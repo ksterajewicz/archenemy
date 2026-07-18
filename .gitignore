@@ -13,3 +13,9 @@
 # ─── editor / desktop-environment junk ────────────────────────────────────────
 .directory
 __pycache__/
+
+# Wallpapers that are protected by licences.
+/wallpapers/tron-grid/wp9024750-tron-legacy-4k-wallpapers.jpg
+/wallpapers/tron-grid/wp9024945-tron-legacy-4k-wallpapers.jpg
+/wallpapers/tron-grid/wp9024977-tron-legacy-4k-wallpapers.png
+
