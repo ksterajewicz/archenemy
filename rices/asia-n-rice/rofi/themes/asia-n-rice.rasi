@@ -1,0 +1,114 @@
+/*
+ * rofi theme — asia-n-rice (mauve na granacie)
+ * accent: #b47687 | bg: granatowa wyspa (blur przez Hyprland layerrule)
+ * layout: center | corners: 14px — spójne z waybarem asia
+ */
+
+* {
+    bg:          rgba(42, 52, 68, 0.85);
+    bg-selected: rgba(180, 118, 135, 0.16);
+    fg:          #e8e8e8;
+    fg-dim:      rgba(232, 232, 232, 0.40);
+    accent:      #b47687;
+    urgent:      #d9738a;
+    border-col:  rgba(180, 118, 135, 0.30);
+
+    background-color: transparent;
+    text-color:       @fg;
+    font:             "JetBrainsMono Nerd Font 11";
+}
+
+window {
+    background-color: @bg;
+    border:           1px solid;
+    border-color:     @border-col;
+    border-radius:    14px;
+    width:            520px;
+    padding:          0px;
+    location:         center;
+}
+
+mainbox {
+    background-color: transparent;
+    children:         [ inputbar, listview ];
+    spacing:          0px;
+    padding:          0px;
+}
+
+/* ── Input bar ──────────────────────────────────────── */
+inputbar {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          14px 18px;
+    spacing:          10px;
+    children:         [ prompt, entry ];
+    border:           0px 0px 1px 0px solid;
+    border-color:     rgba(180, 118, 135, 0.18);
+}
+
+prompt {
+    background-color: transparent;
+    text-color:       @accent;
+}
+
+entry {
+    background-color: transparent;
+    text-color:       @fg;
+    placeholder:      "Search…";
+    placeholder-color: @fg-dim;
+    cursor-color:     @accent;
+    cursor-width:     2px;
+    expand:           true;
+}
+
+/* ── List ───────────────────────────────────────────── */
+listview {
+    background-color: transparent;
+    padding:          8px;
+    spacing:          2px;
+    scrollbar:        false;
+    lines:            8;
+    fixed-height:     true;
+    cycle:            true;
+}
+
+element {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          9px 12px;
+    spacing:          10px;
+    orientation:      horizontal;
+    border-radius:    10px;
+}
+
+element normal.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal {
+    background-color: @bg-selected;
+    text-color:       @accent;
+}
+
+element normal.urgent {
+    text-color: @urgent;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color:       #ffffff;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             20px;
+    vertical-align:   0.5;
+}
+
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    vertical-align:   0.5;
+    expand:           true;
+}

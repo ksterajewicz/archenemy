@@ -1,0 +1,18 @@
+configuration {
+    modi:                   "drun";
+    show-icons:             true;
+    icon-theme:             "Papirus";
+    drun-display-format:    "{name}";
+    font:                   "JetBrainsMono Nerd Font 11";
+    terminal:               "alacritty";
+    sort:                   true;
+    sorting-method:         "fzf";
+    case-sensitive:         false;
+    cycle:                  true;
+    sidebar-mode:           false;
+
+    /* Wayland */
+    location:               0;
+}
+
+@theme "~/.config/rofi/themes/asia-n-rice.rasi"
