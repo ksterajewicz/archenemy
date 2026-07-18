@@ -1,0 +1,179 @@
+ * {
+    font-family:   "Iosevka Nerd Font", monospace;
+    font-size:     12px;
+    font-weight:   500;
+    border:        none;
+    border-radius: 0;
+    min-height:    0;
+    transition:    background 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+window#waybar {
+    background: transparent;
+    color:      #9adbe8;
+}
+/* Ciemne szkło z cyjanową obwódką i delikatnym glow — estetyka Tron: Legacy
+   (glow to świadome odstępstwo per-rice od zasady „no glow" white-blue).
+   Wyspy mają:
+   - pionowy gradient (jaśniej u góry) → efekt „podświetlonego panelu HUD",
+   - box-shadow zewnętrzny (poświata) + inset u góry (świecąca krawędź-linia),
+   spójne na wszystkich wyspach (symetria). */
+.modules-left {
+    background:    linear-gradient(180deg, rgba(7, 22, 30, 0.62), rgba(2, 10, 15, 0.55));
+    color:         #9adbe8;
+    border:        1px solid rgba(0, 229, 255, 0.28);
+    border-radius: 6px;
+    padding:       0 4px;
+    margin:        0 4px 0 0;
+    box-shadow:    0 0 8px rgba(0, 229, 255, 0.25),
+                   inset 0 1px 0 rgba(0, 229, 255, 0.18);
+}
+.modules-right {
+    background:    linear-gradient(180deg, rgba(7, 22, 30, 0.62), rgba(2, 10, 15, 0.55));
+    color:         #9adbe8;
+    border:        1px solid rgba(0, 229, 255, 0.28);
+    border-radius: 6px;
+    padding:       0 10px;
+    margin:        0 0 0 4px;
+    box-shadow:    0 0 8px rgba(0, 229, 255, 0.25),
+                   inset 0 1px 0 rgba(0, 229, 255, 0.18);
+}
+.modules-center {
+    background: transparent;
+}
+#clock {
+    color:          #cfeef7;
+    font-size:      12.5px;
+    font-weight:    600;
+    padding:        0 14px;
+    background:     linear-gradient(180deg, rgba(7, 22, 30, 0.62), rgba(2, 10, 15, 0.55));
+    border:         1px solid rgba(0, 229, 255, 0.28);
+    border-radius:  6px;
+    letter-spacing: 0.04em;
+    box-shadow:     0 0 8px rgba(0, 229, 255, 0.25),
+                    inset 0 1px 0 rgba(0, 229, 255, 0.18);
+}
+/* „Portal do Gridu" — neonowy glyph-launcher na początku lewej wyspy,
+   oddzielony cyjanową hairline od workspace'ów. */
+#custom-launcher {
+    color:        #00e5ff;
+    font-size:    15px;
+    padding:      0 12px 0 10px;
+    margin:       2px 2px 2px 0;
+    border-right: 1px solid rgba(0, 229, 255, 0.20);
+    text-shadow:  0 0 6px rgba(0, 229, 255, 0.55);
+}
+#custom-launcher:hover {
+    color:       #7df9ff;
+    background:  rgba(0, 229, 255, 0.10);
+    text-shadow: 0 0 10px rgba(0, 229, 255, 0.80);
+}
+#workspaces {
+    padding: 0 4px;
+}
+#workspaces button {
+    color:         #4a7a8a;
+    background:    transparent;
+    padding:       1px 7px;
+    margin:        2px 1px;
+    border-radius: 4px;
+    min-width:     0;
+    /* Rozszerzająca się pigułka aktywnego workspace'a — wzorzec repo */
+    transition:    background 200ms ease, color 200ms ease,
+                   padding 200ms cubic-bezier(0.25, 0.10, 0.25, 1.00);
+}
+#workspaces button.empty {
+    color: #2e4a55;
+}
+#workspaces button:hover {
+    background:  rgba(0, 229, 255, 0.10);
+    color:       #00e5ff;
+    box-shadow:  none;
+    text-shadow: none;
+}
+#workspaces button.active {
+    /* Neon: ciemny tekst na świecącym cyjanie (jak identyfikatory programów
+       na kombinezonach) */
+    background:  #00e5ff;
+    color:       #020a0f;
+    font-weight: 600;
+    padding:     1px 10px;
+}
+#workspaces button.urgent {
+    background: #ff7b1c;
+    color:      #020a0f;
+}
+#window {
+    color:       #4a7a8a;
+    padding:     0 10px;
+    border-left: 1px solid rgba(0, 229, 255, 0.20);
+    margin-left: 2px;
+    font-style:  italic;
+    font-size:   11px;
+}
+window#waybar.empty #window,
+window#waybar.solo  #window {
+    background: transparent;
+    border:     none;
+    padding:    0;
+    margin:     0;
+}
+#pulseaudio,
+#network,
+#battery,
+#tray,
+#custom-profileswitcher,
+#custom-micmute {
+    padding:    0 8px;
+    background: transparent;
+    color:      #9adbe8;
+}
+#custom-profileswitcher {
+    color: #00e5ff;
+    font-weight: 600;
+}
+#pulseaudio:hover,
+#network:hover,
+#battery:hover,
+#custom-profileswitcher:hover,
+#custom-micmute:hover {
+    color: #7df9ff;
+}
+#pulseaudio.muted {
+    color: #2e4a55;
+}
+#network.disconnected {
+    color: #2e4a55;
+}
+#battery.warning {
+    color: #ffb454;
+}
+#battery.critical {
+    /* Pomarańcz CLU — kolor semantyczny zagrożenia w rice tron */
+    color:         #020a0f;
+    font-weight:   700;
+    background:    #ff7b1c;
+    border-radius: 4px;
+    margin:        2px 0;
+    padding:       1px 8px;
+}
+@keyframes pulse {
+    to { opacity: 0.4; }
+}
+#battery.critical:not(.charging) {
+    animation: pulse 1.0s ease-in-out infinite alternate;
+}
+#tray {
+    -gtk-icon-effect: none;
+}
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+}
+tooltip {
+    background:    rgba(4, 16, 22, 0.97);
+    border:        1px solid rgba(0, 229, 255, 0.35);
+    border-radius: 6px;
+}
+tooltip label {
+    color:   #9adbe8;
+    padding: 4px;
+}

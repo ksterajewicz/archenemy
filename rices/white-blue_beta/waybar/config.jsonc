@@ -1,0 +1,101 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 38,
+    "spacing": 0,
+    "margin-top": 4,
+    "margin-left": 8,
+    "margin-right": 8,
+    "reload_style_on_change": true,
+    "modules-left":   ["hyprland/workspaces", "hyprland/window"],
+    "modules-center": ["clock"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "pulseaudio", "network", "battery", "tray"],
+    // Workspace'y: pasek pokazuje tylko swój output ({name}: w decades = 1-10
+    // przez defaultName, w shared = globalne id). Scroll przez ws-scroll.sh —
+    // naprawa pod dwa tryby (stały r±1 psułby scroll w trybie shared).
+    "hyprland/workspaces": {
+        "format": "{name}",
+        "on-click": "activate",
+        "on-scroll-up": "~/archenemy/scripts/hypr/ws-scroll.sh up",
+        "on-scroll-down": "~/archenemy/scripts/hypr/ws-scroll.sh down",
+        "all-outputs": false,
+        "show-special": false
+    },
+    "hyprland/window": {
+        "format": "{title}",
+        "max-length": 60,
+        "separate-outputs": true,
+        "rewrite": {
+            "(.*) - Alacritty": "  $1",
+            "(.*) - Brave":     "󰖟 $1"
+        }
+    },
+    "clock": {
+        "format": "{:%H:%M:%S}",
+        "format-alt": "{:%a, %d %b · %H:%M:%S}",
+        "interval": 1,
+        "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
+        "calendar": {
+            "mode": "month",
+            "weeks-pos": "left",
+            "format": {
+                "months":   "<span color='#0a0a0a'><b>{}</b></span>",
+                "days":     "<span color='#0a0a0a'>{}</span>",
+                "weekdays": "<span color='#0148ED'><b>{}</b></span>",
+                "today":    "<span color='#ffffff' background='#0148ED'><b>{}</b></span>"
+            }
+        }
+    },
+    "custom/profileswitcher": {
+        "exec": "~/archenemy/scripts/waybar/profile-get.sh",
+        "interval": 1,
+        "format": "󰓅 {}",
+        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh",
+        "signal": 8,
+        "tooltip": false
+    },
+    "custom/micmute": {
+        "exec": "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo '󰍭' || echo '󰍬'",
+        "interval": 1,
+        "format": "{}",
+        "on-click": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle; pkill -RTMIN+9 waybar",
+        "signal": 9,
+        "tooltip": false
+    },
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "󰖁",
+        "format-icons": {
+            "headphone":  "󰋋",
+            "hands-free": "󰋎",
+            "headset":    "󰋎",
+            "default":    ["󰕿", "󰖀", "󰕾"]
+        },
+        "on-click": "command -v pavucontrol >/dev/null && pavucontrol",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "scroll-step": 5
+    },
+    "network": {
+        "format-wifi":         "󰖩 {essid}",
+        "format-ethernet":     "󰈀 {ifname}",
+        "format-disconnected": "󰖪",
+        "tooltip-format-wifi":     "{essid} · {signalStrength}%\n{ipaddr}/{cidr}\n{bandwidthDownBits} ↓  {bandwidthUpBits} ↑",
+        "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
+        "on-click": "networkmanager_dmenu"
+    },
+    "battery": {
+        "states": {
+            "warning":  25,
+            "critical": 10
+        },
+        "format":           "{icon} {capacity}%",
+        "format-charging":  "󰂄 {capacity}%",
+        "format-plugged":   "󰚥 {capacity}%",
+        "format-icons":     ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
+        "tooltip-format":   "{timeTo}\n{power}W"
+    },
+    "tray": {
+        "icon-size": 14,
+        "spacing":   8
+    }
+}

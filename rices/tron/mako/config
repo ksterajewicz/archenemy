@@ -1,0 +1,37 @@
+# archenemy - mako config (tron rice)
+# made by kst - https://github.com/ksterajewicz
+
+font=JetBrainsMono Nerd Font 11
+width=360
+height=140
+margin=10
+padding=14,16
+anchor=top-right
+layer=overlay
+
+background-color=#020A0FE6
+text-color=#9ADBE8
+border-size=1
+border-color=#00E5FF66
+border-radius=6
+progress-color=over #00E5FF55
+
+default-timeout=5000
+max-history=20
+group-by=app-name
+icons=1
+max-icon-size=40
+
+[urgency=low]
+border-color=#0E2A3366
+default-timeout=3500
+
+[urgency=critical]
+# Pomarańcz CLU — semantyczny kolor alarmu w rice tron
+background-color=#FF7B1CF0
+text-color=#020A0F
+border-color=#FF7B1C
+default-timeout=0
+
+[mode=do-not-disturb]
+invisible=1

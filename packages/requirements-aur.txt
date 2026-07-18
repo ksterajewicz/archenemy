@@ -1,0 +1,3 @@
+# made by kst - https://github.com/ksterajewicz
+networkmanager-dmenu
+brave-bin

@@ -1,0 +1,43 @@
+// archenemy — fastfetch (white-blue): logo Archa i klucze w dominującym
+// niebieskim rice'a (#0148ED, jaśniejszy #4A7FFF jak w gradiencie ramek).
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+  "logo": {
+    "source": "arch",
+    "color": { "1": "38;2;1;72;237", "2": "38;2;74;127;255" }
+  },
+  "display": {
+    "color": { "keys": "38;2;1;72;237", "title": "38;2;1;72;237" }
+  },
+  "modules": [
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "uptime",
+    "packages",
+    "shell",
+    "display",
+    "de",
+    "wm",
+    "wmtheme",
+    "theme",
+    "icons",
+    "font",
+    "cursor",
+    "terminal",
+    "terminalfont",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk",
+    "battery",
+    "poweradapter",
+    "locale",
+    "break",
+    "colors"
+  ]
+}
+

@@ -1,0 +1,110 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 32,
+    "spacing": 0,
+    "margin-top": 4,
+    "margin-left": 8,
+    "margin-right": 8,
+    "reload_style_on_change": true,
+    "modules-left":   ["custom/launcher", "hyprland/workspaces", "hyprland/window"],
+    "modules-center": ["clock"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "pulseaudio", "network", "battery", "tray"],
+    // Sygnatura rice'a: neonowy „portal do Gridu" — glyph Archa otwiera rofi.
+    "custom/launcher": {
+        "format": "󰣇",
+        "on-click": "rofi -show drun",
+        "on-click-right": "~/archenemy/scripts/rofi/rofi_power_menu.sh",
+        "tooltip": false
+    },
+    // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
+    // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
+    // który czyta tryb (decades: r±1, shared: e±1) — jak bindy klawiatury.
+    "hyprland/workspaces": {
+        "format": "{name}",
+        "on-click": "activate",
+        "on-scroll-up": "~/archenemy/scripts/hypr/ws-scroll.sh up",
+        "on-scroll-down": "~/archenemy/scripts/hypr/ws-scroll.sh down",
+        "all-outputs": false,
+        "show-special": false
+    },
+    "hyprland/window": {
+        "format": "{title}",
+        "max-length": 60,
+        "separate-outputs": true,
+        "rewrite": {
+            "(.*) - Alacritty": "  $1",
+            "(.*) - Brave":     "󰖟 $1"
+        }
+    },
+    "clock": {
+        // {0:...} = indeksowany placeholder fmt — pozwala rozbić czas na części
+        // i przygasić sekundy pango-spanem (zwykłe {:...} użyte 2x nie działa)
+        "format": "{0:%H:%M}<span color='#4a7a8a'>:{0:%S}</span>",
+        "format-alt": "{0:%a, %d %b · %H:%M}<span color='#4a7a8a'>:{0:%S}</span>",
+        "interval": 1,
+        "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
+        "calendar": {
+            "mode": "month",
+            "weeks-pos": "left",
+            "format": {
+                "months":   "<span color='#9adbe8'><b>{}</b></span>",
+                "days":     "<span color='#9adbe8'>{}</span>",
+                "weekdays": "<span color='#00e5ff'><b>{}</b></span>",
+                "today":    "<span color='#020a0f' background='#00e5ff'><b>{}</b></span>"
+            }
+        }
+    },
+    "custom/profileswitcher": {
+        "exec": "~/archenemy/scripts/waybar/profile-get.sh",
+        "interval": 1,
+        "format": "󰓅 {}",
+        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh",
+        "signal": 8,
+        "tooltip": false
+    },
+    "custom/micmute": {
+        "exec": "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo '󰍭' || echo '󰍬'",
+        "interval": 1,
+        "format": "{}",
+        "on-click": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle; pkill -RTMIN+9 waybar",
+        "signal": 9,
+        "tooltip": false
+    },
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "󰖁",
+        "format-icons": {
+            "headphone":  "󰋋",
+            "hands-free": "󰋎",
+            "headset":    "󰋎",
+            "default":    ["󰕿", "󰖀", "󰕾"]
+        },
+        "on-click": "pavucontrol",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "scroll-step": 5
+    },
+    "network": {
+        "format-wifi":         "󰖩 {essid}",
+        "format-ethernet":     "󰈀 {ifname}",
+        "format-disconnected": "󰖪",
+        "tooltip-format-wifi":     "{essid} · {signalStrength}%\n{ipaddr}/{cidr}\n{bandwidthDownBits} ↓  {bandwidthUpBits} ↑",
+        "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
+        "on-click": "~/archenemy/scripts/rofi/rofi_network.sh"
+    },
+    "battery": {
+        "states": {
+            "warning":  25,
+            "critical": 10
+        },
+        "format":           "{icon} {capacity}%",
+        "format-charging":  "󰂄 {capacity}%",
+        "format-plugged":   "󰚥 {capacity}%",
+        "format-icons":     ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
+        "tooltip-format":   "{timeTo}\n{power}W"
+    },
+    "tray": {
+        "icon-size": 13,
+        "spacing":   6
+    }
+}

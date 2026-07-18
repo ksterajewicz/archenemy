@@ -1,0 +1,45 @@
+// archenemy — fastfetch (tron rice: Tron: Legacy, ciemny neon)
+// Własny motyw (tron NIE dziedziczy fastfetcha z white-blue): wbudowane logo
+// Archa przemalowane na neonowy cyjan rice'a (#00E5FF / jasny #7DF9FF).
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+
+  "logo": {
+    "source": "arch",
+    "color": { "1": "38;2;0;229;255", "2": "38;2;125;249;255" },
+    "padding": { "top": 1, "right": 3, "left": 2 }
+  },
+
+  // Klucze i tytuł w akcencie rice'a (cyjan = ANSI 6); separatory jako moduł
+  // „custom" (kolor bierze z display.color.output → niebieski).
+  // Bez display.key.width — obcinał ręcznie wyrównane klucze („KERN" → „KE").
+  "display": {
+    "separator": "  ",
+    "color": { "keys": "cyan", "title": "cyan", "output": "blue" }
+  },
+
+  // Klucze = krótkie etykiety w stylu „panelu przyrządów" (bez ikon spoza
+  // pewnego zakresu glifów — świadoma decyzja, żeby nic nie wyszło jako tofu;
+  // riced-owy charakter niesie logo + cyjanowa kolorystyka + separatory).
+  "modules": [
+    "break",
+    { "type": "title", "keyColor": "cyan" },
+    { "type": "custom", "format": "────────────────────────────────" },
+    { "type": "os",           "key": "OS   " },
+    { "type": "kernel",       "key": "KERN " },
+    { "type": "host",         "key": "HOST " },
+    { "type": "uptime",       "key": "UP   " },
+    { "type": "packages",     "key": "PKGS " },
+    { "type": "shell",        "key": "SHELL" },
+    { "type": "wm",           "key": "WM   " },
+    { "type": "terminal",     "key": "TERM " },
+    { "type": "custom", "format": "────────────────────────────────" },
+    { "type": "cpu",          "key": "CPU  " },
+    { "type": "gpu",          "key": "GPU  " },
+    { "type": "memory",       "key": "MEM  " },
+    { "type": "disk",         "key": "DISK ", "folders": "/" },
+    { "type": "battery",      "key": "BAT  " },
+    "break",
+    { "type": "colors", "symbol": "circle" }
+  ]
+}

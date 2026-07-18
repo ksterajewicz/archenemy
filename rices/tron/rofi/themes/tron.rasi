@@ -1,0 +1,116 @@
+/*
+ * rofi theme — tron rice (Tron: Legacy dark neon)
+ * accent: #00E5FF (neon cyjan) | urgent: #FF7B1C (pomarańcz CLU)
+ * bg: ciemne szkło (blur przez layerrule Hyprlanda)
+ * layout: center | corners: 6px — kanciasto, spójnie z waybarem
+ */
+
+* {
+    bg:          rgba(2, 10, 15, 0.92);
+    bg-selected: rgba(0, 229, 255, 0.12);
+    fg:          #9ADBE8;
+    fg-dim:      rgba(154, 219, 232, 0.40);
+    accent:      #00E5FF;
+    urgent:      #FF7B1C;
+    border-col:  rgba(0, 229, 255, 0.45);
+
+    background-color: transparent;
+    text-color:       @fg;
+    font:             "JetBrainsMono Nerd Font 11";
+}
+
+window {
+    background-color: @bg;
+    border:           1px solid;
+    border-color:     @border-col;
+    border-radius:    6px;
+    width:            520px;
+    padding:          0px;
+    location:         center;
+}
+
+mainbox {
+    background-color: transparent;
+    children:         [ inputbar, listview ];
+    spacing:          0px;
+    padding:          0px;
+}
+
+/* ── Input bar ──────────────────────────────────────── */
+inputbar {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          14px 18px;
+    spacing:          10px;
+    children:         [ prompt, entry ];
+    border:           0px 0px 1px 0px solid;
+    border-color:     rgba(0, 229, 255, 0.20);
+}
+
+prompt {
+    background-color: transparent;
+    text-color:       @accent;
+    font:             "JetBrainsMono Nerd Font 13";
+}
+
+entry {
+    background-color: transparent;
+    text-color:       #CFEEF7;
+    placeholder:      "Search the Grid…";
+    placeholder-color: @fg-dim;
+    cursor-color:     @accent;
+    cursor-width:     2px;
+    expand:           true;
+}
+
+/* ── List ───────────────────────────────────────────── */
+listview {
+    background-color: transparent;
+    padding:          8px;
+    spacing:          2px;
+    scrollbar:        false;
+    lines:            8;
+    fixed-height:     true;
+    cycle:            true;
+}
+
+element {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          9px 12px;
+    spacing:          10px;
+    orientation:      horizontal;
+    border-radius:    4px;
+}
+
+element normal.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal {
+    background-color: @bg-selected;
+    text-color:       @accent;
+}
+
+element normal.urgent {
+    text-color: @urgent;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color:       #020A0F;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             20px;
+    vertical-align:   0.5;
+}
+
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    vertical-align:   0.5;
+    expand:           true;
+}

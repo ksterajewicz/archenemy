@@ -1,0 +1,147 @@
+ * {
+    font-family:   "Iosevka Nerd Font", monospace;
+    font-size:     12px;
+    font-weight:   500;
+    border:        none;
+    border-radius: 0;
+    min-height:    0;
+    transition:    background 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+window#waybar {
+    background: transparent;
+    color:      #0a0a0a;
+}
+.modules-left {
+    background:    rgba(255, 255, 255, 0.35);
+    color:         #0a0a0a;
+    border:        0.5px solid rgba(1, 72, 237, 0.12);
+    border-radius: 14px;
+    padding:       0 4px;
+    margin:        0 4px 0 0;
+}
+.modules-right {
+    background:    rgba(255, 255, 255, 0.45);
+    color:         #0a0a0a;
+    border:        0.5px solid rgba(1, 72, 237, 0.12);
+    border-radius: 14px;
+    padding:       0 12px;
+    margin:        0 0 0 4px;
+}
+.modules-center {
+    background: transparent;
+}
+#clock {
+    color:          #0a0a0a;
+    font-size:      13px;
+    font-weight:    500;
+    padding:        0 14px;
+    background:     rgba(255, 255, 255, 0.45);
+    border:         0.5px solid rgba(1, 72, 237, 0.12);
+    border-radius:  14px;
+    letter-spacing: 0.02em;
+}
+#workspaces {
+    padding: 0 4px;
+}
+#workspaces button {
+    color:         #909090;
+    background:    transparent;
+    padding:       2px 8px;
+    margin:        3px 1px;
+    border-radius: 11px;
+    min-width:     0;
+}
+#workspaces button.empty {
+    color: #c8c8c8;
+}
+#workspaces button:hover {
+    background:  rgba(1, 72, 237, 0.08);
+    color:       #0148ED;
+    box-shadow:  none;
+    text-shadow: none;
+}
+#workspaces button.active {
+    background:  #0148ED;
+    color:       #ffffff;
+    font-weight: 600;
+}
+#workspaces button.urgent {
+    background: #0148ED;
+    color:      #ffffff;
+}
+#window {
+    color:       #606060;
+    padding:     0 12px;
+    border-left: 0.5px solid rgba(1, 72, 237, 0.15);
+    margin-left: 2px;
+    font-style:  italic;
+    font-size:   11px;
+}
+window#waybar.empty #window,
+window#waybar.solo  #window {
+    background: transparent;
+    border:     none;
+    padding:    0;
+    margin:     0;
+}
+#memory,
+#cpu,
+#temperature,
+#pulseaudio,
+#network,
+#battery,
+#tray,
+#custom-profileswitcher,
+#custom-micmute {
+    padding:    0 8px;
+    background: transparent;
+    color:      #0a0a0a;
+}
+#memory:hover,
+#cpu:hover,
+#temperature:hover,
+#pulseaudio:hover,
+#network:hover,
+#battery:hover,
+#custom-profileswitcher:hover,
+#custom-micmute:hover {
+    color: #0148ED;
+}
+#pulseaudio.muted {
+    color: #b0b0b0;
+}
+#network.disconnected {
+    color: #b0b0b0;
+}
+#battery.warning {
+    color: #0148ED;
+}
+#battery.critical {
+    color:         #ffffff;
+    font-weight:   700;
+    background:    #0148ED;
+    border-radius: 11px;
+    margin:        3px 0;
+    padding:       2px 10px;
+}
+@keyframes pulse {
+    to { opacity: 0.4; }
+}
+#battery.critical:not(.charging) {
+    animation: pulse 1.0s ease-in-out infinite alternate;
+}
+#tray {
+    -gtk-icon-effect: none;
+}
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+}
+tooltip {
+    background:    rgba(255, 255, 255, 0.97);
+    border:        0.5px solid rgba(1, 72, 237, 0.15);
+    border-radius: 8px;
+}
+tooltip label {
+    color:   #0a0a0a;
+    padding: 4px;
+}

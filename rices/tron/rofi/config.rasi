@@ -1,0 +1,21 @@
+configuration {
+    modi:                   "drun";
+    show-icons:             true;
+    icon-theme:             "Papirus";
+    drun-display-format:    "{name}";
+    /* Glyph szukania jako prompt (neon) zamiast słowa „drun" —
+       glif Material Design (spójny z resztą ikon w repo). */
+    display-drun:           "󰍉 ";
+    font:                   "JetBrainsMono Nerd Font 11";
+    terminal:               "alacritty";
+    sort:                   true;
+    sorting-method:         "fzf";
+    case-sensitive:         false;
+    cycle:                  true;
+    sidebar-mode:           false;
+
+    /* Wayland */
+    location:               0;
+}
+
+@theme "~/.config/rofi/themes/tron.rasi"

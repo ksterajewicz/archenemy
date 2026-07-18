@@ -1,0 +1,6 @@
+megasync
+protonvpn
+protonup-qt
+rustdesk-bin
+# omen-fan: sterowanie wentylatorami laptopów HP Omen (opcjonalne)
+omen-fan

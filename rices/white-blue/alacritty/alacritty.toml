@@ -1,0 +1,126 @@
+# made by kst - https://github.com/ksterajewicz
+
+# ─── Window ────────────────────────────────────────────
+[window]
+padding        = { x = 14, y = 10 }
+decorations    = "None"
+opacity        = 0.70
+blur           = true
+
+# ─── Font ──────────────────────────────────────────────
+[font]
+size = 11.5
+
+[font.normal]
+family = "JetBrainsMono Nerd Font"
+style  = "Regular"
+
+[font.bold]
+family = "JetBrainsMono Nerd Font"
+style  = "Bold"
+
+[font.italic]
+family = "JetBrainsMono Nerd Font"
+style  = "Italic"
+
+# ─── Cursor ────────────────────────────────────────────
+[cursor]
+style          = { shape = "Block", blinking = "On" }
+blink_interval = 550
+unfocused_hollow = true
+
+# ─── Selection — zaznaczenie = automatyczne kopiowanie ─
+[selection]
+save_to_clipboard = true   # samo zaznaczenie kopiuje do schowka
+
+# ─── Scrollback ────────────────────────────────────────
+[scrolling]
+history    = 10000
+multiplier = 3
+
+# ─── Kolory — white/blue theme ─────────────────────────
+[colors.primary]
+background = "#1A1A2E" 
+foreground = "#FFFFFF"       # prawie-czarny z lekkim blue tint
+
+[colors.cursor]
+text   = "#FFFFFF"
+cursor = "#0148ED"
+
+[colors.vi_mode_cursor]
+text   = "#FFFFFF"
+cursor = "#0148ED"
+
+[colors.selection]
+text       = "#FFFFFF"
+background = "#0148ED"
+
+[colors.search.matches]
+foreground = "#FFFFFF"
+background = "#0148ED"
+
+[colors.search.focused_match]
+foreground = "#FFFFFF"
+background = "#0136B1"       # ciemniejszy blue dla aktywnego matcha
+
+[colors.hints.start]
+foreground = "#FFFFFF"
+background = "#0148ED"
+
+[colors.hints.end]
+foreground = "#0148ED"
+background = "#E8EEFF"
+
+# ── Normal colors ──────────────────────────────────────
+[colors.normal]
+black   = "#1A1A2E"          # tło terminala (dark navy)
+red     = "#D93025"
+green   = "#1E7E34"
+yellow  = "#F4A100"
+blue    = "#0148ED"          # Twój niebieski
+magenta = "#7B2FBE"
+cyan    = "#0097A7"
+white   = "#F8F8F8"
+
+# ── Bright colors ──────────────────────────────────────
+[colors.bright]
+black   = "#5C5C7A"
+red     = "#FF4444"
+green   = "#34A853"
+yellow  = "#FFC107"
+blue    = "#4A7FFF"          # jaśniejszy wariant akcentu
+magenta = "#AB47BC"
+cyan    = "#26C6DA"
+white   = "#FFFFFF"
+
+# ─── Keyboard bindings ─────────────────────────────────
+[[keyboard.bindings]]
+key    = "Return"
+mods   = "Control|Shift"
+action = "SpawnNewInstance"
+
+[[keyboard.bindings]]
+key    = "C"
+mods   = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key    = "V"
+mods   = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key    = "Plus"
+mods   = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Minus"
+mods   = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Key0"
+mods   = "Control"
+action = "ResetFontSize"
+

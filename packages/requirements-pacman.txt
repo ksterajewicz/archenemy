@@ -1,0 +1,44 @@
+# made by kst - https://github.com/ksterajewicz
+# core
+hyprland
+hyprpaper
+hyprlock
+hyprpicker
+hyprpolkitagent
+waybar
+rofi-wayland
+alacritty
+fastfetch
+neovim
+mako
+thunar
+# clipboard + screenshots
+cliphist
+wl-clipboard
+hyprshot
+# audio / media / brightness
+# pipewire-pulse: serwer PulseAudio — bez niego pavucontrol i moduł głośności waybara nie działają
+pipewire-pulse
+wireplumber
+pavucontrol
+playerctl
+brightnessctl
+# power profiles (universal profile switcher)
+power-profiles-daemon
+# libnotify: notify-send — powiadomienia z 6 skryptów (zmiana rice'a,
+# tapety, sieć, profile zasilania); mako tylko WYŚWIETLA, nie wysyła
+libnotify
+# socat: nasłuch zdarzeń Hyprlanda (socket2) w workspace-orphan-guard.sh —
+# scalanie workspace'ów po odpięciu monitora; bez socat guard
+# przechodzi w awaryjny tryb sondy co 5 s
+socat
+# network + firewall
+networkmanager
+ufw
+# fonts + icons
+# ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
+ttf-iosevka-nerd
+ttf-jetbrains-mono-nerd
+ttf-nerd-fonts-symbols-mono
+noto-fonts
+papirus-icon-theme

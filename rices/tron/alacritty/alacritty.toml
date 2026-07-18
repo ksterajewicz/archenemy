@@ -1,0 +1,127 @@
+# made by kst - https://github.com/ksterajewicz
+
+# ─── Window ────────────────────────────────────────────
+[window]
+padding        = { x = 14, y = 10 }
+decorations    = "None"
+opacity        = 0.80
+blur           = true
+
+# ─── Font ──────────────────────────────────────────────
+[font]
+size = 11.5
+
+[font.normal]
+family = "JetBrainsMono Nerd Font"
+style  = "Regular"
+
+[font.bold]
+family = "JetBrainsMono Nerd Font"
+style  = "Bold"
+
+[font.italic]
+family = "JetBrainsMono Nerd Font"
+style  = "Italic"
+
+# ─── Cursor ────────────────────────────────────────────
+[cursor]
+style          = { shape = "Block", blinking = "On" }
+blink_interval = 550
+unfocused_hollow = true
+
+# ─── Selection — zaznaczenie = automatyczne kopiowanie ─
+[selection]
+save_to_clipboard = true   # samo zaznaczenie kopiuje do schowka
+
+# ─── Scrollback ────────────────────────────────────────
+[scrolling]
+history    = 10000
+multiplier = 3
+
+# ─── Kolory — tron theme (Tron: Legacy) ────────────────
+# Głęboka czerń z granatem, neon cyjan #00E5FF, pomarańcz CLU
+# zarezerwowany dla yellow (ostrzeżenia wyglądają „po tronowemu").
+[colors.primary]
+background = "#020A0F"
+foreground = "#CFEEF7"       # chłodna, lekko cyjanowa biel
+
+[colors.cursor]
+text   = "#020A0F"
+cursor = "#00E5FF"
+
+[colors.vi_mode_cursor]
+text   = "#020A0F"
+cursor = "#00E5FF"
+
+[colors.selection]
+text       = "#020A0F"
+background = "#00E5FF"
+
+[colors.search.matches]
+foreground = "#020A0F"
+background = "#00E5FF"
+
+[colors.search.focused_match]
+foreground = "#020A0F"
+background = "#7DF9FF"       # jaśniejszy neon dla aktywnego matcha
+
+[colors.hints.start]
+foreground = "#020A0F"
+background = "#00E5FF"
+
+[colors.hints.end]
+foreground = "#00E5FF"
+background = "#0E2A33"
+
+# ── Normal colors ──────────────────────────────────────
+[colors.normal]
+black   = "#0E2A33"          # ciemny teal (widoczny na tle #020A0F)
+red     = "#FF5252"
+green   = "#00E676"
+yellow  = "#FFB454"          # bursztyn w stronę CLU
+blue    = "#40C4FF"
+magenta = "#B388FF"
+cyan    = "#00E5FF"          # akcent rice'a
+white   = "#9ADBE8"
+
+# ── Bright colors ──────────────────────────────────────
+[colors.bright]
+black   = "#4A7A8A"
+red     = "#FF7B1C"          # pomarańcz CLU
+green   = "#69F0AE"
+yellow  = "#FFD180"
+blue    = "#80D8FF"
+magenta = "#D1C4E9"
+cyan    = "#7DF9FF"          # jaśniejszy neon
+white   = "#E0F7FA"
+
+# ─── Keyboard bindings ─────────────────────────────────
+[[keyboard.bindings]]
+key    = "Return"
+mods   = "Control|Shift"
+action = "SpawnNewInstance"
+
+[[keyboard.bindings]]
+key    = "C"
+mods   = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key    = "V"
+mods   = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key    = "Plus"
+mods   = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Minus"
+mods   = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Key0"
+mods   = "Control"
+action = "ResetFontSize"

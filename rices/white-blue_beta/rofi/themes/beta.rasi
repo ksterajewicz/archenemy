@@ -1,0 +1,112 @@
+/*
+ * rofi theme — white/blue rice
+ * accent: #0649EC | bg: #5A5A68 translucent
+ * layout: center | corners: sharp
+ */
+
+* {
+    bg:          rgba(90, 90, 104, 0.82);
+    bg-alt:      rgba(90, 90, 104, 0.55);
+    bg-selected: rgba(6, 73, 236, 0.25);
+    fg:          #FFFFFF;
+    fg-dim:      rgba(255, 255, 255, 0.50);
+    accent:      #0649EC;
+    urgent:      #D93025;
+    border-col:  #0649EC;
+
+    background-color: transparent;
+    text-color:       @fg;
+    font:             "JetBrainsMono Nerd Font 11";
+}
+
+window {
+    background-color: @bg;
+    border:           2px solid;
+    border-color:     @border-col;
+    border-radius:    0px;
+    width:            520px;
+    padding:          0px;
+    location:         center;
+}
+
+mainbox {
+    background-color: transparent;
+    children:         [ inputbar, listview ];
+    spacing:          0px;
+    padding:          0px;
+}
+
+/* ── Input bar ──────────────────────────────────────── */
+inputbar {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          12px 16px;
+    spacing:          0px;
+    children:         [ entry ];
+    border:           0px 0px 1px 0px solid;
+    border-color:     @border-col;
+}
+
+entry {
+    background-color: transparent;
+    text-color:       @fg;
+    placeholder:      "Search...";
+    placeholder-color: @fg-dim;
+    cursor-color:     @accent;
+    cursor-width:     2px;
+    expand:           true;
+}
+
+/* ── List ───────────────────────────────────────────── */
+listview {
+    background-color: transparent;
+    padding:          6px 0px;
+    spacing:          0px;
+    scrollbar:        false;
+    lines:            8;
+    fixed-height:     true;
+    cycle:            true;
+}
+
+element {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          9px 16px;
+    spacing:          10px;
+    orientation:      horizontal;
+    border-radius:    0px;
+}
+
+element normal.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal {
+    background-color: @bg-selected;
+    text-color:       @fg;
+    border:           0px 0px 0px 2px solid;
+    border-color:     @accent;
+}
+
+element normal.urgent {
+    text-color: @urgent;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color:       @fg;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             20px;
+    vertical-align:   0.5;
+}
+
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    vertical-align:   0.5;
+    expand:           true;
+}

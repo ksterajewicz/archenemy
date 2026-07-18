@@ -1,0 +1,21 @@
+veracrypt
+discord
+vscodium
+btop
+signal-desktop
+keepassxc
+libreoffice-fresh
+qbittorrent
+vlc
+pavucontrol
+mangohud
+# steam wymaga repo [multilib] w /etc/pacman.conf (włącza je instalator GPU)
+steam
+# gamemode: optymalizacje na czas gry (w Steam: gamemoderun %command%)
+gamemode
+# lib32-gamemode: wersja 32-bit (gry Proton/Wine) — wymaga [multilib]
+lib32-gamemode
+# gamescope: mikrokompozytor Valve — ratuje problematyczne gry Proton
+gamescope
+# python: tylko do regeneracji tapet (scripts/wallpapers/gen_arch_wallpaper.py)
+python
