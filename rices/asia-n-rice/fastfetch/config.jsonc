@@ -1,0 +1,37 @@
+// archenemy — fastfetch (asia-n-rice). Zaadaptowany 1:1 ze źródła: bez
+// bloku logo/color (domyślne logo Archa i kolory) — tak jak w źródłowym
+// rice'u. Można w każdej chwili przebarwić logo/klucze na mauve (jak
+// robią white-blue/tron), jeśli właściciel zechce parytetu wizualnego.
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+  "modules": [
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "uptime",
+    "packages",
+    "shell",
+    "display",
+    "de",
+    "wm",
+    "wmtheme",
+    "theme",
+    "icons",
+    "font",
+    "cursor",
+    "terminal",
+    "terminalfont",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk",
+    "battery",
+    "poweradapter",
+    "locale",
+    "break",
+    "colors"
+  ]
+}

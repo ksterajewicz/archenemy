@@ -1,0 +1,104 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 38,
+    "spacing": 0,
+    "margin-top": 4,
+    "margin-left": 8,
+    "margin-right": 8,
+    "reload_style_on_change": true,
+    "modules-left":   ["hyprland/workspaces", "hyprland/window"],
+    "modules-center": ["clock"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "pulseaudio", "network", "battery", "tray"],
+    // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
+    // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
+    // który czyta tryb (decades: r±1, shared: e±1) — jak bindy klawiatury.
+    "hyprland/workspaces": {
+        "format": "{name}",
+        "on-click": "activate",
+        "on-scroll-up": "~/archenemy/scripts/hypr/ws-scroll.sh up",
+        "on-scroll-down": "~/archenemy/scripts/hypr/ws-scroll.sh down",
+        "all-outputs": false,
+        "show-special": false
+    },
+    "hyprland/window": {
+        "format": "{title}",
+        "max-length": 60,
+        "separate-outputs": true,
+        "rewrite": {
+            "(.*) - Alacritty": "  $1",
+            "(.*) - Brave":     "󰖟 $1"
+        }
+    },
+    "clock": {
+        "format": "{:%H:%M:%S}",
+        "format-alt": "{:%a, %d %b · %H:%M:%S}",
+        "interval": 1,
+        "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
+        "calendar": {
+            "mode": "month",
+            "weeks-pos": "left",
+            "format": {
+                "months":   "<span color='#e8e8e8'><b>{}</b></span>",
+                "days":     "<span color='#b0b0b0'>{}</span>",
+                "weekdays": "<span color='#5c5c5c'>{}</span>",
+                "today":    "<span color='#0a0a0a' background='#e8e8e8'><b>{}</b></span>"
+            }
+        }
+    },
+    // Profil mocy przez backend archenemy: profile-get.sh (odczyt z fallbackami
+    // asus/ppd/sysfs wg data/hardware.dat), klik → profile-switch.sh. Sygnał 8
+    // odświeża moduł po przełączeniu. NIE wołamy asusctl bezpośrednio.
+    "custom/profileswitcher": {
+        "exec": "~/archenemy/scripts/waybar/profile-get.sh",
+        "interval": 1,
+        "format": "󰓅 {}",
+        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh",
+        "signal": 8,
+        "tooltip": false
+    },
+    "custom/micmute": {
+        "exec": "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo '󰍭' || echo '󰍬'",
+        "interval": 1,
+        "format": "{}",
+        "on-click": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle; pkill -RTMIN+9 waybar",
+        "signal": 9,
+        "tooltip": false
+    },
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "󰖁",
+        "format-icons": {
+            "headphone":  "󰋋",
+            "hands-free": "󰋎",
+            "headset":    "󰋎",
+            "default":    ["󰕿", "󰖀", "󰕾"]
+        },
+        "on-click": "pavucontrol",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "scroll-step": 5
+    },
+    "network": {
+        "format-wifi":         "󰖩 {essid}",
+        "format-ethernet":     "󰈀 {ifname}",
+        "format-disconnected": "󰖪",
+        "tooltip-format-wifi":     "{essid} · {signalStrength}%\n{ipaddr}/{cidr}\n{bandwidthDownBits} ↓  {bandwidthUpBits} ↑",
+        "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
+        "on-click": "~/archenemy/scripts/rofi/rofi_network.sh"
+    },
+    "battery": {
+        "states": {
+            "warning":  25,
+            "critical": 10
+        },
+        "format":           "{icon} {capacity}%",
+        "format-charging":  "󰂄 {capacity}%",
+        "format-plugged":   "󰚥 {capacity}%",
+        "format-icons":     ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
+        "tooltip-format":   "{timeTo}\n{power}W"
+    },
+    "tray": {
+        "icon-size": 14,
+        "spacing":   8
+    }
+}
