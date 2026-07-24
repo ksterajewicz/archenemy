@@ -7,6 +7,7 @@ keepassxc
 libreoffice-fresh
 qbittorrent
 vlc
+mpv
 pavucontrol
 mangohud
 # steam wymaga repo [multilib] w /etc/pacman.conf (włącza je instalator GPU)

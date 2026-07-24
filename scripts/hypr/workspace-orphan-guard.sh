@@ -131,21 +131,44 @@ merge_orphans
 
 SOCK="${XDG_RUNTIME_DIR:-}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
 
+# Po scaleniu zdrenuj linie zakolejkowane w trakcie pracy: własne echa
+# dispatchy guarda (movetoworkspacesilent → movewindowv2) i duplikaty v1
+# re-triggerowały scalanie po każdym scaleniu. Jeśli w drenażu przyszedł
+# świeży event monitora, zrób JEDNO powtórne scalenie — mógł zajść realny
+# unplug, gdy pracowaliśmy.
+drain_and_remerge() {
+    local l monitor_event=""
+    while IFS= read -r -t 0.1 l; do
+        case "$l" in
+            'monitorremoved'*|'configreloaded'*) monitor_event=1 ;;
+        esac
+    done
+    if [[ -n "$monitor_event" ]]; then
+        sleep 0.5
+        merge_orphans
+    fi
+}
+
 if command -v socat >/dev/null 2>&1 && [[ -S "$SOCK" ]]; then
     # Zdarzeniowo: monitorremoved = fizyczne odpięcie,
     # configreloaded = np. monitor disable po hyprctl reload.
     # createworkspace/movewindow = sierota potrafi powstać też BEZ odpinania
     # (scroll/klik/przeniesienie okna poza dekadę żywego monitora) — scal ją
     # od razu przy utworzeniu, zanim użytkownik zobaczy podwójną "1".
+    # Dopasowujemy TYLKO warianty v2 (Hyprland emituje każdy event podwójnie:
+    # v1+v2 — wzorzec 'createworkspace'* łapał oba i scalał dwukrotnie);
+    # configreloaded nie ma wariantu v2.
     socat -U - "UNIX-CONNECT:$SOCK" 2>/dev/null | while IFS= read -r line; do
         case "$line" in
-            'monitorremoved>>'*|'configreloaded'*)
+            'monitorremovedv2>>'*|'configreloaded'*)
                 sleep 0.5   # daj Hyprlandowi domknąć przenoszenie workspace'ów
                 merge_orphans
+                drain_and_remerge
                 ;;
-            'createworkspace'*|'movewindow'*)
+            'createworkspacev2>>'*|'movewindowv2>>'*)
                 sleep 0.2   # okno podążające za createworkspace musi zdążyć wylądować
                 merge_orphans
+                drain_and_remerge
                 ;;
         esac
     done
@@ -154,5 +177,17 @@ else
     # sonda scala z opóźnieniem, więc widać "przeskakujące" okna. Daj znać.
     command -v notify-send >/dev/null 2>&1 && \
         notify-send -u low "archenemy" "workspace-guard: brak socat — działam sondą co 2 s (szybciej: sudo pacman -S socat i przeloguj)."
-    while sleep 2; do merge_orphans; done
+    # Kontrola żywotności: po śmierci Hyprlanda hyprctl przestaje odpowiadać —
+    # bez wyjścia martwy demon trzymałby flock w XDG_RUNTIME_DIR i głodził
+    # guarda następnej sesji (tryb socat kończy się sam na EOF socketa).
+    fails=0
+    while sleep 2; do
+        if hyprctl monitors &>/dev/null; then
+            fails=0
+            merge_orphans
+        else
+            fails=$((fails + 1))
+            (( fails >= 5 )) && exit 0
+        fi
+    done
 fi
