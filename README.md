@@ -93,12 +93,16 @@ archenemy/
 │                                     #   mako, hyprlock, alacritty, waybar; fastfetch domyślny;
 │                                     #   MangoHud/nvim/networkmanager-dmenu z white-blue (symlinki).
 ├── scripts/
-│   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A).
+│   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
+│   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo.
 │   ├── changing-theme-scripts/       # Po jednym stubie na rice (nazwa pliku = pozycja w menu);
 │   │                                 #   wspólna logika przełączania w lib/switch-rice.sh.
 │   ├── hypr/                         # workspace-orphan-guard.sh — demon (tylko tryb decades): scala
 │   │                                 #   workspace'y-sieroty z ekranem, który jest — koniec z podwójną
 │   │                                 #   „1" na pasku. ws-scroll.sh — scroll waybara wg trybu workspace'ów.
+│   │                                 #   workspace-mode-switch.sh — przełącza shared/decades na żywo
+│   │                                 #   (regeneracja + reload + guard); lib/gen-workspaces.sh — wspólny
+│   │                                 #   generator reguł/bindów workspace'ów (współdzielony z install.sh).
 │   ├── rofi/                         # Menu rofi: rice'y, tapety, sieć (z reskanem), zasilanie.
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
 │   │                                 #   logo Archa + siatka Tron (gen_tron_wallpaper.py).
@@ -172,7 +176,7 @@ Przy instalacji monitory dostają **numery 1, 2, 3… liczone od lewej do prawej
 - **`shared`** — 10 wspólnych workspace'ów (1-10) dla wszystkich monitorów. Monitor o numerze k ma „domowy" workspace k (tam otwiera się po starcie), ale `Super + 1..0` działa globalnie — workspace przywołujesz na ekran, na którym jesteś. Odporny na odpinanie monitora: workspace'y istnieją zawsze po jednym, więc nic się nie dubluje.
 - **`decades`** — każdy monitor ma **własne** workspace'y liczone od 1 do 10 (izolowane dekady). Pasek pokazuje tylko workspace'y swojego monitora, `Super + 1..0` działa w obrębie monitora z fokusem. Kolejność dekad monitorów zewnętrznych idzie wg numeracji lewa→prawa; wyjątek: panel wbudowany laptopa (eDP/LVDS/DSI) zawsze trzyma pierwszą dekadę — to jedyny ekran, który istnieje zawsze, inaczej praca bez monitora zewnętrznego tworzyłaby workspace'y-sieroty (podwójna „1" na pasku). Po odpięciu monitora jego workspace'y scala demon-guard (okna z workspace'u N lądują na N); po ponownym podpięciu monitor dostaje z powrotem swoje.
 
-Tryb i numerację zmienisz, uruchamiając `install.sh` ponownie. Skróty działają tak samo w obu trybach — różni się tylko zasięg:
+Tryb przełączysz **na żywo** w TUI pod `Super + A` → `[w] workspace mode` (bez ponownego biegu instalatora): regeneruje reguły i bindy workspace'ów, przeładowuje Hyprlanda i w razie potrzeby startuje demona-guarda. Numerację monitorów nadal ustawia `install.sh` (tryb korzysta z zapisanej kolejności lewa→prawa). Uwaga: przeładowanie nie przenosi już otwartych okien — dla czystego przesortowania (zwłaszcza `defaultName` dekad) przeloguj się albo przenieś okna ręcznie. Skróty działają tak samo w obu trybach — różni się tylko zasięg:
 
 | Skrót | Akcja |
 |---|---|
