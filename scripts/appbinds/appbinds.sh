@@ -34,6 +34,16 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Czysty bashowy trim — NIE `| xargs`: xargs robi przetwarzanie cudzysłowów,
+# więc `sh -c 'btop; read'` gubił apostrofy, a samotny apostrof wysypywał
+# cały pipe („unmatched single quote" → „Empty command").
+trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
 # ─── PLIK BINDÓW ──────────────────────────────────────────────────────────────
 
 # Upewnij się, że plik istnieje (install.sh go tworzy, ale nie zakładaj)
@@ -61,8 +71,8 @@ list_binds() {
         [[ "$line" =~ ^bind ]] || continue
         i=$((i + 1))
         # bind = $mainMod, KEY, exec, CMD
-        key=$(echo "$line" | cut -d, -f2 | xargs)
-        cmd=$(echo "$line" | cut -d, -f4- | xargs)
+        key=$(trim "$(cut -d, -f2 <<<"$line")")
+        cmd=$(trim "$(cut -d, -f4- <<<"$line")")
         printf "    ${CYAN}%2d)${NC} Super + ${BLUE}%-12s${NC} → %s\n" "$i" "$key" "$cmd"
     done < "$BINDS_CONF"
     if [[ $i -eq 0 ]]; then
@@ -105,10 +115,10 @@ print_binds_from() {
         [[ "$line" =~ ^bind[a-z]*[[:space:]]*=(.*)$ ]] || continue
         rest="${BASH_REMATCH[1]}"
         IFS=',' read -r mods key dispatcher args <<< "$rest"
-        mods=$(echo "$mods" | xargs)
-        key=$(pretty_key "$(echo "$key" | xargs)")
-        dispatcher=$(echo "$dispatcher" | xargs)
-        args=$(echo "$args" | xargs)
+        mods=$(trim "$mods")
+        key=$(pretty_key "$(trim "$key")")
+        dispatcher=$(trim "$dispatcher")
+        args=$(trim "$args")
 
         # $mainMod → Super, 'SUPER SHIFT' → 'Super+Shift'
         mods="${mods//\$mainMod/Super}"
@@ -136,11 +146,15 @@ show_all_binds() {
     # Definicje zmiennych ($terminal = alacritty itd.) z aktywnego hyprland.conf
     declare -gA HYPR_VARS=()
     local line
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^\$([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.+)$ ]]; then
-            HYPR_VARS[${BASH_REMATCH[1]}]=$(echo "${BASH_REMATCH[2]}" | xargs)
-        fi
-    done < "$CONFIG_DIR/hypr/hyprland.conf"
+    # Guard [[ -f ]]: przed pierwszym przełączeniem rice'a hyprland.conf bywa
+    # wiszącym symlinkiem — redirect z niego wysypałby całe [s].
+    if [[ -f "$CONFIG_DIR/hypr/hyprland.conf" ]]; then
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^\$([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+                HYPR_VARS[${BASH_REMATCH[1]}]=$(trim "${BASH_REMATCH[2]}")
+            fi
+        done < "$CONFIG_DIR/hypr/hyprland.conf"
+    fi
 
     {
         echo -e "${BLUE}  All archenemy shortcuts${NC}  (q = back)"
@@ -169,7 +183,7 @@ show_all_binds() {
 add_bind() {
     echo ""
     read -rp "  Key (e.g. g, F5, semicolon, minus): " key
-    key=$(echo "$key" | xargs)
+    key=$(trim "$key")
 
     if [[ -z "$key" ]]; then
         echo -e "  ${YELLOW}⚠ Empty key — cancelled.${NC}"
@@ -186,7 +200,7 @@ add_bind() {
     fi
 
     read -rp "  Command (e.g. spotify, steam, alacritty -e btop): " cmd
-    cmd=$(echo "$cmd" | xargs)
+    cmd=$(trim "$cmd")
     if [[ -z "$cmd" ]]; then
         echo -e "  ${YELLOW}⚠ Empty command — cancelled.${NC}"
         return

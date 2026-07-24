@@ -35,6 +35,9 @@ socat
 # network + firewall
 networkmanager
 ufw
+# pciutils: lspci — wykrywanie GPU w install/gpudrivers-installation.sh;
+# minimalny Arch potrafi go nie mieć (skrypt też sam go dociąga w razie braku)
+pciutils
 # fonts + icons
 # ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
 ttf-iosevka-nerd

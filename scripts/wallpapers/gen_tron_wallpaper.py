@@ -7,7 +7,7 @@ winieta; PNG pisany ręcznie przez zlib/struct (wzorzec z gen_arch_wallpaper.py)
 
 Paleta rice'a tron: tło #020A0F, neon #00E5FF, przygaszony #0E2A33.
 """
-import sys, zlib, struct, math
+import os, sys, zlib, struct, math
 
 BG    = (2, 10, 15)        # ~#020A0F
 NEON  = (0, 229, 255)      # #00E5FF
@@ -108,6 +108,8 @@ def render(width, height, out_path):
 
 if __name__ == '__main__':
     out_dir = sys.argv[1] if len(sys.argv) > 1 else 'wallpapers/tron-grid'
+    # katalog wyjściowy może nie istnieć (świeże repo / własna ścieżka)
+    os.makedirs(out_dir, exist_ok=True)
     # konwencja przełącznika tapet: v1 = monitor główny, v2 = dodatkowy
     render(1920, 1080, f'{out_dir}/tron-grid-v1-1920x1080.png')
     render(2560, 1600, f'{out_dir}/tron-grid-v2-2560x1600.png')

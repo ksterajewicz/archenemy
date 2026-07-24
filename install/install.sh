@@ -59,10 +59,17 @@ if ! command -v hyprctl &>/dev/null; then
     echo -e "Do you allow me to install Hyprland? It is required for this to work."
     read -rp "[y/N]: " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
-        sudo pacman -S --needed hyprland
-        echo ""
-        echo -e "${GREEN}Hyprland installed.${NC}"
-        echo -e "${YELLOW}Please reboot and log in to Hyprland. Then run install.sh again.${NC}"
+        # Sukces ogłaszamy dopiero po sprawdzeniu kodu wyjścia pacmana —
+        # „Hyprland installed." przy nieudanej instalacji wprowadzał w błąd.
+        if sudo pacman -S --needed hyprland; then
+            echo ""
+            echo -e "${GREEN}Hyprland installed.${NC}"
+            echo -e "${YELLOW}Please reboot and log in to Hyprland. Then run install.sh again.${NC}"
+        else
+            echo ""
+            echo -e "${RED}✗ Hyprland installation failed — check pacman output above and retry.${NC}"
+            exit 1
+        fi
     else
         echo -e "${YELLOW}Exiting.${NC}"
     fi
@@ -360,9 +367,18 @@ fi
 
 if [[ ${#MISSING_PACMAN[@]} -gt 0 ]]; then
     echo ""
-    read -rp "Install missing pacman packages? [y/N]: " ans
-    if [[ "$ans" =~ ^[Yy]$ ]]; then
-        sudo pacman -S --needed "${MISSING_PACMAN[@]}"
+    # Pakiety WYMAGANE → default-Yes; odmowę i niepowodzenie rejestrujemy
+    # w SUMMARY_SKIPPED (dotąd default-No bez śladu — nieudana/odrzucona
+    # instalacja kończyła się czystym podsumowaniem, a configi wołały
+    # nieistniejące binarki).
+    read -rp "Install missing pacman packages? [Y/n]: " ans
+    if [[ ! "$ans" =~ ^[Nn]$ ]]; then
+        if ! sudo pacman -S --needed "${MISSING_PACMAN[@]}"; then
+            echo -e "${RED}✗ pacman zgłosił błąd przy pakietach wymaganych.${NC}"
+            SUMMARY_SKIPPED+=("WYMAGANE pakiety pacman — instalacja NIE powiodła się: ${MISSING_PACMAN[*]}")
+        fi
+    else
+        SUMMARY_SKIPPED+=("WYMAGANE pakiety pacman pominięte na życzenie: ${MISSING_PACMAN[*]}")
     fi
 fi
 
@@ -384,13 +400,20 @@ fi
 
 if [[ ${#MISSING_AUR[@]} -gt 0 ]]; then
     echo ""
-    read -rp "Install missing AUR packages with yay? [y/N]: " ans
-    if [[ "$ans" =~ ^[Yy]$ ]]; then
+    # Jak wyżej: wymagane → default-Yes + rejestr niepowodzeń w SUMMARY_SKIPPED.
+    read -rp "Install missing AUR packages with yay? [Y/n]: " ans
+    if [[ ! "$ans" =~ ^[Nn]$ ]]; then
         if command -v yay &>/dev/null; then
-            yay -S --needed "${MISSING_AUR[@]}"
+            if ! yay -S --needed "${MISSING_AUR[@]}"; then
+                echo -e "${RED}✗ yay zgłosił błąd przy pakietach wymaganych.${NC}"
+                SUMMARY_SKIPPED+=("WYMAGANE pakiety AUR — instalacja NIE powiodła się: ${MISSING_AUR[*]}")
+            fi
         else
             echo -e "${YELLOW}⚠ yay not available — skipping AUR packages.${NC}"
+            SUMMARY_SKIPPED+=("WYMAGANE pakiety AUR pominięte (brak yay): ${MISSING_AUR[*]}")
         fi
+    else
+        SUMMARY_SKIPPED+=("WYMAGANE pakiety AUR pominięte na życzenie: ${MISSING_AUR[*]}")
     fi
 fi
 
@@ -852,10 +875,21 @@ echo ""
 
 # ─── 9. SYMLINKS ──────────────────────────────────────────────────────────────
 
-echo -e "${CYAN}[9] Creating symlinks for rice '$DEFAULT_RICE'...${NC}"
+# Ponowny bieg instalatora respektuje aktywny rice: jeśli .current_rice
+# wskazuje istniejący rice, symlinkujemy TEN rice — dotąd każdy bieg cicho
+# przywracał DEFAULT_RICE (white-blue) i nadpisywał wybór użytkownika.
+TARGET_RICE="$DEFAULT_RICE"
+if [[ -f "$CURRENT_RICE" ]]; then
+    _cur_rice="$(<"$CURRENT_RICE")"
+    if [[ -n "$_cur_rice" && -d "$RICES_DIR/$_cur_rice" ]]; then
+        TARGET_RICE="$_cur_rice"
+    fi
+fi
+
+echo -e "${CYAN}[9] Creating symlinks for rice '$TARGET_RICE'...${NC}"
 
 LINK_TS=$(date +%Y%m%d_%H%M%S)
-for src in "$RICES_DIR/$DEFAULT_RICE"/*/; do
+for src in "$RICES_DIR/$TARGET_RICE"/*/; do
     [[ -d "$src" ]] || continue
     name=$(basename "$src")
     dest="$CONFIG_DIR/$name"
@@ -867,8 +901,8 @@ for src in "$RICES_DIR/$DEFAULT_RICE"/*/; do
     echo -e "  ${GREEN}✓ ~/.config/$name → $src${NC}"
 done
 
-echo "$DEFAULT_RICE" > "$CURRENT_RICE"
-SUMMARY_DONE+=("Rice '$DEFAULT_RICE' symlinked into ~/.config")
+echo "$TARGET_RICE" > "$CURRENT_RICE"
+SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
 echo ""
 
 # ─── 9.5 SCRIPTS + INITIAL WALLPAPER ─────────────────────────────────────────
