@@ -240,6 +240,33 @@ remove_bind() {
     reload_hyprland
 }
 
+# ─── TRYB WORKSPACE'ÓW (shared/decades) ──────────────────────────────────────
+
+# Przełączenie trybu na żywo (bez ponownego install.sh). Cała robota —
+# regeneracja workspaces-monitors.conf, reload, guard — siedzi w
+# scripts/hypr/workspace-mode-switch.sh (jedno źródło prawdy z install.sh).
+workspace_mode_menu() {
+    local mode_dat="$ARCHENEMY_DIR/data/workspace-mode.dat"
+    local switch="$ARCHENEMY_DIR/scripts/hypr/workspace-mode-switch.sh"
+    local cur="decades"
+    [[ -f "$mode_dat" ]] && cur="$(<"$mode_dat")"
+    local other="shared"; [[ "$cur" == "shared" ]] && other="decades"
+
+    echo ""
+    echo -e "  Current workspace mode: ${CYAN}${cur}${NC}"
+    echo -e "    ${BLUE}shared${NC}  — 10 global workspaces (1-10) shared by all monitors"
+    echo -e "    ${BLUE}decades${NC} — each monitor gets its own 1-10 (isolated decades)"
+    echo ""
+    read -rp "  Switch to '${other}'? [y/N]: " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+
+    if [[ ! -x "$switch" ]]; then
+        echo -e "  ${RED}✗ Missing ${switch} — run ./install/install.sh once.${NC}"
+        return
+    fi
+    bash "$switch" "$other"
+}
+
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
 
 ensure_conf
@@ -255,7 +282,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${CYAN}[q]${NC} quit"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${CYAN}[q]${NC} quit"
     echo ""
     read -rp "  Choice: " choice
 
@@ -263,6 +290,7 @@ while :; do
         a|A) add_bind ;;
         d|D) remove_bind ;;
         s|S) show_all_binds; continue ;;
+        w|W) workspace_mode_menu ;;
         q|Q) exit 0 ;;
         *)   ;;
     esac
