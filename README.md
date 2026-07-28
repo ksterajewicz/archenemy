@@ -88,10 +88,12 @@ archenemy/
 │   │                                 #   mako i hyprlock dziedziczy z white-blue (symlinki w repo).
 │   ├── tron/                         # Tron: Legacy — ciemny neon (cyjan + pomarańcz CLU), glow,
 │   │                                 #   rogi 4-6px. Własny fastfetch (logo Archa w cyjanie) + launcher
-│   │                                 #   w waybarze; nvim/networkmanager-dmenu z white-blue (symlinki).
+│   │                                 #   w waybarze i motyw nvim (neon cyjan);
+│   │                                 #   networkmanager-dmenu z white-blue (symlink).
 │   └── asia-n-rice/                  # Mauve/róż na granacie, płaski look. Własny hypr, rofi,
-│                                     #   mako, hyprlock, alacritty, waybar; fastfetch domyślny;
-│                                     #   MangoHud/nvim/networkmanager-dmenu z white-blue (symlinki).
+│                                     #   mako, hyprlock, alacritty, waybar i motyw nvim (mauve);
+│                                     #   fastfetch domyślny;
+│                                     #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
 ├── scripts/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
 │   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo.
@@ -129,10 +131,10 @@ Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem worksp
 
 | Rice | Opis |
 |---|---|
-| `white-blue` | Domyślny. Biało-niebieskie szkło: zaokrąglone rogi, dostrojony blur, własne animacje, spójny akcent `#0148ED`, motyw mako + hyprlock. |
+| `white-blue` | Domyślny. Biało-niebieskie szkło: zaokrąglone rogi, dostrojony blur, własne animacje, spójny akcent `#0148ED`, motyw mako + hyprlock + nvim (ręczny colorscheme w palecie rice'a). |
 | `white-blue_beta` | Pierwotny wygląd biało-niebieski, trzymany do wglądu/odwrotu. Tylko poprawki funkcjonalne, bez zmian wizualnych. Mako i hyprlock dziedziczy z `white-blue` przez symlinki w repo. |
-| `tron` | Tron: Legacy — ciemne szkło `#020A0F`, neon cyjan `#00E5FF` z poświatą (glow), pomarańcz CLU `#FF7B1C` tylko dla alarmów, rogi niemal ostre (4–6px). Własny motyw waybar (z launcherem „portal do Gridu" i podświetlanymi wyspami HUD), rofi (glif szukania), fastfetch (logo Archa w neonowym cyjanie), alacritty/mako/hyprlock (kinowa oprawa z neonowymi liniami)/MangoHud; nvim i networkmanager-dmenu dziedziczy z `white-blue` przez symlinki w repo. Tapeta: zestaw `tron-grid` (generowany). |
-| `asia-n-rice` | Przygaszony mauve/róż (`#b47687`) na ciemnym granacie (`#2a3444`), płaski look: waybar z zaokrąglonymi wyspami (14px) i kursywnymi tytułami okien, ostre rogi okien, ramka `#131a2a`. Wygląd zaadaptowany z zewnętrznego rice'a i przepięty pod backend archenemy: alacritty zamiast kitty, rofi zamiast wofi, warstwa maszynowa (GPU/monitory/workspace'y) przez `source`, bez cava. Własny motyw waybar/rofi/mako/hyprlock/alacritty w palecie mauve; fastfetch domyślny (bez przebarwienia); MangoHud, nvim i networkmanager-dmenu dziedziczy z `white-blue` przez symlinki. Bez własnej tapety — używa aktualnej (warstwa maszynowa). |
+| `tron` | Tron: Legacy — ciemne szkło `#020A0F`, neon cyjan `#00E5FF` z poświatą (glow), pomarańcz CLU `#FF7B1C` tylko dla alarmów, rogi niemal ostre (4–6px). Własny motyw waybar (z launcherem „portal do Gridu" i podświetlanymi wyspami HUD), rofi (glif szukania), fastfetch (logo Archa w neonowym cyjanie), alacritty/mako/hyprlock (kinowa oprawa z neonowymi liniami)/MangoHud/nvim (ręczny colorscheme: neon cyjan na `#020A0F`, alarmy w pomarańczu CLU); networkmanager-dmenu dziedziczy z `white-blue` przez symlink w repo. Tapeta: zestaw `tron-grid` (generowany). |
+| `asia-n-rice` | Przygaszony mauve/róż (`#b47687`) na ciemnym granacie (`#2a3444`), płaski look: waybar z zaokrąglonymi wyspami (14px) i kursywnymi tytułami okien, ostre rogi okien, ramka `#131a2a`. Wygląd zaadaptowany z zewnętrznego rice'a i przepięty pod backend archenemy: alacritty zamiast kitty, rofi zamiast wofi, warstwa maszynowa (GPU/monitory/workspace'y) przez `source`, bez cava. Własny motyw waybar/rofi/mako/hyprlock/alacritty w palecie mauve; fastfetch domyślny (bez przebarwienia); własny motyw nvim (ręczny colorscheme w palecie mauve, płaski — bez boldów); MangoHud i networkmanager-dmenu dziedziczy z `white-blue` przez symlinki. Bez własnej tapety — używa aktualnej (warstwa maszynowa). |
 
 Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.config`. Przełączanie: `Super + T` — menu pokazuje skrypty z `scripts/changing-theme-scripts/` (nazwa pliku `.sh` to etykieta w menu: `white-blue`, `white-blue_beta`). Przy przełączeniu stare symlinki rice'a są sprzątane, więc motywy się nie mieszają.
 
@@ -158,7 +160,7 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 | `Super + L` | Ekran blokady (hyprlock) |
 | `Super + K` | Zmiana układu klawiatury |
 | `Super + A` | Menedżer własnych skrótów do aplikacji |
-| `Super + prawy Shift` | Menu zasilania (wyłącz / restart) |
+| `Super + prawy Shift` | Menu zasilania (wyłącz / restart); przy zablokowanym ekranie (hyprlock) — bezpośrednie wyłączenie, bez menu i potwierdzenia |
 
 ### Sterowanie oknami
 | Skrót | Akcja |
