@@ -23,14 +23,16 @@
 #   workspace = N, monitor:X działają przy connect).
 #
 #   Reguły przypięcia czyta z generowanego (maszynowego)
-#   workspaces-monitors.conf — patrz install.sh [8b].
+#   workspaces-monitors.lua — patrz install.sh [8b]. Wzorzec seda niżej
+#   jest sprzężony z formatem emisji gen-workspaces.sh (JEDNA linia na
+#   hl.workspace_rule) — zmieniasz tam, zmieniasz tu.
 #   Wywołanie ręczne: workspace-orphan-guard.sh --sweep
 #   (jednorazowe sprzątanie, bez demona).
 # =============================================
 
 set -uo pipefail
 
-WS_MON_CONF="$HOME/archenemy/config/hypr/workspaces-monitors.conf"
+WS_MON_CONF="$HOME/archenemy/config/hypr/workspaces-monitors.lua"
 WS_MODE_DAT="$HOME/archenemy/data/workspace-mode.dat"
 
 # Tryb shared (globalne workspace'y 1-10): dekady-sieroty nie istnieją,
@@ -53,8 +55,8 @@ merge_orphans() {
     # hyprctl nie odpowiada / zero monitorów — nie ruszaj niczego
     ((${#connected[@]})) || return 0
 
-    # Reguły przypięcia: "workspace = <id>, monitor:<nazwa>, ..." →
-    # sieroty (monitor odpięty) + baza dekady pierwszego żywego monitora.
+    # Reguły przypięcia: hl.workspace_rule({ workspace = "<id>", monitor = "<nazwa>", ... })
+    # → sieroty (monitor odpięty) + baza dekady pierwszego żywego monitora.
     local -a orphan_ids=()
     local min_alive="" id mon
     while read -r id mon; do
@@ -63,7 +65,7 @@ merge_orphans() {
         else
             orphan_ids+=("$id")
         fi
-    done < <(sed -n 's/^workspace = \([0-9]\+\), monitor:\([^,]\+\).*$/\1 \2/p' "$WS_MON_CONF")
+    done < <(sed -n 's/^hl\.workspace_rule({ workspace = "\([0-9]\+\)", monitor = "\([^"]\+\)".*$/\1 \2/p' "$WS_MON_CONF")
     ((${#orphan_ids[@]})) || return 0
 
     local base=0
