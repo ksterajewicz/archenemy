@@ -208,8 +208,8 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     fi
 
     # 3) Zmienne środowiskowe Hyprlanda (GBM_BACKEND, LIBVA_DRIVER_NAME, ...)
-    #    generuje już główny install.sh do config/hypr/gpu-env.conf — tu ich nie
+    #    generuje już główny install.sh do config/hypr/gpu-env.lua — tu ich nie
     #    dublujemy, żeby nie rozjechać się z warstwą maszynową.
-    echo -e "  ${YELLOW}Zmienne Wayland dla NVIDIA ustawia install.sh (config/hypr/gpu-env.conf).${NC}"
+    echo -e "  ${YELLOW}Zmienne Wayland dla NVIDIA ustawia install.sh (config/hypr/gpu-env.lua).${NC}"
     echo -e "  ${YELLOW}Zrestartuj system, aby modeset i moduły weszły w życie.${NC}"
 fi

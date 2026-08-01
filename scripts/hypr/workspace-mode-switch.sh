@@ -8,7 +8,7 @@
 #
 #   Co robi:
 #     1. odtwarza kolejność monitorów L->P z data/monitors/*.dat (ORDER=k),
-#     2. regeneruje config/hypr/workspaces-monitors.conf przez wspólną
+#     2. regeneruje config/hypr/workspaces-monitors.lua przez wspólną
 #        bibliotekę lib/gen-workspaces.sh (JEDNO źródło prawdy z install.sh),
 #     3. zapisuje nowy tryb do data/workspace-mode.dat (atomowo),
 #     4. hyprctl reload — bindy Super+1..0 i reguły workspace'ów wchodzą od razu,
@@ -24,7 +24,7 @@ ARCHENEMY_DIR="$HOME/archenemy"
 DATA_DIR="$ARCHENEMY_DIR/data"
 MON_DIR="$DATA_DIR/monitors"
 MODE_DAT="$DATA_DIR/workspace-mode.dat"
-WS_CONF="$ARCHENEMY_DIR/config/hypr/workspaces-monitors.conf"
+WS_CONF="$ARCHENEMY_DIR/config/hypr/workspaces-monitors.lua"
 GUARD="$ARCHENEMY_DIR/scripts/hypr/workspace-orphan-guard.sh"
 LIB="$ARCHENEMY_DIR/scripts/hypr/lib/gen-workspaces.sh"
 
@@ -80,7 +80,7 @@ if [[ ${#ORDERED_LR[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# ─── Regeneracja workspaces-monitors.conf (atomowo: tmp + mv) ───
+# ─── Regeneracja workspaces-monitors.lua (atomowo: tmp + mv) ───
 tmp="$(mktemp "${WS_CONF}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}" >&2; exit 1; }
 if ! generate_workspaces_monitors "$tmp" "$TARGET" "${ORDERED_LR[@]}"; then
     rm -f "$tmp"

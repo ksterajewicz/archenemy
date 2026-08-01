@@ -2,13 +2,20 @@
 /data/
 /.current_rice
 /backups/
+/config/hypr/monitorshyprl.lua
+/config/hypr/workspaces-monitors.lua
+/config/hypr/hardware-keys.lua
+/config/hypr/gpu-env.lua
+/config/hypr/autostartpersonalisation.lua
+/config/hypr/appbinds.lua
+/config/hypr/hyprpaper.conf
+# stare nazwy sprzed migracji na Lua — mogą jeszcze leżeć na maszynie
 /config/hypr/monitorshyprl.conf
 /config/hypr/workspaces-monitors.conf
 /config/hypr/hardware-keys.conf
 /config/hypr/gpu-env.conf
 /config/hypr/autostartpersonalisation.conf
 /config/hypr/appbinds.conf
-/config/hypr/hyprpaper.conf
 
 # ─── editor / desktop-environment junk ────────────────────────────────────────
 .directory
