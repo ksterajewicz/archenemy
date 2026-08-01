@@ -2,7 +2,7 @@
 -- made by kst - https://github.com/ksterajewicz
 -- github - https://github.com/ksterajewicz/archenemy
 --
--- Konwencja formatu (parsuje ją appbinds.sh — TUI Super+A):
+-- Konwencja formatu (wspólna dla rice'ów; beta nie ma TUI Super+A):
 --   * zmienne rice'a: `local nazwa = "wartość"` — jedna na linię,
 --   * bindy: JEDNA linia na bind, zaczyna się od `hl.bind(`.
 -- require() dostaje ścieżki absolutne budowane z $HOME — pliki wspólne
