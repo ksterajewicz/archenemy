@@ -47,11 +47,20 @@ Instalator: wykryje i skonfiguruje monitory (w tym ich numerację lewa→prawa i
 | Warstwa | Gdzie mieszka | W gicie? |
 |---|---|---|
 | **Rice** (wygląd) | `rices/<nazwa>/` — foldery podlinkowywane do `~/.config` | ✅ |
-| **Wspólne** (skróty, klawisze media) | `config/hypr/*.conf` | ✅ |
-| **Maszyna** (monitory, GPU, klawisze sprzętowe) | `config/hypr/*-monitors/keys/env*.conf` — generuje `install.sh` | ❌ |
-| **Osobiste** (Twój autostart, Twoje skróty do aplikacji) | `config/hypr/autostartpersonalisation.conf`, `config/hypr/appbinds.conf` | ❌ |
+| **Wspólne** (skróty, klawisze media) | `config/hypr/*.lua` | ✅ |
+| **Maszyna** (monitory, GPU, klawisze sprzętowe) | `config/hypr/*-monitors/keys/env*.lua` — generuje `install.sh` | ❌ |
+| **Osobiste** (Twój autostart, Twoje skróty do aplikacji) | `config/hypr/autostartpersonalisation.lua`, `config/hypr/appbinds.lua` | ❌ |
 
 Dzięki temu to samo repo działa na każdej maszynie i nic prywatnego nie wycieka na GitHuba.
+
+**Config Hyprlanda jest w Lua** (od Hyprlanda 0.55 stary format hyprlang
+`.conf` jest przestarzały): każdy rice ma `hypr/hyprland.lua`, warstwy
+wspólna/maszynowa/osobista to też pliki `.lua` dołączane przez `require()`.
+Konwencja repo: jeden bind = jedna linia `hl.bind(...)` — na tym polegają
+menedżer skrótów Super+A i guard workspace'ów. Wyjątki od migracji:
+`hyprlock.conf` i `hyprpaper.conf` zostają w hyprlangu (to osobne programy,
+nie Hyprland). Stare pliki `.conf` leżą obok jako `*.conf.bak` do czasu
+zweryfikowania migracji na żywej maszynie.
 
 ## Struktura plików
 
@@ -73,14 +82,17 @@ archenemy/
 │   └── additional-packages-aur.txt   # Pakiety opcjonalne (AUR).
 ├── config/
 │   └── hypr/
-│   │   ├── workspaces.conf           # Skróty workspace'ów (wspólne dla wszystkich maszyn).
-│   │   ├── keyboard.conf             # Klawisze multimedialne (wspólne).
-│   │   ├── gpu_wayland_scaling.conf  # Uniwersalne zmienne Wayland (wspólne).
-│   │   └── custom_window_rules.conf  # Reguły okien (wspólne).
+│   │   ├── workspaces.lua            # Autostart guarda workspace'ów (wspólny dla wszystkich maszyn).
+│   │   ├── keyboard.lua              # Klawisze multimedialne (wspólne).
+│   │   ├── gpu_wayland_scaling.lua   # Uniwersalne zmienne Wayland (wspólne).
+│   │   ├── custom_window_rules.lua   # Reguły okien (wspólne).
+│   │   │   # (obok leżą *.conf.bak — stare wersje hyprlang do usunięcia
+│   │   │   #  po zweryfikowaniu migracji na żywej maszynie)
 │   │   # + pliki generowane przez install.sh (poza gitem):
-│   │   # monitorshyprl.conf, workspaces-monitors.conf, hardware-keys.conf,
-│   │   # gpu-env.conf, autostartpersonalisation.conf, appbinds.conf,
-│   │   # hyprpaper.conf (rice'y wskazują na niego symlinkiem)
+│   │   # monitorshyprl.lua, workspaces-monitors.lua, hardware-keys.lua,
+│   │   # gpu-env.lua, autostartpersonalisation.lua, appbinds.lua,
+│   │   # hyprpaper.conf (hyprpaper nie migruje na Lua; rice'y wskazują
+│   │   # na niego symlinkiem)
 ├── rices/
 │   ├── white-blue/                   # Domyślny rice: alacritty, fastfetch, hypr(+hyprlock), mako,
 │   │                                 #   MangoHud, networkmanager-dmenu, nvim, rofi, waybar.
@@ -142,7 +154,7 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 
 ## Własne skróty do aplikacji (Super + A)
 
-`Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.conf` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
+`Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.lua` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
 
 ## Skróty klawiszowe
 
