@@ -2,7 +2,7 @@
 
 # =============================================
 #   archenemy - workspace-orphan-guard.sh
-#   Demon (exec-once ze wspólnego workspaces.conf).
+#   Demon (start z hl.on("hyprland.start") we wspólnym workspaces.lua).
 #
 #   Problem: po odpięciu monitora Hyprland przenosi jego
 #   workspace'y (11-20, 21-30, ...) na pozostały ekran — pasek

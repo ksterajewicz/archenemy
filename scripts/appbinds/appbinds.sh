@@ -7,8 +7,8 @@
 #   UI po angielsku (decyzja właściciela 2026-07-12).
 #
 #   Bindy lądują w warstwie OSOBISTEJ (poza gitem):
-#   ~/archenemy/config/hypr/appbinds.conf
-#   — hyprland.conf rice'a source'uje ten plik.
+#   ~/archenemy/config/hypr/appbinds.lua
+#   — hyprland.lua rice'a require'uje ten plik.
 # =============================================
 
 ARCHENEMY_DIR="$HOME/archenemy"
@@ -222,7 +222,7 @@ add_bind() {
         return
     fi
     # Komenda ląduje w stringu Lua — cudzysłów/backslash rozbiłyby składnię pliku.
-    if [[ "$cmd" == *'"'* || "$cmd" == *'\\'* ]]; then
+    if [[ "$cmd" == *'"'* || "$cmd" == *'\'* ]]; then
         echo -e "  ${RED}✗ Command must not contain \" or \\ (it is written into a Lua string).${NC}"
         return
     fi

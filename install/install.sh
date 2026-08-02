@@ -629,7 +629,7 @@ fi
 echo ""
 
 # ─── 8. GENERATE MACHINE-LOCAL CONFIGS ───────────────────────────────────────
-# Pliki per-maszyna (w .gitignore) — hyprland.conf je source'uje, więc każdy
+# Pliki per-maszyna (w .gitignore) — hyprland.lua je require'uje, więc każdy
 # musi istnieć, nawet pusty, żeby Hyprland nie zgłaszał błędów konfiguracji.
 
 echo -e "${CYAN}[8] Generating machine-local configs...${NC}"
