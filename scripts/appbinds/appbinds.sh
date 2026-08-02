@@ -210,6 +210,13 @@ add_bind() {
         echo -e "  ${RED}✗ '${key}' does not look like a key name (no spaces or commas).${NC}"
         return
     fi
+    # Klawisze-modyfikatory dokładają własny mod do maski w chwili naciśnięcia,
+    # więc prosty bind Super+<modyfikator> nigdy nie odpali (wiki: Binding modkeys
+    # only) — odrzucamy, zamiast pozwolić na martwy bind.
+    if [[ "$key" =~ ^(Shift|Control|Alt|Super|Meta|Hyper)_(L|R)$ ]]; then
+        echo -e "  ${RED}✗ '${key}' is a modifier key — a plain Super+${key} bind would never fire.${NC}"
+        return
+    fi
     if key_taken "$key"; then
         echo -e "  ${RED}✗ Super+${key} is already taken (by archenemy or one of your binds).${NC}"
         return

@@ -126,7 +126,11 @@ hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(theme_menu))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(wallpaper_menu))
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(lock))
 hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(appbinds))
-hl.bind(mainMod .. " + Shift_R", hl.dsp.exec_cmd(power_menu), { locked = true }) -- locked = dawne bindl: działa też pod hyprlockiem (skrypt sam wykrywa blokadę -> poweroff bez menu)
+-- Shift_R to modyfikator, więc wg wiki (Binds -> "Binding modkeys only") bind musi
+-- mieć PEŁNĄ maskę chwili naciśnięcia (SUPER + SHIFT) i flagę release; sama maska
+-- "SUPER" nigdy nie pasuje, bo wciśnięty prawy Shift dokłada SHIFT do maski.
+-- locked = dawne bindl: działa też pod hyprlockiem (skrypt sam wykrywa blokadę -> poweroff bez menu)
+hl.bind(mainMod .. " + SHIFT + Shift_R", hl.dsp.exec_cmd(power_menu), { release = true, locked = true })
 
 -- Keyboard language
 -- Allows the user to switch between any two chosen keyboard layouts.
