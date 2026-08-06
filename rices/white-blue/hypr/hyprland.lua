@@ -60,7 +60,8 @@ hl.config({
         gaps_out    = { top = 4, right = 12, bottom = 12, left = 12 },
         border_size = 2,
 
-        ["col.active_border"]   = "rgb(0148ED) rgb(4A7FFF) 45deg",
+        -- Gradient w API Lua to tabela (string „kolor kolor kąt" z hyprlanga nie przechodzi).
+        ["col.active_border"]   = { colors = { "rgb(0148ED)", "rgb(4A7FFF)" }, angle = 45 },
         ["col.inactive_border"] = "rgba(9AA5B188)",
 
         layout           = "dwindle",
@@ -103,7 +104,9 @@ hl.config({
 
 -- Animacje (dawne animations{}: bezier → hl.curve, animation → hl.animation;
 -- speed w ds jak dawniej: 2 = 200 ms)
-hl.animation({ leaf = "global", enabled = true })
+-- API wymaga speed i bezier także dla global; 10/"default" (krzywa wbudowana)
+-- = jawne domyślne Hyprlanda, jak dawne gołe „animations { enabled = true }".
+hl.animation({ leaf = "global", enabled = true, speed = 10, bezier = "default" })
 
 hl.curve("smooth",   { type = "bezier", points = { {0.25, 0.10}, {0.25, 1.00} } })
 hl.curve("overshot", { type = "bezier", points = { {0.13, 0.99}, {0.29, 1.08} } })

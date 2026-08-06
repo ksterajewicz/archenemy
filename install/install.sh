@@ -646,10 +646,14 @@ mkdir -p "$HYPR_LOCAL_DIR"
         pos="${MON_POS[$mon]}"
         scale="${MON_SCALE[$mon]}"
 
+        # Scale w cudzysłowach: walidacja w [3.5] dopuszcza też literał "auto",
+        # a niecytowany goły `auto` to w Lua odczyt niezdefiniowanej globalnej
+        # (nil) — pole cicho znika z tabeli. Parser Hyprlanda (CLuaConfigString
+        # + parseScale) przyjmuje "1"/"1.33"/"auto" jako string.
         if [[ -n "$rate" ]]; then
-            echo "hl.monitor({ output = \"$mon\", mode = \"${res}@${rate}\", position = \"$pos\", scale = $scale })"
+            echo "hl.monitor({ output = \"$mon\", mode = \"${res}@${rate}\", position = \"$pos\", scale = \"$scale\" })"
         else
-            echo "hl.monitor({ output = \"$mon\", mode = \"$res\", position = \"$pos\", scale = $scale })"
+            echo "hl.monitor({ output = \"$mon\", mode = \"$res\", position = \"$pos\", scale = \"$scale\" })"
         fi
     done
     # Pusty output = reguła fallback dla monitorów bez własnej reguły.
