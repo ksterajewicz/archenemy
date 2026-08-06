@@ -26,3 +26,6 @@ __pycache__/
 /wallpapers/tron-grid/wp9024945-tron-legacy-4k-wallpapers.jpg
 /wallpapers/tron-grid/wp9024977-tron-legacy-4k-wallpapers.png
 
+
+# zasoby agenta Claude — lokalne, nie wchodzą na GitHub
+/.claude/
