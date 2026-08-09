@@ -1,6 +1,13 @@
-# ~/archenemy/rices/white-blue/hypr/hyprland.conf
+# ~/archenemy/rices/asia-n-rice/hypr/hyprland.conf
 # made by kst - https://github.com/ksterajewicz
-# github - https://github.com/ksterajewicz/archenemy 
+# github - https://github.com/ksterajewicz/archenemy
+#
+# Rice asia-n-rice: mauve/róż (#b47687) na granacie. Wygląd zaadaptowany 1:1
+# z zewnętrznego rice'a (kitty/wofi/cava/NVIDIA-hardcode) i przepięty pod
+# backend archenemy: alacritty zamiast kitty, rofi zamiast wofi, warstwa
+# maszynowa (GPU/monitory/workspace'y) przez source zamiast hardkodu, cava
+# usunięta. Płaski look źródła zachowany: ramka #131a2a, bez tuningu
+# dekoracji/animacji (domyślne Hyprlanda — tak jak w źródle).
 
 $mainMod      = SUPER
 $terminal     = alacritty
@@ -15,7 +22,7 @@ $wallpaper_menu = ~/archenemy/scripts/rofi/rofi_wallpaper_switcher.sh
 $power_menu   = ~/archenemy/scripts/rofi/rofi_power_menu.sh
 $appbinds     = alacritty --class archenemy-appbinds -e ~/archenemy/scripts/appbinds/appbinds.sh
 
-# GPU + Wayland + scaling 
+# GPU + Wayland + scaling
 source = ~/archenemy/config/hypr/gpu_wayland_scaling.conf
 source = ~/archenemy/config/hypr/gpu-env.conf
 
@@ -41,70 +48,23 @@ source = ~/archenemy/config/hypr/workspaces-monitors.conf
 
 general {
     gaps_in      = 6
-    # Góra = 4 (równa margin-top waybara z config.jsonc) — przerwa pasek-okno
-    # ma być identyczna jak pasek-krawędź ekranu. Kolejność: góra prawo dół lewo.
+    # Góra = 4 (równa margin-top waybara asia z config.jsonc) — przerwa
+    # pasek-okno ma być identyczna jak pasek-krawędź. Kolejność: góra prawo dół lewo.
     gaps_out     = 4, 12, 12, 12
     border_size  = 2
 
-    col.active_border   = rgb(0148ED) rgb(4A7FFF) 45deg
-    col.inactive_border = rgba(9AA5B188)
+    # Płaski granat ze źródła — bez gradientu, bez glow (look asia-n-rice).
+    col.active_border   = rgb(131a2a)
+    col.inactive_border = rgb(131a2a)
 
     layout           = dwindle
     resize_on_border = true
     allow_tearing    = true
 }
 
-decoration {
-    rounding = 12
-
-    active_opacity   = 1.0
-    inactive_opacity = 1.0
-
-    blur {
-        enabled           = true
-        size              = 7
-        passes            = 3
-        noise             = 0.012
-        contrast          = 1.05
-        brightness        = 1.05
-        vibrancy          = 0.18
-        vibrancy_darkness = 0.0
-        popups            = true
-        ignore_opacity    = true
-        new_optimizations = true
-    }
-
-    shadow {
-        enabled       = true
-        range         = 18
-        render_power  = 3
-        color         = rgba(0148ED22)
-        color_inactive = rgba(00000018)
-    }
-
-    dim_inactive = true
-    dim_strength = 0.04
-}
-
-animations {
-    enabled = true
-
-    bezier = smooth,   0.25, 0.10, 0.25, 1.00
-    bezier = overshot, 0.13, 0.99, 0.29, 1.08
-    bezier = quick,    0.15, 0.00, 0.10, 1.00
-
-    # Szybko i konkretnie: ruch okien bez animacji, reszta krótka.
-    # Warstwy (waybar/rofi/mako) zostają płynne — one mają wyglądać.
-    animation = windowsIn,   1, 2, quick, popin 90%
-    animation = windowsOut,  1, 2, quick, popin 95%
-    animation = windowsMove, 0
-    animation = border,      1, 4, smooth
-    animation = fade,        1, 2, smooth
-    animation = workspaces,  1, 2, quick, slidefade 8%
-    animation = specialWorkspace, 1, 3, overshot, slidefadevert -35%
-    animation = layersIn,    1, 3, smooth, fade
-    animation = layersOut,   1, 2, smooth, fade
-}
+# Bez bloku decoration/animations — źródło ich nie ma. Zostają domyślne
+# Hyprlanda (ostre rogi, domyślny blur/animacje), co wiernie oddaje wygląd
+# źródłowego rice'a. NIE dokładać tu filozofii animacji white-blue.
 
 gesture = 3, horizontal, workspace
 gesture = 4, horizontal, workspace
@@ -144,11 +104,11 @@ bind = $mainMod, R,      exec, $menu
 bind = $mainMod, B,      exec, $browser
 bind = $mainMod, S,      exec, $gamelauncher
 bind = $mainMod, N,      exec, $networkmanager_gui
-bind = $mainMod, T,      exec, $theme_menu 
+bind = $mainMod, T,      exec, $theme_menu
 bind = $mainMod, W,      exec, $wallpaper_menu
 bind = $mainMod, L,      exec, $lock
 bind = $mainMod, A,      exec, $appbinds
-bind = $mainMod, Shift_R, exec, $power_menu
+bindl = $mainMod, Shift_R, exec, $power_menu # flaga "l": działa też pod hyprlockiem (skrypt sam wykrywa blokadę -> poweroff bez menu)
 
 # Keyboard language
 # Allows the user to switch between any two chosen keyboard layouts.
@@ -244,4 +204,3 @@ layerrule = match:namespace ^(notifications)$, animation slide
 layerrule = match:namespace ^(rofi)$, blur on
 layerrule = match:namespace ^(rofi)$, ignore_alpha 0.5
 layerrule = match:namespace ^(rofi)$, animation popin 80%
-

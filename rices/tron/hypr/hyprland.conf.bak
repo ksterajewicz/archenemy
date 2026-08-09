@@ -78,7 +78,11 @@ decoration {
 
     shadow {
         enabled       = true
-        range         = 18
+        # Range = 4 = górna szpara gaps_out (patrz general): poświata nie może
+        # sięgać wyżej niż przerwa pasek↔okno, bo inaczej wchodzi pod półprzezroczysty
+        # waybar i prześwituje przez jego szkło. Górna szpara jest przybita do 4
+        # (inwariant równych odstępów), więc to range schodzi do niej, nie odwrotnie.
+        range         = 4
         render_power  = 3
         # Glow: cyjanowa poświata aktywnego okna (estetyka Tron: Legacy —
         # świadome odstępstwo per-rice od zasady „no glow" white-blue).
@@ -154,7 +158,7 @@ bind = $mainMod, T,      exec, $theme_menu
 bind = $mainMod, W,      exec, $wallpaper_menu
 bind = $mainMod, L,      exec, $lock
 bind = $mainMod, A,      exec, $appbinds
-bind = $mainMod, Shift_R, exec, $power_menu
+bindl = $mainMod, Shift_R, exec, $power_menu # flaga "l": działa też pod hyprlockiem (skrypt sam wykrywa blokadę -> poweroff bez menu)
 
 # Keyboard language
 # Allows the user to switch between any two chosen keyboard layouts.

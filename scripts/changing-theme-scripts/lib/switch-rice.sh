@@ -32,21 +32,24 @@ if [[ ! -d "$RICE_DIR" ]]; then
     exit 1
 fi
 
-# Już aktywny? Nie ma nic do roboty.
-if [[ -f "$CURRENT_RICE" && "$(cat "$CURRENT_RICE")" == "$RICE_NAME" ]]; then
-    notify-send "archenemy" "Rice '$RICE_NAME' is already active."
-    exit 0
-fi
+# Już aktywny? Nakładamy MIMO TO (re-apply): wcześniejszy early-exit czynił
+# na wpół nałożony rice (przerwane przełączenie, ręcznie skasowany symlink)
+# nienaprawialnym z menu — .current_rice mówił „aktywny", a stan był popsuty.
+# Ponowne nałożenie jest idempotentne i tanie.
 
 # ─── SYMLINKI ─────────────────────────────────────────────────────────────────
 
 # Sprzątanie: usuń z ~/.config KAŻDY symlink wskazujący na jakikolwiek rice.
 # Bez tego zostałyby foldery poprzedniego motywu, których nowy rice nie ma
 # (np. mako z innego rice'a) — cichy przeciek wyglądu.
+# Kanonizujemy OBIE strony porównania: readlink -f daje ścieżkę fizyczną,
+# a $HOME bywa logiczny (np. /home jako symlink) — porównanie fizycznej
+# z logiczną nigdy nie pasowało i sprzątanie cicho się pomijało.
+RICES_REAL=$(readlink -f "$ARCHENEMY_DIR/rices")
 for link in "$CONFIG_DIR"/*; do
     [[ -L "$link" ]] || continue
     target=$(readlink -f "$link")
-    [[ "$target" == "$ARCHENEMY_DIR/rices/"* ]] && rm "$link"
+    [[ -n "$RICES_REAL" && "$target" == "$RICES_REAL/"* ]] && rm "$link"
 done
 
 for src in "$RICE_DIR"/*/; do

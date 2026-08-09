@@ -7,6 +7,16 @@
 #   UI po angielsku (decyzja właściciela 2026-07-12).
 # =============================================
 
+# Pod blokadą (hyprlock / ext-session-lock-v1) protokół rezerwuje wejście
+# wyłącznie dla klienta blokady — rofi nie dostałoby klawiatury. Dlatego
+# przy aktywnym hyprlocku wyłączamy bezpośrednio, bez menu i potwierdzenia
+# (akord Super+prawy Shift jest nie do trafienia przypadkiem). Bind w rice'ach
+# ma flagę "l" (bindl), żeby w ogóle odpalił się przy zablokowanym ekranie.
+if pidof hyprlock >/dev/null 2>&1; then
+    systemctl poweroff
+    exit 0
+fi
+
 POWEROFF="󰐥  Power off"
 REBOOT="󰜉  Reboot"
 

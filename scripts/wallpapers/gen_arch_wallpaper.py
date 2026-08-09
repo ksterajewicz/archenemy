@@ -5,7 +5,7 @@ Zero zależności: krzywe Béziera → polygon → scanline fill (even-odd)
 z antyaliasingiem (4 subpróbki w pionie + ułamkowe pokrycie w poziomie),
 PNG pisany ręcznie przez zlib/struct.
 """
-import sys, zlib, struct
+import os, sys, zlib, struct
 
 # ── logo: sylwetka "A" Archa w przestrzeni 1000x900 (y w dół) ────────────────
 # Krzywe dobrane ręcznie; legs rozszerzają się ku dołowi, spód nóg wznosi się
@@ -96,6 +96,8 @@ def render(width, height, logo_frac, bg, fg, out_path):
            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
            + chunk(b"IDAT", zlib.compress(raw, 9))
            + chunk(b"IEND", b""))
+    # ścieżka z argv może wskazywać nieistniejący katalog
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "wb") as f:
         f.write(png)
     print(f"OK {out_path} ({width}x{height}, logo {int(height*logo_frac)}px)")

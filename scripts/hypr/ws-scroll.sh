@@ -8,7 +8,7 @@
 #     shared  → e±1 (globalnie, następny/poprzedni istniejący)
 #
 #   Bindy KLAWIATURY nie przechodzą przez ten skrypt — install.sh [8b]
-#   generuje je natywnie do workspaces-monitors.conf (zero forka shella
+#   generuje je natywnie do workspaces-monitors.lua (zero forka shella
 #   na naciśnięcie). Waybarowy config.jsonc jest tracked+wizualny, więc
 #   nie jest generowany per tryb — stąd ten jeden wspólny wrapper.
 #

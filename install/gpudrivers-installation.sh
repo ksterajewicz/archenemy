@@ -11,7 +11,21 @@ GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 # ─── WYKRYWANIE GPU ───────────────────────────────────────────────────────────
 
+# lspci (pciutils) bywa nieobecne na minimalnym Archu — bez guarda cała
+# instalacja GPU cicho się pomijała z mylącym „nie dopasowano żadnego GPU".
+if ! command -v lspci &>/dev/null; then
+    echo -e "${YELLOW}Brak lspci (pakiet pciutils) — bez niego nie wykryję GPU. Instaluję...${NC}"
+    if ! sudo pacman -S --needed pciutils; then
+        echo -e "${RED}✗ Nie udało się zainstalować pciutils — zainstaluj ręcznie (sudo pacman -S pciutils) i uruchom skrypt ponownie.${NC}"
+        exit 1
+    fi
+fi
+
 GPU_INFO="$(lspci | grep -Ei 'vga|3d|display')"
+if [[ -z "$GPU_INFO" ]]; then
+    echo -e "${YELLOW}lspci nie zgłasza żadnego GPU (vga/3d/display) — pomijam instalację sterowników.${NC}"
+    exit 0
+fi
 echo -e "${YELLOW}Wykryte GPU:${NC}"
 echo "$GPU_INFO"
 echo ""
@@ -174,11 +188,19 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
             sudo sed -i -E \
                 's/^(MODULES=\()(.*)(\))/\1nvidia nvidia_modeset nvidia_uvm nvidia_drm \2\3/' \
                 "$MKINIT"
-            echo -e "  ${GREEN}✓ Dopisano moduły NVIDIA do $MKINIT (backup: .bak-archenemy).${NC}"
-            if sudo mkinitcpio -P; then
-                echo -e "  ${GREEN}✓ initramfs przebudowany.${NC}"
+            # sed nic nie robi, gdy linia MODULES=(...) jest zakomentowana albo
+            # w formie MODULES=""— zweryfikuj wynik, zanim ogłosimy sukces.
+            if grep -qE '^MODULES=.*nvidia_drm' "$MKINIT"; then
+                echo -e "  ${GREEN}✓ Dopisano moduły NVIDIA do $MKINIT (backup: .bak-archenemy).${NC}"
+                if sudo mkinitcpio -P; then
+                    echo -e "  ${GREEN}✓ initramfs przebudowany.${NC}"
+                else
+                    echo -e "  ${RED}✗ mkinitcpio -P nie powiódł się — sprawdź $MKINIT (backup obok).${NC}"
+                fi
             else
-                echo -e "  ${RED}✗ mkinitcpio -P nie powiódł się — sprawdź $MKINIT (backup obok).${NC}"
+                echo -e "  ${RED}✗ Nie znalazłem aktywnej linii MODULES=(...) w $MKINIT — dopisz ręcznie:${NC}"
+                echo -e "      MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)"
+                echo -e "      i przebuduj initramfs: sudo mkinitcpio -P"
             fi
         fi
     else
@@ -186,8 +208,8 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     fi
 
     # 3) Zmienne środowiskowe Hyprlanda (GBM_BACKEND, LIBVA_DRIVER_NAME, ...)
-    #    generuje już główny install.sh do config/hypr/gpu-env.conf — tu ich nie
+    #    generuje już główny install.sh do config/hypr/gpu-env.lua — tu ich nie
     #    dublujemy, żeby nie rozjechać się z warstwą maszynową.
-    echo -e "  ${YELLOW}Zmienne Wayland dla NVIDIA ustawia install.sh (config/hypr/gpu-env.conf).${NC}"
+    echo -e "  ${YELLOW}Zmienne Wayland dla NVIDIA ustawia install.sh (config/hypr/gpu-env.lua).${NC}"
     echo -e "  ${YELLOW}Zrestartuj system, aby modeset i moduły weszły w życie.${NC}"
 fi

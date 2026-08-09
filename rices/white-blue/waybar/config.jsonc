@@ -37,15 +37,26 @@
         "format-alt": "{0:%a, %d %b · %H:%M}<span color='#909090'>:{0:%S}</span>",
         "interval": 1,
         "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
+        // iso8601: tydzień od poniedziałku + numeracja ISO ({:%V}) niezależnie
+        // od locale. Nawigacja (blok actions): scroll na zegarze = miesiące,
+        // PPM = widok rok/miesiąc; LPM zostaje domyślnym przełącznikiem format-alt.
         "calendar": {
             "mode": "month",
             "weeks-pos": "left",
+            "on-scroll": 1,
+            "iso8601": true,
             "format": {
                 "months":   "<span color='#0a0a0a'><b>{}</b></span>",
                 "days":     "<span color='#0a0a0a'>{}</span>",
+                "weeks":    "<span color='#909090'>{:%V}</span>",
                 "weekdays": "<span color='#0148ED'><b>{}</b></span>",
                 "today":    "<span color='#ffffff' background='#0148ED'><b>{}</b></span>"
             }
+        },
+        "actions": {
+            "on-click-right": "mode",
+            "on-scroll-up": "shift_up",
+            "on-scroll-down": "shift_down"
         }
     },
     "custom/profileswitcher": {
