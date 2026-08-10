@@ -42,20 +42,20 @@
         "format": "{0:%H:%M}<span color='#4a7a8a'>:{0:%S}</span>",
         "format-alt": "{0:%a, %d %b · %H:%M}<span color='#4a7a8a'>:{0:%S}</span>",
         "interval": 1,
-        "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
-        // iso8601: tydzień od poniedziałku + numeracja ISO ({:%V}) niezależnie
-        // od locale. Nawigacja (blok actions): scroll na zegarze = miesiące,
-        // PPM = widok rok/miesiąc; LPM zostaje domyślnym przełącznikiem format-alt.
+        // Nagłówek tooltipa = pełna data dnia w akcencie cyjan; niżej siatka miesiąca.
+        "tooltip-format": "<tt><span color='#00e5ff'><big>{:%A, %d %B %Y}</big></span>\n\n{calendar}</tt>",
+        // Kalendarz miesięczny BEZ kolumny numerów tygodni — ISO-tygodnie (31-36)
+        // po lewej w pionie myliły się z dniami sąsiedniego miesiąca; usunięte
+        // 2026-08-10. iso8601 zostaje = tydzień od poniedziałku. Nawigacja
+        // (actions): scroll na zegarze = miesiące, PPM = rok/miesiąc; LPM = format-alt.
         "calendar": {
             "mode": "month",
-            "weeks-pos": "left",
             "on-scroll": 1,
             "iso8601": true,
             "format": {
-                "months":   "<span color='#9adbe8'><b>{}</b></span>",
+                "months":   "<span color='#00e5ff'><b>{}</b></span>",
                 "days":     "<span color='#9adbe8'>{}</span>",
-                "weeks":    "<span color='#4a7a8a'>{:%V}</span>",
-                "weekdays": "<span color='#00e5ff'><b>{}</b></span>",
+                "weekdays": "<span color='#4a7a8a'>{}</span>",
                 "today":    "<span color='#020a0f' background='#00e5ff'><b>{}</b></span>"
             }
         },
