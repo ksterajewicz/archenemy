@@ -9,6 +9,9 @@
 /config/hypr/autostartpersonalisation.lua
 /config/hypr/appbinds.lua
 /config/hypr/hyprpaper.conf
+/config/hypr/hyprlock-background-white-blue.conf
+/config/hypr/hyprlock-background-tron.conf
+/config/hypr/hyprlock-background-asia-n-rice.conf
 # stare nazwy sprzed migracji na Lua — mogą jeszcze leżeć na maszynie
 /config/hypr/monitorshyprl.conf
 /config/hypr/workspaces-monitors.conf

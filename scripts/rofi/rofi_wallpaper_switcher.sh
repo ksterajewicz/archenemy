@@ -18,20 +18,42 @@
 #   wybranego pliku *v1*/*v2* leży druga połowa pary, primary dostaje v1,
 #   secondary v2. Odznaczony: tapeta trafia tylko na monitor z fokusem.
 #
+#   Drugi przełącznik "[ ] Set as hyprlock background (no blur)" (domyślnie
+#   odznaczony): zaznaczony — wybrana tapeta idzie też jako `path` w
+#   hyprlock-background-<rice>.conf (blur_size/blur_passes → 0, reszta pól
+#   rice'a — brightness/contrast/noise/vibrancy — nietknięta). Eliminuje
+#   koszt żywego zrzutu ekranu + blur przy każdym Super+L (zgłoszenie
+#   właściciela: hyprlock wolny). Odznaczony — hyprlock wraca do domyślnego
+#   `path = screenshot` + blur.
+#
 #   Stan: data/wallpaper.dat w formacie "monitor=ścieżka" (po linii na monitor).
 #   Stary format (sama nazwa zestawu) jest migrowany automatycznie.
+#   Stan hyprlocka: data/hyprlock-wallpaper.dat — "off" albo bezwzględna
+#   ścieżka ostatnio wybranego obrazu; wczytywany też przy --restore, żeby
+#   wybór właściciela przeżył przełączenie rice'a (Super+T).
 # =============================================
 
 ARCHENEMY_DIR="$HOME/archenemy"
 WALLPAPERS_DIR="$ARCHENEMY_DIR/wallpapers"
 DATA_DIR="$ARCHENEMY_DIR/data"
 WALLPAPER_DAT="$DATA_DIR/wallpaper.dat"
+HYPRLOCK_DAT="$DATA_DIR/hyprlock-wallpaper.dat"
 # Warstwa maszynowa (gitignore) — rice'y linkują do tego pliku relatywnym
 # symlinkiem, więc hyprpaper czyta go przez ~/.config/hypr/hyprpaper.conf.
 HYPRPAPER_CONF="$ARCHENEMY_DIR/config/hypr/hyprpaper.conf"
+# Warstwa maszynowa (gitignore) — każdy rice'owy hyprlock.conf source'uje
+# swój plik (patrz install.sh [8h]); trzy realne rice'y, beta dziedziczy
+# symlinkiem hyprlock.conf z white-blue.
+HYPRLOCK_BG_FILES=(
+    "$ARCHENEMY_DIR/config/hypr/hyprlock-background-white-blue.conf"
+    "$ARCHENEMY_DIR/config/hypr/hyprlock-background-tron.conf"
+    "$ARCHENEMY_DIR/config/hypr/hyprlock-background-asia-n-rice.conf"
+)
 
 TOGGLE_ON="[x] Upload to all monitors"
 TOGGLE_OFF="[ ] Upload to all monitors"
+LOCK_TOGGLE_ON="[x] Set as hyprlock background (no blur)"
+LOCK_TOGGLE_OFF="[ ] Set as hyprlock background (no blur)"
 
 # ─── RESOLVE MONITORS FROM data/monitors/*.dat ───────────────────────────────
 
@@ -157,6 +179,36 @@ save_and_generate() {
     mv "$tmp_conf" "$HYPRPAPER_CONF"
 }
 
+# Ustaw tło hyprlocka we wszystkich rice'ach (state = "off" albo ścieżka pliku).
+# Nadpisuje WYŁĄCZNIE path/blur_size/blur_passes — brightness/contrast/noise/
+# vibrancy per rice zostają nietknięte, więc tożsamość wizualna rice'a (np.
+# przyciemniony tron) przeżywa włączenie/wyłączenie tej opcji. Restart/reload
+# niepotrzebny: hyprlock czyta swój config od zera przy każdym Super+L.
+apply_hyprlock_background() {
+    local state="$1" f tmp path blur_size blur_passes
+    if [[ "$state" == "off" ]]; then
+        path="screenshot"; blur_size=7; blur_passes=3
+    else
+        path="$state"; blur_size=0; blur_passes=0
+    fi
+    for f in "${HYPRLOCK_BG_FILES[@]}"; do
+        [[ -f "$f" ]] || continue
+        tmp=$(mktemp "$f.XXXXXX") || continue
+        sed -E \
+            -e "s|^([[:space:]]*path[[:space:]]*=).*|\\1 ${path}|" \
+            -e "s|^([[:space:]]*blur_size[[:space:]]*=).*|\\1 ${blur_size}|" \
+            -e "s|^([[:space:]]*blur_passes[[:space:]]*=).*|\\1 ${blur_passes}|" \
+            "$f" > "$tmp"
+        chmod 644 "$tmp"
+        mv "$tmp" "$f"
+    done
+    tmp=$(mktemp "$HYPRLOCK_DAT.XXXXXX") || return 1
+    printf '%s\n' "$state" > "$tmp"
+    chmod 644 "$tmp"
+    mkdir -p "$DATA_DIR"
+    mv "$tmp" "$HYPRLOCK_DAT"
+}
+
 # Zaaplikuj stan przez IPC (hyprpaper >= 0.8); gdy IPC padnie — restart daemona,
 # który wczyta świeżo wygenerowany hyprpaper.conf.
 apply_ipc() {
@@ -181,10 +233,16 @@ load_state
 
 # ─── PICK WALLPAPER ───────────────────────────────────────────────────────────
 
-MODE_ALL=1   # ptaszek "Upload to all monitors" — domyślnie zaznaczony
+MODE_ALL=1    # ptaszek "Upload to all monitors" — domyślnie zaznaczony
+MODE_LOCK=0   # ptaszek "Set as hyprlock background" — domyślnie odznaczony
+LOCK_STATE="off"
+[[ -f "$HYPRLOCK_DAT" ]] && LOCK_STATE="$(<"$HYPRLOCK_DAT")"
+[[ "$LOCK_STATE" != "off" ]] && MODE_LOCK=1
 
 if [[ "$1" == "--restore" ]]; then
-    # Stan już wczytany (plus ewentualna migracja) — tylko odtwórz.
+    # Stan już wczytany (plus ewentualna migracja) — tylko odtwórz. Hyprlock
+    # niezależnie od tapety pulpitu — przeżywa Super+T tak samo.
+    apply_hyprlock_background "$LOCK_STATE"
     [[ ${#STATE[@]} -eq 0 ]] && exit 0
     save_and_generate
     apply_ipc
@@ -227,13 +285,24 @@ else
         else
             toggle="$TOGGLE_OFF"
         fi
-        CHOICE=$(printf '%s\n' "$toggle" "${REL[@]}" | rofi -dmenu -i -p "Select wallpaper:")
+        if [[ "$MODE_LOCK" -eq 1 ]]; then
+            lock_toggle="$LOCK_TOGGLE_ON"
+        else
+            lock_toggle="$LOCK_TOGGLE_OFF"
+        fi
+        CHOICE=$(printf '%s\n' "$toggle" "$lock_toggle" "${REL[@]}" | rofi -dmenu -i -p "Select wallpaper:")
         [[ -z "$CHOICE" ]] && exit 0
         if [[ "$CHOICE" == "$TOGGLE_ON" ]]; then
             MODE_ALL=0
             continue
         elif [[ "$CHOICE" == "$TOGGLE_OFF" ]]; then
             MODE_ALL=1
+            continue
+        elif [[ "$CHOICE" == "$LOCK_TOGGLE_ON" ]]; then
+            MODE_LOCK=0
+            continue
+        elif [[ "$CHOICE" == "$LOCK_TOGGLE_OFF" ]]; then
+            MODE_LOCK=1
             continue
         fi
         break
@@ -251,6 +320,14 @@ else
         apply_file_allmon "$FILE"
     else
         STATE[$(focused_monitor)]="$FILE"
+    fi
+
+    # Hyprlock: tylko w tej (interaktywnej) gałęzi — bezpośrednie wywołanie
+    # CLI nie dotyka stanu hyprlocka, poza zakresem tego menu.
+    if [[ "$MODE_LOCK" -eq 1 ]]; then
+        apply_hyprlock_background "$FILE"
+    elif [[ "$LOCK_STATE" != "off" ]]; then
+        apply_hyprlock_background "off"
     fi
 fi
 

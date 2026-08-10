@@ -60,7 +60,10 @@ Konwencja repo: jeden bind = jedna linia `hl.bind(...)` — na tym polegają
 menedżer skrótów Super+A i guard workspace'ów. Wyjątki od migracji:
 `hyprlock.conf` i `hyprpaper.conf` zostają w hyprlangu (to osobne programy,
 nie Hyprland). Stare pliki `.conf` leżą obok jako `*.conf.bak` do czasu
-zweryfikowania migracji na żywej maszynie.
+zweryfikowania migracji na żywej maszynie. Tło ekranu blokady każdego rice'a
+(`background { ... }`) jest wydzielone przez `source =` do generowanego
+`config/hypr/hyprlock-background-<rice>.conf` — zmieniasz je checkboxem w
+`Super + W`, nie edycją `hyprlock.conf`.
 
 ## Struktura plików
 
@@ -92,7 +95,8 @@ archenemy/
 │   │   # monitorshyprl.lua, workspaces-monitors.lua, hardware-keys.lua,
 │   │   # gpu-env.lua, autostartpersonalisation.lua, appbinds.lua,
 │   │   # hyprpaper.conf (hyprpaper nie migruje na Lua; rice'y wskazują
-│   │   # na niego symlinkiem)
+│   │   # na niego symlinkiem), hyprlock-background-<rice>.conf ×3
+│   │   # (tło hyprlocka; rice'y wskazują na nie przez `source =`)
 ├── rices/
 │   ├── white-blue/                   # Domyślny rice: alacritty, fastfetch, hypr(+hyprlock), mako,
 │   │                                 #   MangoHud, networkmanager-dmenu, nvim, rofi, waybar.
@@ -128,7 +132,7 @@ archenemy/
 
 ## Tapety
 
-Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp).
+Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
 
 Na górze menu jest przełącznik **`[x] Upload to all monitors`** (domyślnie zaznaczony):
 
