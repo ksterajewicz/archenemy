@@ -6,8 +6,7 @@ Osobisty rice Arch Linuxa pod Hyprlanda. Jeden instalator stawia cały wygląd p
 
 - **dev** — gałąź główna, tu lądują wszystkie zmiany
 - **main** — tylko stabilne wydania, aktualizowana gdy dev jest stabilny
-- **test** — tylko dla deweloperów, prawdziwa wersja rolling do testowania
-  
+
 ## Wymagania
 
 - Arch Linux z Hyprlandem (instalator zaproponuje instalację, jeśli go brak)
