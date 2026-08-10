@@ -61,7 +61,7 @@
         "exec": "~/archenemy/scripts/waybar/profile-get.sh",
         "interval": 1,
         "format": "󰓅 {}",
-        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh",
+        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh; pkill -RTMIN+8 waybar",
         "signal": 8,
         "tooltip": false
     },
