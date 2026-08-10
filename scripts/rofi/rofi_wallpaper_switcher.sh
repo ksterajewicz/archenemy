@@ -185,22 +185,31 @@ save_and_generate() {
 # przyciemniony tron) przeżywa włączenie/wyłączenie tej opcji. Restart/reload
 # niepotrzebny: hyprlock czyta swój config od zera przy każdym Super+L.
 apply_hyprlock_background() {
-    local state="$1" f tmp path blur_size blur_passes
+    local state="$1" f tmp path blur_size blur_passes path_esc
     if [[ "$state" == "off" ]]; then
         path="screenshot"; blur_size=7; blur_passes=3
     else
         path="$state"; blur_size=0; blur_passes=0
     fi
+    # Ścieżka pochodzi z nazwy pliku użytkownika i trafia do PRAWEJ strony
+    # podmiany seda — escapujemy znaki specjalne: `&` (= całe dopasowanie),
+    # `\` oraz `|` (delimiter). Bez tego nazwa z `&` rozbija ścieżkę, a z `|`
+    # wysypuje seda i pusty tmp nadpisałby dobry plik (hyprlock traci tło).
+    path_esc=$(printf '%s' "$path" | sed -e 's/[\\&|]/\\&/g')
     for f in "${HYPRLOCK_BG_FILES[@]}"; do
         [[ -f "$f" ]] || continue
         tmp=$(mktemp "$f.XXXXXX") || continue
-        sed -E \
-            -e "s|^([[:space:]]*path[[:space:]]*=).*|\\1 ${path}|" \
+        # Guard: tylko udany sed nadpisuje plik — błąd zostawia oryginał.
+        if sed -E \
+            -e "s|^([[:space:]]*path[[:space:]]*=).*|\\1 ${path_esc}|" \
             -e "s|^([[:space:]]*blur_size[[:space:]]*=).*|\\1 ${blur_size}|" \
             -e "s|^([[:space:]]*blur_passes[[:space:]]*=).*|\\1 ${blur_passes}|" \
-            "$f" > "$tmp"
-        chmod 644 "$tmp"
-        mv "$tmp" "$f"
+            "$f" > "$tmp"; then
+            chmod 644 "$tmp"
+            mv "$tmp" "$f"
+        else
+            rm -f "$tmp"
+        fi
     done
     tmp=$(mktemp "$HYPRLOCK_DAT.XXXXXX") || return 1
     printf '%s\n' "$state" > "$tmp"
