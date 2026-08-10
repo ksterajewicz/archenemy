@@ -15,7 +15,6 @@
     // naprawa pod dwa tryby (stały r±1 psułby scroll w trybie shared).
     "hyprland/workspaces": {
         "format": "{name}",
-        "on-click": "activate",
         "on-scroll-up": "~/archenemy/scripts/hypr/ws-scroll.sh up",
         "on-scroll-down": "~/archenemy/scripts/hypr/ws-scroll.sh down",
         "all-outputs": false,
