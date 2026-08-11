@@ -112,7 +112,8 @@ archenemy/
 │                                     #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
 ├── scripts/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
-│   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo.
+│   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo;
+│   │                                 #   [v] przełącza styl paska głośności w waybarze.
 │   ├── changing-theme-scripts/       # Po jednym stubie na rice (nazwa pliku = pozycja w menu);
 │   │                                 #   wspólna logika przełączania w lib/switch-rice.sh.
 │   ├── hypr/                         # workspace-orphan-guard.sh — demon (tylko tryb decades): scala
@@ -124,7 +125,9 @@ archenemy/
 │   ├── rofi/                         # Menu rofi: rice'y, tapety, sieć (z reskanem), zasilanie.
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
 │   │                                 #   logo Archa + siatka Tron (gen_tron_wallpaper.py).
-│   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny).
+│   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny) +
+│                                     #   volume-bar.sh — pasek głośności (▮▮▯) zamiast modułu pulseaudio;
+│                                     #   styl segments/blocks przełączalny w Super+A → [v].
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     └── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
@@ -159,6 +162,12 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 ## Własne skróty do aplikacji (Super + A)
 
 `Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.lua` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
+
+To samo TUI ma dwie dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y") oraz `[v] volume bar` — styl paska głośności w waybarze (`segments` ▮▮▯ / `blocks` █░░), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara).
+
+Głośność: moduł `pulseaudio` waybara zastąpiony własnym `custom/volumebar` (skrypt `scripts/waybar/volume-bar.sh`) — rysuje pasek wypełnienia z procentem zamiast samej ikony. Scroll na pasku i klawisze głośności działają jak dotąd (klawisze sprzętowe dodatkowo wysyłają do waybara sygnał 10 = natychmiastowe odświeżenie paska). Klik: LPM `pavucontrol`, PPM mute. Stan `>100%` (boost) ma osobną klasę koloru per rice.
+
+Jasność ekranu: klawisze `XF86MonBrightness*` wołają `swayosd-client` — zmieniają jasność i pokazują pasek OSD u dołu wszystkich monitorów (serwer `swayosd-server` startuje z każdym rice'em i jest restartowany przy przełączeniu rice'a, bo czyta motyw tylko przy starcie). Motyw OSD per rice: `rices/*/swayosd/style.css` (beta dziedziczy z white-blue przez symlink). Pakiet: `swayosd-git` (AUR).
 
 ## Skróty klawiszowe
 

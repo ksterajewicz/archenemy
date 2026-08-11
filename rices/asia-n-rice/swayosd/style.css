@@ -1,0 +1,49 @@
+/* archenemy - swayosd (asia-n-rice)
+ * OSD jasności/głośności u dołu wszystkich monitorów. Paleta mauve #b47687
+ * na granacie #2a3444, zaokrąglenie 14px (jak wyspy waybara rice'a). */
+
+window#osd {
+    border-radius: 14px;
+    border: 1px solid rgba(180, 118, 135, 0.35);
+    background: rgba(42, 52, 68, 0.95);
+}
+
+window#osd #container {
+    margin: 16px;
+}
+
+window#osd image,
+window#osd label {
+    color: #b47687;
+}
+
+window#osd progressbar,
+window#osd segmentedprogress {
+    min-height: 8px;
+    border-radius: 14px;
+    background: transparent;
+    border: none;
+}
+
+window#osd trough,
+window#osd segment {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: rgba(180, 118, 135, 0.25);
+}
+
+window#osd progress,
+window#osd segment.active {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: #b47687;
+}
+
+window#osd segment {
+    margin-left: 8px;
+}
+window#osd segment:first-child {
+    margin-left: 0;
+}
