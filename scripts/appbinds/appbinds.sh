@@ -295,6 +295,39 @@ workspace_mode_menu() {
     bash "$switch" "$other"
 }
 
+# ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
+
+# Wybór stylu paska custom/volumebar (segments/blocks). Zapis do
+# data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
+# sygnał 10 do waybara = pasek przerysowuje się od razu.
+volume_style_menu() {
+    local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
+    local cur="segments"
+    [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
+
+    echo ""
+    echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
+    echo -e "    ${BLUE}1${NC}) segments   ▮▮▮▮▮▮▯▯▯▯"
+    echo -e "    ${BLUE}2${NC}) blocks     ██████░░░░"
+    echo ""
+    read -rp "  Choose [1-2, Enter = cancel]: " ans
+    local target=""
+    case "$ans" in
+        1) target="segments" ;;
+        2) target="blocks" ;;
+        "") echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}"; return ;;
+    esac
+
+    mkdir -p "$(dirname "$style_dat")"
+    local tmp
+    tmp="$(mktemp "${style_dat}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return; }
+    printf '%s\n' "$target" > "$tmp"
+    mv "$tmp" "$style_dat"
+    pkill -RTMIN+10 waybar 2>/dev/null
+    echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
+}
+
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
 
 ensure_conf
@@ -310,7 +343,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${CYAN}[q]${NC} quit"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${CYAN}[q]${NC} quit"
     echo ""
     read -rp "  Choice: " choice
 
@@ -319,6 +352,7 @@ while :; do
         d|D) remove_bind ;;
         s|S) show_all_binds; continue ;;
         w|W) workspace_mode_menu ;;
+        v|V) volume_style_menu ;;
         q|Q) exit 0 ;;
         *)   ;;
     esac

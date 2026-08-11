@@ -794,6 +794,18 @@ generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-white-blue.con
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-tron.conf" "0.55"
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-asia-n-rice.conf" "0.85"
 
+# 8i. Styl paska głośności waybara (przełączalny w Super+A → [v]) — seed
+# domyślny. volume-bar.sh ma fallback "segments", ale seed daje wykrywalność
+# i spójność z workspace-mode.dat.
+VOLSTYLE_DAT="$DATA_DIR/volume-bar-style.dat"
+if [[ ! -f "$VOLSTYLE_DAT" ]]; then
+    mkdir -p "$DATA_DIR"
+    echo "segments" > "$VOLSTYLE_DAT"
+    echo -e "  ${GREEN}✓ volume-bar-style.dat (segments)${NC}"
+else
+    echo -e "  ${YELLOW}⚠ volume-bar-style.dat istnieje — nie ruszam.${NC}"
+fi
+
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
 

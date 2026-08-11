@@ -9,7 +9,7 @@
     "reload_style_on_change": true,
     "modules-left":   ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock"],
-    "modules-right":  ["custom/profileswitcher", "custom/micmute", "pulseaudio", "network", "battery", "tray"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "battery", "tray"],
     // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
     // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
     // który czyta tryb (decades: r±1, shared: e±1) — jak bindy klawiatury.
@@ -76,18 +76,18 @@
         "signal": 9,
         "tooltip": false
     },
-    "pulseaudio": {
-        "format": "{icon} {volume}%",
-        "format-muted": "󰖁",
-        "format-icons": {
-            "headphone":  "󰋋",
-            "hands-free": "󰋎",
-            "headset":    "󰋎",
-            "default":    ["󰕿", "󰖀", "󰕾"]
-        },
+    // Pasek głośności (skrypt renderuje ▮▮▯ + %); styl przełączalny w Super+A
+    // → [v]. Reaguje: interval:1 (backstop) + signal:10 (klawisze/scroll wołają
+    // pkill -RTMIN+10). exec-on-event odświeża od razu po scrollu/kliknięciu.
+    "custom/volumebar": {
+        "exec": "~/archenemy/scripts/waybar/volume-bar.sh",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 10,
+        "on-scroll-up": "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+",
+        "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
         "on-click": "pavucontrol",
-        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
-        "scroll-step": 5
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
     "network": {
         "format-wifi":         "󰖩 {essid}",

@@ -87,7 +87,7 @@ window#waybar.solo  #window {
 #memory,
 #cpu,
 #temperature,
-#pulseaudio,
+#custom-volumebar,
 #network,
 #battery,
 #tray,
@@ -100,15 +100,18 @@ window#waybar.solo  #window {
 #memory:hover,
 #cpu:hover,
 #temperature:hover,
-#pulseaudio:hover,
+#custom-volumebar:hover,
 #network:hover,
 #battery:hover,
 #custom-profileswitcher:hover,
 #custom-micmute:hover {
     color: #0148ED;
 }
-#pulseaudio.muted {
+#custom-volumebar.muted {
     color: #b0b0b0;
+}
+#custom-volumebar.boost {
+    color: #0148ED;
 }
 #network.disconnected {
     color: #b0b0b0;
