@@ -62,7 +62,7 @@ hl.config({
         border_size = 2,
 
         -- Tron: neon cyjan na aktywnym oknie, wygaszony ciemny teal na nieaktywnych.
-        ["col.active_border"]   = "rgb(00E5FF) rgb(7DF9FF) 45deg",
+        ["col.active_border"]   = { colors = { "rgb(00E5FF)", "rgb(7DF9FF)" }, angle = 45 },
         ["col.inactive_border"] = "rgba(0E2A33AA)",
 
         layout           = "dwindle",
@@ -114,7 +114,7 @@ hl.config({
 
 -- Animacje (dawne animations{}: bezier → hl.curve, animation → hl.animation;
 -- speed w ds jak dawniej: 2 = 200 ms)
-hl.animation({ leaf = "global", enabled = true })
+hl.animation({ leaf = "global", enabled = true, speed = 10, bezier = "default" })
 
 hl.curve("smooth",   { type = "bezier", points = { {0.25, 0.10}, {0.25, 1.00} } })
 hl.curve("overshot", { type = "bezier", points = { {0.13, 0.99}, {0.29, 1.08} } })
