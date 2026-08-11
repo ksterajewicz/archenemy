@@ -139,8 +139,12 @@ hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("hyprctl switchxkblayout all next"))
 
 hl.config({
     input = {
-        kb_layout  = "pl,us",
-        kb_options = "grp:alt_shift_toggle",
+        -- Bez kb_options: grp:alt_shift_toggle kolidował z AltGr+Shift+litera
+        -- (wielkie polskie znaki, np. Ż) — Prawy Alt+Prawy Shift jest w XKB
+        -- naraz group-togglem I drogą do 4. poziomu klawisza, więc próba
+        -- napisania Ż przełączała układ i połykała znak. Jedyny przełącznik
+        -- układu: Super+K (hyprctl switchxkblayout, wyżej w bindach).
+        kb_layout = "pl,us",
 
         follow_mouse  = 1,
         sensitivity   = 0,
