@@ -98,6 +98,14 @@ window#waybar.solo  #window {
     background: transparent;
     color:      #0a0a0a;
 }
+/* #custom-micmute i #network zaczynają się od glifu ikony z dużym
+   wbudowanym odstępem po lewej (Nerd Font) — z pełnym 4px paddingu
+   przerwa po poprzednim module (profileswitcher/volumebar) wyglądała
+   szerzej niż pozostałe. */
+#custom-micmute,
+#network {
+    padding-left: 1px;
+}
 #custom-profileswitcher {
     color: #0148ED;
     font-weight: 600;

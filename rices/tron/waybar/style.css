@@ -127,6 +127,14 @@ window#waybar.solo  #window {
     background: transparent;
     color:      #9adbe8;
 }
+/* #custom-micmute i #network zaczynają się od glifu ikony z dużym
+   wbudowanym odstępem po lewej (Nerd Font) — z pełnym 4px paddingu
+   przerwa po poprzednim module (profileswitcher/volumebar) wyglądała
+   szerzej niż pozostałe. */
+#custom-micmute,
+#network {
+    padding-left: 1px;
+}
 /* Szerokość na sztywno: bez tego Pango czasem zwęża widget przy glifach
    ▮/▯ (styl "segments"), a kursor nad widocznym tekstem trafia poza
    faktyczny (skurczony) obszar modułu — scroll nie zmienia głośności. */
