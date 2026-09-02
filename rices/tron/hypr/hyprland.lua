@@ -11,6 +11,18 @@
 
 local HOME = os.getenv("HOME")
 
+-- require dla plików GENEROWANYCH przez install.sh: jeśli pliku jeszcze nie ma
+-- (np. po `git pull` przed ponownym uruchomieniem install.sh), require rzuca
+-- błąd, który UBIJA wykonanie CAŁEGO hyprland.lua — przepadają bindy, monitory
+-- i reszta configu. Guard sprawdza plik przed require, więc brak wygenerowanego
+-- pliku kosztuje tylko jego funkcję, a nie cały config.
+local function require_optional(path)
+    local f = io.open(path, "r")
+    if not f then return end
+    f:close()
+    require(path)
+end
+
 local mainMod      = "SUPER"
 local terminal     = "alacritty"
 local filemanager  = "thunar"
@@ -39,7 +51,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 require(HOME .. "/archenemy/config/hypr/autostartpersonalisation.lua")
-require(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
+require_optional(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
 
 hl.config({
     xwayland = {
