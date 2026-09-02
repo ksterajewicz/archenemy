@@ -681,7 +681,7 @@ echo -e "  ${GREEN}✓ workspaces-monitors.lua (tryb: $WS_MODE, ${#ORDERED_LR[@]
     if [[ "$HW_PROFILE" == "asus" ]]; then
         echo "-- Górne klawisze ASUS ROG"
         echo "hl.bind(\"XF86Launch1\", hl.dsp.exec_cmd(\"rog-control-center\"))"
-        echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"asusctl profile -n\"))"
+        echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"asusctl profile -n; pkill -RTMIN+8 waybar\"))"
     else
         echo "-- Brak bindów sprzętowych dla tego profilu ($HW_PROFILE)"
     fi
