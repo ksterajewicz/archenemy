@@ -123,7 +123,7 @@ window#waybar.solo  #window {
 #tray,
 #custom-profileswitcher,
 #custom-micmute {
-    padding:    0 8px;
+    padding:    0 4px;
     background: transparent;
     color:      #9adbe8;
 }
