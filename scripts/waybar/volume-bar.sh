@@ -12,7 +12,10 @@
 #   z capem 100% — boost >100% daje pełny pasek + realną liczbę (klasa boost).
 #
 #   Reaguje na zmiany: interval:1 (backstop: pavucontrol/BT) + signal 10
-#   (klawisze sprzętowe i scroll wołają pkill -RTMIN+10 waybar).
+#   (klawisze sprzętowe i scroll wołają pkill -RTMIN+10 waybar). Ten sam
+#   backstop 1s wykrywa też wpięcie/odpięcie słuchawek — Active Port
+#   domyślnego sinka z pactl podmienia ikonę głośnika na słuchawki i z
+#   powrotem, bez osobnego triggera.
 #
 #   Użycie: volume-bar.sh   (woła waybar; wypisuje jedną linię JSON)
 # =============================================
@@ -58,9 +61,27 @@ case "$STYLE" in
         ;;
 esac
 
+# ─── Wykrycie słuchawek ───────────────────────────────────────────────────────
+# Active Port domyślnego sinka z pactl (pipewire-pulse) — nazwy portów
+# słuchawkowych zawierają "headphone"/"headset" (analog i USB); reszta
+# (speaker, hdmi, line-out...) to głośniki.
+headphones=0
+default_sink="$(pactl get-default-sink 2>/dev/null)"
+if [[ -n "$default_sink" ]]; then
+    active_port="$(pactl list sinks 2>/dev/null | awk -v target="$default_sink" '
+        /^Sink #/            { name="" }
+        /^\tName: /           { name=$2 }
+        name==target && /^\tActive Port: / { print $3 }
+    ' | tail -n1)"
+    [[ "$active_port" =~ [Hh]eadphone|[Hh]eadset ]] && headphones=1
+fi
+
 # ─── Ikona głośnika + klasa ───────────────────────────────────────────────────
 if (( muted )); then
     icon="󰖁"; class="muted"
+elif (( headphones )); then
+    icon="󰋋"
+    if (( pct > 100 )); then class="boost"; else class="normal"; fi
 else
     if   (( pct == 0 ));  then icon="󰕿"
     elif (( pct < 50 ));  then icon="󰖀"

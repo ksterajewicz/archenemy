@@ -44,6 +44,16 @@ trim() {
     printf '%s' "$s"
 }
 
+# Jeden klawisz bez Enter (menu/potwierdzenia — nie wolne wpisywanie tekstu).
+# Zwraca $'\e' dla samego Escape, żeby wołający mógł potraktować go jak
+# anulowanie/wyjście.
+read_key() {
+    local prompt="$1" key=""
+    IFS= read -rsn1 -p "$prompt" key
+    echo ""
+    printf '%s' "$key"
+}
+
 # ─── PLIK BINDÓW ──────────────────────────────────────────────────────────────
 
 # Upewnij się, że plik istnieje (install.sh go tworzy, ale nie zakładaj)
@@ -285,7 +295,7 @@ workspace_mode_menu() {
     echo -e "    ${BLUE}shared${NC}  — 10 global workspaces (1-10) shared by all monitors"
     echo -e "    ${BLUE}decades${NC} — each monitor gets its own 1-10 (isolated decades)"
     echo ""
-    read -rp "  Switch to '${other}'? [y/N]: " ans
+    local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
     [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
 
     if [[ ! -x "$switch" ]]; then
@@ -310,12 +320,12 @@ volume_style_menu() {
     echo -e "    ${BLUE}1${NC}) segments   ▮▮▮▮▮▮▯▯▯▯"
     echo -e "    ${BLUE}2${NC}) blocks     ██████░░░░"
     echo ""
-    read -rp "  Choose [1-2, Enter = cancel]: " ans
+    local ans; ans="$(read_key "  Choose [1-2, Esc = cancel]: ")"
     local target=""
     case "$ans" in
         1) target="segments" ;;
         2) target="blocks" ;;
-        "") echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
         *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}"; return ;;
     esac
 
@@ -343,9 +353,9 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[u]${NC} autostart apps   ${CYAN}[q]${NC} quit"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
-    read -rp "  Choice: " choice
+    choice="$(read_key "  Choice: ")"
 
     case "$choice" in
         a|A) add_bind ;;
@@ -354,8 +364,9 @@ while :; do
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
-        q|Q) exit 0 ;;
-        *)   ;;
+        p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
+        q|Q|$'\e') exit 0 ;;
+        *)   continue ;;
     esac
 
     echo ""

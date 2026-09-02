@@ -127,6 +127,12 @@ window#waybar.solo  #window {
     background: transparent;
     color:      #9adbe8;
 }
+/* Szerokość na sztywno: bez tego Pango czasem zwęża widget przy glifach
+   ▮/▯ (styl "segments"), a kursor nad widocznym tekstem trafia poza
+   faktyczny (skurczony) obszar modułu — scroll nie zmienia głośności. */
+#custom-volumebar {
+    min-width: 150px;
+}
 #custom-profileswitcher {
     color: #00e5ff;
     font-weight: 600;
