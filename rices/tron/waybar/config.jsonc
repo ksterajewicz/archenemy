@@ -67,7 +67,7 @@
     },
     "custom/profileswitcher": {
         "exec": "~/archenemy/scripts/waybar/profile-get.sh",
-        "interval": 1,
+        "interval": 0.5,
         "format": "󰓅 {}",
         "on-click": "~/archenemy/scripts/waybar/profile-switch.sh; pkill -RTMIN+8 waybar",
         "signal": 8,
