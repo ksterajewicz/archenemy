@@ -87,37 +87,28 @@ window#waybar.solo  #window {
 #memory,
 #cpu,
 #temperature,
-#custom-volumebar,
+#pulseaudio,
 #network,
 #battery,
 #tray,
 #custom-profileswitcher,
 #custom-micmute {
-    padding:    0 4px;
+    padding:    0 8px;
     background: transparent;
     color:      #0a0a0a;
-}
-/* Szerokość na sztywno: bez tego Pango czasem zwęża widget przy glifach
-   ▮/▯ (styl "segments"), a kursor nad widocznym tekstem trafia poza
-   faktyczny (skurczony) obszar modułu — scroll nie zmienia głośności. */
-#custom-volumebar {
-    min-width: 150px;
 }
 #memory:hover,
 #cpu:hover,
 #temperature:hover,
-#custom-volumebar:hover,
+#pulseaudio:hover,
 #network:hover,
 #battery:hover,
 #custom-profileswitcher:hover,
 #custom-micmute:hover {
     color: #0148ED;
 }
-#custom-volumebar.muted {
+#pulseaudio.muted {
     color: #b0b0b0;
-}
-#custom-volumebar.boost {
-    color: #0148ED;
 }
 #network.disconnected {
     color: #b0b0b0;

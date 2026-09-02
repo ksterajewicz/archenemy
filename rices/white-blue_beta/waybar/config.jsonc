@@ -9,7 +9,7 @@
     "reload_style_on_change": true,
     "modules-left":   ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock"],
-    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "battery", "tray"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "pulseaudio", "network", "battery", "tray"],
     // Workspace'y: pasek pokazuje tylko swój output ({name}: w decades = 1-10
     // przez defaultName, w shared = globalne id). Scroll przez ws-scroll.sh —
     // naprawa pod dwa tryby (stały r±1 psułby scroll w trybie shared).
@@ -33,27 +33,17 @@
         "format": "{:%H:%M:%S}",
         "format-alt": "{:%a, %d %b · %H:%M:%S}",
         "interval": 1,
-        // Nagłówek tooltipa = pełna data dnia w akcencie; niżej siatka miesiąca.
-        "tooltip-format": "<tt><span color='#0148ED'><big>{:%A, %d %B %Y}</big></span>\n\n{calendar}</tt>",
-        // Kalendarz miesięczny BEZ kolumny numerów tygodni — ISO-tygodnie (31-36)
-        // po lewej w pionie myliły się z dniami sąsiedniego miesiąca; usunięte
-        // 2026-08-10. iso8601 zostaje = tydzień od poniedziałku. Nawigacja: scroll
-        // = miesiące, PPM = rok/miesiąc; LPM = format-alt. (fix istniejącego — beta: bug-fixy)
+        "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
+        // weeks-pos usunięty (bug-fix): kolumna numerów tygodni ISO myliła się
+        // wizualnie z dniami sąsiedniego miesiąca. Reszta stylu bez zmian.
         "calendar": {
             "mode": "month",
-            "on-scroll": 1,
-            "iso8601": true,
             "format": {
-                "months":   "<span color='#0148ED'><b>{}</b></span>",
+                "months":   "<span color='#0a0a0a'><b>{}</b></span>",
                 "days":     "<span color='#0a0a0a'>{}</span>",
-                "weekdays": "<span color='#909090'>{}</span>",
+                "weekdays": "<span color='#0148ED'><b>{}</b></span>",
                 "today":    "<span color='#ffffff' background='#0148ED'><b>{}</b></span>"
             }
-        },
-        "actions": {
-            "on-click-right": "mode",
-            "on-scroll-up": "shift_up",
-            "on-scroll-down": "shift_down"
         }
     },
     "custom/profileswitcher": {
@@ -72,18 +62,18 @@
         "signal": 9,
         "tooltip": false
     },
-    // Pasek głośności (skrypt renderuje ▮▮▯ + %); styl przełączalny w Super+A
-    // → [v]. Reaguje: interval:1 (backstop) + signal:10 (klawisze/scroll wołają
-    // pkill -RTMIN+10). exec-on-event odświeża od razu po scrollu/kliknięciu.
-    "custom/volumebar": {
-        "exec": "~/archenemy/scripts/waybar/volume-bar.sh",
-        "return-type": "json",
-        "interval": 1,
-        "signal": 10,
-        "on-scroll-up": "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+",
-        "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "󰖁",
+        "format-icons": {
+            "headphone":  "󰋋",
+            "hands-free": "󰋎",
+            "headset":    "󰋎",
+            "default":    ["󰕿", "󰖀", "󰕾"]
+        },
         "on-click": "command -v pavucontrol >/dev/null && pavucontrol",
-        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "scroll-step": 5
     },
     "network": {
         "format-wifi":         "󰖩 {essid}",
