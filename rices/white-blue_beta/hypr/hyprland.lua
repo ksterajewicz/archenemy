@@ -37,6 +37,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 require(HOME .. "/archenemy/config/hypr/autostartpersonalisation.lua")
+require(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
 
 hl.config({
     xwayland = {

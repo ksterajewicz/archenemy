@@ -343,7 +343,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${CYAN}[q]${NC} quit"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[u]${NC} autostart apps   ${CYAN}[q]${NC} quit"
     echo ""
     read -rp "  Choice: " choice
 
@@ -353,6 +353,7 @@ while :; do
         s|S) show_all_binds; continue ;;
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
+        u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         q|Q) exit 0 ;;
         *)   ;;
     esac

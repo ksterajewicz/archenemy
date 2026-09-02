@@ -7,6 +7,7 @@
 /config/hypr/hardware-keys.lua
 /config/hypr/gpu-env.lua
 /config/hypr/autostartpersonalisation.lua
+/config/hypr/autostart-apps.lua
 /config/hypr/appbinds.lua
 /config/hypr/hyprpaper.conf
 /config/hypr/hyprlock-background-white-blue.conf

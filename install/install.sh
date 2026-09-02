@@ -806,6 +806,15 @@ else
     echo -e "  ${YELLOW}⚠ volume-bar-style.dat istnieje — nie ruszam.${NC}"
 fi
 
+# 8j. Autostart aplikacji wybranych w TUI (Super+A → [u]) — warstwa RÓWNOLEGŁA
+# do autostartpersonalisation.lua (tamten zostaje w pełni ręczny). Generujemy
+# zawsze, także jako pusty stub: rice'y require'ują ten plik, więc musi istnieć
+# po świeżej instalacji i po ponownym biegu instalatora (git pull).
+# Generator wydzielony do biblioteki (jedno źródło prawdy z pickerem TUI).
+source "$ARCHENEMY_DIR/scripts/hypr/lib/gen-autostart.sh"
+generate_autostart_apps "$DATA_DIR/autostart-apps.dat" "$HYPR_LOCAL_DIR/autostart-apps.lua"
+echo -e "  ${GREEN}✓ autostart-apps.lua${NC}"
+
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
 

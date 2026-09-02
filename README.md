@@ -93,7 +93,7 @@ archenemy/
 │   │   │   #  po zweryfikowaniu migracji na żywej maszynie)
 │   │   # + pliki generowane przez install.sh (poza gitem):
 │   │   # monitorshyprl.lua, workspaces-monitors.lua, hardware-keys.lua,
-│   │   # gpu-env.lua, autostartpersonalisation.lua, appbinds.lua,
+│   │   # gpu-env.lua, autostartpersonalisation.lua, autostart-apps.lua, appbinds.lua,
 │   │   # hyprpaper.conf (hyprpaper nie migruje na Lua; rice'y wskazują
 │   │   # na niego symlinkiem), hyprlock-background-<rice>.conf ×3
 │   │   # (tło hyprlocka; rice'y wskazują na nie przez `source =`)
@@ -113,7 +113,9 @@ archenemy/
 ├── scripts/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
 │   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo;
-│   │                                 #   [v] przełącza styl paska głośności w waybarze.
+│   │                                 #   [v] przełącza styl paska głośności w waybarze;
+│   │                                 #   autostart-picker.sh — [u] wybór aplikacji do autostartu
+│   │                                 #   (checkboxy + filtr, czysty bash).
 │   ├── changing-theme-scripts/       # Po jednym stubie na rice (nazwa pliku = pozycja w menu);
 │   │                                 #   wspólna logika przełączania w lib/switch-rice.sh.
 │   ├── hypr/                         # workspace-orphan-guard.sh — demon (tylko tryb decades): scala
@@ -121,7 +123,9 @@ archenemy/
 │   │                                 #   „1" na pasku. ws-scroll.sh — scroll waybara wg trybu workspace'ów.
 │   │                                 #   workspace-mode-switch.sh — przełącza shared/decades na żywo
 │   │                                 #   (regeneracja + reload + guard); lib/gen-workspaces.sh — wspólny
-│   │                                 #   generator reguł/bindów workspace'ów (współdzielony z install.sh).
+│   │                                 #   generator reguł/bindów workspace'ów (współdzielony z install.sh);
+│   │                                 #   lib/gen-autostart.sh — generator autostart-apps.lua
+│   │                                 #   (współdzielony z install.sh i pickerem z Super+A → [u]).
 │   ├── rofi/                         # Menu rofi: rice'y, tapety, sieć (z reskanem), zasilanie.
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
 │   │                                 #   logo Archa + siatka Tron (gen_tron_wallpaper.py).
@@ -163,7 +167,7 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 
 `Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.lua` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
 
-To samo TUI ma dwie dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y") oraz `[v] volume bar` — styl paska głośności w waybarze (`segments` ▮▮▯ / `blocks` █░░), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara).
+To samo TUI ma trzy dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y"), `[u] autostart apps` — wybór aplikacji odpalanych przy starcie Hyprlanda z listy wszystkich wpisów `.desktop` (checkboxy `[x]`/`[ ]`, filtrowanie po nazwie przez `/tekst`; wybór ląduje w `data/autostart-apps.dat`, a z niego generowany jest osobisty `config/hypr/autostart-apps.lua` — obok ręcznego `autostartpersonalisation.lua`, którego ta warstwa nie dotyka), oraz `[v] volume bar` — styl paska głośności w waybarze (`segments` ▮▮▯ / `blocks` █░░), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara).
 
 Głośność: moduł `pulseaudio` waybara zastąpiony własnym `custom/volumebar` (skrypt `scripts/waybar/volume-bar.sh`) — rysuje pasek wypełnienia z procentem zamiast samej ikony. Scroll na pasku i klawisze głośności działają jak dotąd (klawisze sprzętowe dodatkowo wysyłają do waybara sygnał 10 = natychmiastowe odświeżenie paska). Klik: LPM `pavucontrol`, PPM mute. Stan `>100%` (boost) ma osobną klasę koloru per rice.
 
