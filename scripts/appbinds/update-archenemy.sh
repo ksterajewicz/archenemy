@@ -26,7 +26,7 @@ NC='\033[0m'
 read_key() {
     local prompt="$1" key=""
     IFS= read -rsn1 -p "$prompt" key
-    echo ""
+    echo "" >&2
     printf '%s' "$key"
 }
 
