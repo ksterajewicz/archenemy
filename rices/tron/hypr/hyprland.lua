@@ -75,6 +75,7 @@ hl.config({
         border_size = 2,
 
         -- Tron: neon cyjan na aktywnym oknie, wygaszony ciemny teal na nieaktywnych.
+        -- Gradient w API Lua to tabela (string „kolor kolor kąt" z hyprlanga nie przechodzi).
         ["col.active_border"]   = { colors = { "rgb(00E5FF)", "rgb(7DF9FF)" }, angle = 45 },
         ["col.inactive_border"] = "rgba(0E2A33AA)",
 
@@ -127,6 +128,8 @@ hl.config({
 
 -- Animacje (dawne animations{}: bezier → hl.curve, animation → hl.animation;
 -- speed w ds jak dawniej: 2 = 200 ms)
+-- API wymaga speed i bezier także dla global; 10/"default" (krzywa wbudowana)
+-- = jawne domyślne Hyprlanda, jak dawne gołe „animations { enabled = true }".
 hl.animation({ leaf = "global", enabled = true, speed = 10, bezier = "default" })
 
 hl.curve("smooth",   { type = "bezier", points = { {0.25, 0.10}, {0.25, 1.00} } })
