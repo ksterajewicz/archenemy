@@ -92,5 +92,8 @@ fi
 
 # ─── Wyjście JSON (return-type: json) ─────────────────────────────────────────
 # Tekst: ikona + pasek + procent. Wartości bez znaków łamiących JSON.
-printf '{"text":"%s %s %d%%","class":"%s","percentage":%d,"tooltip":"Volume: %d%%"}\n' \
+# Procent wyrównany do 3 znaków (%3d): etykieta ma stałą długość niezależnie
+# od 0% / 60% / 150%, więc moduł nie zmienia szerokości przy kręceniu głośnością
+# — to (a nie sztywna szerokość w px w CSS) trzyma obszar scrolla na miejscu.
+printf '{"text":"%s %s %3d%%","class":"%s","percentage":%d,"tooltip":"Volume: %d%%"}\n' \
     "$icon" "$bar" "$pct" "$class" "$fill_pct" "$pct"

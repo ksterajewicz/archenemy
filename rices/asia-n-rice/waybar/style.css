@@ -119,12 +119,6 @@ window#waybar.solo  #window {
 #network {
     padding-left: 1px;
 }
-/* Szerokość na sztywno: bez tego Pango czasem zwęża widget przy glifach
-   ▮/▯ (styl "segments"), a kursor nad widocznym tekstem trafia poza
-   faktyczny (skurczony) obszar modułu — scroll nie zmienia głośności. */
-#custom-volumebar {
-    min-width: 150px;
-}
 
 #memory:hover,
 #cpu:hover,
