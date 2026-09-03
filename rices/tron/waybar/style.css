@@ -117,29 +117,40 @@ window#waybar.solo  #window {
     padding:    0;
     margin:     0;
 }
-#pulseaudio,
+#custom-volumebar,
 #network,
 #battery,
 #tray,
 #custom-profileswitcher,
 #custom-micmute {
-    padding:    0 8px;
+    padding:    0 4px;
     background: transparent;
     color:      #9adbe8;
+}
+/* #custom-micmute i #network zaczynają się od glifu ikony z dużym
+   wbudowanym odstępem po lewej (Nerd Font) — z pełnym 4px paddingu
+   przerwa po poprzednim module (profileswitcher/volumebar) wyglądała
+   szerzej niż pozostałe. */
+#custom-micmute,
+#network {
+    padding-left: 1px;
 }
 #custom-profileswitcher {
     color: #00e5ff;
     font-weight: 600;
 }
-#pulseaudio:hover,
+#custom-volumebar:hover,
 #network:hover,
 #battery:hover,
 #custom-profileswitcher:hover,
 #custom-micmute:hover {
     color: #7df9ff;
 }
-#pulseaudio.muted {
+#custom-volumebar.muted {
     color: #2e4a55;
+}
+#custom-volumebar.boost {
+    color: #ff7b1c;
 }
 #network.disconnected {
     color: #2e4a55;

@@ -6,8 +6,7 @@ Osobisty rice Arch Linuxa pod Hyprlanda. Jeden instalator stawia cały wygląd p
 
 - **dev** — gałąź główna, tu lądują wszystkie zmiany
 - **main** — tylko stabilne wydania, aktualizowana gdy dev jest stabilny
-- **test** — tylko dla deweloperów, prawdziwa wersja rolling do testowania
-  
+
 ## Wymagania
 
 - Arch Linux z Hyprlandem (instalator zaproponuje instalację, jeśli go brak)
@@ -61,7 +60,10 @@ Konwencja repo: jeden bind = jedna linia `hl.bind(...)` — na tym polegają
 menedżer skrótów Super+A i guard workspace'ów. Wyjątki od migracji:
 `hyprlock.conf` i `hyprpaper.conf` zostają w hyprlangu (to osobne programy,
 nie Hyprland). Stare pliki `.conf` leżą obok jako `*.conf.bak` do czasu
-zweryfikowania migracji na żywej maszynie.
+zweryfikowania migracji na żywej maszynie. Tło ekranu blokady każdego rice'a
+(`background { ... }`) jest wydzielone przez `source =` do generowanego
+`config/hypr/hyprlock-background-<rice>.conf` — zmieniasz je checkboxem w
+`Super + W`, nie edycją `hyprlock.conf`.
 
 ## Struktura plików
 
@@ -91,9 +93,10 @@ archenemy/
 │   │   │   #  po zweryfikowaniu migracji na żywej maszynie)
 │   │   # + pliki generowane przez install.sh (poza gitem):
 │   │   # monitorshyprl.lua, workspaces-monitors.lua, hardware-keys.lua,
-│   │   # gpu-env.lua, autostartpersonalisation.lua, appbinds.lua,
+│   │   # gpu-env.lua, autostartpersonalisation.lua, autostart-apps.lua, appbinds.lua,
 │   │   # hyprpaper.conf (hyprpaper nie migruje na Lua; rice'y wskazują
-│   │   # na niego symlinkiem)
+│   │   # na niego symlinkiem), hyprlock-background-<rice>.conf ×3
+│   │   # (tło hyprlocka; rice'y wskazują na nie przez `source =`)
 ├── rices/
 │   ├── white-blue/                   # Domyślny rice: alacritty, fastfetch, hypr(+hyprlock), mako,
 │   │                                 #   MangoHud, networkmanager-dmenu, nvim, rofi, waybar.
@@ -109,7 +112,10 @@ archenemy/
 │                                     #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
 ├── scripts/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
-│   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo.
+│   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo;
+│   │                                 #   [v] przełącza styl paska głośności w waybarze;
+│   │                                 #   autostart-picker.sh — [u] wybór aplikacji do autostartu
+│   │                                 #   (checkboxy + filtr, czysty bash).
 │   ├── changing-theme-scripts/       # Po jednym stubie na rice (nazwa pliku = pozycja w menu);
 │   │                                 #   wspólna logika przełączania w lib/switch-rice.sh.
 │   ├── hypr/                         # workspace-orphan-guard.sh — demon (tylko tryb decades): scala
@@ -117,11 +123,15 @@ archenemy/
 │   │                                 #   „1" na pasku. ws-scroll.sh — scroll waybara wg trybu workspace'ów.
 │   │                                 #   workspace-mode-switch.sh — przełącza shared/decades na żywo
 │   │                                 #   (regeneracja + reload + guard); lib/gen-workspaces.sh — wspólny
-│   │                                 #   generator reguł/bindów workspace'ów (współdzielony z install.sh).
+│   │                                 #   generator reguł/bindów workspace'ów (współdzielony z install.sh);
+│   │                                 #   lib/gen-autostart.sh — generator autostart-apps.lua
+│   │                                 #   (współdzielony z install.sh i pickerem z Super+A → [u]).
 │   ├── rofi/                         # Menu rofi: rice'y, tapety, sieć (z reskanem), zasilanie.
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
 │   │                                 #   logo Archa + siatka Tron (gen_tron_wallpaper.py).
-│   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny).
+│   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny) +
+│                                     #   volume-bar.sh — pasek głośności (▮▮▯) zamiast modułu pulseaudio;
+│                                     #   styl segments/blocks przełączalny w Super+A → [v].
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     └── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
@@ -129,7 +139,7 @@ archenemy/
 
 ## Tapety
 
-Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp).
+Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
 
 Na górze menu jest przełącznik **`[x] Upload to all monitors`** (domyślnie zaznaczony):
 
@@ -156,6 +166,14 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 ## Własne skróty do aplikacji (Super + A)
 
 `Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.lua` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
+
+To samo TUI ma dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y"), `[u] autostart apps` — wybór aplikacji odpalanych przy starcie Hyprlanda z listy wszystkich wpisów `.desktop` (checkboxy `[x]`/`[ ]`, filtrowanie po nazwie przez `/tekst`; wybór ląduje w `data/autostart-apps.dat`, a z niego generowany jest osobisty `config/hypr/autostart-apps.lua` — obok ręcznego `autostartpersonalisation.lua`, którego ta warstwa nie dotyka), `[v] volume bar` — styl paska głośności w waybarze (`segments` ▮▮▯ / `blocks` █░░), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara), oraz `[p] update archenemy` — aktualizator repo: wybierasz gałąź (`dev` — najnowsze zmiany / `main` — tylko stabilne wydania), skrypt robi `git fetch`/`checkout`/`pull --ff-only`, a lokalne zmiany w plikach śledzonych przez git chowa `git stash` na czas pull i przywraca po nim. Warstwa maszynowa i osobista (monitory, appbinds, autostart, rice, styl paska głośności...) jest poza gitem, więc update jej nie rusza — Twoje ustawienia zostają domyślnie bez zmian. Na końcu proponuje ponowne uruchomienie `install.sh`, żeby dogenerować ewentualne nowe pliki maszynowe.
+
+Menu główne TUI (Super+A) i potwierdzenia w podmenu (`[v]`, `[w]`, `[p]`) odpowiadają na jeden klawisz bez Entera — `Escape` wychodzi/anuluje tak samo jak `q`/`N`.
+
+Głośność: moduł `pulseaudio` waybara zastąpiony własnym `custom/volumebar` (skrypt `scripts/waybar/volume-bar.sh`) — rysuje pasek wypełnienia z procentem zamiast samej ikony. Scroll na pasku i klawisze głośności działają jak dotąd (klawisze sprzętowe dodatkowo wysyłają do waybara sygnał 10 = natychmiastowe odświeżenie paska). Klik: LPM `pavucontrol`, PPM mute. Stan `>100%` (boost) ma osobną klasę koloru per rice. Ikona głośnika automatycznie zamienia się na słuchawki, gdy Active Port domyślnego sinka (z `pactl`) wskazuje na wyjście słuchawkowe — i wraca do głośnika po odpięciu; wykrywane w tym samym backstopie `interval:1`, bez osobnego triggera.
+
+Jasność ekranu: klawisze `XF86MonBrightness*` wołają `swayosd-client` — zmieniają jasność i pokazują pasek OSD u dołu wszystkich monitorów (serwer `swayosd-server` startuje z każdym rice'em i jest restartowany przy przełączeniu rice'a, bo czyta motyw tylko przy starcie). Motyw OSD per rice: `rices/*/swayosd/style.css` (beta dziedziczy z white-blue przez symlink). Pakiet: `swayosd-git` (AUR).
 
 ## Skróty klawiszowe
 

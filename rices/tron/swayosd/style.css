@@ -1,0 +1,49 @@
+/* archenemy - swayosd (tron)
+ * OSD jasności/głośności u dołu wszystkich monitorów. Tron: Legacy —
+ * ciemne szkło #041016, neon cyjan #00e5ff, rogi niemal ostre (8px). */
+
+window#osd {
+    border-radius: 8px;
+    border: 1px solid rgba(0, 229, 255, 0.35);
+    background: rgba(4, 16, 22, 0.92);
+}
+
+window#osd #container {
+    margin: 16px;
+}
+
+window#osd image,
+window#osd label {
+    color: #00e5ff;
+}
+
+window#osd progressbar,
+window#osd segmentedprogress {
+    min-height: 8px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+}
+
+window#osd trough,
+window#osd segment {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: rgba(0, 229, 255, 0.22);
+}
+
+window#osd progress,
+window#osd segment.active {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: #00e5ff;
+}
+
+window#osd segment {
+    margin-left: 8px;
+}
+window#osd segment:first-child {
+    margin-left: 0;
+}

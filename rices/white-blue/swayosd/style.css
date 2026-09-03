@@ -1,0 +1,52 @@
+/* archenemy - swayosd (white-blue)
+ * OSD jasności/głośności u dołu wszystkich monitorów (pozycja = domyślna
+ * swayosd). Themujemy tylko kolory: zimna biel + błękit akcentu #0148ED. */
+
+window#osd {
+    border-radius: 999px;
+    border: 1px solid rgba(1, 72, 237, 0.25);
+    background: rgba(255, 255, 255, 0.94);
+}
+
+window#osd #container {
+    margin: 16px;
+}
+
+window#osd image {
+    color: #0148ED;
+}
+
+window#osd label {
+    color: #0a0a0a;
+}
+
+window#osd progressbar,
+window#osd segmentedprogress {
+    min-height: 8px;
+    border-radius: 999px;
+    background: transparent;
+    border: none;
+}
+
+window#osd trough,
+window#osd segment {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: rgba(10, 10, 10, 0.15);
+}
+
+window#osd progress,
+window#osd segment.active {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: #0148ED;
+}
+
+window#osd segment {
+    margin-left: 8px;
+}
+window#osd segment:first-child {
+    margin-left: 0;
+}

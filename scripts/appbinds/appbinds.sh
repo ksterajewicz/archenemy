@@ -44,6 +44,16 @@ trim() {
     printf '%s' "$s"
 }
 
+# Jeden klawisz bez Enter (menu/potwierdzenia — nie wolne wpisywanie tekstu).
+# Zwraca $'\e' dla samego Escape, żeby wołający mógł potraktować go jak
+# anulowanie/wyjście.
+read_key() {
+    local prompt="$1" key=""
+    IFS= read -rsn1 -p "$prompt" key
+    echo "" >&2
+    printf '%s' "$key"
+}
+
 # ─── PLIK BINDÓW ──────────────────────────────────────────────────────────────
 
 # Upewnij się, że plik istnieje (install.sh go tworzy, ale nie zakładaj)
@@ -285,7 +295,7 @@ workspace_mode_menu() {
     echo -e "    ${BLUE}shared${NC}  — 10 global workspaces (1-10) shared by all monitors"
     echo -e "    ${BLUE}decades${NC} — each monitor gets its own 1-10 (isolated decades)"
     echo ""
-    read -rp "  Switch to '${other}'? [y/N]: " ans
+    local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
     [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
 
     if [[ ! -x "$switch" ]]; then
@@ -293,6 +303,39 @@ workspace_mode_menu() {
         return
     fi
     bash "$switch" "$other"
+}
+
+# ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
+
+# Wybór stylu paska custom/volumebar (segments/blocks). Zapis do
+# data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
+# sygnał 10 do waybara = pasek przerysowuje się od razu.
+volume_style_menu() {
+    local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
+    local cur="segments"
+    [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
+
+    echo ""
+    echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
+    echo -e "    ${BLUE}1${NC}) segments   ▮▮▮▮▮▮▯▯▯▯"
+    echo -e "    ${BLUE}2${NC}) blocks     ██████░░░░"
+    echo ""
+    local ans; ans="$(read_key "  Choose [1-2, Esc = cancel]: ")"
+    local target=""
+    case "$ans" in
+        1) target="segments" ;;
+        2) target="blocks" ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}"; return ;;
+    esac
+
+    mkdir -p "$(dirname "$style_dat")"
+    local tmp
+    tmp="$(mktemp "${style_dat}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return; }
+    printf '%s\n' "$target" > "$tmp"
+    mv "$tmp" "$style_dat"
+    pkill -RTMIN+10 waybar 2>/dev/null
+    echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
 }
 
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
@@ -310,17 +353,20 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${CYAN}[q]${NC} quit"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
-    read -rp "  Choice: " choice
+    choice="$(read_key "  Choice: ")"
 
     case "$choice" in
         a|A) add_bind ;;
         d|D) remove_bind ;;
         s|S) show_all_binds; continue ;;
         w|W) workspace_mode_menu ;;
-        q|Q) exit 0 ;;
-        *)   ;;
+        v|V) volume_style_menu ;;
+        u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
+        p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
+        q|Q|$'\e') exit 0 ;;
+        *)   continue ;;
     esac
 
     echo ""

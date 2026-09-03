@@ -18,6 +18,18 @@
 
 local HOME = os.getenv("HOME")
 
+-- require dla plików GENEROWANYCH przez install.sh: jeśli pliku jeszcze nie ma
+-- (np. po `git pull` przed ponownym uruchomieniem install.sh), require rzuca
+-- błąd, który UBIJA wykonanie CAŁEGO hyprland.lua — przepadają bindy, monitory
+-- i reszta configu. Guard sprawdza plik przed require, więc brak wygenerowanego
+-- pliku kosztuje tylko jego funkcję, a nie cały config.
+local function require_optional(path)
+    local f = io.open(path, "r")
+    if not f then return end
+    f:close()
+    require(path)
+end
+
 local mainMod      = "SUPER"
 local terminal     = "alacritty"
 local filemanager  = "thunar"
@@ -40,11 +52,13 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("waybar")
     hl.exec_cmd("hyprpaper")
     hl.exec_cmd("mako")
+    hl.exec_cmd("swayosd-server")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("wl-paste --type text  --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 require(HOME .. "/archenemy/config/hypr/autostartpersonalisation.lua")
+require_optional(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
 
 hl.config({
     xwayland = {
@@ -138,8 +152,12 @@ hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("hyprctl switchxkblayout all next"))
 
 hl.config({
     input = {
-        kb_layout  = "pl,us",
-        kb_options = "grp:alt_shift_toggle",
+        -- Bez kb_options: grp:alt_shift_toggle kolidował z AltGr+Shift+litera
+        -- (wielkie polskie znaki, np. Ż) — Prawy Alt+Prawy Shift jest w XKB
+        -- naraz group-togglem I drogą do 4. poziomu klawisza, więc próba
+        -- napisania Ż przełączała układ i połykała znak. Jedyny przełącznik
+        -- układu: Super+K (hyprctl switchxkblayout, wyżej w bindach).
+        kb_layout = "pl,us",
 
         follow_mouse  = 1,
         sensitivity   = 0,

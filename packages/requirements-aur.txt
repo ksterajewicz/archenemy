@@ -1,3 +1,7 @@
 # made by kst - https://github.com/ksterajewicz
 networkmanager-dmenu
 brave-bin
+# swayosd-git: OSD jasności — pasek u dołu WSZYSTKICH monitorów przy zmianie
+# jasności (klawisze XF86MonBrightness → swayosd-client). swayosd-server
+# autostartuje każdy rice; motyw per rice w rices/*/swayosd/style.css
+swayosd-git

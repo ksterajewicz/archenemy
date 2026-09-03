@@ -96,6 +96,13 @@ waybar & disown
 # w motywie POPRZEDNIEGO rice'a (np. białe mako w tronie).
 makoctl reload >/dev/null 2>&1
 
+# swayosd-server też czyta style.css tylko przy starcie (brak live-reloadu),
+# więc po zmianie rice'a restart, żeby OSD jasności miało motyw nowego rice'a.
+if command -v swayosd-server >/dev/null 2>&1; then
+    pkill -x swayosd-server 2>/dev/null
+    swayosd-server & disown
+fi
+
 # hyprpaper.conf jest wspólny (warstwa maszynowa, symlink w każdym rice),
 # więc restart hyprpapera przy zmianie rice'a nie jest już potrzebny —
 # tapety przywraca --restore wyżej (z własnym fallbackiem restartu).

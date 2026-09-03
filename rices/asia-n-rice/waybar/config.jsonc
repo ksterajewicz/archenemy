@@ -9,13 +9,12 @@
     "reload_style_on_change": true,
     "modules-left":   ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock"],
-    "modules-right":  ["custom/profileswitcher", "custom/micmute", "pulseaudio", "network", "battery", "tray"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "battery", "tray"],
     // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
     // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
     // który czyta tryb (decades: r±1, shared: e±1) — jak bindy klawiatury.
     "hyprland/workspaces": {
         "format": "{name}",
-        "on-click": "activate",
         "on-scroll-up": "~/archenemy/scripts/hypr/ws-scroll.sh up",
         "on-scroll-down": "~/archenemy/scripts/hypr/ws-scroll.sh down",
         "all-outputs": false,
@@ -34,21 +33,22 @@
         "format": "{:%H:%M:%S}",
         "format-alt": "{:%a, %d %b · %H:%M:%S}",
         "interval": 1,
-        "tooltip-format": "<tt><big>{:%Y-%m-%d %H:%M}</big>\n\n{calendar}</tt>",
-        // iso8601: tydzień od poniedziałku + numeracja ISO ({:%V}) niezależnie
-        // od locale. Nawigacja (blok actions): scroll na zegarze = miesiące,
-        // PPM = widok rok/miesiąc; LPM zostaje domyślnym przełącznikiem format-alt.
+        // Nagłówek tooltipa = pełna data dnia w akcencie mauve; niżej siatka miesiąca.
+        "tooltip-format": "<tt><span color='#b47687'><big>{:%A, %d %B %Y}</big></span>\n\n{calendar}</tt>",
+        // Kalendarz miesięczny BEZ kolumny numerów tygodni — ISO-tygodnie (31-36)
+        // po lewej w pionie myliły się z dniami sąsiedniego miesiąca; usunięte
+        // 2026-08-10. iso8601 zostaje = tydzień od poniedziałku. Akcent kalendarza
+        // dostrojony do mauve rice'a (był szary). Nawigacja (actions): scroll na
+        // zegarze = miesiące, PPM = rok/miesiąc; LPM = format-alt.
         "calendar": {
             "mode": "month",
-            "weeks-pos": "left",
             "on-scroll": 1,
             "iso8601": true,
             "format": {
-                "months":   "<span color='#e8e8e8'><b>{}</b></span>",
+                "months":   "<span color='#b47687'><b>{}</b></span>",
                 "days":     "<span color='#b0b0b0'>{}</span>",
-                "weeks":    "<span color='#5c5c5c'>{:%V}</span>",
                 "weekdays": "<span color='#5c5c5c'>{}</span>",
-                "today":    "<span color='#0a0a0a' background='#e8e8e8'><b>{}</b></span>"
+                "today":    "<span color='#2a3444' background='#b47687'><b>{}</b></span>"
             }
         },
         "actions": {
@@ -62,9 +62,9 @@
     // odświeża moduł po przełączeniu. NIE wołamy asusctl bezpośrednio.
     "custom/profileswitcher": {
         "exec": "~/archenemy/scripts/waybar/profile-get.sh",
-        "interval": 1,
+        "interval": 0.5,
         "format": "󰓅 {}",
-        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh",
+        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh; pkill -RTMIN+8 waybar",
         "signal": 8,
         "tooltip": false
     },
@@ -76,18 +76,18 @@
         "signal": 9,
         "tooltip": false
     },
-    "pulseaudio": {
-        "format": "{icon} {volume}%",
-        "format-muted": "󰖁",
-        "format-icons": {
-            "headphone":  "󰋋",
-            "hands-free": "󰋎",
-            "headset":    "󰋎",
-            "default":    ["󰕿", "󰖀", "󰕾"]
-        },
+    // Pasek głośności (skrypt renderuje ▮▮▯ + %); styl przełączalny w Super+A
+    // → [v]. Reaguje: interval:1 (backstop) + signal:10 (klawisze/scroll wołają
+    // pkill -RTMIN+10). exec-on-event odświeża od razu po scrollu/kliknięciu.
+    "custom/volumebar": {
+        "exec": "~/archenemy/scripts/waybar/volume-bar.sh",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 10,
+        "on-scroll-up": "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+",
+        "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
         "on-click": "pavucontrol",
-        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
-        "scroll-step": 5
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
     "network": {
         "format-wifi":         "󰖩 {essid}",
