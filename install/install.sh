@@ -816,6 +816,26 @@ source "$ARCHENEMY_DIR/scripts/hypr/lib/gen-autostart.sh"
 generate_autostart_apps "$DATA_DIR/autostart-apps.dat" "$HYPR_LOCAL_DIR/autostart-apps.lua"
 echo -e "  ${GREEN}✓ autostart-apps.lua${NC}"
 
+# 8k. Timer waybara (moduł custom/timer; ustawienia w Super+A → [t]) — seed
+# domyślnych. Timer jest OPCJONALNY, dlatego enabled=0: świeża instalacja ma
+# pasek jak dotąd, dopóki właściciel go nie włączy. Skrypty timera mają własne
+# fallbacki, ale seed daje wykrywalność (pliki widać w data/) i spójność
+# z volume-bar-style.dat. Istniejących plików NIE nadpisujemy. Stanu biegu
+# (timer-state.dat) nie seedujemy — tworzy go pierwsze kliknięcie w pasek.
+seed_dat() {
+    local file="$1" value="$2"
+    if [[ ! -f "$file" ]]; then
+        mkdir -p "$DATA_DIR"
+        echo "$value" > "$file"
+        echo -e "  ${GREEN}✓ $(basename "$file") ($value)${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ $(basename "$file") istnieje — nie ruszam.${NC}"
+    fi
+}
+seed_dat "$DATA_DIR/timer-enabled.dat"  "0"
+seed_dat "$DATA_DIR/timer-duration.dat" "25"
+seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
+
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
 

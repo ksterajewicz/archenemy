@@ -25,8 +25,9 @@ playerctl
 brightnessctl
 # power profiles (universal profile switcher)
 power-profiles-daemon
-# libnotify: notify-send — powiadomienia z 6 skryptów (zmiana rice'a,
-# tapety, sieć, profile zasilania); mako tylko WYŚWIETLA, nie wysyła
+# libnotify: notify-send — powiadomienia z 7 skryptów (zmiana rice'a,
+# tapety, sieć, profile zasilania, koniec odliczania timera waybara);
+# mako tylko WYŚWIETLA, nie wysyła
 libnotify
 # socat: nasłuch zdarzeń Hyprlanda (socket2) w workspace-orphan-guard.sh —
 # scalanie workspace'ów po odpięciu monitora; bez socat guard

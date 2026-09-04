@@ -114,6 +114,7 @@ archenemy/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
 │   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo;
 │   │                                 #   [v] przełącza styl paska głośności w waybarze;
+│   │                                 #   [t] timer waybara: włącz/wyłącz, domyślny czas, kolor;
 │   │                                 #   autostart-picker.sh — [u] wybór aplikacji do autostartu
 │   │                                 #   (checkboxy + filtr, czysty bash).
 │   ├── changing-theme-scripts/       # Po jednym stubie na rice (nazwa pliku = pozycja w menu);
@@ -132,6 +133,9 @@ archenemy/
 │   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny) +
 │                                     #   volume-bar.sh — pasek głośności zamiast modułu pulseaudio;
 │                                     #   styl line/ticks/solid przełączalny w Super+A → [v].
+│                                     #   timer.sh + timer-ctl.sh — timer (odliczanie) obok zegara,
+│                                     #   opcjonalny, włączany w Super+A → [t];
+│                                     #   lib/timer-state.sh — wspólny odczyt/zapis stanu timera.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     └── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
@@ -167,13 +171,35 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 
 `Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.lua` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
 
-To samo TUI ma dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y"), `[u] autostart apps` — wybór aplikacji odpalanych przy starcie Hyprlanda z listy wszystkich wpisów `.desktop` (checkboxy `[x]`/`[ ]`, filtrowanie po nazwie przez `/tekst`; wybór ląduje w `data/autostart-apps.dat`, a z niego generowany jest osobisty `config/hypr/autostart-apps.lua` — obok ręcznego `autostartpersonalisation.lua`, którego ta warstwa nie dotyka), `[v] volume bar` — styl paska głośności w waybarze (`line` ━━━━━━────, `ticks` ▮▮▮▮▮▮▯▯▯▯, `solid` ▬▬▬▬▬▬▬▬──────), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara), oraz `[p] update archenemy` — aktualizator repo: wybierasz gałąź (`dev` — najnowsze zmiany / `main` — tylko stabilne wydania), skrypt robi `git fetch`/`checkout`/`pull --ff-only`, a lokalne zmiany w plikach śledzonych przez git chowa `git stash` na czas pull i przywraca po nim. Warstwa maszynowa i osobista (monitory, appbinds, autostart, rice, styl paska głośności...) jest poza gitem, więc update jej nie rusza — Twoje ustawienia zostają domyślnie bez zmian. Na końcu proponuje ponowne uruchomienie `install.sh`, żeby dogenerować ewentualne nowe pliki maszynowe.
+To samo TUI ma dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y"), `[u] autostart apps` — wybór aplikacji odpalanych przy starcie Hyprlanda z listy wszystkich wpisów `.desktop` (checkboxy `[x]`/`[ ]`, filtrowanie po nazwie przez `/tekst`; wybór ląduje w `data/autostart-apps.dat`, a z niego generowany jest osobisty `config/hypr/autostart-apps.lua` — obok ręcznego `autostartpersonalisation.lua`, którego ta warstwa nie dotyka), `[v] volume bar` — styl paska głośności w waybarze (`line` ━━━━━━────, `ticks` ▮▮▮▮▮▮▯▯▯▯, `solid` ▬▬▬▬▬▬▬▬──────), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara), `[t] timer` — timer odliczający obok zegara (sekcja „Timer"), oraz `[p] update archenemy` — aktualizator repo: wybierasz gałąź (`dev` — najnowsze zmiany / `main` — tylko stabilne wydania), skrypt robi `git fetch`/`checkout`/`pull --ff-only`, a lokalne zmiany w plikach śledzonych przez git chowa `git stash` na czas pull i przywraca po nim. Warstwa maszynowa i osobista (monitory, appbinds, autostart, rice, styl paska głośności...) jest poza gitem, więc update jej nie rusza — Twoje ustawienia zostają domyślnie bez zmian. Na końcu proponuje ponowne uruchomienie `install.sh`, żeby dogenerować ewentualne nowe pliki maszynowe.
 
-Menu główne TUI (Super+A) i potwierdzenia w podmenu (`[v]`, `[w]`, `[p]`) odpowiadają na jeden klawisz bez Entera — `Escape` wychodzi/anuluje tak samo jak `q`/`N`.
+Menu główne TUI (Super+A) i potwierdzenia w podmenu (`[v]`, `[w]`, `[t]`, `[p]`) odpowiadają na jeden klawisz bez Entera (wyjątek: wpisywanie czasu i koloru w `[t]` kończysz Enterem) — `Escape` wychodzi/anuluje tak samo jak `q`/`N`.
 
 Głośność: moduł `pulseaudio` waybara zastąpiony własnym `custom/volumebar` (skrypt `scripts/waybar/volume-bar.sh`) — rysuje pasek wypełnienia z procentem zamiast samej ikony. Scroll na pasku i klawisze głośności działają jak dotąd (klawisze sprzętowe dodatkowo wysyłają do waybara sygnał 10 = natychmiastowe odświeżenie paska). Klik: LPM `pavucontrol`, PPM mute. Trzy style do wyboru w `Super+A` → `[v]`: `line` (cienka kreska, 10 komórek), `ticks` (segmenty ▮▮▯, 10 komórek) i `solid` (gruby blok głośności na cienkiej linii, dłuższy — 14 komórek). Stan `>100%` (boost) ma osobną klasę koloru per rice. Ikona głośnika automatycznie zamienia się na słuchawki, gdy Active Port domyślnego sinka (z `pactl`) wskazuje na wyjście słuchawkowe — i wraca do głośnika po odpięciu; wykrywane w tym samym backstopie `interval:1`, bez osobnego triggera.
 
 Jasność ekranu: klawisze `XF86MonBrightness*` wołają `swayosd-client` — zmieniają jasność i pokazują pasek OSD u dołu wszystkich monitorów (serwer `swayosd-server` startuje z każdym rice'em i jest restartowany przy przełączeniu rice'a, bo czyta motyw tylko przy starcie). Motyw OSD per rice: `rices/*/swayosd/style.css` (beta dziedziczy z white-blue przez symlink). Pakiet: `swayosd-git` (AUR).
+
+## Timer
+
+Opcjonalny timer odliczający, jako **osobna wyspa tuż po prawej od zegara**
+(własna pigułka, nie doklejona do zegara). Domyślnie wyłączony — włączasz go
+w `Super + A` → `[t] timer`, tam też ustawiasz domyślny czas (domyślnie 25 min)
+i kolor cyfr: **czerwony `#ff0000` niezależnie od rice'a**, zmienialny na
+dowolny `#rrggbb` wpisany w TUI. Kolor idzie przez pango prosto ze skryptu, więc
+zmienia się wyłącznie kolor cyfr — pigułka pod spodem zostaje w palecie rice'a.
+
+Sterowanie na pasku: **LPM** start / pauza / wznowienie (a na odliczonym timerze
+— skasowanie alarmu), **PPM** reset do domyślnego czasu, **scroll** ±1 minuta
+(działa tylko, gdy timer stoi albo jest zapauzowany — biegnącego odliczania
+scroll nie rusza). Po dojściu do zera leci jedno powiadomienie (`notify-send`).
+Odliczanie liczy się z zegara ściennego, więc przeładowanie waybara ani zmiana
+rice'a go nie przesuwają. Wyłączenie timera w TUI chowa moduł całkowicie —
+zegar wraca wtedy dokładnie na środek paska.
+
+Ustawienia i stan mieszkają w warstwie maszynowej (poza gitem):
+`data/timer-enabled.dat`, `timer-duration.dat`, `timer-color.dat`,
+`timer-state.dat`. `white-blue_beta` timera nie ma (rice zamrożony —
+tylko bugfixy).
 
 ## Skróty klawiszowe
 

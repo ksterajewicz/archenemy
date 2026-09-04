@@ -46,6 +46,31 @@ window#waybar {
     letter-spacing: 0.02em;
 }
 
+/* Timer: druga wyspa środka, ta sama płaska pigułka co zegar (granat, bez
+   glow — cecha tego rice'a), odsunięta o 4 px = rytm odstępów paska.
+   BEZ reguły `color` — kolor cyfr ustawia timer.sh pango-spanem
+   (czerwony domyślnie, hex z Super+A → [t]). */
+#custom-timer {
+    font-size:      13px;
+    font-weight:    500;
+    padding:        0 14px;
+    margin-left:    4px;
+    background:     rgba(42, 52, 68, 0.55);
+    border:         0.5px solid rgba(0, 0, 0, 0.05);
+    border-radius:  14px;
+    letter-spacing: 0.02em;
+}
+
+/* Wyłączony w TUI: skrypt zwraca pusty tekst i waybar chowa moduł. Ta klasa
+   zeruje pigułkę na wypadek, gdyby pusty moduł mimo wszystko został
+   narysowany. */
+#custom-timer.off {
+    padding:    0;
+    margin:     0;
+    background: transparent;
+    border:     none;
+}
+
 #workspaces {
     padding: 0 4px;
 }

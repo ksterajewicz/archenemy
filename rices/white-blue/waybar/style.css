@@ -11,12 +11,16 @@ window#waybar {
     background: transparent;
     color:      #0a0a0a;
 }
+/* Wcięcie brzegowe wysp: pierwszy i ostatni element ma mieć do krawędzi
+   wyspy nie mniej światła niż do sąsiada, inaczej treść wygląda na wciśniętą
+   w obwódkę. Lewa wyspa trzyma pigułki (tła sięgają dalej niż litery), prawa
+   goły tekst — dlatego prawa dostaje większe wcięcie niż lewa. */
 .modules-left {
     background:    rgba(255, 255, 255, 0.40);
     color:         #0a0a0a;
     border:        0.5px solid rgba(1, 72, 237, 0.10);
     border-radius: 14px;
-    padding:       0 4px;
+    padding:       0 6px;
     margin:        0 4px 0 0;
 }
 .modules-right {
@@ -24,7 +28,7 @@ window#waybar {
     color:         #0a0a0a;
     border:        0.5px solid rgba(1, 72, 237, 0.10);
     border-radius: 14px;
-    padding:       0 10px;
+    padding:       0 9px;
     margin:        0 0 0 4px;
 }
 .modules-center {
@@ -40,14 +44,41 @@ window#waybar {
     border-radius:  14px;
     letter-spacing: 0.04em;
 }
+/* Timer: druga wyspa środka, ta sama pigułka co zegar (tożsamość rice'a),
+   odsunięta o 4 px = rytm odstępów paska. BEZ reguły `color` — kolor cyfr
+   ustawia timer.sh pango-spanem (czerwony domyślnie, hex z Super+A → [t]). */
+#custom-timer {
+    font-size:      12.5px;
+    font-weight:    600;
+    padding:        0 14px;
+    margin-left:    4px;
+    background:     rgba(255, 255, 255, 0.40);
+    border:         0.5px solid rgba(1, 72, 237, 0.10);
+    border-radius:  14px;
+    letter-spacing: 0.04em;
+}
+/* Wyłączony w TUI: skrypt zwraca pusty tekst i waybar chowa moduł. Ta klasa
+   zeruje pigułkę na wypadek, gdyby pusty moduł mimo wszystko został
+   narysowany — zegar nie może obok siebie dostać pustego prostokąta. */
+#custom-timer.off {
+    padding:    0;
+    margin:     0;
+    background: transparent;
+    border:     none;
+}
+/* Wcięcie pierwszej pigułki od krawędzi wyspy = padding wyspy + ten padding
+   + margin przycisku (6+2+1 = 9 px). Reszta światła przeniesiona do wyspy,
+   żeby dało się nim sterować w jednym miejscu. */
 #workspaces {
-    padding: 0 4px;
+    padding: 0 2px;
 }
 #workspaces button {
     color:         #909090;
     background:    transparent;
     padding:       1px 7px;
-    margin:        2px 1px;
+    /* 3 px zamiast 2: pigułka nie dotyka niemal obwódki wyspy (32-6 = 26 px
+       wysokości) i ma ten sam rytm pionowy co pigułka krytycznej baterii */
+    margin:        3px 1px;
     border-radius: 10px;
     min-width:     0;
     /* Subtelne rozszerzenie pigułki przy aktywacji — bez glow, technicznie */

@@ -54,6 +54,17 @@ read_key() {
     printf '%s' "$key"
 }
 
+# Zapis jednowartościowego pliku warstwy maszynowej (data/*.dat) — atomowo
+# (tmp + mv), bo moduły waybara czytają te pliki co sekundę i nie mogą trafić
+# na zapis w połowie. Jedno miejsce dla wszystkich menu TUI.
+write_dat() {
+    local file="$1" value="$2" tmp
+    mkdir -p "$(dirname "$file")"
+    tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
+    printf '%s\n' "$value" > "$tmp"
+    mv "$tmp" "$file"
+}
+
 # ─── PLIK BINDÓW ──────────────────────────────────────────────────────────────
 
 # Upewnij się, że plik istnieje (install.sh go tworzy, ale nie zakładaj)
@@ -336,13 +347,88 @@ volume_style_menu() {
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    mkdir -p "$(dirname "$style_dat")"
-    local tmp
-    tmp="$(mktemp "${style_dat}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return; }
-    printf '%s\n' "$target" > "$tmp"
-    mv "$tmp" "$style_dat"
+    write_dat "$style_dat" "$target" || return
     pkill -RTMIN+10 waybar 2>/dev/null
     echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
+}
+
+# ─── TIMER (waybar) ──────────────────────────────────────────────────────────
+
+# Ustawienia modułu custom/timer: włączenie na pasku, domyślny czas odliczania
+# i kolor tekstu. Pliki data/timer-*.dat czyta scripts/waybar/timer.sh; po
+# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu.
+# Sam bieg timera (start/pauza/reset) obsługuje pasek, nie to menu.
+timer_menu() {
+    local lib="$ARCHENEMY_DIR/scripts/waybar/lib/timer-state.sh"
+    if [[ ! -f "$lib" ]]; then
+        echo -e "  ${RED}✗ Missing ${lib} — run ./install/install.sh once.${NC}"
+        return
+    fi
+    # shellcheck source=/dev/null
+    source "$lib"
+
+    local enabled_label="off"
+    timer_enabled && enabled_label="on"
+    timer_load_state
+
+    echo ""
+    echo -e "  Timer (waybar): ${CYAN}${enabled_label}${NC} · ${CYAN}$(timer_duration_minutes) min${NC} · ${CYAN}$(timer_color)${NC} · now: ${CYAN}${TIMER_STATUS}${NC}"
+    if [[ "$enabled_label" == "on" ]]; then
+        echo -e "    ${BLUE}1${NC}) turn off"
+    else
+        echo -e "    ${BLUE}1${NC}) turn on"
+    fi
+    echo -e "    ${BLUE}2${NC}) default duration (minutes)"
+    echo -e "    ${BLUE}3${NC}) text colour (hex)"
+    echo ""
+    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+
+    case "$ans" in
+        1)
+            local target="1"
+            [[ "$enabled_label" == "on" ]] && target="0"
+            write_dat "$TIMER_ENABLED_DAT" "$target" || return
+            if [[ "$target" == "1" ]]; then
+                echo -e "  ${GREEN}✓ Timer shown on the bar.${NC}"
+            else
+                echo -e "  ${GREEN}✓ Timer hidden (the clock goes back to the exact centre).${NC}"
+            fi
+            ;;
+        2)
+            local mins
+            read -rp "  Default duration in minutes [1-${TIMER_MAX_MINUTES}]: " mins
+            mins=$(trim "$mins")
+            if [[ ! "$mins" =~ ^[0-9]+$ ]] || (( mins < 1 || mins > TIMER_MAX_MINUTES )); then
+                echo -e "  ${RED}✗ '${mins}' is not a number between 1 and ${TIMER_MAX_MINUTES}.${NC}"
+                return
+            fi
+            write_dat "$TIMER_DURATION_DAT" "$mins" || return
+            # Nowy czas ma być widoczny od razu — ale tylko wtedy, gdy nie
+            # przerwie trwającego odliczania (reset zabiłby bieg w połowie).
+            if [[ "$TIMER_STATUS" == "running" ]]; then
+                echo -e "  ${YELLOW}⚠ Timer is running — the new default applies after a reset (RMB on the bar).${NC}"
+            else
+                bash "$ARCHENEMY_DIR/scripts/waybar/timer-ctl.sh" reset
+            fi
+            echo -e "  ${GREEN}✓ Default duration: ${mins} min${NC}"
+            ;;
+        3)
+            local hex
+            read -rp "  Text colour as hex (e.g. #ff0000): " hex
+            hex=$(trim "$hex")
+            [[ "$hex" == "#"* ]] || hex="#$hex"
+            if [[ ! "$hex" =~ ^#[0-9a-fA-F]{6}$ ]]; then
+                echo -e "  ${RED}✗ '${hex}' is not a #rrggbb colour.${NC}"
+                return
+            fi
+            write_dat "$TIMER_COLOR_DAT" "$hex" || return
+            echo -e "  ${GREEN}✓ Timer colour: ${hex}${NC}"
+            ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
+    esac
+
+    pkill -RTMIN+11 waybar 2>/dev/null
 }
 
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
@@ -360,7 +446,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")"
 
@@ -370,6 +456,7 @@ while :; do
         s|S) show_all_binds; continue ;;
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
+        t|T) timer_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
         q|Q|$'\e') exit 0 ;;
