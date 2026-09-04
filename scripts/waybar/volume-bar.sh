@@ -36,6 +36,14 @@ ARCHENEMY_DIR="$HOME/archenemy"
 STYLE_DAT="$ARCHENEMY_DIR/data/volume-bar-style.dat"
 SINK="@DEFAULT_AUDIO_SINK@"
 
+# Pion ikony słuchawek. Zgłoszenie właściciela 2026-09-04: glif słuchawek 󰋋
+# siedzi w Iosevce NIŻEJ niż głośnik 󰕾 i mikrofon 󰍬 — ikony nie stoją w jednej
+# linii. Korekta idzie pango-spanem na SAMYM glifie, nie CSS-em: reguła w
+# style.css ruszyłaby cały moduł (pasek i procent razem z ikoną), a to różnica
+# metryk jednego glifu. Jednostka `rise` = 1/1024 punktu: dodatnia w górę,
+# ujemna w dół, 0 = bez korekty (wtedy skrypt nie owija ikony w ogóle).
+# 512 ≈ ½ pt ≈ 0,7 px przy foncie 12 px — pierwsza kalibracja, dostrajasz TU.
+ICON_RISE_HEADPHONES=512
 
 STYLE="line"
 [[ -f "$STYLE_DAT" ]] && STYLE="$(<"$STYLE_DAT")"
@@ -92,7 +100,12 @@ fi
 if (( muted )); then
     icon="󰖁"; class="muted"
 elif (( headphones )); then
-    icon="󰋋"
+    # Jedyna ikona z korektą pionu (patrz ICON_RISE_HEADPHONES na górze).
+    if (( ICON_RISE_HEADPHONES != 0 )); then
+        icon="<span rise='${ICON_RISE_HEADPHONES}'>󰋋</span>"
+    else
+        icon="󰋋"
+    fi
     if (( pct > 100 )); then class="boost"; else class="normal"; fi
 else
     if   (( pct == 0 ));  then icon="󰕿"
