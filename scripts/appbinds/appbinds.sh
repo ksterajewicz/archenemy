@@ -307,26 +307,33 @@ workspace_mode_menu() {
 
 # ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
 
-# Wybór stylu paska custom/volumebar (segments/blocks). Zapis do
+# Wybór stylu paska custom/volumebar (line/ticks/solid). Zapis do
 # data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
 # sygnał 10 do waybara = pasek przerysowuje się od razu.
 volume_style_menu() {
     local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
-    local cur="segments"
+    local cur="line"
     [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
+    cur="${cur//[[:space:]]/}"
+    # Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
+    # (w tym nazwy stylów wycofanych 2026-09-03) jest efektywnie "line" — menu
+    # nie może pokazywać stylu, którego skrypt już nie zna.
+    [[ "$cur" == "ticks" || "$cur" == "solid" ]] || cur="line"
 
     echo ""
     echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
-    echo -e "    ${BLUE}1${NC}) segments   ▮▮▮▮▮▮▯▯▯▯"
-    echo -e "    ${BLUE}2${NC}) blocks     ██████░░░░"
+    echo -e "    ${BLUE}1${NC}) line    ━━━━━━────"
+    echo -e "    ${BLUE}2${NC}) ticks   ▮▮▮▮▮▮▯▯▯▯"
+    echo -e "    ${BLUE}3${NC}) solid   ▬▬▬▬▬▬▬▬──────"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-2, Esc = cancel]: ")"
+    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
     local target=""
     case "$ans" in
-        1) target="segments" ;;
-        2) target="blocks" ;;
+        1) target="line" ;;
+        2) target="ticks" ;;
+        3) target="solid" ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
-        *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}"; return ;;
+        *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
     mkdir -p "$(dirname "$style_dat")"

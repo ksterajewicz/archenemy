@@ -6,10 +6,18 @@
 #   Zamiast tekstu "{icon} {volume}%" rysuje pasek wypełnienia z liczbą %.
 #
 #   Styl paska bierze z data/volume-bar-style.dat (przełączalny na żywo w
-#   TUI Super+A → [v] volume bar); fallback "segments":
-#     segments → ▮▮▮▮▮▮▯▯▯▯   blocks → ██████░░░░
-#   Pasek ma stałą liczbę komórek (CELLS); wypełnienie liczone z procentu
-#   z capem 100% — boost >100% daje pełny pasek + realną liczbę (klasa boost).
+#   TUI Super+A → [v] volume bar). Trzy style, fallback "line":
+#     line  → ━━━━━━────         (domyślny: ciągła cienka kreska, ~2 px kreski)
+#     ticks → ▮▮▮▮▮▮▯▯▯▯         (segmentowany wskaźnik)
+#     solid → ▬▬▬▬▬▬▬▬──────     (gruby blok głośności na cienkiej linii,
+#                                 dłuższy: 14 komórek zamiast 10)
+#   Warstwa maszynowa (.dat) jest poza gitem i po aktualizacji repo może
+#   trzymać nazwę sprzed 2026-09-03 ("segments"/"blocks" — style wycofane jako
+#   za grube). KAŻDA nierozpoznana wartość spada na "line", więc stary plik
+#   daje nowy domyślny wygląd, a nie pusty ani surowy pasek.
+#   Pasek ma stałą liczbę komórek (CELLS — zależną od stylu); wypełnienie
+#   liczone z procentu z capem 100% — boost >100% daje pełny pasek + realną
+#   liczbę (klasa boost).
 #
 #   Reaguje na zmiany: interval:1 (backstop: pavucontrol/BT) + signal 10
 #   (klawisze sprzętowe i scroll wołają pkill -RTMIN+10 waybar). Ten sam
@@ -25,10 +33,19 @@ set -uo pipefail
 ARCHENEMY_DIR="$HOME/archenemy"
 STYLE_DAT="$ARCHENEMY_DIR/data/volume-bar-style.dat"
 SINK="@DEFAULT_AUDIO_SINK@"
-CELLS=10
 
-STYLE="segments"
+STYLE="line"
 [[ -f "$STYLE_DAT" ]] && STYLE="$(<"$STYLE_DAT")"
+STYLE="${STYLE//[[:space:]]/}"   # plik pisany ręcznie potrafi mieć \n, spacje, CR
+
+# Długość paska i znaki wypełnienia — JEDNO miejsce na styl, bo CELLS musi być
+# znane przed liczeniem wypełnienia, a znaki dopiero przy rysowaniu.
+# Nierozpoznana wartość (w tym nazwy stylów wycofanych) spada na "line".
+case "$STYLE" in
+    ticks) CELLS=10; CH_FILL='▮'; CH_EMPTY='▯' ;;
+    solid) CELLS=14; CH_FILL='▬'; CH_EMPTY='─' ;;
+    *)     CELLS=10; CH_FILL='━'; CH_EMPTY='─' ;;
+esac
 
 # ─── Odczyt głośności ─────────────────────────────────────────────────────────
 # wpctl get-volume: "Volume: 0.60" albo "Volume: 0.60 [MUTED]"
@@ -51,15 +68,7 @@ empty=$(( CELLS - filled ))
 # ─── Render paska wg stylu ────────────────────────────────────────────────────
 repeat() { local n="$1" ch="$2" out=""; while (( n-- > 0 )); do out+="$ch"; done; printf '%s' "$out"; }
 
-case "$STYLE" in
-    blocks)
-        bar="$(repeat "$filled" '█')$(repeat "$empty" '░')"
-        ;;
-    *)  # segments (domyślny)
-        STYLE="segments"
-        bar="$(repeat "$filled" '▮')$(repeat "$empty" '▯')"
-        ;;
-esac
+bar="$(repeat "$filled" "$CH_FILL")$(repeat "$empty" "$CH_EMPTY")"
 
 # ─── Wykrycie słuchawek ───────────────────────────────────────────────────────
 # Active Port domyślnego sinka z pactl (pipewire-pulse) — nazwy portów

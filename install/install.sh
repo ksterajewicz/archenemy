@@ -795,13 +795,14 @@ generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-tron.conf" "0.
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-asia-n-rice.conf" "0.85"
 
 # 8i. Styl paska głośności waybara (przełączalny w Super+A → [v]) — seed
-# domyślny. volume-bar.sh ma fallback "segments", ale seed daje wykrywalność
-# i spójność z workspace-mode.dat.
+# domyślny. volume-bar.sh ma fallback "line", ale seed daje wykrywalność
+# i spójność z workspace-mode.dat. Istniejącego pliku NIE nadpisujemy — stare
+# nazwy stylów volume-bar.sh sam interpretuje jako "line".
 VOLSTYLE_DAT="$DATA_DIR/volume-bar-style.dat"
 if [[ ! -f "$VOLSTYLE_DAT" ]]; then
     mkdir -p "$DATA_DIR"
-    echo "segments" > "$VOLSTYLE_DAT"
-    echo -e "  ${GREEN}✓ volume-bar-style.dat (segments)${NC}"
+    echo "line" > "$VOLSTYLE_DAT"
+    echo -e "  ${GREEN}✓ volume-bar-style.dat (line)${NC}"
 else
     echo -e "  ${YELLOW}⚠ volume-bar-style.dat istnieje — nie ruszam.${NC}"
 fi
