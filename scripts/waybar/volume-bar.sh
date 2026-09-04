@@ -9,8 +9,10 @@
 #   TUI Super+A → [v] volume bar). Trzy style, fallback "line":
 #     line  → ━━━━━━────         (domyślny: ciągła cienka kreska, ~2 px kreski)
 #     ticks → ▮▮▮▮▮▮▯▯▯▯         (segmentowany wskaźnik)
-#     solid → ▬▬▬▬▬▬▬▬──────     (gruby blok głośności na cienkiej linii,
-#                                 dłuższy: 14 komórek zamiast 10)
+#     solid → ▬▬▬▬▬▬▬▬▬▬▬▬────────  (gruby blok głośności na cienkiej linii,
+#                                 dłuższy: 20 komórek zamiast 10 — jedna
+#                                 komórka = dokładnie 5%, czyli jeden tick
+#                                 scrolla przesuwa pasek o jedną komórkę)
 #   Warstwa maszynowa (.dat) jest poza gitem i po aktualizacji repo może
 #   trzymać nazwę sprzed 2026-09-03 ("segments"/"blocks" — style wycofane jako
 #   za grube). KAŻDA nierozpoznana wartość spada na "line", więc stary plik
@@ -34,6 +36,7 @@ ARCHENEMY_DIR="$HOME/archenemy"
 STYLE_DAT="$ARCHENEMY_DIR/data/volume-bar-style.dat"
 SINK="@DEFAULT_AUDIO_SINK@"
 
+
 STYLE="line"
 [[ -f "$STYLE_DAT" ]] && STYLE="$(<"$STYLE_DAT")"
 STYLE="${STYLE//[[:space:]]/}"   # plik pisany ręcznie potrafi mieć \n, spacje, CR
@@ -43,7 +46,7 @@ STYLE="${STYLE//[[:space:]]/}"   # plik pisany ręcznie potrafi mieć \n, spacje
 # Nierozpoznana wartość (w tym nazwy stylów wycofanych) spada na "line".
 case "$STYLE" in
     ticks) CELLS=10; CH_FILL='▮'; CH_EMPTY='▯' ;;
-    solid) CELLS=14; CH_FILL='▬'; CH_EMPTY='─' ;;
+    solid) CELLS=20; CH_FILL='▬'; CH_EMPTY='─' ;;
     *)     CELLS=10; CH_FILL='━'; CH_EMPTY='─' ;;
 esac
 

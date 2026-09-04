@@ -335,7 +335,7 @@ volume_style_menu() {
     echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
     echo -e "    ${BLUE}1${NC}) line    ━━━━━━────"
     echo -e "    ${BLUE}2${NC}) ticks   ▮▮▮▮▮▮▯▯▯▯"
-    echo -e "    ${BLUE}3${NC}) solid   ▬▬▬▬▬▬▬▬──────"
+    echo -e "    ${BLUE}3${NC}) solid   ▬▬▬▬▬▬▬▬▬▬▬▬────────"
     echo ""
     local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
     local target=""
