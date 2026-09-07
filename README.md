@@ -135,13 +135,22 @@ archenemy/
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
 │   │                                 #   logo Archa (gen_arch_wallpaper.py), siatka Tron
 │   │                                 #   (gen_tron_wallpaper.py) i generatywne tapety ditherowe
-│   │                                 #   rice'a dither-flux (gen_dither_flux_wallpaper.py).
+│   │                                 #   rice'a dither-flux (gen_dither_flux_wallpaper.py);
+│   │                                 #   flux-wall.sh — start/stop tapety liczonej shaderem.
 │   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny) +
 │                                     #   volume-bar.sh — pasek głośności zamiast modułu pulseaudio;
 │                                     #   styl line/ticks/solid przełączalny w Super+A → [v].
 │                                     #   timer.sh + timer-ctl.sh — timer (odliczanie) obok zegara,
 │                                     #   opcjonalny, włączany w Super+A → [t];
 │                                     #   lib/timer-state.sh — wspólny odczyt/zapis stanu timera.
+├── src/
+│   └── flux-wall/                    # Tapeta liczona shaderem na GPU (C, wlr-layer-shell + EGL/GLES 3):
+│       ├── main.c                    #   jedna powierzchnia na monitor, uniformy: resolution, time,
+│       ├── test.c                    #   paleta rice'a, detail (z baterii); testy funkcji czystych;
+│       ├── Makefile                  #   kod protokołów generuje wayland-scanner z XML-i w repo;
+│       ├── protocols/                #   wlr-layer-shell + xdg-shell (XML, licencja MIT/X11);
+│       └── shaders/                  #   dither-flux.frag — domain warping + Bayer 8x8 + paleta.
+│                                     #   Buduje install.sh [9.6]; build/ poza gitem.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
@@ -161,6 +170,25 @@ Na górze menu jest przełącznik **`[x] Upload to all monitors`** (domyślnie z
 Wybór per-monitor jest pamiętany w `data/wallpaper.dat` i przywracany przy zmianie rice'a. Który monitor jest „główny" ustalasz przy instalacji (rola primary/secondary) — instalator sam proponuje: pierwszy = primary, drugi = secondary.
 
 Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem workspace'ów rządzi co innego: **numeracja monitorów lewa→prawa** i **tryb workspace'ów** — oba ustawiane przy instalacji (patrz sekcja „Workspace'y").
+
+## Animowana tapeta liczona shaderem (flux-wall)
+
+`src/flux-wall` to mały klient Waylanda (C, ~600 linii): otwiera powierzchnię na warstwie tła (`wlr-layer-shell`) osobno na każdym monitorze, zakłada kontekst EGL z GLES 3.0 i w każdej klatce rysuje jeden fragment shader. Tapeta nie jest plikiem ani wideo — jest **kodem**: nie ma pętli, nie powtarza się, liczy się natywnie w pikselach fizycznych monitora (raster Bayera 1 px bez skalowania) i zmienia paletę bez regenerowania czegokolwiek.
+
+Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`, `time`, `palette_bg`/`palette_ink`/`palette_accent` (trzy kolory rice'a) i `detail` (0–1). **`detail` steruje szczegółowością z poziomu baterii** (`--battery`: `/sys/class/power_supply/BAT*`): mniej procent = mniej oktaw szumu i wolniejszy dryf, czyli mniej pracy GPU dokładnie wtedy, gdy energii ubywa; na zasilaniu sieciowym pełnia. Zmiana jest interpolowana płynnie.
+
+Budowanie: `install.sh` krok **[9.6]** (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — każde niepowodzenie zostawia tapety w hyprpaper i ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji.
+
+Uruchamianie (etap prototypu — ręcznie, integracja z `Super+W` i przełącznikiem rice'ów po testach na żywej maszynie):
+
+```
+scripts/wallpapers/flux-wall.sh start          # paleta milford-woda, --battery, log w $XDG_RUNTIME_DIR/flux-wall.log
+scripts/wallpapers/flux-wall.sh start -f 30    # limit 30 klatek/s
+scripts/wallpapers/flux-wall.sh start --once   # jedna klatka, bez animacji
+scripts/wallpapers/flux-wall.sh stop
+```
+
+Bezpośrednio: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fps] [-o nazwa-monitora] [--once] [-v]`. Kody wyjścia: 1 argumenty/plik, 2 brak Waylanda lub layer-shell, 3 błąd EGL/shadera — skrypty używają ich do fallbacku. Testy funkcji czystych (paleta, bateria): `make -C src/flux-wall test`.
 
 ## Rice'y
 

@@ -908,6 +908,41 @@ else
 fi
 echo ""
 
+# ─── 9.6 FLUX-WALL (tapeta liczona shaderem) ─────────────────────────────────
+# Pierwszy komponent KOMPILOWANY w repo. Build jest opcjonalny z definicji:
+# każde niepowodzenie (brak kompilatora, brak nagłówków, błąd make) zostawia
+# tapety w hyprpaper jak dotąd i trafia do SUMMARY_SKIPPED — nigdy nie
+# przerywa instalacji i nigdy nie zostawia czarnego ekranu.
+
+echo -e "${CYAN}[9.6] Building flux-wall (shader wallpaper)...${NC}"
+
+FLUX_WALL_DIR="$ARCHENEMY_DIR/src/flux-wall"
+FLUX_WALL_MISSING=()
+for tool in gcc make pkg-config wayland-scanner; do
+    command -v "$tool" &>/dev/null || FLUX_WALL_MISSING+=("$tool")
+done
+for mod in wayland-client wayland-egl egl glesv2; do
+    pkg-config --exists "$mod" 2>/dev/null || FLUX_WALL_MISSING+=("pkg-config:$mod")
+done
+
+if [[ ${#FLUX_WALL_MISSING[@]} -gt 0 ]]; then
+    echo -e "  ${YELLOW}⚠ flux-wall pominięty — brakuje: ${FLUX_WALL_MISSING[*]}${NC}"
+    echo -e "    (pakiety: base-devel wayland mesa; tapety zostają w hyprpaper)"
+    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — brakuje: ${FLUX_WALL_MISSING[*]} (tapety w hyprpaper)")
+elif ! FLUX_WALL_LOG=$(make -C "$FLUX_WALL_DIR" 2>&1); then
+    echo -e "  ${RED}✗ flux-wall: błąd budowania — ostatnie linie:${NC}"
+    echo "$FLUX_WALL_LOG" | tail -5 | sed 's/^/    /'
+    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — błąd make (tapety w hyprpaper; szczegóły: make -C src/flux-wall)")
+elif [[ -x "$FLUX_WALL_DIR/build/flux-wall" ]]; then
+    echo -e "  ${GREEN}✓ flux-wall zbudowany: src/flux-wall/build/flux-wall${NC}"
+    echo -e "    start: scripts/wallpapers/flux-wall.sh start   stop: ... stop"
+    SUMMARY_DONE+=("flux-wall zbudowany (scripts/wallpapers/flux-wall.sh start)")
+else
+    echo -e "  ${RED}✗ flux-wall: make wyszedł czysto, ale binarki nie ma${NC}"
+    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — make bez błędu, brak binarki (tapety w hyprpaper)")
+fi
+echo ""
+
 # ─── 10. UFW + SYSTEMD ────────────────────────────────────────────────────────
 
 echo -e "${CYAN}[10] Optional configuration...${NC}"

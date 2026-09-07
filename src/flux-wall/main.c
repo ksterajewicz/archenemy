@@ -1,0 +1,603 @@
+/*
+ * =============================================
+ *   archenemy - flux-wall
+ *   Tapeta liczona shaderem na warstwie tła (wlr-layer-shell + EGL + GLES 3.0).
+ *
+ *   Jedna powierzchnia na każdy monitor, raster liczony natywnie w pikselach
+ *   fizycznych (bez skalowania — dither jednopikselowy nie znosi skalowania).
+ *   Fragment shader dostaje uniformy:
+ *     vec2  resolution       rozmiar powierzchni w pikselach
+ *     float time             sekundy od startu (animacja)
+ *     vec3  palette_bg/ink/accent   paleta rice'a (0..1)
+ *     float detail           szczegółowość 0..1 (z baterii albo stała)
+ *
+ *   Kody wyjścia (install.sh i przełącznik używają ich do fallbacku na hyprpaper):
+ *     0 ok   1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
+ *     3 błąd EGL/GLES (shader, kontekst)
+ *
+ *   Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]
+ *                     [-f fps] [-o output] [--once] [-v]
+ * =============================================
+ */
+#define _POSIX_C_SOURCE 200809L
+#include <errno.h>
+#include <getopt.h>
+#include <poll.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <wayland-client.h>
+#include <wayland-egl.h>
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES3/gl3.h>
+
+#include "wlr-layer-shell-unstable-v1-client-protocol.h"
+
+/* ── konfiguracja ─────────────────────────────────────────────────────────── */
+
+struct palette { float bg[3], ink[3], accent[3]; };
+
+struct config {
+    const char *shader_path;
+    const char *output_name;     /* NULL = wszystkie monitory */
+    struct palette palette;
+    float detail;                /* wartość stała, gdy battery == false */
+    bool  battery;               /* detail z /sys/class/power_supply */
+    int   fps;                   /* 0 = każda klatka kompozytora */
+    bool  once;                  /* jedna klatka po configure, bez animacji */
+    bool  verbose;
+};
+
+/* ── stan ─────────────────────────────────────────────────────────────────── */
+
+struct state;
+
+struct output {
+    struct state *state;
+    struct wl_output *wl_output;
+    uint32_t global_name;
+    char name[64];
+    int32_t scale;
+    struct wl_surface *surface;
+    struct zwlr_layer_surface_v1 *layer_surface;
+    struct wl_egl_window *egl_window;
+    EGLSurface egl_surface;
+    struct wl_callback *frame_cb;
+    int32_t width, height;       /* piksele fizyczne */
+    bool configured;
+    bool needs_frame;            /* klatka czeka na limit fps */
+    struct output *next;
+};
+
+struct state {
+    struct config cfg;
+    struct wl_display *display;
+    struct wl_registry *registry;
+    struct wl_compositor *compositor;
+    struct zwlr_layer_shell_v1 *layer_shell;
+    struct output *outputs;
+
+    EGLDisplay egl_display;
+    EGLConfig  egl_config;
+    EGLContext egl_context;
+    GLuint program;
+    GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail;
+
+    struct timespec start;
+    double last_render;          /* do limitu fps */
+    float  detail_current;       /* interpolowana wartość uniformu */
+    float  detail_target;
+    double last_battery_poll;
+    bool running;
+};
+
+static void logv(const struct state *s, const char *fmt, ...) {
+    if (!s->cfg.verbose) return;
+    va_list ap; va_start(ap, fmt);
+    fputs("flux-wall: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
+    va_end(ap);
+}
+
+static void die(int code, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    fputs("flux-wall: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
+    va_end(ap);
+    exit(code);
+}
+
+static double now_seconds(void) {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* ── paleta i bateria (bez Waylanda — testowalne osobno) ──────────────────── */
+
+/* "0F1A24" albo "#0F1A24" → rgb 0..1; false przy śmieciach. */
+bool parse_hex_color(const char *hex, float out[3]) {
+    if (!hex) return false;
+    if (*hex == '#') hex++;
+    if (strlen(hex) != 6) return false;
+    for (int i = 0; i < 3; i++) {
+        char buf[3] = { hex[2 * i], hex[2 * i + 1], 0 };
+        char *end;
+        long v = strtol(buf, &end, 16);
+        if (*end != 0) return false;
+        out[i] = (float)v / 255.0f;
+    }
+    return true;
+}
+
+/* "bg,ink,accent" — trzy hexy rozdzielone przecinkami. */
+bool parse_palette(const char *spec, struct palette *p) {
+    if (!spec) return false;
+    char buf[64];
+    if (strlen(spec) >= sizeof buf) return false;
+    strcpy(buf, spec);
+    char *save = NULL;
+    const char *a = strtok_r(buf, ",", &save);
+    const char *b = strtok_r(NULL, ",", &save);
+    const char *c = strtok_r(NULL, ",", &save);
+    if (!a || !b || !c || strtok_r(NULL, ",", &save)) return false;
+    return parse_hex_color(a, p->bg) && parse_hex_color(b, p->ink) && parse_hex_color(c, p->accent);
+}
+
+/* Poziom baterii 0..1 z sysfs; na zasilaniu sieciowym (status Charging/Full)
+ * lub bez baterii → 1.0 (pełna szczegółowość). Ścieżka bazowa jako parametr,
+ * żeby dało się testować na atrapie katalogu. */
+float battery_detail(const char *power_supply_dir) {
+    char path[512];
+    for (int i = 0; i < 4; i++) {
+        snprintf(path, sizeof path, "%s/BAT%d/capacity", power_supply_dir, i);
+        FILE *f = fopen(path, "r");
+        if (!f) continue;
+        int cap = -1;
+        if (fscanf(f, "%d", &cap) != 1) cap = -1;
+        fclose(f);
+        if (cap < 0) continue;
+
+        snprintf(path, sizeof path, "%s/BAT%d/status", power_supply_dir, i);
+        char status[32] = "";
+        f = fopen(path, "r");
+        if (f) { if (!fgets(status, sizeof status, f)) status[0] = 0; fclose(f); }
+        if (strncmp(status, "Charging", 8) == 0 || strncmp(status, "Full", 4) == 0)
+            return 1.0f;
+        if (cap > 100) cap = 100;
+        return (float)cap / 100.0f;
+    }
+    return 1.0f;
+}
+
+/* ── GLES ─────────────────────────────────────────────────────────────────── */
+
+static const char *VERTEX_SRC =
+    "#version 300 es\n"
+    "void main() {\n"
+    "    /* jeden trojkat pokrywajacy caly ekran, bez VBO */\n"
+    "    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);\n"
+    "    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n < 0) { fclose(f); return NULL; }
+    char *buf = malloc((size_t)n + 1);
+    if (!buf) { fclose(f); return NULL; }
+    size_t got = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[got] = 0;
+    return buf;
+}
+
+static GLuint compile_shader(GLenum type, const char *src, const char *label) {
+    GLuint sh = glCreateShader(type);
+    glShaderSource(sh, 1, &src, NULL);
+    glCompileShader(sh);
+    GLint ok = 0;
+    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[4096];
+        glGetShaderInfoLog(sh, sizeof log, NULL, log);
+        die(3, "kompilacja shadera (%s) nie powiodła się:\n%s", label, log);
+    }
+    return sh;
+}
+
+static void build_program(struct state *s) {
+    char *frag = read_file(s->cfg.shader_path);
+    if (!frag) die(1, "nie mogę odczytać shadera: %s (%s)", s->cfg.shader_path, strerror(errno));
+
+    GLuint vs = compile_shader(GL_VERTEX_SHADER, VERTEX_SRC, "vertex");
+    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, frag, s->cfg.shader_path);
+    free(frag);
+
+    s->program = glCreateProgram();
+    glAttachShader(s->program, vs);
+    glAttachShader(s->program, fs);
+    glLinkProgram(s->program);
+    GLint ok = 0;
+    glGetProgramiv(s->program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[4096];
+        glGetProgramInfoLog(s->program, sizeof log, NULL, log);
+        die(3, "linkowanie programu nie powiodło się:\n%s", log);
+    }
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    s->u_resolution = glGetUniformLocation(s->program, "resolution");
+    s->u_time       = glGetUniformLocation(s->program, "time");
+    s->u_bg         = glGetUniformLocation(s->program, "palette_bg");
+    s->u_ink        = glGetUniformLocation(s->program, "palette_ink");
+    s->u_accent     = glGetUniformLocation(s->program, "palette_accent");
+    s->u_detail     = glGetUniformLocation(s->program, "detail");
+    logv(s, "shader zbudowany; uniformy: resolution=%d time=%d bg=%d ink=%d accent=%d detail=%d",
+         s->u_resolution, s->u_time, s->u_bg, s->u_ink, s->u_accent, s->u_detail);
+}
+
+/* ── EGL ──────────────────────────────────────────────────────────────────── */
+
+static void egl_init(struct state *s) {
+    PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display =
+        (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
+    if (get_platform_display)
+        s->egl_display = get_platform_display(EGL_PLATFORM_WAYLAND_EXT, s->display, NULL);
+    else
+        s->egl_display = eglGetDisplay((EGLNativeDisplayType)s->display);
+    if (s->egl_display == EGL_NO_DISPLAY) die(3, "eglGetDisplay nie powiodło się");
+
+    EGLint major, minor;
+    if (!eglInitialize(s->egl_display, &major, &minor)) die(3, "eglInitialize nie powiodło się");
+    logv(s, "EGL %d.%d", major, minor);
+
+    if (!eglBindAPI(EGL_OPENGL_ES_API)) die(3, "eglBindAPI(GLES) nie powiodło się");
+
+    const EGLint config_attribs[] = {
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+        EGL_NONE,
+    };
+    EGLint n = 0;
+    if (!eglChooseConfig(s->egl_display, config_attribs, &s->egl_config, 1, &n) || n < 1)
+        die(3, "brak konfiguracji EGL dla GLES 3 / RGBA8");
+
+    const EGLint ctx_attribs[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE };
+    s->egl_context = eglCreateContext(s->egl_display, s->egl_config, EGL_NO_CONTEXT, ctx_attribs);
+    if (s->egl_context == EGL_NO_CONTEXT) die(3, "eglCreateContext (ES 3.0) nie powiodło się");
+}
+
+/* ── render ───────────────────────────────────────────────────────────────── */
+
+static void output_request_frame(struct output *o);
+
+static void render_output(struct output *o) {
+    struct state *s = o->state;
+    if (!o->configured || !o->egl_surface) return;
+
+    eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+    glViewport(0, 0, o->width, o->height);
+    glUseProgram(s->program);
+
+    double t = now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
+    if (s->u_resolution >= 0) glUniform2f(s->u_resolution, (float)o->width, (float)o->height);
+    if (s->u_time       >= 0) glUniform1f(s->u_time, (float)t);
+    if (s->u_bg         >= 0) glUniform3fv(s->u_bg, 1, s->cfg.palette.bg);
+    if (s->u_ink        >= 0) glUniform3fv(s->u_ink, 1, s->cfg.palette.ink);
+    if (s->u_accent     >= 0) glUniform3fv(s->u_accent, 1, s->cfg.palette.accent);
+    if (s->u_detail     >= 0) glUniform1f(s->u_detail, s->detail_current);
+
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
+    eglSwapBuffers(s->egl_display, o->egl_surface);
+    s->last_render = now_seconds();
+}
+
+static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
+    (void)time_ms;
+    struct output *o = data;
+    wl_callback_destroy(cb);
+    o->frame_cb = NULL;
+
+    struct state *s = o->state;
+    if (s->cfg.fps > 0) {
+        double min_dt = 1.0 / s->cfg.fps;
+        if (now_seconds() - s->last_render < min_dt) { o->needs_frame = true; return; }
+    }
+    render_output(o);
+}
+
+static const struct wl_callback_listener frame_listener = { .done = frame_done };
+
+static void output_request_frame(struct output *o) {
+    if (o->frame_cb) return;
+    o->frame_cb = wl_surface_frame(o->surface);
+    wl_callback_add_listener(o->frame_cb, &frame_listener, o);
+}
+
+/* ── layer surface ────────────────────────────────────────────────────────── */
+
+static void layer_configure(void *data, struct zwlr_layer_surface_v1 *ls,
+                            uint32_t serial, uint32_t w, uint32_t h) {
+    struct output *o = data;
+    struct state *s = o->state;
+    zwlr_layer_surface_v1_ack_configure(ls, serial);
+
+    int32_t pw = (int32_t)w * o->scale, ph = (int32_t)h * o->scale;
+    if (pw <= 0 || ph <= 0) return;
+
+    logv(s, "%s: configure %ux%u (skala %d → %dx%d px)", o->name, w, h, o->scale, pw, ph);
+    o->width = pw; o->height = ph;
+    wl_surface_set_buffer_scale(o->surface, o->scale);
+
+    if (!o->egl_window) {
+        o->egl_window = wl_egl_window_create(o->surface, pw, ph);
+        o->egl_surface = eglCreateWindowSurface(s->egl_display, s->egl_config,
+                                                (EGLNativeWindowType)o->egl_window, NULL);
+        if (o->egl_surface == EGL_NO_SURFACE) die(3, "%s: eglCreateWindowSurface", o->name);
+        eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+        /* Własne frame callbacks sterują tempem — swap nie może blokować. */
+        eglSwapInterval(s->egl_display, 0);
+        /* Program budujemy przy PIERWSZEJ powierzchni, nie na starcie: kompilacja
+         * shadera wymaga bieżącego kontekstu, a kontekst bez powierzchni
+         * (surfaceless) to rozszerzenie, którego nie chcemy wymagać od sterownika
+         * — właściciel ma NVIDIĘ, a fallback ma być pewny, nie prawdopodobny. */
+        if (!s->program) build_program(s);
+    } else {
+        wl_egl_window_resize(o->egl_window, pw, ph, 0, 0);
+    }
+    o->configured = true;
+    render_output(o);
+}
+
+static void layer_closed(void *data, struct zwlr_layer_surface_v1 *ls) {
+    (void)ls;
+    struct output *o = data;
+    logv(o->state, "%s: layer surface zamknięta przez kompozytor", o->name);
+    o->configured = false;
+}
+
+static const struct zwlr_layer_surface_v1_listener layer_listener = {
+    .configure = layer_configure,
+    .closed    = layer_closed,
+};
+
+static void output_create_surface(struct output *o) {
+    struct state *s = o->state;
+    if (o->surface) return;
+    if (s->cfg.output_name && strcmp(s->cfg.output_name, o->name) != 0) {
+        logv(s, "%s: pomijam (wybrano %s)", o->name, s->cfg.output_name);
+        return;
+    }
+    o->surface = wl_compositor_create_surface(s->compositor);
+    o->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        s->layer_shell, o->surface, o->wl_output,
+        ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, "flux-wall");
+    zwlr_layer_surface_v1_add_listener(o->layer_surface, &layer_listener, o);
+    zwlr_layer_surface_v1_set_anchor(o->layer_surface,
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    zwlr_layer_surface_v1_set_exclusive_zone(o->layer_surface, -1);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(o->layer_surface,
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    zwlr_layer_surface_v1_set_size(o->layer_surface, 0, 0);   /* rozmiar poda kompozytor */
+    wl_surface_commit(o->surface);
+    logv(s, "%s: layer surface utworzona", o->name);
+}
+
+static void output_destroy(struct output *o) {
+    struct state *s = o->state;
+    if (o->frame_cb) wl_callback_destroy(o->frame_cb);
+    if (o->egl_surface) {
+        eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        eglDestroySurface(s->egl_display, o->egl_surface);
+    }
+    if (o->egl_window) wl_egl_window_destroy(o->egl_window);
+    if (o->layer_surface) zwlr_layer_surface_v1_destroy(o->layer_surface);
+    if (o->surface) wl_surface_destroy(o->surface);
+    if (o->wl_output) wl_output_destroy(o->wl_output);
+    free(o);
+}
+
+/* ── wl_output ────────────────────────────────────────────────────────────── */
+
+static void out_geometry(void *d, struct wl_output *w, int32_t x, int32_t y, int32_t pw, int32_t ph,
+                         int32_t sub, const char *make, const char *model, int32_t tr) {
+    (void)d; (void)w; (void)x; (void)y; (void)pw; (void)ph; (void)sub; (void)make; (void)model; (void)tr;
+}
+static void out_mode(void *d, struct wl_output *w, uint32_t f, int32_t mw, int32_t mh, int32_t r) {
+    (void)d; (void)w; (void)f; (void)mw; (void)mh; (void)r;
+}
+static void out_done(void *data, struct wl_output *w) {
+    (void)w;
+    struct output *o = data;
+    /* Po `done` znamy skalę i nazwę — dopiero teraz sens ma tworzyć powierzchnię. */
+    if (o->state->layer_shell && o->state->compositor) output_create_surface(o);
+}
+static void out_scale(void *data, struct wl_output *w, int32_t factor) {
+    (void)w;
+    struct output *o = data;
+    o->scale = factor > 0 ? factor : 1;
+}
+static void out_name(void *data, struct wl_output *w, const char *name) {
+    (void)w;
+    struct output *o = data;
+    snprintf(o->name, sizeof o->name, "%s", name);
+}
+static void out_description(void *d, struct wl_output *w, const char *desc) { (void)d; (void)w; (void)desc; }
+
+static const struct wl_output_listener output_listener = {
+    .geometry = out_geometry, .mode = out_mode, .done = out_done,
+    .scale = out_scale, .name = out_name, .description = out_description,
+};
+
+/* ── registry ─────────────────────────────────────────────────────────────── */
+
+static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
+                       const char *iface, uint32_t version) {
+    struct state *s = data;
+    if (strcmp(iface, wl_compositor_interface.name) == 0) {
+        s->compositor = wl_registry_bind(reg, name, &wl_compositor_interface, version < 4 ? version : 4);
+    } else if (strcmp(iface, zwlr_layer_shell_v1_interface.name) == 0) {
+        s->layer_shell = wl_registry_bind(reg, name, &zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
+    } else if (strcmp(iface, wl_output_interface.name) == 0) {
+        struct output *o = calloc(1, sizeof *o);
+        o->state = s;
+        o->global_name = name;
+        o->scale = 1;
+        snprintf(o->name, sizeof o->name, "output-%u", name);
+        /* v4 daje zdarzenie `name` (potrzebne do -o); starsze wersje — sama skala. */
+        o->wl_output = wl_registry_bind(reg, name, &wl_output_interface, version < 4 ? version : 4);
+        wl_output_add_listener(o->wl_output, &output_listener, o);
+        o->next = s->outputs;
+        s->outputs = o;
+    }
+}
+
+static void reg_global_remove(void *data, struct wl_registry *reg, uint32_t name) {
+    (void)reg;
+    struct state *s = data;
+    struct output **pp = &s->outputs;
+    while (*pp) {
+        if ((*pp)->global_name == name) {
+            struct output *o = *pp;
+            *pp = o->next;
+            logv(s, "%s: monitor odpięty", o->name);
+            output_destroy(o);
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+
+static const struct wl_registry_listener registry_listener = {
+    .global = reg_global, .global_remove = reg_global_remove,
+};
+
+/* ── pętla ────────────────────────────────────────────────────────────────── */
+
+static void update_detail(struct state *s) {
+    double t = now_seconds();
+    if (s->cfg.battery && t - s->last_battery_poll > 30.0) {
+        s->detail_target = battery_detail("/sys/class/power_supply");
+        s->last_battery_poll = t;
+        logv(s, "bateria → detail cel %.2f", s->detail_target);
+    }
+    /* Płynne dojście do celu — skok szczegółowości byłby widoczny. */
+    float d = s->detail_target - s->detail_current;
+    if (d > 0.002f || d < -0.002f) s->detail_current += d * 0.02f;
+    else s->detail_current = s->detail_target;
+}
+
+static void main_loop(struct state *s) {
+    struct pollfd pfd = { .fd = wl_display_get_fd(s->display), .events = POLLIN };
+    while (s->running) {
+        while (wl_display_prepare_read(s->display) != 0)
+            wl_display_dispatch_pending(s->display);
+        wl_display_flush(s->display);
+
+        int timeout = -1;
+        if (s->cfg.fps > 0) {
+            for (struct output *o = s->outputs; o; o = o->next)
+                if (o->needs_frame) { timeout = (int)(1000.0 / s->cfg.fps); break; }
+        }
+        int r = poll(&pfd, 1, timeout);
+        if (r < 0 && errno != EINTR) { wl_display_cancel_read(s->display); die(2, "poll: %s", strerror(errno)); }
+        if (r > 0 && (pfd.revents & POLLIN)) {
+            if (wl_display_read_events(s->display) < 0) die(2, "połączenie z kompozytorem zerwane");
+        } else {
+            wl_display_cancel_read(s->display);
+        }
+        if (wl_display_dispatch_pending(s->display) < 0) die(2, "dispatch: %s", strerror(errno));
+
+        update_detail(s);
+        if (s->cfg.fps > 0) {
+            double min_dt = 1.0 / s->cfg.fps;
+            for (struct output *o = s->outputs; o; o = o->next)
+                if (o->needs_frame && now_seconds() - s->last_render >= min_dt) {
+                    o->needs_frame = false;
+                    render_output(o);
+                }
+        }
+        if (wl_display_get_error(s->display)) die(2, "błąd protokołu Waylanda");
+    }
+}
+
+/* ── main ─────────────────────────────────────────────────────────────────── */
+
+static void usage(void) {
+    fputs("Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]\n"
+          "                  [-f fps] [-o output] [--once] [-v]\n", stderr);
+}
+
+int main(int argc, char **argv) {
+    struct state s = {0};
+    s.cfg.detail = 1.0f;
+    s.cfg.palette = (struct palette){ {0.059f, 0.102f, 0.141f}, {0.361f, 0.529f, 0.639f}, {0.847f, 0.902f, 0.933f} };
+
+    static const struct option longopts[] = {
+        {"shader", required_argument, 0, 's'}, {"palette", required_argument, 0, 'p'},
+        {"detail", required_argument, 0, 'd'}, {"battery", no_argument, 0, 'B'},
+        {"fps", required_argument, 0, 'f'},    {"output", required_argument, 0, 'o'},
+        {"once", no_argument, 0, '1'},          {"verbose", no_argument, 0, 'v'},
+        {"help", no_argument, 0, 'h'},          {0, 0, 0, 0},
+    };
+    int c;
+    while ((c = getopt_long(argc, argv, "s:p:d:f:o:1vh", longopts, NULL)) != -1) {
+        switch (c) {
+        case 's': s.cfg.shader_path = optarg; break;
+        case 'p': if (!parse_palette(optarg, &s.cfg.palette)) die(1, "zła paleta: %s (oczekiwane bg,ink,acc jako hex)", optarg); break;
+        case 'd': s.cfg.detail = strtof(optarg, NULL); if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1"); break;
+        case 'B': s.cfg.battery = true; break;
+        case 'f': s.cfg.fps = atoi(optarg); if (s.cfg.fps < 0) die(1, "fps < 0"); break;
+        case 'o': s.cfg.output_name = optarg; break;
+        case '1': s.cfg.once = true; break;
+        case 'v': s.cfg.verbose = true; break;
+        case 'h': usage(); return 0;
+        default: usage(); return 1;
+        }
+    }
+    if (!s.cfg.shader_path) { usage(); return 1; }
+
+    s.detail_target = s.cfg.battery ? battery_detail("/sys/class/power_supply") : s.cfg.detail;
+    s.detail_current = s.detail_target;
+    s.last_battery_poll = now_seconds();
+
+    s.display = wl_display_connect(NULL);
+    if (!s.display) die(2, "brak połączenia z Waylandem (WAYLAND_DISPLAY?)");
+    s.registry = wl_display_get_registry(s.display);
+    wl_registry_add_listener(s.registry, &registry_listener, &s);
+    wl_display_roundtrip(s.display);              /* globale */
+    if (!s.compositor) die(2, "kompozytor nie wystawia wl_compositor");
+    if (!s.layer_shell) die(2, "kompozytor nie wspiera wlr-layer-shell");
+
+    egl_init(&s);
+    /* Shader wczytujemy od razu (błąd pliku = kod 1 zanim cokolwiek wstanie),
+     * ale kompilujemy dopiero przy pierwszej powierzchni — patrz layer_configure. */
+    {
+        char *probe = read_file(s.cfg.shader_path);
+        if (!probe) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
+        free(probe);
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &s.start);
+    s.running = true;
+    /* Monitory znane po pierwszym roundtripie dostały listenery; drugi roundtrip
+     * dowozi ich zdarzenia (scale/name/done) — i w `done` powstają powierzchnie. */
+    wl_display_roundtrip(s.display);
+    for (struct output *o = s.outputs; o; o = o->next) output_create_surface(o);
+
+    main_loop(&s);
+    return 0;
+}

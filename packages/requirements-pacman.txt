@@ -39,6 +39,15 @@ ufw
 # pciutils: lspci — wykrywanie GPU w install/gpudrivers-installation.sh;
 # minimalny Arch potrafi go nie mieć (skrypt też sam go dociąga w razie braku)
 pciutils
+# flux-wall (src/flux-wall): tapeta liczona shaderem na GPU — komponent
+# kompilowany przez install.sh. base-devel = gcc/make/pkgconf; wayland =
+# libwayland-client, libwayland-egl i wayland-scanner (XML-e protokołów są
+# w repo, więc wayland-protocols/wlr-protocols NIE są potrzebne); mesa = EGL
+# i GLES. wayland i mesa i tak ciągnie Hyprland — tu są jawnie, bo build
+# potrzebuje ich nagłówków i pkg-config, nie tylko bibliotek.
+base-devel
+wayland
+mesa
 # fonts + icons
 # ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
 ttf-iosevka-nerd
