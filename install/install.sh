@@ -802,6 +802,8 @@ generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-white-blue.con
 # tron: ciemniej niż white-blue — blokada ma wyglądać jak zgaszony Grid.
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-tron.conf" "0.55"
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-asia-n-rice.conf" "0.85"
+# dither-flux: przygaszone jak fiord w ulewie, ale raster tapety ma zostać czytelny.
+generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-dither-flux.conf" "0.70"
 
 # 8i. Styl paska głośności waybara (przełączalny w Super+A → [v]) — seed
 # domyślny. volume-bar.sh ma fallback "line", ale seed daje wykrywalność

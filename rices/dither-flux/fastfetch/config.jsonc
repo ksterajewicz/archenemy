@@ -1,0 +1,43 @@
+// archenemy — fastfetch (dither-flux rice: paleta milford-woda)
+// Własny motyw: wbudowane logo Archa w pianie (#D8E6EE) i mgle (#A8C4D4).
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+
+  "logo": {
+    "source": "arch",
+    "color": { "1": "38;2;216;230;238", "2": "38;2;168;196;212" },
+    "padding": { "top": 1, "right": 3, "left": 2 }
+  },
+
+  // Klucze i tytuł w pianie (= ANSI white alacritty); separatory jako moduł
+  // „custom" (kolor bierze z display.color.output → niebieski).
+  // Bez display.key.width — obcinał ręcznie wyrównane klucze („KERN" → „KE").
+  "display": {
+    "separator": "  ",
+    "color": { "keys": "white", "title": "white", "output": "blue" }
+  },
+
+  // Klucze = krótkie etykiety w stylu „panelu przyrządów" (bez ikon spoza
+  // pewnego zakresu glifów — świadoma decyzja, żeby nic nie wyszło jako tofu).
+  "modules": [
+    "break",
+    { "type": "title", "keyColor": "white" },
+    { "type": "custom", "format": "────────────────────────────────" },
+    { "type": "os",           "key": "OS   " },
+    { "type": "kernel",       "key": "KERN " },
+    { "type": "host",         "key": "HOST " },
+    { "type": "uptime",       "key": "UP   " },
+    { "type": "packages",     "key": "PKGS " },
+    { "type": "shell",        "key": "SHELL" },
+    { "type": "wm",           "key": "WM   " },
+    { "type": "terminal",     "key": "TERM " },
+    { "type": "custom", "format": "────────────────────────────────" },
+    { "type": "cpu",          "key": "CPU  " },
+    { "type": "gpu",          "key": "GPU  " },
+    { "type": "memory",       "key": "MEM  " },
+    { "type": "disk",         "key": "DISK ", "folders": "/" },
+    { "type": "battery",      "key": "BAT  " },
+    "break",
+    { "type": "colors", "symbol": "circle" }
+  ]
+}

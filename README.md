@@ -106,10 +106,14 @@ archenemy/
 │   │                                 #   rogi 4-6px. Własny fastfetch (logo Archa w cyjanie) + launcher
 │   │                                 #   w waybarze i motyw nvim (neon cyjan);
 │   │                                 #   networkmanager-dmenu z white-blue (symlink).
-│   └── asia-n-rice/                  # Mauve/róż na granacie, płaski look. Własny hypr, rofi,
-│                                     #   mako, hyprlock, alacritty, waybar i motyw nvim (mauve);
-│                                     #   fastfetch domyślny;
-│                                     #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
+│   ├── asia-n-rice/                  # Mauve/róż na granacie, płaski look. Własny hypr, rofi,
+│   │                                 #   mako, hyprlock, alacritty, waybar i motyw nvim (mauve);
+│   │                                 #   fastfetch domyślny;
+│   │                                 #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
+│   └── dither-flux/                  # Dither art + algorithmic art w palecie deszczowej
+│                                     #   milford-woda: zero zaokrągleń, bez blura i poświat,
+│                                     #   ramki 1 px, płaskie płyty. Własny komplet warstw;
+│                                     #   networkmanager-dmenu z white-blue (symlink).
 ├── scripts/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
 │   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo;
@@ -140,7 +144,9 @@ archenemy/
 │                                     #   lib/timer-state.sh — wspólny odczyt/zapis stanu timera.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
-    └── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
+    ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
+    └── dither-flux/                  # Zestaw: 3 formy generatywne (pole przepływu ×2, atraktor) w rastrze
+                                      #   Bayera, paleta milford-woda — v1/v2; z gen_dither_flux_wallpaper.py.
 ```
 
 ## Tapety
@@ -164,6 +170,7 @@ Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem worksp
 | `white-blue_beta` | Pierwotny wygląd biało-niebieski, trzymany do wglądu/odwrotu. Tylko poprawki funkcjonalne, bez zmian wizualnych. Mako i hyprlock dziedziczy z `white-blue` przez symlinki w repo. |
 | `tron` | Tron: Legacy — ciemne szkło `#020A0F`, neon cyjan `#00E5FF` z poświatą (glow), pomarańcz CLU `#FF7B1C` tylko dla alarmów, rogi niemal ostre (4–6px). Własny motyw waybar (z launcherem „portal do Gridu" i podświetlanymi wyspami HUD), rofi (glif szukania), fastfetch (logo Archa w neonowym cyjanie), alacritty/mako/hyprlock (kinowa oprawa z neonowymi liniami)/MangoHud/nvim (ręczny colorscheme: neon cyjan na `#020A0F`, alarmy w pomarańczu CLU); networkmanager-dmenu dziedziczy z `white-blue` przez symlink w repo. Tapeta: zestaw `tron-grid` (generowany). |
 | `asia-n-rice` | Przygaszony mauve/róż (`#b47687`) na ciemnym granacie (`#2a3444`), płaski look: waybar z zaokrąglonymi wyspami (14px) i kursywnymi tytułami okien, ostre rogi okien, ramka `#131a2a`. Wygląd zaadaptowany z zewnętrznego rice'a i przepięty pod backend archenemy: alacritty zamiast kitty, rofi zamiast wofi, warstwa maszynowa (GPU/monitory/workspace'y) przez `source`, bez cava. Własny motyw waybar/rofi/mako/hyprlock/alacritty w palecie mauve; fastfetch domyślny (bez przebarwienia); własny motyw nvim (ręczny colorscheme w palecie mauve, płaski — bez boldów); MangoHud i networkmanager-dmenu dziedziczy z `white-blue` przez symlinki. Bez własnej tapety — używa aktualnej (warstwa maszynowa). |
+| `dither-flux` | Dither art + algorithmic art: tapety to generatywne pola (pole przepływu, atraktor Clifforda) kwantyzowane rastrem Bayera 8×8, w palecie deszczowej `milford-woda` z kadru Milford Sound — mokre góry `#0F1A24`, stalowa woda `#5C87A3`, mgła `#A8C4D4`, piana `#D8E6EE` jako akcent; bursztyn `#E0A23C` to jedyny ciepły kolor i służy wyłącznie alarmom. Geometria idzie za rastrem: **zero zaokrągleń**, ramki okien 1 px, **blur i cień wyłączone** (rozmycie i dither to sprzeczne materiały), wyspy waybara, rofi i mako jako płaskie, niemal nieprzezroczyste płyty. Własny komplet: waybar (z launcherem), rofi, alacritty (ANSI stonowane do palety, ale rozróżnialne), mako, swayosd, hyprlock (linie 1 px, bez poświaty), fastfetch (logo Archa w pianie), MangoHud, nvim (ręczny colorscheme); networkmanager-dmenu z `white-blue` przez symlink. Tapety: zestaw `dither-flux` z `gen_dither_flux_wallpaper.py`. |
 
 Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.config`. Przełączanie: `Super + T` — menu pokazuje skrypty z `scripts/changing-theme-scripts/` (nazwa pliku `.sh` to etykieta w menu: `white-blue`, `white-blue_beta`). Przy przełączeniu stare symlinki rice'a są sprzątane, więc motywy się nie mieszają.
 
