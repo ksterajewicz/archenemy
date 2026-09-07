@@ -149,7 +149,8 @@ archenemy/
 │       ├── test.c                    #   paleta rice'a, detail (z baterii); testy funkcji czystych;
 │       ├── Makefile                  #   kod protokołów generuje wayland-scanner z XML-i w repo;
 │       ├── protocols/                #   wlr-layer-shell + xdg-shell (XML, licencja MIT/X11);
-│       └── shaders/                  #   dither-flux.frag — domain warping + Bayer 8x8 + paleta.
+│       └── shaders/                  #   animacje do wyboru w Super+W: dither-flux (domain warping),
+│                                     #   dither-waves (interferencja), dither-drift (wędrujące ziarno).
 │                                     #   Buduje install.sh [9.6]; build/ poza gitem.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
@@ -161,7 +162,9 @@ archenemy/
 
 ## Tapety
 
-Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Wyjątek: zestaw `dither-flux` jest **generowany pod realne monitory** — `install.sh` krok **[9.7]** czyta rozdzielczości i role z `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, dalsze → `m-<nazwa>`; tryby nazwane jak `preferred` dopytuje `hyprctl`) i w tle uruchamia `gen_dither_flux_wallpaper.py` do `wallpapers/dither-flux/generated/` (poza gitem; log `generate.log`). Raster 1 px nie znosi skalowania, więc tapeta musi mieć dokładnie rozdzielczość ekranu. Pliki `v1`/`v2` z repo zostają jako zestaw awaryjny. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
+Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Wyjątek: zestaw `dither-flux` jest **generowany pod realne monitory** — `install.sh` krok **[9.7]** czyta rozdzielczości i role z `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, dalsze → `m-<nazwa>`; tryby nazwane jak `preferred` dopytuje `hyprctl`) i w tle uruchamia `gen_dither_flux_wallpaper.py` do `wallpapers/dither-flux/generated/` (poza gitem; log `generate.log`). Raster 1 px nie znosi skalowania, więc tapeta musi mieć dokładnie rozdzielczość ekranu. Pliki `v1`/`v2` z repo zostają jako zestaw awaryjny.
+
+Na górze menu `Super+W` (gdy flux-wall jest zbudowany) są też pozycje **`Animation: <nazwa>`** — jedna na każdy shader w `src/flux-wall/shaders/` — oraz **`Animation: off`**. Wybór animacji nie zmienia tapety hyprpapera: animacja rysuje nad nią i działa w **każdym** rice'ie, w jego palecie (deklaracja `rices/<rice>/flux-wall.conf`). Wybór jest zapamiętywany w `data/flux-wall.dat` i przeżywa `Super+T` oraz restart; `off` wyłącza animację wszędzie, a usunięcie pliku przywraca domyślne zachowanie rice'a (dither-flux: włączona, pozostałe: wyłączona). Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
 
 Na górze menu jest przełącznik **`[x] Upload to all monitors`** (domyślnie zaznaczony):
 
@@ -182,14 +185,19 @@ Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`
 
 **Warstwa.** flux-wall rysuje na warstwie `bottom` — **nad** tapetą hyprpapera (warstwa `background`) i **pod** oknami. Hyprpaper działa zawsze i zostaje pod spodem: gdyby flux-wall padł albo nie został zbudowany, widać zwykłą tapetę. To jest cały fallback — bez osobnej logiki.
 
-**Out of the box.** `install.sh` krok **[9.6]** buduje binarkę (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — brak narzędzi albo błąd `make` ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji. Rice **deklaruje** użycie flux-wall plikiem `rices/<rice>/flux-wall.conf` (paleta, shader, argumenty — `dither-flux` ma `--battery`); autostart rice'a (`hyprland.lua`) i przełącznik `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje dla nowego, jeśli ma deklarację. Brak binarki lub deklaracji = cicho nic.
+**Out of the box.** `install.sh` krok **[9.6]** buduje binarkę (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — brak narzędzi albo błąd `make` ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji.
+
+**Animacje do wyboru** (`src/flux-wall/shaders/`): `dither-flux` — domain warping, pole dryfuje bez końca; `dither-waves` — interferencja fal kołowych płynących od źródeł; `dither-drift` — kompozycja stoi, a wędruje samo ziarno rastra (skokowo, jak stary ekran). Każda w palecie bieżącego rice'a, każda z `detail` z baterii.
+
+**Kto decyduje, co się wyświetla** — dwa źródła w tej kolejności: (1) wybór użytkownika z `Super+W` w `data/flux-wall.dat` (`off` albo nazwa animacji — działa w każdym rice'ie); (2) bez wyboru — deklaracja rice'a `rices/<rice>/flux-wall.conf`: `FLUX_WALL_PALETTE` (trzy kolory), `FLUX_WALL_SHADER` (domyślna animacja), `FLUX_WALL_ARGS` (`--battery`), `FLUX_WALL_AUTOSTART` (`1` tylko w `dither-flux`; `tron`, `white-blue`, `asia-n-rice` mają paletę, ale animację wyłączoną, dopóki jej nie wybierzesz). Autostart rice'a (`hyprland.lua`) i `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje wg tych reguł. Brak binarki = cicho nic.
 
 Ręcznie:
 
 ```
-scripts/wallpapers/flux-wall.sh start          # dla bieżącego rice'a (conf), log w $XDG_RUNTIME_DIR/flux-wall.log
-scripts/wallpapers/flux-wall.sh start -f 30    # dodatkowe opcje idą do flux-wall: limit 30 klatek/s
-scripts/wallpapers/flux-wall.sh start --once   # jedna klatka, bez animacji
+scripts/wallpapers/flux-wall.sh list                 # dostępne animacje
+scripts/wallpapers/flux-wall.sh select dither-waves  # wybierz i zapamiętaj (to samo, co Super+W)
+scripts/wallpapers/flux-wall.sh off                  # wyłącz i zapamiętaj
+scripts/wallpapers/flux-wall.sh start -f 30          # uruchom wg reguł, opcje idą do flux-wall (log w $XDG_RUNTIME_DIR/flux-wall.log)
 scripts/wallpapers/flux-wall.sh stop | status
 ```
 

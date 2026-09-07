@@ -26,6 +26,12 @@
 #   właściciela: hyprlock wolny). Odznaczony — hyprlock wraca do domyślnego
 #   `path = screenshot` + blur.
 #
+#   Pozycje "Animation: <nazwa>" / "Animation: off" (tylko gdy flux-wall jest
+#   zbudowany): wybór animowanej tapety liczonej shaderem (src/flux-wall) —
+#   idzie do scripts/wallpapers/flux-wall.sh select|off, który zapisuje wybór
+#   w data/flux-wall.dat i stosuje go. Nie dotyka stanu tapety hyprpapera:
+#   animacja rysuje NAD nią (warstwa bottom), tapeta zostaje pod spodem.
+#
 #   Stan: data/wallpaper.dat w formacie "monitor=ścieżka" (po linii na monitor).
 #   Stary format (sama nazwa zestawu) jest migrowany automatycznie.
 #   Stan hyprlocka: data/hyprlock-wallpaper.dat — "off" albo bezwzględna
@@ -55,6 +61,10 @@ TOGGLE_ON="[x] Upload to all monitors"
 TOGGLE_OFF="[ ] Upload to all monitors"
 LOCK_TOGGLE_ON="[x] Set as hyprlock background (no blur)"
 LOCK_TOGGLE_OFF="[ ] Set as hyprlock background (no blur)"
+FLUX_WALL="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
+FLUX_WALL_BIN="$ARCHENEMY_DIR/src/flux-wall/build/flux-wall"
+ANIM_PREFIX="Animation: "
+ANIM_OFF="${ANIM_PREFIX}off"
 
 # ─── RESOLVE MONITORS FROM data/monitors/*.dat ───────────────────────────────
 
@@ -288,6 +298,16 @@ else
         REL+=("${f#"$WALLPAPERS_DIR"/}")
     done
 
+    # Animacje (flux-wall) — tylko gdy binarka istnieje; bez niej pozycje
+    # obiecywałyby coś, czego install.sh nie zbudował.
+    ANIM=()
+    if [[ -x "$FLUX_WALL_BIN" && -f "$FLUX_WALL" ]]; then
+        while IFS= read -r name; do
+            [[ -n "$name" ]] && ANIM+=("${ANIM_PREFIX}${name}")
+        done < <(bash "$FLUX_WALL" list 2>/dev/null)
+        [[ ${#ANIM[@]} -gt 0 ]] && ANIM+=("$ANIM_OFF")
+    fi
+
     # Pętla menu: wybranie przełącznika odwraca ptaszek i otwiera menu ponownie.
     while :; do
         if [[ "$MODE_ALL" -eq 1 ]]; then
@@ -300,7 +320,7 @@ else
         else
             lock_toggle="$LOCK_TOGGLE_OFF"
         fi
-        CHOICE=$(printf '%s\n' "$toggle" "$lock_toggle" "${REL[@]}" | rofi -dmenu -i -p "Select wallpaper:")
+        CHOICE=$(printf '%s\n' "$toggle" "$lock_toggle" "${ANIM[@]}" "${REL[@]}" | rofi -dmenu -i -p "Select wallpaper:")
         [[ -z "$CHOICE" ]] && exit 0
         if [[ "$CHOICE" == "$TOGGLE_ON" ]]; then
             MODE_ALL=0
@@ -317,6 +337,22 @@ else
         fi
         break
     done
+
+    # Animacja: osobna droga — wybór zapisuje i stosuje flux-wall.sh, stan tapety
+    # hyprpapera zostaje nietknięty (animacja rysuje nad nią).
+    if [[ "$CHOICE" == "$ANIM_OFF" ]]; then
+        bash "$FLUX_WALL" off >/dev/null 2>&1
+        notify-send "archenemy" "Animation off."
+        exit 0
+    elif [[ "$CHOICE" == "$ANIM_PREFIX"* ]]; then
+        anim="${CHOICE#"$ANIM_PREFIX"}"
+        if bash "$FLUX_WALL" select "$anim" >/dev/null 2>&1; then
+            notify-send "archenemy" "Animation '$anim' applied."
+            exit 0
+        fi
+        notify-send -u critical "archenemy" "Animation '$anim' failed to start — see ${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
+        exit 1
+    fi
 
     FILE="$WALLPAPERS_DIR/$CHOICE"
     # rofi -dmenu zwraca wpisany tekst także BEZ dopasowania — bez guarda zły
