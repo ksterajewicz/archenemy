@@ -681,7 +681,16 @@ echo -e "  ${GREEN}✓ workspaces-monitors.lua (tryb: $WS_MODE, ${#ORDERED_LR[@]
     if [[ "$HW_PROFILE" == "asus" ]]; then
         echo "-- Górne klawisze ASUS ROG"
         echo "hl.bind(\"XF86Launch1\", hl.dsp.exec_cmd(\"rog-control-center\"))"
-        echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"asusctl profile -n; pkill -RTMIN+8 waybar\"))"
+        # Klawisz profilu idzie DOKŁADNIE tą samą drogą co klik w module waybara:
+        # profile-switch.sh weryfikuje efekt w sysfs, przy martwym asusd spada na
+        # power-profiles-daemon, a przy totalnej awarii wysyła krytyczne
+        # powiadomienie z prawdziwym błędem. Surowe `asusctl profile -n` (tak było
+        # do 2026-09-07) potrafi wyjść zerem NIC nie zmieniając — pęknięcie
+        # asusctl↔asusd, decyzja 2026-07-15 — a `pkill` w tej samej linii odświeżał
+        # pasek również po nieudanej zmianie, więc klawisz wyglądał na martwy i nie
+        # dawał żadnej informacji. Odświeżenie paska (RTMIN+8) robią teraz skrypty
+        # profili, wyłącznie po POTWIERDZONEJ zmianie.
+        echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"~/archenemy/scripts/waybar/profile-switch.sh\"))"
     else
         echo "-- Brak bindów sprzętowych dla tego profilu ($HW_PROFILE)"
     fi
