@@ -129,7 +129,9 @@ archenemy/
 │   │                                 #   (współdzielony z install.sh i pickerem z Super+A → [u]).
 │   ├── rofi/                         # Menu rofi: rice'y, tapety, sieć (z reskanem), zasilanie.
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
-│   │                                 #   logo Archa + siatka Tron (gen_tron_wallpaper.py).
+│   │                                 #   logo Archa (gen_arch_wallpaper.py), siatka Tron
+│   │                                 #   (gen_tron_wallpaper.py) i generatywne tapety ditherowe
+│   │                                 #   rice'a dither-flux (gen_dither_flux_wallpaper.py).
 │   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny) +
 │                                     #   volume-bar.sh — pasek głośności zamiast modułu pulseaudio;
 │                                     #   styl line/ticks/solid przełączalny w Super+A → [v].
