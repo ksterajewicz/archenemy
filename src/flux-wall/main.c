@@ -15,8 +15,13 @@
  *     0 ok   1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
  *     3 błąd EGL/GLES (shader, kontekst)
  *
+ *   Skalowanie: przy wp_fractional_scale_v1 + wp_viewporter bufor ma rozmiar
+ *   logiczny × skala ułamkowa (np. 1.25) zaokrąglony do pikseli fizycznych,
+ *   a viewport mapuje go na rozmiar logiczny — raster 1:1 przy KAŻDEJ skali
+ *   ustawionej w install.sh. Bez tych protokołów: skala całkowita wl_output.
+ *
  *   Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]
- *                     [-f fps] [-o output] [--once] [-v]
+ *                     [-f fps] [-o output] [-l background|bottom] [--once] [-v]
  * =============================================
  */
 #define _POSIX_C_SOURCE 200809L
@@ -39,6 +44,8 @@
 #include <GLES3/gl3.h>
 
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
+#include "fractional-scale-v1-client-protocol.h"
+#include "viewporter-client-protocol.h"
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
 
@@ -53,6 +60,7 @@ struct config {
     int   fps;                   /* 0 = każda klatka kompozytora */
     bool  once;                  /* jedna klatka po configure, bez animacji */
     bool  verbose;
+    uint32_t layer;              /* ZWLR_LAYER_SHELL_V1_LAYER_* — bottom = nad hyprpaperem */
 };
 
 /* ── stan ─────────────────────────────────────────────────────────────────── */
@@ -70,6 +78,10 @@ struct output {
     struct wl_egl_window *egl_window;
     EGLSurface egl_surface;
     struct wl_callback *frame_cb;
+    struct wp_viewport *viewport;
+    struct wp_fractional_scale_v1 *fractional;
+    uint32_t frac_scale120;      /* preferowana skala ×120; 0 = nieznana */
+    int32_t logical_w, logical_h;
     int32_t width, height;       /* piksele fizyczne */
     bool configured;
     bool needs_frame;            /* klatka czeka na limit fps */
@@ -82,6 +94,8 @@ struct state {
     struct wl_registry *registry;
     struct wl_compositor *compositor;
     struct zwlr_layer_shell_v1 *layer_shell;
+    struct wp_viewporter *viewporter;
+    struct wp_fractional_scale_manager_v1 *fractional_manager;
     struct output *outputs;
 
     EGLDisplay egl_display;
@@ -328,18 +342,31 @@ static void output_request_frame(struct output *o) {
 
 /* ── layer surface ────────────────────────────────────────────────────────── */
 
-static void layer_configure(void *data, struct zwlr_layer_surface_v1 *ls,
-                            uint32_t serial, uint32_t w, uint32_t h) {
-    struct output *o = data;
+/* Rozmiar bufora z rozmiaru logicznego i skali. Wołane z `configure`
+ * (rozmiar) i z `preferred_scale` (skala) — obie mogą przyjść w dowolnej
+ * kolejności, więc liczymy dopiero, gdy znamy oba. */
+static void output_apply_size(struct output *o) {
     struct state *s = o->state;
-    zwlr_layer_surface_v1_ack_configure(ls, serial);
+    if (o->logical_w <= 0 || o->logical_h <= 0) return;
 
-    int32_t pw = (int32_t)w * o->scale, ph = (int32_t)h * o->scale;
+    int32_t pw, ph;
+    if (o->viewport && o->frac_scale120) {
+        /* skala ułamkowa: bufor w pikselach fizycznych, viewport → rozmiar logiczny */
+        pw = (int32_t)((o->logical_w * o->frac_scale120 + 60) / 120);
+        ph = (int32_t)((o->logical_h * o->frac_scale120 + 60) / 120);
+        wp_viewport_set_destination(o->viewport, o->logical_w, o->logical_h);
+        wl_surface_set_buffer_scale(o->surface, 1);
+    } else {
+        pw = o->logical_w * o->scale;
+        ph = o->logical_h * o->scale;
+        wl_surface_set_buffer_scale(o->surface, o->scale);
+    }
     if (pw <= 0 || ph <= 0) return;
-
-    logv(s, "%s: configure %ux%u (skala %d → %dx%d px)", o->name, w, h, o->scale, pw, ph);
+    bool changed = (pw != o->width || ph != o->height);
     o->width = pw; o->height = ph;
-    wl_surface_set_buffer_scale(o->surface, o->scale);
+    logv(s, "%s: %dx%d logicznie, skala %s%.3f → bufor %dx%d px", o->name, o->logical_w, o->logical_h,
+         (o->viewport && o->frac_scale120) ? "ułamkowa " : "całkowita ",
+         (o->viewport && o->frac_scale120) ? o->frac_scale120 / 120.0 : (double)o->scale, pw, ph);
 
     if (!o->egl_window) {
         o->egl_window = wl_egl_window_create(o->surface, pw, ph);
@@ -354,12 +381,34 @@ static void layer_configure(void *data, struct zwlr_layer_surface_v1 *ls,
          * (surfaceless) to rozszerzenie, którego nie chcemy wymagać od sterownika
          * — właściciel ma NVIDIĘ, a fallback ma być pewny, nie prawdopodobny. */
         if (!s->program) build_program(s);
-    } else {
+    } else if (changed) {
         wl_egl_window_resize(o->egl_window, pw, ph, 0, 0);
     }
     o->configured = true;
     render_output(o);
 }
+
+static void layer_configure(void *data, struct zwlr_layer_surface_v1 *ls,
+                            uint32_t serial, uint32_t w, uint32_t h) {
+    struct output *o = data;
+    zwlr_layer_surface_v1_ack_configure(ls, serial);
+    if (w == 0 || h == 0) return;
+    o->logical_w = (int32_t)w; o->logical_h = (int32_t)h;
+    output_apply_size(o);
+}
+
+static void fractional_preferred(void *data, struct wp_fractional_scale_v1 *fs, uint32_t scale120) {
+    (void)fs;
+    struct output *o = data;
+    if (scale120 == 0 || scale120 == o->frac_scale120) return;
+    o->frac_scale120 = scale120;
+    logv(o->state, "%s: preferowana skala %u/120 = %.3f", o->name, scale120, scale120 / 120.0);
+    output_apply_size(o);
+}
+
+static const struct wp_fractional_scale_v1_listener fractional_listener = {
+    .preferred_scale = fractional_preferred,
+};
 
 static void layer_closed(void *data, struct zwlr_layer_surface_v1 *ls) {
     (void)ls;
@@ -381,9 +430,14 @@ static void output_create_surface(struct output *o) {
         return;
     }
     o->surface = wl_compositor_create_surface(s->compositor);
+    /* Skala ułamkowa: bez obu obiektów zostajemy przy skali całkowitej wl_output. */
+    if (s->fractional_manager && s->viewporter) {
+        o->fractional = wp_fractional_scale_manager_v1_get_fractional_scale(s->fractional_manager, o->surface);
+        wp_fractional_scale_v1_add_listener(o->fractional, &fractional_listener, o);
+        o->viewport = wp_viewporter_get_viewport(s->viewporter, o->surface);
+    }
     o->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        s->layer_shell, o->surface, o->wl_output,
-        ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, "flux-wall");
+        s->layer_shell, o->surface, o->wl_output, s->cfg.layer, "flux-wall");
     zwlr_layer_surface_v1_add_listener(o->layer_surface, &layer_listener, o);
     zwlr_layer_surface_v1_set_anchor(o->layer_surface,
         ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
@@ -404,6 +458,8 @@ static void output_destroy(struct output *o) {
         eglDestroySurface(s->egl_display, o->egl_surface);
     }
     if (o->egl_window) wl_egl_window_destroy(o->egl_window);
+    if (o->fractional) wp_fractional_scale_v1_destroy(o->fractional);
+    if (o->viewport) wp_viewport_destroy(o->viewport);
     if (o->layer_surface) zwlr_layer_surface_v1_destroy(o->layer_surface);
     if (o->surface) wl_surface_destroy(o->surface);
     if (o->wl_output) wl_output_destroy(o->wl_output);
@@ -451,6 +507,10 @@ static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
         s->compositor = wl_registry_bind(reg, name, &wl_compositor_interface, version < 4 ? version : 4);
     } else if (strcmp(iface, zwlr_layer_shell_v1_interface.name) == 0) {
         s->layer_shell = wl_registry_bind(reg, name, &zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
+    } else if (strcmp(iface, wp_viewporter_interface.name) == 0) {
+        s->viewporter = wl_registry_bind(reg, name, &wp_viewporter_interface, 1);
+    } else if (strcmp(iface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+        s->fractional_manager = wl_registry_bind(reg, name, &wp_fractional_scale_manager_v1_interface, 1);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         struct output *o = calloc(1, sizeof *o);
         o->state = s;
@@ -538,23 +598,29 @@ static void main_loop(struct state *s) {
 
 static void usage(void) {
     fputs("Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]\n"
-          "                  [-f fps] [-o output] [--once] [-v]\n", stderr);
+          "                  [-f fps] [-o output] [-l background|bottom] [--once] [-v]\n"
+          "  -l  warstwa: bottom (domyślnie — nad tapetą hyprpapera, pod oknami)\n"
+          "      albo background (na równi z hyprpaperem)\n", stderr);
 }
 
 int main(int argc, char **argv) {
     struct state s = {0};
     s.cfg.detail = 1.0f;
+    /* bottom: zawsze NAD hyprpaperem (warstwa background) i POD oknami —
+     * hyprpaper zostaje pod spodem jako fallback, gdyby flux-wall padł. */
+    s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
     s.cfg.palette = (struct palette){ {0.059f, 0.102f, 0.141f}, {0.361f, 0.529f, 0.639f}, {0.847f, 0.902f, 0.933f} };
 
     static const struct option longopts[] = {
         {"shader", required_argument, 0, 's'}, {"palette", required_argument, 0, 'p'},
         {"detail", required_argument, 0, 'd'}, {"battery", no_argument, 0, 'B'},
         {"fps", required_argument, 0, 'f'},    {"output", required_argument, 0, 'o'},
+        {"layer", required_argument, 0, 'l'},
         {"once", no_argument, 0, '1'},          {"verbose", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},          {0, 0, 0, 0},
     };
     int c;
-    while ((c = getopt_long(argc, argv, "s:p:d:f:o:1vh", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:p:d:f:o:l:1vh", longopts, NULL)) != -1) {
         switch (c) {
         case 's': s.cfg.shader_path = optarg; break;
         case 'p': if (!parse_palette(optarg, &s.cfg.palette)) die(1, "zła paleta: %s (oczekiwane bg,ink,acc jako hex)", optarg); break;
@@ -562,6 +628,11 @@ int main(int argc, char **argv) {
         case 'B': s.cfg.battery = true; break;
         case 'f': s.cfg.fps = atoi(optarg); if (s.cfg.fps < 0) die(1, "fps < 0"); break;
         case 'o': s.cfg.output_name = optarg; break;
+        case 'l':
+            if (strcmp(optarg, "bottom") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+            else if (strcmp(optarg, "background") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+            else die(1, "zła warstwa: %s (bottom|background)", optarg);
+            break;
         case '1': s.cfg.once = true; break;
         case 'v': s.cfg.verbose = true; break;
         case 'h': usage(); return 0;
@@ -581,6 +652,7 @@ int main(int argc, char **argv) {
     wl_display_roundtrip(s.display);              /* globale */
     if (!s.compositor) die(2, "kompozytor nie wystawia wl_compositor");
     if (!s.layer_shell) die(2, "kompozytor nie wspiera wlr-layer-shell");
+    logv(&s, "skala ułamkowa: %s", (s.fractional_manager && s.viewporter) ? "dostępna" : "brak (skala całkowita)");
 
     egl_init(&s);
     /* Shader wczytujemy od razu (błąd pliku = kod 1 zanim cokolwiek wstanie),

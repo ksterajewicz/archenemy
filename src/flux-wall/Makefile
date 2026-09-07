@@ -19,9 +19,9 @@ BUILD    = build
 PROTO    = protocols
 SCANNER ?= wayland-scanner
 
-PROTO_XML  = $(PROTO)/wlr-layer-shell-unstable-v1.xml $(PROTO)/xdg-shell.xml
-PROTO_C    = $(BUILD)/wlr-layer-shell-unstable-v1-protocol.c $(BUILD)/xdg-shell-protocol.c
-PROTO_H    = $(BUILD)/wlr-layer-shell-unstable-v1-client-protocol.h $(BUILD)/xdg-shell-client-protocol.h
+PROTO_XML  = $(PROTO)/wlr-layer-shell-unstable-v1.xml $(PROTO)/xdg-shell.xml $(PROTO)/fractional-scale-v1.xml $(PROTO)/viewporter.xml
+PROTO_C    = $(BUILD)/wlr-layer-shell-unstable-v1-protocol.c $(BUILD)/xdg-shell-protocol.c $(BUILD)/fractional-scale-v1-protocol.c $(BUILD)/viewporter-protocol.c
+PROTO_H    = $(BUILD)/wlr-layer-shell-unstable-v1-client-protocol.h $(BUILD)/xdg-shell-client-protocol.h $(BUILD)/fractional-scale-v1-client-protocol.h $(BUILD)/viewporter-client-protocol.h
 
 all: $(BUILD)/flux-wall
 

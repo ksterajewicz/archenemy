@@ -155,12 +155,13 @@ archenemy/
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
     └── dither-flux/                  # Zestaw: 3 formy generatywne (pole przepływu ×2, atraktor) w rastrze
-                                      #   Bayera, paleta milford-woda — v1/v2; z gen_dither_flux_wallpaper.py.
+                                      #   Bayera, paleta milford-woda — v1/v2 z repo; generated/ (poza gitem)
+                                      #   = te same formy pod REALNE monitory, install.sh [9.7].
 ```
 
 ## Tapety
 
-Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
+Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Wyjątek: zestaw `dither-flux` jest **generowany pod realne monitory** — `install.sh` krok **[9.7]** czyta rozdzielczości i role z `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, dalsze → `m-<nazwa>`; tryby nazwane jak `preferred` dopytuje `hyprctl`) i w tle uruchamia `gen_dither_flux_wallpaper.py` do `wallpapers/dither-flux/generated/` (poza gitem; log `generate.log`). Raster 1 px nie znosi skalowania, więc tapeta musi mieć dokładnie rozdzielczość ekranu. Pliki `v1`/`v2` z repo zostają jako zestaw awaryjny. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
 
 Na górze menu jest przełącznik **`[x] Upload to all monitors`** (domyślnie zaznaczony):
 
@@ -177,18 +178,22 @@ Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem worksp
 
 Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`, `time`, `palette_bg`/`palette_ink`/`palette_accent` (trzy kolory rice'a) i `detail` (0–1). **`detail` steruje szczegółowością z poziomu baterii** (`--battery`: `/sys/class/power_supply/BAT*`): mniej procent = mniej oktaw szumu i wolniejszy dryf, czyli mniej pracy GPU dokładnie wtedy, gdy energii ubywa; na zasilaniu sieciowym pełnia. Zmiana jest interpolowana płynnie.
 
-Budowanie: `install.sh` krok **[9.6]** (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — każde niepowodzenie zostawia tapety w hyprpaper i ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji.
+**Rozdzielczość i skala.** Każdy monitor dostaje własną powierzchnię w rozmiarze, który podaje kompozytor, pomnożonym przez skalę — także **ułamkową** (`wp_fractional_scale_v1` + `wp_viewporter`: bufor ma rozmiar logiczny × np. 1.25 zaokrąglony do pikseli fizycznych, a viewport mapuje go na rozmiar logiczny). Raster jest 1:1 przy każdej rozdzielczości i skali ustawionej w `install.sh` [3.5]; bez tych protokołów wraca skala całkowita `wl_output`.
 
-Uruchamianie (etap prototypu — ręcznie, integracja z `Super+W` i przełącznikiem rice'ów po testach na żywej maszynie):
+**Warstwa.** flux-wall rysuje na warstwie `bottom` — **nad** tapetą hyprpapera (warstwa `background`) i **pod** oknami. Hyprpaper działa zawsze i zostaje pod spodem: gdyby flux-wall padł albo nie został zbudowany, widać zwykłą tapetę. To jest cały fallback — bez osobnej logiki.
+
+**Out of the box.** `install.sh` krok **[9.6]** buduje binarkę (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — brak narzędzi albo błąd `make` ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji. Rice **deklaruje** użycie flux-wall plikiem `rices/<rice>/flux-wall.conf` (paleta, shader, argumenty — `dither-flux` ma `--battery`); autostart rice'a (`hyprland.lua`) i przełącznik `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje dla nowego, jeśli ma deklarację. Brak binarki lub deklaracji = cicho nic.
+
+Ręcznie:
 
 ```
-scripts/wallpapers/flux-wall.sh start          # paleta milford-woda, --battery, log w $XDG_RUNTIME_DIR/flux-wall.log
-scripts/wallpapers/flux-wall.sh start -f 30    # limit 30 klatek/s
+scripts/wallpapers/flux-wall.sh start          # dla bieżącego rice'a (conf), log w $XDG_RUNTIME_DIR/flux-wall.log
+scripts/wallpapers/flux-wall.sh start -f 30    # dodatkowe opcje idą do flux-wall: limit 30 klatek/s
 scripts/wallpapers/flux-wall.sh start --once   # jedna klatka, bez animacji
-scripts/wallpapers/flux-wall.sh stop
+scripts/wallpapers/flux-wall.sh stop | status
 ```
 
-Bezpośrednio: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fps] [-o nazwa-monitora] [--once] [-v]`. Kody wyjścia: 1 argumenty/plik, 2 brak Waylanda lub layer-shell, 3 błąd EGL/shadera — skrypty używają ich do fallbacku. Testy funkcji czystych (paleta, bateria): `make -C src/flux-wall test`.
+Bezpośrednio: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fps] [-o nazwa-monitora] [-l bottom|background] [--once] [-v]`. Kody wyjścia: 1 argumenty/plik, 2 brak Waylanda lub layer-shell, 3 błąd EGL/shadera. Testy funkcji czystych (paleta, bateria): `make -C src/flux-wall test`.
 
 ## Rice'y
 

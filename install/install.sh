@@ -943,6 +943,82 @@ else
 fi
 echo ""
 
+# ─── 9.7 TAPETY DITHER-FLUX POD REALNE MONITORY ──────────────────────────────
+# Generator maluje raster 1 px, więc tapeta musi mieć DOKŁADNIE rozdzielczość
+# monitora — skalowanie przez hyprpaper rozmywa ziarno. Rozdzielczości i role
+# bierzemy z data/monitors/*.dat ([3.5]): primary → v1, secondary → v2 (tak
+# paruje je przełącznik Super+W), pozostałe → m-<nazwa>. Wynik do
+# wallpapers/dither-flux/generated/ (poza gitem). Czysty Python liczy kilka
+# minut, więc generowanie idzie W TLE — instalator nie czeka; pliki pojawiają
+# się w Super+W, gdy będą gotowe. Idempotentne: gotowe pliki pomijane.
+
+echo -e "${CYAN}[9.7] Generating dither-flux wallpapers for detected monitors...${NC}"
+
+FLUX_GEN="$ARCHENEMY_DIR/scripts/wallpapers/gen_dither_flux_wallpaper.py"
+FLUX_OUT="$ARCHENEMY_DIR/wallpapers/dither-flux/generated"
+FLUX_SIZES=()
+FLUX_SKIPPED_MONS=()
+if command -v python3 &>/dev/null && [[ -f "$FLUX_GEN" ]]; then
+    for dat in "$DATA_DIR"/monitors/*.dat; do
+        [[ -f "$dat" ]] || continue
+        mon=$(grep '^MONITOR='    "$dat" | cut -d= -f2)
+        res=$(grep '^RESOLUTION=' "$dat" | cut -d= -f2)
+        role=$(grep '^ROLE='      "$dat" | cut -d= -f2)
+        # Tryby nazwane (preferred/highres/highrr) nie mówią, ile to pikseli —
+        # pytamy działającego Hyprlanda; bez niego monitor pomijamy z komunikatem.
+        if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+            # Bez f-stringa: backslash w wyrażeniu f-stringa to SyntaxError, a błąd
+            # składni powstaje przed wykonaniem — `except` go nie złapie (złapane
+            # testem na atrapie 2026-09-07).
+            res=$(hyprctl -j monitors 2>/dev/null | python3 -c '
+import json, sys
+mon = sys.argv[1]
+try:
+    for m in json.load(sys.stdin):
+        if m.get("name") == mon and m.get("width") and m.get("height"):
+            print("%dx%d" % (int(m["width"]), int(m["height"]))); break
+except Exception:
+    pass' "$mon" 2>/dev/null)
+            if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+                FLUX_SKIPPED_MONS+=("$mon (tryb nazwany, brak hyprctl)")
+                continue
+            fi
+        fi
+        # Tag z NAZWY monitora, nie z licznika: numeracja zależałaby od kolejności
+        # plików .dat i nowy monitor przesuwałby numery już wygenerowanych plików
+        # (przeliczanie gotowych tapet — złapane testem na atrapie 2026-09-07).
+        case "$role" in
+            primary)   tag="v1" ;;
+            secondary) tag="v2" ;;
+            *)         tag="m-$mon" ;;
+        esac
+        # gotowe? (pierwsza forma jako wskaźnik kompletu tej rozdzielczości)
+        if [[ -f "$FLUX_OUT/dither-flux-przeplyw-$tag-$res.png" ]]; then
+            echo -e "  ${GREEN}✓ $mon $res ($tag) — już wygenerowane${NC}"
+            continue
+        fi
+        FLUX_SIZES+=("$tag:$res")
+        echo -e "  → $mon $res ($tag)"
+    done
+    if [[ ${#FLUX_SIZES[@]} -gt 0 ]]; then
+        mkdir -p "$FLUX_OUT"
+        nohup python3 "$FLUX_GEN" "$FLUX_OUT" milford-woda 2026 "${FLUX_SIZES[@]}" \
+            >"$FLUX_OUT/generate.log" 2>&1 &
+        echo -e "  ${GREEN}✓ generowanie w tle (${FLUX_SIZES[*]}); log: wallpapers/dither-flux/generated/generate.log${NC}"
+        SUMMARY_DONE+=("dither-flux: tapety pod ${FLUX_SIZES[*]} generują się w tle (Super+W pokaże je za kilka minut)")
+    elif [[ ${#FLUX_SKIPPED_MONS[@]} -eq 0 ]]; then
+        echo -e "  ${GREEN}✓ nic do zrobienia${NC}"
+    fi
+    if [[ ${#FLUX_SKIPPED_MONS[@]} -gt 0 ]]; then
+        echo -e "  ${YELLOW}⚠ pominięte: ${FLUX_SKIPPED_MONS[*]}${NC}"
+        SUMMARY_SKIPPED+=("dither-flux: tapety NIE wygenerowane dla: ${FLUX_SKIPPED_MONS[*]} — podaj rozdzielczość WxH w [3.5] albo uruchom z sesji Hyprlanda")
+    fi
+else
+    echo -e "  ${YELLOW}⚠ brak python3 albo generatora — tapety dither-flux tylko z repo (v1/v2)${NC}"
+    SUMMARY_SKIPPED+=("dither-flux: generowanie tapet pod monitory pominięte (brak python3)")
+fi
+echo ""
+
 # ─── 10. UFW + SYSTEMD ────────────────────────────────────────────────────────
 
 echo -e "${CYAN}[10] Optional configuration...${NC}"

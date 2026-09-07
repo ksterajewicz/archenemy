@@ -48,6 +48,11 @@ pciutils
 base-devel
 wayland
 mesa
+# python: install.sh [9.7] generuje tapety dither-flux pod realne rozdzielczości
+# monitorów (scripts/wallpapers/gen_dither_flux_wallpaper.py, czysty Python bez
+# zależności); do 2026-09-07 był opcjonalny (regeneracja tapet), teraz wymagany —
+# bez niego rice dither-flux ma tylko zestaw awaryjny v1/v2 z repo
+python
 # fonts + icons
 # ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
 ttf-iosevka-nerd

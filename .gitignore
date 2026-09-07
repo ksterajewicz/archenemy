@@ -37,3 +37,4 @@ __pycache__/
 
 # ─── flux-wall: artefakty budowania (kod protokołów z wayland-scanner, binarka) ──
 /src/flux-wall/build/
+/wallpapers/dither-flux/generated/

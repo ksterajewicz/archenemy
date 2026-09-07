@@ -15,11 +15,16 @@ a generator maluje nimi każdą formę. Dzięki temu zmiana palety rice'a nie wy
 dotykania silników.
 
 Użycie:
-    gen_dither_flux_wallpaper.py [katalog] [paleta] [ziarno] [filtr nazw...]
+    gen_dither_flux_wallpaper.py [katalog] [paleta] [ziarno] [TAG:WxH ...] [filtr nazw...]
 
     katalog  domyślnie wallpapers/dither-flux
     paleta   nazwa z PALETTES (domyślnie: milford-woda — paleta rice'a)
     ziarno   liczba całkowita (domyślnie 2026)
+    TAG:WxH  rozdzielczość docelowa, np. v1:1920x1080 v2:2560x1600 — podane
+             zastępują domyślne SIZES. install.sh podaje tu REALNE tryby
+             monitorów z data/monitors/*.dat (primary → v1, secondary → v2),
+             żeby raster był liczony natywnie, bez skalowania.
+    filtr    fragment nazwy formy (przeplyw, atraktor…) — generuj tylko pasujące
 """
 import math, os, struct, sys, time, zlib
 
@@ -371,15 +376,32 @@ def render(form, engine, seed, level, gamma, palette, out_dir):
               f'akcent {acc*100:.1f}%  {size} KiB  ({time.time() - t0:.0f} s)', flush=True)
 
 if __name__ == '__main__':
+    import re
     out_dir = sys.argv[1] if len(sys.argv) > 1 else 'wallpapers/dither-flux'
     palette = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_PALETTE
     base_seed = int(sys.argv[3]) if len(sys.argv) > 3 else 2026
-    only = sys.argv[4:] or None
+    rest = sys.argv[4:]
+    # Argumenty w formie TAG:WxH to rozdzielczości; reszta to filtry nazw form.
+    sizes = []
+    only = []
+    for arg in rest:
+        m = re.fullmatch(r'([a-z0-9]+):(\d+)x(\d+)', arg)
+        if m:
+            w, h = int(m.group(2)), int(m.group(3))
+            if w < 64 or h < 64 or w > 16384 or h > 16384:
+                sys.exit(f'Rozdzielczość poza zakresem: {arg}')
+            sizes.append((m.group(1), w, h))
+        else:
+            only.append(arg)
+    if sizes:
+        SIZES[:] = sizes
+    only = only or None
 
     if palette not in PALETTES:
         sys.exit(f'Nieznana paleta: {palette}. Dostępne: {", ".join(PALETTES)}')
     os.makedirs(out_dir, exist_ok=True)
-    print(f'archenemy — tapety dither-flux (paleta {palette}, ziarno {base_seed})')
+    print(f'archenemy — tapety dither-flux (paleta {palette}, ziarno {base_seed}, '
+          f'rozmiary {", ".join(f"{t}:{w}x{h}" for t, w, h in SIZES)})')
     for form, engine, off, level, gamma in FORMS:
         if only and not any(o in form for o in only):
             continue

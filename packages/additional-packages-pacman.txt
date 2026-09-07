@@ -18,5 +18,3 @@ gamemode
 lib32-gamemode
 # gamescope: mikrokompozytor Valve — ratuje problematyczne gry Proton
 gamescope
-# python: tylko do regeneracji tapet (scripts/wallpapers/gen_arch_wallpaper.py)
-python
