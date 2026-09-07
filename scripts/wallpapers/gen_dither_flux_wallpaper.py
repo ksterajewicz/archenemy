@@ -18,23 +18,25 @@ Użycie:
     gen_dither_flux_wallpaper.py [katalog] [paleta] [ziarno] [filtr nazw...]
 
     katalog  domyślnie wallpapers/dither-flux
-    paleta   indygo | mroz | papier | mech   (domyślnie: indygo)
+    paleta   nazwa z PALETTES (domyślnie: milford-woda — paleta rice'a)
     ziarno   liczba całkowita (domyślnie 2026)
 """
 import math, os, struct, sys, time, zlib
 
-# ── palety rice'ów ───────────────────────────────────────────────────────────
+# ── paleta rice'a ────────────────────────────────────────────────────────────
 # (tło, atrament, akcent lub None, próg pasma akcentu jako ułamek maksimum pola)
+#
+# `milford-woda` — paleta deszczowa odczytana z kadru Milford Sound w ulewie
+# (wybór właściciela 2026-09-07): czarne mokre góry, stalowo-błękitna wzburzona
+# woda, biała piana wodospadu. Akcentem jest PIANA, nie kolor ciepły — dlatego
+# rozświetlenia siadają na grzbietach smug i obraz czyta się jak mokre warstwice.
+# Słownik zostaje słownikiem, choć ma dziś jeden wpis: paleta jest parametrem
+# wywołania, więc kolejny rice dopisze swoją bez dotykania silników.
 PALETTES = {
-    # stalowy atrament na granatowej nocy, akcent bursztynowy
-    'indygo': dict(bg=(0x0E, 0x12, 0x20), ink=(0x8E, 0xA2, 0xD6), acc=(0xE8, 0xC1, 0x70), acc_from=0.82),
-    # zimna biel z błękitem — akcent jest czystym błękitem
-    'mroz':   dict(bg=(0x11, 0x18, 0x20), ink=(0xC9, 0xD7, 0xE3), acc=(0x5F, 0xB3, 0xE8), acc_from=0.84),
-    # ciemny atrament na jasnym papierze; duotone, bez akcentu
-    'papier': dict(bg=(0xEC, 0xE6, 0xD8), ink=(0x2B, 0x2A, 0x33), acc=None,               acc_from=2.0),
-    # szałwia na mchu, akcent musztardowy
-    'mech':   dict(bg=(0x14, 0x1A, 0x16), ink=(0x8F, 0xA8, 0x8A), acc=(0xD9, 0xA4, 0x41), acc_from=0.83),
+    'milford-woda': dict(bg=(0x0F, 0x1A, 0x24), ink=(0x5C, 0x87, 0xA3), acc=(0xD8, 0xE6, 0xEE), acc_from=0.80),
 }
+
+DEFAULT_PALETTE = 'milford-woda'
 
 # Rozdzielczości: v1 trafia na monitor główny, v2 na dodatkowy (konwencja
 # przełącznika tapet — rofi_wallpaper_switcher.sh paruje pliki po *v1*/*v2*).
@@ -338,13 +340,13 @@ def engine_warp(w, h, seed):
     vignette(out, w, h, 0.25)
     return out
 
-# ── formy wybrane przez właściciela (partia 2 z przeglądu 2026-09-07) ────────
+# ── formy pierwszego zestawu (wybór właściciela 2026-09-07) ──────────────────
 # (nazwa pliku, silnik, offset ziarna, poziom tonowania, gamma tonowania)
+# Silniki fal i domain warpingu zostają wyżej i są sprawne — po prostu nie weszły
+# do pierwszego zestawu tapet; dopisanie ich tutaj wystarczy, by wróciły.
 FORMS = [
     ('przeplyw',  engine_flow,      1,  0.62, 1.9),
     ('atraktor',  engine_attractor, 2,  0.62, 1.9),
-    ('fale',      engine_waves,     12, 0.60, 1.9),
-    ('warp',      engine_warp,      16, 0.55, 3.0),
     ('przeplyw2', engine_flow,      17, 0.62, 1.9),
 ]
 
@@ -370,7 +372,7 @@ def render(form, engine, seed, level, gamma, palette, out_dir):
 
 if __name__ == '__main__':
     out_dir = sys.argv[1] if len(sys.argv) > 1 else 'wallpapers/dither-flux'
-    palette = sys.argv[2] if len(sys.argv) > 2 else 'indygo'
+    palette = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_PALETTE
     base_seed = int(sys.argv[3]) if len(sys.argv) > 3 else 2026
     only = sys.argv[4:] or None
 
