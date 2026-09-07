@@ -533,9 +533,16 @@ case "$hw_choice" in
         HW_PROFILE="asus"
         echo -e "  ${GREEN}✓ ASUS ROG selected.${NC}"
         echo ""
-        if command -v yay &>/dev/null; then
-            echo -e "  Installing asusctl and rog-control-center..."
-            yay -S --needed asusctl rog-control-center
+        # asusctl i rog-control-center są w OFICJALNYM repo (extra) — instalujemy
+        # pacmanem, nie yay. Stara ścieżka `yay -S asusctl` dawała menu „4 providers":
+        # pakiet `asusctl` nie istnieje już w AUR pod własną nazwą, a cztery inne
+        # (asusctl-git, -devel-git, -nosystemd, -x11) go tylko DOSTARCZAJĄ — yay
+        # z nieodświeżoną bazą pacmana nie widział extra/asusctl i pytał o AUR-owego
+        # dostawcę (zgłoszenie właściciela 2026-09-07). Instalator celowo nie robi
+        # `pacman -Sy` (częściowa aktualizacja na Archu) — przy nieznanym pakiecie
+        # mówi wprost, co zrobić.
+        echo -e "  Installing asusctl and rog-control-center (repo extra)..."
+        if sudo pacman -S --needed asusctl rog-control-center; then
             # asusd musi działać, inaczej przełącznik profili (asusctl profile) nie zadziała
             if systemctl list-unit-files asusd.service &>/dev/null; then
                 sudo systemctl enable --now asusd.service
@@ -544,7 +551,10 @@ case "$hw_choice" in
                 echo -e "  ${YELLOW}⚠ Brak asusd.service — włącz daemon asusd ręcznie.${NC}"
             fi
         else
-            echo -e "  ${YELLOW}⚠ yay not available — install asusctl / rog-control-center manually.${NC}"
+            echo -e "  ${RED}✗ asusctl/rog-control-center NIE zainstalowane.${NC}"
+            echo -e "    Jeśli pacman nie zna pakietu: baza jest nieodświeżona — zrób pełną"
+            echo -e "    aktualizację (sudo pacman -Syu) i uruchom instalator ponownie."
+            SUMMARY_SKIPPED+=("asusctl/rog-control-center (repo extra) — instalacja nie powiodła się; profile przez fallback ppd")
         fi
         # Domknięcie ścieżki ASUS: gdy asusctl mimo wszystko nie odpowiada
         # (brak yay, nieudana instalacja, asusd nie wstał), profile mają działać
