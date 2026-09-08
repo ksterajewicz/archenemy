@@ -12,6 +12,10 @@
 #include <unistd.h>
 
 #include "engine.h"
+#include "audio.h"
+#define TEST_PI 3.14159265f
+#include <math.h>
+#include <time.h>
 bool  parse_hex_color(const char *hex, float out[3]);
 bool  parse_palette(const char *spec, struct palette *p);
 float battery_detail(const char *power_supply_dir);
@@ -104,6 +108,91 @@ int main(void) {
     CHECK(flux_update_path("shaders/dither-flow.frag", up, sizeof up) && strcmp(up, "shaders/dither-flow.update.glsl") == 0, ".frag → .update.glsl");
     CHECK(!flux_update_path("shaders/dither-flow.glsl", up, sizeof up), "nie-.frag → false");
     CHECK(!flux_update_path("shaders/dither-flow.frag", up, 8), "za mały bufor → false");
+
+    /* ── DSP audio (czyste funkcje) ─────────────────────────────────────── */
+    printf("audio_fft_power\n");
+    static struct audio_fft fft; audio_fft_init(&fft);
+    static float sig[AUDIO_FFT_N]; static float pw[AUDIO_FFT_N / 2 + 1];
+    const float f44 = 44.0f * AUDIO_RATE / AUDIO_FFT_N;                 /* 1031.25 Hz = środek binu 44 */
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = sinf(2.0f * TEST_PI * f44 * (float)i / AUDIO_RATE);
+    audio_fft_power(&fft, sig, pw);
+    int kpeak = 0; for (int k = 1; k <= AUDIO_FFT_N / 2; k++) if (pw[k] > pw[kpeak]) kpeak = k;
+    CHECK(kpeak == 44, "sinus 1031.25 Hz → pik w binie 44");
+    CHECK(pw[kpeak] > 0.9f && pw[kpeak] < 1.1f, "moc piku ~1.0 (normalizacja)");
+    CHECK(pw[kpeak + 10] < pw[kpeak] * 0.001f && pw[kpeak - 10] < pw[kpeak] * 0.001f, "10 binów dalej < -30 dB");
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.0f;
+    audio_fft_power(&fft, sig, pw);
+    float tot = 0; for (int k = 0; k <= AUDIO_FFT_N / 2; k++) tot += pw[k];
+    CHECK(tot == 0.0f, "cisza → moc 0");
+
+    printf("audio_bands\n");
+    struct audio_bands_raw raw;
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.5f * sinf(2.0f * TEST_PI * 60.0f * (float)i / AUDIO_RATE);
+    audio_fft_power(&fft, sig, pw);
+    audio_bands(pw, AUDIO_FFT_N / 2 + 1, AUDIO_RATE, sig, AUDIO_FFT_N, &raw);
+    CHECK(raw.bass > 5.0f * raw.mid && raw.bass > 5.0f * raw.high, "60 Hz → energia w basie, nie w mid/high");
+    CHECK(raw.level > 0.34f && raw.level < 0.36f, "RMS sinusa 0.5 ≈ 0.354 (2.56 okresu w oknie)");
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.5f * sinf(2.0f * TEST_PI * 6000.0f * (float)i / AUDIO_RATE);
+    audio_fft_power(&fft, sig, pw);
+    audio_bands(pw, AUDIO_FFT_N / 2 + 1, AUDIO_RATE, sig, AUDIO_FFT_N, &raw);
+    CHECK(raw.high > 5.0f * raw.bass && raw.high > 5.0f * raw.mid, "6 kHz → energia w high");
+    int nz = 0; for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) if (raw.spectrum[i] > 0.01f) nz++;
+    CHECK(nz >= 1 && nz <= 3, "6 kHz w widmie log: 1–3 biny");
+
+    printf("audio_agc_step / audio_smooth\n");
+    struct audio_agc agc = {0};
+    CHECK(near(audio_agc_step(&agc, 0.5f, 0.02f, 0.004f), 1.0f), "pierwszy sygnał → 1.0 (peak = x)");
+    CHECK(audio_agc_step(&agc, 0.25f, 0.02f, 0.004f) < 0.55f, "połowa peaku → ~0.5");
+    for (int i = 0; i < 1000; i++) audio_agc_step(&agc, 0.0f, 0.02f, 0.004f);  /* 20 s ciszy (stała 2 s) */
+    CHECK(near(agc.peak, 0.004f), "po 20 s peak opada do podłogi");
+    CHECK(near(audio_agc_step(&agc, 0.002f, 0.02f, 0.004f), 0.5f), "sygnał pod podłogą → x/podłoga, nie 1.0");
+    float sm = audio_smooth(0.0f, 1.0f, 0.02f, 0.03f, 0.25f);
+    float sd = audio_smooth(1.0f, 0.0f, 0.02f, 0.03f, 0.25f);
+    CHECK(sm > 0.4f && sd > 0.9f, "atak szybki (0→0.49), opadanie wolne (1→0.92)");
+
+    printf("audio_beat_step\n");
+    struct audio_beat bt = {0};
+    int hits = 0;
+    for (int i = 0; i < 110; i++) {                       /* impulsy co 500 ms, pierwszy po 200 ms */
+        bool imp = (i % 25 == 10);
+        float o = audio_beat_step(&bt, imp ? 1.0f : 0.1f, 0.02f);
+        if (imp && o >= 0.99f) hits++;
+    }
+    CHECK(hits == 4, "4 impulsy co 500 ms → 4 detekcje");
+    struct audio_beat bt2 = {0}; int onsets = 0;
+    for (int i = 0; i < 100; i++) if (audio_beat_step(&bt2, 0.8f, 0.02f) >= 0.99f) onsets++;
+    CHECK(onsets == 1, "ton ciągły → dokładnie jeden onset, bez serii");
+
+    printf("audio_features_age\n");
+    struct audio_features fe = { .level = 1.0f, .bass = 1.0f, .t = 10.0 };
+    audio_features_age(&fe, 10.05, 0.25f);
+    CHECK(near(fe.bass, 1.0f), "50 ms → bez zmian");
+    audio_features_age(&fe, 10.6, 0.25f);
+    CHECK(fe.bass < 0.2f, "500 ms → zgaszone");
+
+    printf("audio_analyze (cały łańcuch)\n");
+    static struct audio_state st; audio_state_init(&st);
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.5f * sinf(2.0f * TEST_PI * 60.0f * (float)i / AUDIO_RATE);
+    for (int i = 0; i < 20; i++) audio_analyze(&st, sig, 0.02f, 1.0 + i * 0.02);
+    CHECK(st.out.bass > 0.8f && st.out.high < 0.2f, "bas 60 Hz przez 0.4 s → bass ~1, high ~0");
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.0f;
+    for (int i = 0; i < 50; i++) audio_analyze(&st, sig, 0.02f, 2.0 + i * 0.02);
+    CHECK(st.out.bass < 0.05f && st.out.level < 0.05f, "cisza 1 s → wszystko ~0");
+
+    printf("audio_start z pliku (wątek, bez serwera)\n");
+    {
+        char fpath[512]; snprintf(fpath, sizeof fpath, "%s/tone.f32", dir);
+        FILE *tf = fopen(fpath, "wb");
+        for (int i = 0; i < AUDIO_RATE; i++) { float v = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE); fwrite(&v, sizeof v, 1, tf); }
+        fclose(tf);
+        struct audio *au = audio_start(NULL, fpath, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct timespec ts = { 0, 400000000L }; nanosleep(&ts, NULL);
+        struct audio_features snap; audio_snapshot(au, &snap);
+        CHECK(snap.live && snap.bass > 0.5f && snap.t > 0.0, "po 0.4 s: live, bass > 0.5, znacznik czasu");
+        audio_stop(au);
+        remove(fpath);
+    }
 
     /* sprzątanie */
     const char *files[] = { "BAT0/capacity", "BAT0/status", "BAT1/capacity", "BAT1/status", "BAT0", "BAT1", NULL };

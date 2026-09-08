@@ -5,13 +5,13 @@
 #   pakietów wayland-protocols / wlr-protocols.
 #
 #   make            zbuduj build/flux-wall
-#   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux)
+#   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio)
 #   make clean
 # =============================================
 
 CC      ?= gcc
 CFLAGS  ?= -O2 -std=c11 -Wall -Wextra -Wpedantic
-PKGS     = wayland-client wayland-egl egl glesv2
+PKGS     = wayland-client wayland-egl egl glesv2 libpulse-simple
 CFLAGS  += $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))
 
@@ -36,8 +36,9 @@ $(BUILD)/%-client-protocol.h: $(PROTO)/%.xml | $(BUILD)
 	$(SCANNER) client-header $< $@
 
 # engine.c = rysowanie (GLES, bez Waylanda); main.c = Wayland/EGL i pętla.
-$(BUILD)/flux-wall: main.c engine.c engine.h $(PROTO_C) $(PROTO_H) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(BUILD) -o $@ main.c engine.c $(PROTO_C) $(LDLIBS) -lm
+# audio.c = analiza dźwięku z monitora wyjścia (libpulse-simple + pthread).
+$(BUILD)/flux-wall: main.c engine.c engine.h audio.c audio.h $(PROTO_C) $(PROTO_H) | $(BUILD)
+	$(CC) $(CFLAGS) -I$(BUILD) -o $@ main.c engine.c audio.c $(PROTO_C) $(LDLIBS) -lm -lpthread
 
 # Testy funkcji czystych (paleta, bateria) bez Waylanda/EGL — patrz test.c.
 # main.c kompilowany OSOBNO z main() przemianowanym na flux_wall_main; test.c
@@ -45,8 +46,8 @@ $(BUILD)/flux-wall: main.c engine.c engine.h $(PROTO_C) $(PROTO_H) | $(BUILD)
 $(BUILD)/main-under-test.o: main.c $(PROTO_H) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(BUILD) -Dmain=flux_wall_main -c -o $@ main.c
 
-$(BUILD)/flux-wall-test: test.c engine.c engine.h $(BUILD)/main-under-test.o $(PROTO_C) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(BUILD) -o $@ test.c engine.c $(BUILD)/main-under-test.o $(PROTO_C) $(LDLIBS) -lm
+$(BUILD)/flux-wall-test: test.c engine.c engine.h audio.c audio.h $(BUILD)/main-under-test.o $(PROTO_C) | $(BUILD)
+	$(CC) $(CFLAGS) -I$(BUILD) -o $@ test.c engine.c audio.c $(BUILD)/main-under-test.o $(PROTO_C) $(LDLIBS) -lm -lpthread
 
 test: $(BUILD)/flux-wall-test
 	./$(BUILD)/flux-wall-test
