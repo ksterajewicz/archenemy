@@ -111,6 +111,13 @@ audio_args() {      # ustawia AUDIO_ARGS
     local lvl strength sink
     lvl="$(read_audio_level)"
     [[ "$lvl" == "off" ]] && return 0
+    # Binarka sprzed reakcji na dźwięk (git pull bez install.sh/make) nie zna
+    # --audio i padłaby na getopt z kodem 1 — wtedy startujemy BEZ audio
+    # i mówimy, co zrobić. (2026-09-08: tak wyglądało „Animation failed to start”.)
+    if ! "$BIN" --help 2>&1 | grep -q -- '--audio'; then
+        echo "flux-wall.sh: binarka nie zna --audio — uruchom ./install/install.sh (krok [9.6]) albo make -C src/flux-wall; startuję bez reakcji na dźwięk" >&2
+        return 0
+    fi
     command -v pactl >/dev/null 2>&1 || return 0
     sink="$(pactl get-default-sink 2>/dev/null)"
     [[ -n "$sink" ]] || return 0
