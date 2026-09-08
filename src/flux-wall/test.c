@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-struct palette { float bg[3], ink[3], accent[3]; };
+#include "engine.h"
 bool  parse_hex_color(const char *hex, float out[3]);
 bool  parse_palette(const char *spec, struct palette *p);
 float battery_detail(const char *power_supply_dir);
@@ -80,6 +80,30 @@ int main(void) {
     snprintf(path, sizeof path, "%s/BAT1/capacity", dir); write_file(path, "7\n");
     snprintf(path, sizeof path, "%s/BAT1/status", dir);   write_file(path, "Discharging\n");
     CHECK(near(battery_detail(dir), 0.07f), "BAT0 uszkodzona, BAT1 7% → 0.07");
+
+    /* #pragma flux — parser parametrów animacji cząstkowej */
+    printf("flux_params_parse\n");
+    char err[256];
+    struct flux_params fp = FLUX_PARAMS_DEFAULT;
+    CHECK(flux_params_parse("// bez pragm\nvoid main(){}\n", &fp, err, sizeof err) && fp.particles == 20000 && near(fp.life, 4.0f), "brak pragm → domyślne");
+    fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
+    CHECK(flux_params_parse("#pragma flux particles 20800\n  #pragma flux life 4.3\n#pragma flux splat 1\n#pragma flux warm 20\n#pragma flux seed 7\n", &fp, err, sizeof err)
+          && fp.particles == 20800 && near(fp.life, 4.3f) && fp.splat == 1 && fp.warm == 20 && fp.seed == 7, "pięć kluczy (w tym z wcięciem)");
+    fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
+    CHECK(!flux_params_parse("#pragma flux particles abc\n", &fp, err, sizeof err) && strstr(err, "nie jest liczbą"), "wartość nie-liczba → błąd");
+    CHECK(!flux_params_parse("#pragma flux kolor 1\n", &fp, err, sizeof err) && strstr(err, "nieznany klucz"), "nieznany klucz → błąd");
+    CHECK(!flux_params_parse("#pragma flux life 0\n", &fp, err, sizeof err) && strstr(err, "poza zakresem"), "life 0 → poza zakresem");
+    CHECK(!flux_params_parse("#pragma flux splat 2\n", &fp, err, sizeof err), "splat 2 → poza zakresem");
+    CHECK(!flux_params_parse("#pragma flux life\n", &fp, err, sizeof err) && strstr(err, "klucz wartość"), "brak wartości → błąd");
+    CHECK(!flux_params_parse("#pragma flux life 4 5\n", &fp, err, sizeof err), "nadmiarowy token → błąd");
+    fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
+    CHECK(flux_params_parse("#pragma once\n#pragma fluxx 1 2\n", &fp, err, sizeof err) && fp.particles == 20000, "inne pragmy ignorowane");
+
+    printf("flux_update_path\n");
+    char up[64];
+    CHECK(flux_update_path("shaders/dither-flow.frag", up, sizeof up) && strcmp(up, "shaders/dither-flow.update.glsl") == 0, ".frag → .update.glsl");
+    CHECK(!flux_update_path("shaders/dither-flow.glsl", up, sizeof up), "nie-.frag → false");
+    CHECK(!flux_update_path("shaders/dither-flow.frag", up, 8), "za mały bufor → false");
 
     /* sprzątanie */
     const char *files[] = { "BAT0/capacity", "BAT0/status", "BAT1/capacity", "BAT1/status", "BAT0", "BAT1", NULL };

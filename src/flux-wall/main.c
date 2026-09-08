@@ -5,11 +5,15 @@
  *
  *   Jedna powierzchnia na każdy monitor, raster liczony natywnie w pikselach
  *   fizycznych (bez skalowania — dither jednopikselowy nie znosi skalowania).
- *   Fragment shader dostaje uniformy:
+ *   Rysowaniem zajmuje się silnik z engine.c (bez Waylanda — ten sam kod
+ *   działa offscreen w testach). Fragment shader dostaje uniformy:
  *     vec2  resolution       rozmiar powierzchni w pikselach
  *     float time             sekundy od startu (animacja)
  *     vec3  palette_bg/ink/accent   paleta rice'a (0..1)
  *     float detail           szczegółowość 0..1 (z baterii albo stała)
+ *   a gdy obok `<shader>.frag` leży `<shader>.update.glsl`, silnik przechodzi
+ *   w tryb cząstkowy (formy akumulacyjne: pole przepływu, atraktor) i dokłada
+ *   `sampler2D accum` + `gain` — kontrakt w engine.h.
  *
  *   Kody wyjścia (install.sh i przełącznik używają ich do fallbacku na hyprpaper):
  *     0 ok   1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
@@ -46,10 +50,9 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
+#include "engine.h"
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
-
-struct palette { float bg[3], ink[3], accent[3]; };
 
 struct config {
     const char *shader_path;
@@ -85,6 +88,7 @@ struct output {
     int32_t width, height;       /* piksele fizyczne */
     bool configured;
     bool needs_frame;            /* klatka czeka na limit fps */
+    struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
     struct output *next;
 };
 
@@ -101,8 +105,9 @@ struct state {
     EGLDisplay egl_display;
     EGLConfig  egl_config;
     EGLContext egl_context;
-    GLuint program;
-    GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail;
+    struct flux_engine *engine;  /* programy GL (present + ewentualnie cząstki) */
+    char  *frag_src, *update_src; /* źródła wczytane na starcie; update NULL = tryb jednoprzebiegowy */
+    char   update_path[1024];
 
     struct timespec start;
     double last_render;          /* do limitu fps */
@@ -190,14 +195,6 @@ float battery_detail(const char *power_supply_dir) {
 
 /* ── GLES ─────────────────────────────────────────────────────────────────── */
 
-static const char *VERTEX_SRC =
-    "#version 300 es\n"
-    "void main() {\n"
-    "    /* jeden trojkat pokrywajacy caly ekran, bez VBO */\n"
-    "    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);\n"
-    "    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-    "}\n";
-
 static char *read_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -213,50 +210,21 @@ static char *read_file(const char *path) {
     return buf;
 }
 
-static GLuint compile_shader(GLenum type, const char *src, const char *label) {
-    GLuint sh = glCreateShader(type);
-    glShaderSource(sh, 1, &src, NULL);
-    glCompileShader(sh);
-    GLint ok = 0;
-    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[4096];
-        glGetShaderInfoLog(sh, sizeof log, NULL, log);
-        die(3, "kompilacja shadera (%s) nie powiodła się:\n%s", label, log);
+/* Programy GL budujemy przy PIERWSZEJ powierzchni (kompilacja wymaga bieżącego
+ * kontekstu). Źródła są już wczytane — błąd pliku wyszedł na starcie kodem 1. */
+static void build_engine(struct state *s) {
+    char err[2560];
+    s->engine = flux_engine_create(s->frag_src, s->cfg.shader_path,
+                                   s->update_src, s->update_src ? s->update_path : NULL,
+                                   err, sizeof err);
+    if (!s->engine) die(3, "%s", err);
+    if (flux_engine_is_particle(s->engine)) {
+        const struct flux_params *p = flux_engine_params(s->engine);
+        logv(s, "silnik cząstkowy: %d cząstek, życie %.1f s, %g kroków/s, splat %s, warm %d",
+             p->particles, p->life, p->rate, p->splat ? "plane" : "screen", p->warm);
+    } else {
+        logv(s, "silnik jednoprzebiegowy (brak %s)", s->update_path);
     }
-    return sh;
-}
-
-static void build_program(struct state *s) {
-    char *frag = read_file(s->cfg.shader_path);
-    if (!frag) die(1, "nie mogę odczytać shadera: %s (%s)", s->cfg.shader_path, strerror(errno));
-
-    GLuint vs = compile_shader(GL_VERTEX_SHADER, VERTEX_SRC, "vertex");
-    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, frag, s->cfg.shader_path);
-    free(frag);
-
-    s->program = glCreateProgram();
-    glAttachShader(s->program, vs);
-    glAttachShader(s->program, fs);
-    glLinkProgram(s->program);
-    GLint ok = 0;
-    glGetProgramiv(s->program, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[4096];
-        glGetProgramInfoLog(s->program, sizeof log, NULL, log);
-        die(3, "linkowanie programu nie powiodło się:\n%s", log);
-    }
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-
-    s->u_resolution = glGetUniformLocation(s->program, "resolution");
-    s->u_time       = glGetUniformLocation(s->program, "time");
-    s->u_bg         = glGetUniformLocation(s->program, "palette_bg");
-    s->u_ink        = glGetUniformLocation(s->program, "palette_ink");
-    s->u_accent     = glGetUniformLocation(s->program, "palette_accent");
-    s->u_detail     = glGetUniformLocation(s->program, "detail");
-    logv(s, "shader zbudowany; uniformy: resolution=%d time=%d bg=%d ink=%d accent=%d detail=%d",
-         s->u_resolution, s->u_time, s->u_bg, s->u_ink, s->u_accent, s->u_detail);
 }
 
 /* ── EGL ──────────────────────────────────────────────────────────────────── */
@@ -297,21 +265,11 @@ static void output_request_frame(struct output *o);
 
 static void render_output(struct output *o) {
     struct state *s = o->state;
-    if (!o->configured || !o->egl_surface) return;
+    if (!o->configured || !o->egl_surface || !o->target) return;
 
     eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
-    glViewport(0, 0, o->width, o->height);
-    glUseProgram(s->program);
-
     double t = now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
-    if (s->u_resolution >= 0) glUniform2f(s->u_resolution, (float)o->width, (float)o->height);
-    if (s->u_time       >= 0) glUniform1f(s->u_time, (float)t);
-    if (s->u_bg         >= 0) glUniform3fv(s->u_bg, 1, s->cfg.palette.bg);
-    if (s->u_ink        >= 0) glUniform3fv(s->u_ink, 1, s->cfg.palette.ink);
-    if (s->u_accent     >= 0) glUniform3fv(s->u_accent, 1, s->cfg.palette.accent);
-    if (s->u_detail     >= 0) glUniform1f(s->u_detail, s->detail_current);
-
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current, s->cfg.once);
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
     eglSwapBuffers(s->egl_display, o->egl_surface);
@@ -380,9 +338,17 @@ static void output_apply_size(struct output *o) {
          * shadera wymaga bieżącego kontekstu, a kontekst bez powierzchni
          * (surfaceless) to rozszerzenie, którego nie chcemy wymagać od sterownika
          * — właściciel ma NVIDIĘ, a fallback ma być pewny, nie prawdopodobny. */
-        if (!s->program) build_program(s);
+        if (!s->engine) build_engine(s);
     } else if (changed) {
         wl_egl_window_resize(o->egl_window, pw, ph, 0, 0);
+    }
+    eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+    if (!o->target) {
+        char err[256];
+        o->target = flux_target_create(s->engine, pw, ph, err, sizeof err);
+        if (!o->target) die(3, "%s: %s", o->name, err);
+    } else if (changed) {
+        flux_target_resize(o->target, pw, ph);
     }
     o->configured = true;
     render_output(o);
@@ -453,6 +419,12 @@ static void output_create_surface(struct output *o) {
 static void output_destroy(struct output *o) {
     struct state *s = o->state;
     if (o->frame_cb) wl_callback_destroy(o->frame_cb);
+    if (o->target && o->egl_surface) {
+        /* obiekty GL zwalniamy przy bieżącym kontekście — inaczej wyciekną */
+        eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+        flux_target_destroy(o->target);
+        o->target = NULL;
+    }
     if (o->egl_surface) {
         eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroySurface(s->egl_display, o->egl_surface);
@@ -600,6 +572,7 @@ static void usage(void) {
     fputs("Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]\n"
           "                  [-f fps] [-o output] [-l background|bottom] [--once] [-v]\n"
           "  -l  warstwa: bottom (domyślnie — nad tapetą hyprpapera, pod oknami)\n"
+          "  Plik <shader>.update.glsl obok .frag włącza silnik cząstkowy (engine.h).\n"
           "      albo background (na równi z hyprpaperem)\n", stderr);
 }
 
@@ -655,13 +628,15 @@ int main(int argc, char **argv) {
     logv(&s, "skala ułamkowa: %s", (s.fractional_manager && s.viewporter) ? "dostępna" : "brak (skala całkowita)");
 
     egl_init(&s);
-    /* Shader wczytujemy od razu (błąd pliku = kod 1 zanim cokolwiek wstanie),
-     * ale kompilujemy dopiero przy pierwszej powierzchni — patrz layer_configure. */
-    {
-        char *probe = read_file(s.cfg.shader_path);
-        if (!probe) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
-        free(probe);
-    }
+    /* Źródła wczytujemy od razu (błąd pliku = kod 1 zanim cokolwiek wstanie),
+     * kompilujemy dopiero przy pierwszej powierzchni — patrz output_apply_size.
+     * Plik `<nazwa>.update.glsl` obok `.frag` włącza tryb cząstkowy. */
+    s.frag_src = read_file(s.cfg.shader_path);
+    if (!s.frag_src) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
+    if (flux_update_path(s.cfg.shader_path, s.update_path, sizeof s.update_path))
+        s.update_src = read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
+    else
+        snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
 
     clock_gettime(CLOCK_MONOTONIC, &s.start);
     s.running = true;

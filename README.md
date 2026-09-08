@@ -145,13 +145,15 @@ archenemy/
 │                                     #   lib/timer-state.sh — wspólny odczyt/zapis stanu timera.
 ├── src/
 │   └── flux-wall/                    # Tapeta liczona shaderem na GPU (C, wlr-layer-shell + EGL/GLES 3):
-│       ├── main.c                    #   jedna powierzchnia na monitor, uniformy: resolution, time,
-│       ├── test.c                    #   paleta rice'a, detail (z baterii); testy funkcji czystych;
+│       ├── main.c                    #   Wayland/EGL: jedna powierzchnia na monitor, pętla, bateria;
+│       ├── engine.c / engine.h       #   rysowanie (GLES, bez Waylanda): przebieg jednoprzebiegowy
+│       │                             #   albo silnik cząstkowy (formy akumulacyjne — pole przepływu);
+│       ├── test.c                    #   testy funkcji czystych (paleta, bateria, #pragma flux);
 │       ├── Makefile                  #   kod protokołów generuje wayland-scanner z XML-i w repo;
 │       ├── protocols/                #   wlr-layer-shell + xdg-shell (XML, licencja MIT/X11);
 │       └── shaders/                  #   animacje do wyboru w Super+W: dither-flux (domain warping),
-│                                     #   dither-waves (interferencja). Buduje install.sh [9.6];
-│                                     #   build/ poza gitem.
+│                                     #   dither-waves (interferencja), dither-flow (pole przepływu —
+│                                     #   para .frag + .update.glsl). Buduje install.sh [9.6]; build/ poza gitem.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
@@ -177,7 +179,7 @@ Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem worksp
 
 ## Animowana tapeta liczona shaderem (flux-wall)
 
-`src/flux-wall` to mały klient Waylanda (C, ~600 linii): otwiera powierzchnię na warstwie tła (`wlr-layer-shell`) osobno na każdym monitorze, zakłada kontekst EGL z GLES 3.0 i w każdej klatce rysuje jeden fragment shader. Tapeta nie jest plikiem ani wideo — jest **kodem**: nie ma pętli, nie powtarza się, liczy się natywnie w pikselach fizycznych monitora (raster Bayera 1 px bez skalowania) i zmienia paletę bez regenerowania czegokolwiek.
+`src/flux-wall` to mały klient Waylanda (C, ~1100 linii w `main.c` + `engine.c`): otwiera powierzchnię na warstwie tła (`wlr-layer-shell`) osobno na każdym monitorze, zakłada kontekst EGL z GLES 3.0 i w każdej klatce rysuje jeden fragment shader. Tapeta nie jest plikiem ani wideo — jest **kodem**: nie ma pętli, nie powtarza się, liczy się natywnie w pikselach fizycznych monitora (raster Bayera 1 px bez skalowania) i zmienia paletę bez regenerowania czegokolwiek.
 
 Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`, `time`, `palette_bg`/`palette_ink`/`palette_accent` (trzy kolory rice'a) i `detail` (0–1). **`detail` steruje szczegółowością z poziomu baterii** (`--battery`: `/sys/class/power_supply/BAT*`): mniej procent = mniej oktaw szumu i wolniejszy dryf, czyli mniej pracy GPU dokładnie wtedy, gdy energii ubywa; na zasilaniu sieciowym pełnia. Zmiana jest interpolowana płynnie.
 
@@ -187,7 +189,9 @@ Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`
 
 **Out of the box.** `install.sh` krok **[9.6]** buduje binarkę (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — brak narzędzi albo błąd `make` ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji.
 
-**Animacje do wyboru** (`src/flux-wall/shaders/`): `dither-flux` — domain warping, pole dryfuje bez końca; `dither-waves` — interferencja fal kołowych płynących od źródeł. Każda w palecie bieżącego rice'a, każda z `detail` z baterii. (Animacja `dither-drift` — nieruchoma kompozycja z wędrującym ziarnem — usunięta 2026-09-08; jeśli była wybrana, `install.sh` [9.6] czyści ten wybór i wraca do domyślnej animacji rice'a.)
+**Animacje do wyboru** (`src/flux-wall/shaders/`): `dither-flux` — domain warping, pole dryfuje bez końca; `dither-waves` — interferencja fal kołowych płynących od źródeł; `dither-flow` — **pole przepływu**, ta sama forma co tapeta statyczna `przeplyw`, tylko żywa: cząstki wędrują po polu i zostawiają gasnące smugi, a pole powoli dryfuje, więc linie prądu przebudowują się bez końca (obraz po starcie narasta przez kilka sekund — to zamierzone). Każda w palecie bieżącego rice'a, każda z `detail` z baterii. (Animacja `dither-drift` — nieruchoma kompozycja z wędrującym ziarnem — usunięta 2026-09-08; jeśli była wybrana, `install.sh` [9.6] czyści ten wybór i wraca do domyślnej animacji rice'a.)
+
+**Dwa rodzaje animacji — jeden kontrakt.** `dither-flux` i `dither-waves` to pojedynczy plik `.frag` liczony per piksel. Formy **akumulacyjne** (pole przepływu, atraktor) nie dają się tak policzyć — obraz jest sumą śladów tysięcy cząstek — więc `engine.c` ma dla nich **silnik cząstkowy**: pozycje cząstek żyją w teksturze (ping-pong), każda klatka to krok symulacji i dorysowanie śladów do akumulatora, który gaśnie w czasie (`exp(-dt/life)` — wygląd nie zależy od liczby klatek na sekundę), a `.frag` robi z akumulatora tone + dither. Silnik włącza się sam, gdy obok `<nazwa>.frag` leży **`<nazwa>.update.glsl`** (krok cząstki; parametry jako `#pragma flux klucz wartość`: `particles`, `life`, `rate`, `inc`, `gain`, `splat`, `scale`, `warmup`, `warm`, `seed`). Rozszerzenie jest celowo inne niż `.frag`, więc menu `Super+W`, wrapper i `flux-wall.conf` rice'ów nie wiedzą o różnicy — nowa animacja to nadal „wrzuć pliki do `shaders/`". Wymaga renderowalnych buforów zmiennoprzecinkowych (`GL_EXT_color_buffer_float`/`_half_float`); ich brak = kod 3 i zwykła tapeta hyprpapera pod spodem.
 
 **Kto decyduje, co się wyświetla** — dwa źródła w tej kolejności: (1) wybór użytkownika z `Super+W` w `data/flux-wall.dat` (`off` albo nazwa animacji — działa w każdym rice'ie); (2) bez wyboru — deklaracja rice'a `rices/<rice>/flux-wall.conf`: `FLUX_WALL_PALETTE` (trzy kolory), `FLUX_WALL_SHADER` (domyślna animacja), `FLUX_WALL_ARGS` (`--battery`), `FLUX_WALL_AUTOSTART` (`1` tylko w `dither-flux`; `tron`, `white-blue`, `asia-n-rice` mają paletę, ale animację wyłączoną, dopóki jej nie wybierzesz). Autostart rice'a (`hyprland.lua`) i `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje wg tych reguł. Brak binarki = cicho nic.
 
