@@ -150,8 +150,8 @@ archenemy/
 │       ├── Makefile                  #   kod protokołów generuje wayland-scanner z XML-i w repo;
 │       ├── protocols/                #   wlr-layer-shell + xdg-shell (XML, licencja MIT/X11);
 │       └── shaders/                  #   animacje do wyboru w Super+W: dither-flux (domain warping),
-│                                     #   dither-waves (interferencja), dither-drift (wędrujące ziarno).
-│                                     #   Buduje install.sh [9.6]; build/ poza gitem.
+│                                     #   dither-waves (interferencja). Buduje install.sh [9.6];
+│                                     #   build/ poza gitem.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
@@ -187,7 +187,7 @@ Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`
 
 **Out of the box.** `install.sh` krok **[9.6]** buduje binarkę (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — brak narzędzi albo błąd `make` ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji.
 
-**Animacje do wyboru** (`src/flux-wall/shaders/`): `dither-flux` — domain warping, pole dryfuje bez końca; `dither-waves` — interferencja fal kołowych płynących od źródeł; `dither-drift` — kompozycja stoi, a wędruje samo ziarno rastra (skokowo, jak stary ekran). Każda w palecie bieżącego rice'a, każda z `detail` z baterii.
+**Animacje do wyboru** (`src/flux-wall/shaders/`): `dither-flux` — domain warping, pole dryfuje bez końca; `dither-waves` — interferencja fal kołowych płynących od źródeł. Każda w palecie bieżącego rice'a, każda z `detail` z baterii. (Animacja `dither-drift` — nieruchoma kompozycja z wędrującym ziarnem — usunięta 2026-09-08; jeśli była wybrana, `install.sh` [9.6] czyści ten wybór i wraca do domyślnej animacji rice'a.)
 
 **Kto decyduje, co się wyświetla** — dwa źródła w tej kolejności: (1) wybór użytkownika z `Super+W` w `data/flux-wall.dat` (`off` albo nazwa animacji — działa w każdym rice'ie); (2) bez wyboru — deklaracja rice'a `rices/<rice>/flux-wall.conf`: `FLUX_WALL_PALETTE` (trzy kolory), `FLUX_WALL_SHADER` (domyślna animacja), `FLUX_WALL_ARGS` (`--battery`), `FLUX_WALL_AUTOSTART` (`1` tylko w `dither-flux`; `tron`, `white-blue`, `asia-n-rice` mają paletę, ale animację wyłączoną, dopóki jej nie wybierzesz). Autostart rice'a (`hyprland.lua`) i `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje wg tych reguł. Brak binarki = cicho nic.
 

@@ -958,6 +958,21 @@ else
     echo -e "  ${RED}✗ flux-wall: make wyszedł czysto, ale binarki nie ma${NC}"
     SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — make bez błędu, brak binarki (tapety w hyprpaper)")
 fi
+
+# Wybór animacji z Super+W (data/flux-wall.dat) może wskazywać shader, którego
+# już nie ma (np. usunięty z repo). Wrapper i tak by go pominął, ale CICHO —
+# użytkownik widziałby tylko, że „animacja zniknęła". Decyzja właściciela
+# 2026-09-08: nieaktualny wpis kasujemy tutaj, jawnie, z wpisem w podsumowaniu.
+FLUX_CHOICE_DAT="$ARCHENEMY_DIR/data/flux-wall.dat"
+if [[ -f "$FLUX_CHOICE_DAT" ]]; then
+    FLUX_CHOICE="$(<"$FLUX_CHOICE_DAT")"; FLUX_CHOICE="${FLUX_CHOICE//[[:space:]]/}"
+    if [[ -n "$FLUX_CHOICE" && "$FLUX_CHOICE" != "off" && ! -f "$FLUX_WALL_DIR/shaders/$FLUX_CHOICE.frag" ]]; then
+        rm -f "$FLUX_CHOICE_DAT"
+        echo -e "  ${YELLOW}⚠ Wybrana animacja '$FLUX_CHOICE' już nie istnieje — wybór wyczyszczony,${NC}"
+        echo -e "    wraca domyślna animacja rice'a (Super+W → Animation, żeby wybrać inną)."
+        SUMMARY_DONE+=("flux-wall: usunięty wybór nieistniejącej animacji '$FLUX_CHOICE' (Super+W → Animation)")
+    fi
+fi
 echo ""
 
 # ─── 9.7 TAPETY DITHER-FLUX POD REALNE MONITORY ──────────────────────────────
