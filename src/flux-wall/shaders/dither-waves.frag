@@ -10,6 +10,7 @@
  * Uniformy: kontrakt flux-wall (resolution, time, palette_*, detail).
  */
 precision highp float;
+precision highp sampler2D;   /* domyślnie lowp — texelFetch z akumulatora/widma byłby zaokrąglany tam, gdzie sterownik honoruje precyzję (Mesa) */
 
 uniform vec2  resolution;
 uniform float time;

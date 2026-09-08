@@ -35,6 +35,7 @@ static const char *UPDATE_PRELUDE =
     "#version 300 es\n"
     "precision highp float;\n"
     "precision highp int;\n"
+    "precision highp sampler2D;   /* domyślnie lowp: pozycje z texelFetch byłyby zaokrąglane (Mesa honoruje, NVIDIA nie) */\n"
     "uniform sampler2D pos;\n"
     "uniform float time;\n"
     "uniform float dt;\n"
