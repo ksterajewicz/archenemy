@@ -43,6 +43,7 @@ static const char *UPDATE_PRELUDE =
     "uniform float aspect;\n"
     "uniform int   seed;\n"
     "uniform float life_steps;\n"
+    "uniform sampler2D accum;   /* akumulator z poprzedniego kroku — cząstki mogą reagować na gęstość */\n"
     "out vec4 o;\n"
     "uint h2u(int x, int y, int s) {\n"
     "    uint n = uint(x) * 374761393u + uint(y) * 668265263u + uint(s) * 1013904223u;\n"
@@ -118,7 +119,7 @@ struct flux_engine {
     /* present */
     GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail, u_accum, u_gain;
     /* update */
-    GLint uu_pos, uu_time, uu_dt, uu_detail, uu_resolution, uu_aspect, uu_seed, uu_life;
+    GLint uu_pos, uu_time, uu_dt, uu_detail, uu_resolution, uu_aspect, uu_seed, uu_life, uu_accum;
     /* splat */
     GLint us_pos, us_P, us_active, us_splat, us_scale, us_aspect, us_warm, us_inc;
     /* fade */
@@ -304,6 +305,7 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->uu_aspect     = glGetUniformLocation(e->prog_update, "aspect");
     e->uu_seed       = glGetUniformLocation(e->prog_update, "seed");
     e->uu_life       = glGetUniformLocation(e->prog_update, "life_steps");
+    e->uu_accum      = glGetUniformLocation(e->prog_update, "accum");
 
     e->prog_splat = link(VS_SPLAT, FS_SPLAT, "splat", err, errlen);
     if (!e->prog_splat) { flux_engine_destroy(e); return NULL; }
@@ -446,6 +448,12 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
     if (e->uu_aspect     >= 0) glUniform1f(e->uu_aspect, aspect);
     if (e->uu_seed       >= 0) glUniform1i(e->uu_seed, p->seed);
     if (e->uu_life       >= 0) glUniform1f(e->uu_life, p->life * p->rate);
+    if (e->uu_accum      >= 0) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, t->acc_tex);
+        glUniform1i(e->uu_accum, 1);
+        glActiveTexture(GL_TEXTURE0);
+    }
     glDrawArrays(GL_TRIANGLES, 0, 3);
     t->src = 1 - t->src;
 

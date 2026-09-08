@@ -17,7 +17,8 @@
  * Kontrakt kroku cząstek (.update.glsl) — prelude dokleja silnik:
  *   pos (sampler2D P×P: xy pozycja, z wiek w krokach, w numer wcielenia),
  *   time, dt (sekundy na krok), detail, resolution, aspect (w/h), seed,
- *   life_steps; funkcje h2/vnoise/fbm 1:1 z gen_dither_flux_wallpaper.py;
+ *   life_steps, accum (sampler2D — gęstość śladów z poprzedniego kroku, w
+ *   pikselach ekranu); funkcje h2/vnoise/fbm 1:1 z gen_dither_flux_wallpaper.py;
  *   plik definiuje main() i pisze `o = vec4(x, y, wiek, wcielenie)`.
  * Parametry w nagłówku .update.glsl: `#pragma flux <klucz> <wartość>`.
  */
