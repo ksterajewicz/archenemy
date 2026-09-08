@@ -9,6 +9,7 @@
  *
  * Stan: xy = pozycja w 0..1 ekranu, z = wiek, w = wcielenie (patrz engine.h).
  */
+#pragma flux audio 1
 #pragma flux particles 6000
 #pragma flux life 2.5
 #pragma flux rate 60

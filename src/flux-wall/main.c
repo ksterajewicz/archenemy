@@ -26,9 +26,9 @@
  *
  *   Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]
  *                     [-f fps] [-o output] [-l background|bottom] [--once] [-v]
- *                     [--audio[=monitor]] [--audio-strength 0..3] [--audio-file plik]
- *   Dźwięk (audio.c): pasma z monitora WYJŚCIA → silnik (tempo, jasność) i
- *   uniformy audio_* w shaderach; w ciszy obraz identyczny jak bez --audio.
+ *                     [--audio-device=monitor] [--no-audio] [--audio-file plik]
+ *   Dźwięk (audio.c): tylko animacje z `#pragma flux audio 1` (wizualizacje
+ *   muzyki) — pasma z monitora WYJŚCIA → uniformy audio_* i reakcje silnika.
  * =============================================
  */
 #define _POSIX_C_SOURCE 200809L
@@ -68,10 +68,9 @@ struct config {
     bool  once;                  /* jedna klatka po configure, bez animacji */
     bool  verbose;
     uint32_t layer;              /* ZWLR_LAYER_SHELL_V1_LAYER_* — bottom = nad hyprpaperem */
-    bool  audio;                 /* --audio: reakcja na dźwięk z monitora wyjścia */
-    const char *audio_device;    /* jawna nazwa monitora (fallback po @DEFAULT_MONITOR@) */
-    const char *audio_file;      /* --audio-file: surowy f32 mono 48 kHz zamiast serwera (debug) */
-    float audio_strength;        /* mnożnik reakcji: TUI low 0.5 / mid 1.0 / high 1.6 */
+    bool  no_audio;              /* --no-audio: nie startuj wątku nawet dla wizualizacji */
+    const char *audio_device;    /* --audio-device: jawna nazwa monitora (fallback po @DEFAULT_MONITOR@) */
+    const char *audio_file;      /* --audio-file: surowy f32 mono 48 kHz zamiast serwera (debug; wymusza audio) */
 };
 
 /* ── stan ─────────────────────────────────────────────────────────────────── */
@@ -287,7 +286,7 @@ static void render_output(struct output *o) {
         audio = &feat;
     }
     flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current,
-                       audio, s->cfg.audio_strength, s->cfg.once);
+                       audio, 1.0f, s->cfg.once);
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
     eglSwapBuffers(s->egl_display, o->egl_surface);
@@ -589,12 +588,13 @@ static void main_loop(struct state *s) {
 static void usage(void) {
     fputs("Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]\n"
           "                  [-f fps] [-o output] [-l background|bottom] [--once] [-v]\n"
-          "                  [--audio[=monitor]] [--audio-strength 0..3] [--audio-file plik.f32]\n"
+          "                  [--audio-device=monitor] [--no-audio] [--audio-file plik.f32]\n"
           "  -l  warstwa: bottom (domyślnie — nad tapetą hyprpapera, pod oknami)\n"
           "      albo background (na równi z hyprpaperem)\n"
           "  Plik <shader>.update.glsl obok .frag włącza silnik cząstkowy (engine.h).\n"
-          "  --audio  reakcja na dźwięk z MONITORA wyjścia (nigdy mikrofon): najpierw\n"
-          "           @DEFAULT_MONITOR@, potem podana nazwa (pactl get-default-sink + .monitor)\n", stderr);
+          "  Dźwięk startuje SAM, gdy shader deklaruje `#pragma flux audio 1` (wizualizacja\n"
+          "  muzyki): monitor WYJŚCIA (nigdy mikrofon) — najpierw @DEFAULT_MONITOR@, potem\n"
+          "  --audio-device (np. z pactl get-default-sink + .monitor).\n", stderr);
 }
 
 int main(int argc, char **argv) {
@@ -603,7 +603,6 @@ int main(int argc, char **argv) {
     /* bottom: zawsze NAD hyprpaperem (warstwa background) i POD oknami —
      * hyprpaper zostaje pod spodem jako fallback, gdyby flux-wall padł. */
     s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
-    s.cfg.audio_strength = 1.0f;
     s.cfg.palette = (struct palette){ {0.059f, 0.102f, 0.141f}, {0.361f, 0.529f, 0.639f}, {0.847f, 0.902f, 0.933f} };
 
     static const struct option longopts[] = {
@@ -611,7 +610,7 @@ int main(int argc, char **argv) {
         {"detail", required_argument, 0, 'd'}, {"battery", no_argument, 0, 'B'},
         {"fps", required_argument, 0, 'f'},    {"output", required_argument, 0, 'o'},
         {"layer", required_argument, 0, 'l'},
-        {"audio", optional_argument, 0, 'A'},   {"audio-strength", required_argument, 0, 'S'},
+        {"audio-device", required_argument, 0, 'A'}, {"no-audio", no_argument, 0, 'N'},
         {"audio-file", required_argument, 0, 'F'},
         {"once", no_argument, 0, '1'},          {"verbose", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},          {0, 0, 0, 0},
@@ -630,12 +629,9 @@ int main(int argc, char **argv) {
             else if (strcmp(optarg, "background") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
             else die(1, "zła warstwa: %s (bottom|background)", optarg);
             break;
-        case 'A': s.cfg.audio = true; if (optarg) s.cfg.audio_device = optarg; break;
-        case 'S':
-            s.cfg.audio_strength = strtof(optarg, NULL);
-            if (s.cfg.audio_strength < 0 || s.cfg.audio_strength > 3) die(1, "audio-strength poza 0..3");
-            break;
-        case 'F': s.cfg.audio = true; s.cfg.audio_file = optarg; break;
+        case 'A': s.cfg.audio_device = optarg; break;
+        case 'N': s.cfg.no_audio = true; break;
+        case 'F': s.cfg.audio_file = optarg; break;
         case '1': s.cfg.once = true; break;
         case 'v': s.cfg.verbose = true; break;
         case 'h': usage(); return 0;
@@ -668,15 +664,25 @@ int main(int argc, char **argv) {
     else
         snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
 
-    /* Audio: wątek startuje po EGL, NIGDY przy --once (klatka statyczna) i nigdy
-     * nie jest błędem krytycznym — brak serwera = praca bez reakcji. */
-    if (s.cfg.audio && !s.cfg.once) {
-        s.audio = audio_start(s.cfg.audio_device, s.cfg.audio_file, s.cfg.verbose);
-        if (!s.audio) logv(&s, "audio: nie udało się uruchomić wątku — bez reakcji na dźwięk");
-        else logv(&s, "audio: %s, siła %.2f", s.cfg.audio_file ? s.cfg.audio_file
-                  : (s.cfg.audio_device ? s.cfg.audio_device : "@DEFAULT_MONITOR@"), s.cfg.audio_strength);
-    } else if (s.cfg.audio) {
-        logv(&s, "audio: pominięte przy --once");
+    /* Audio: TYLKO gdy shader deklaruje `#pragma flux audio 1` (wizualizacja
+     * muzyki) albo podano --audio-file; nigdy przy --once i --no-audio; nigdy
+     * nie jest błędem krytycznym — brak serwera = praca bez reakcji. Pragmy
+     * czytamy tu z tekstu (silnik zbuduje się dopiero przy pierwszej
+     * powierzchni), błędy pragm zgłosi wtedy silnik. */
+    {
+        struct flux_params pp = FLUX_PARAMS_DEFAULT;
+        char perr[256];
+        flux_params_parse(s.frag_src, &pp, perr, sizeof perr);
+        if (s.update_src) flux_params_parse(s.update_src, &pp, perr, sizeof perr);
+        bool wants = pp.audio || s.cfg.audio_file;
+        if (wants && !s.cfg.once && !s.cfg.no_audio) {
+            s.audio = audio_start(s.cfg.audio_device, s.cfg.audio_file, s.cfg.verbose);
+            if (!s.audio) logv(&s, "audio: nie udało się uruchomić wątku — bez reakcji na dźwięk");
+            else logv(&s, "audio: wizualizacja muzyki, źródło %s", s.cfg.audio_file ? s.cfg.audio_file
+                      : (s.cfg.audio_device ? s.cfg.audio_device : "@DEFAULT_MONITOR@"));
+        } else if (wants) {
+            logv(&s, "audio: pominięte (%s)", s.cfg.once ? "--once" : "--no-audio");
+        }
     }
 
     clock_gettime(CLOCK_MONOTONIC, &s.start);

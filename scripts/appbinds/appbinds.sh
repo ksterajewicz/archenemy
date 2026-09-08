@@ -352,42 +352,6 @@ volume_style_menu() {
     echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
 }
 
-# ─── MUSIC REACTIVITY (flux-wall) ─────────────────────────────────────────────
-# Reakcja animowanej tapety na dźwięk: data/flux-wall-audio.dat (off/low/mid/
-# high) czyta scripts/wallpapers/flux-wall.sh, który po zapisie restartuje
-# flux-walla z nowymi argumentami. Nasłuch to wyłącznie monitor wyjścia
-# (to, co słychać z głośników), nigdy mikrofon.
-music_menu() {
-    local fw="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
-    local cur="mid"
-    [[ -f "$fw" ]] && cur="$(bash "$fw" audio status 2>/dev/null)"
-    [[ -n "$cur" ]] || cur="mid"
-
-    echo ""
-    echo -e "  Music reactivity (flux-wall): ${CYAN}${cur}${NC}"
-    echo -e "    ${BLUE}1${NC}) off    animations ignore sound"
-    echo -e "    ${BLUE}2${NC}) low    subtle"
-    echo -e "    ${BLUE}3${NC}) mid    strong but not too strong (default)"
-    echo -e "    ${BLUE}4${NC}) high   visualizer"
-    echo -e "  Listens to the system OUTPUT (what you hear), never the microphone."
-    echo ""
-    local ans; ans="$(read_key "  Choose [1-4, Esc = cancel]: ")"
-    local target=""
-    case "$ans" in
-        1) target="off" ;;
-        2) target="low" ;;
-        3) target="mid" ;;
-        4) target="high" ;;
-        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
-        *)  echo -e "  ${RED}✗ Pick 1, 2, 3 or 4.${NC}"; return ;;
-    esac
-    if bash "$fw" audio "$target" >/dev/null 2>&1; then
-        echo -e "  ${GREEN}✓ Music reactivity: ${target}${NC}"
-    else
-        echo -e "  ${YELLOW}⚠ Saved, but flux-wall did not restart (no animation running?).${NC}"
-    fi
-}
-
 # ─── TIMER (waybar) ──────────────────────────────────────────────────────────
 
 # Ustawienia modułu custom/timer: włączenie na pasku, domyślny czas odliczania
@@ -482,7 +446,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[m]${NC} music reactivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")"
 
@@ -493,7 +457,6 @@ while :; do
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
         t|T) timer_menu ;;
-        m|M) music_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
         q|Q|$'\e') exit 0 ;;

@@ -176,6 +176,7 @@ static bool set_param(struct flux_params *p, const char *key, const char *val, c
     else if (strcmp(key, "warmup")    == 0) { if (d < 0 || d > 600)     goto range; p->warmup = (float)d; }
     else if (strcmp(key, "warm")      == 0) { if (d < 0 || d > 100000)  goto range; p->warm = (int)d; }
     else if (strcmp(key, "seed")      == 0) { if (d < 0 || d > 2147483647.0) goto range; p->seed = (int)d; }
+    else if (strcmp(key, "audio")         == 0) { if (d != 0 && d != 1) goto range; p->audio = (int)d; }
     else if (strcmp(key, "audio_tempo")   == 0) { if (d < 0 || d > 10) goto range; p->audio_tempo = (float)d; }
     else if (strcmp(key, "audio_glow")    == 0) { if (d < 0 || d > 10) goto range; p->audio_glow = (float)d; }
     else if (strcmp(key, "audio_sparkle") == 0) { if (d < 0 || d > 10) goto range; p->audio_sparkle = (float)d; }

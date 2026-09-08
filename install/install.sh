@@ -863,10 +863,6 @@ seed_dat() {
 seed_dat "$DATA_DIR/timer-enabled.dat"  "0"
 seed_dat "$DATA_DIR/timer-duration.dat" "25"
 seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
-# Reakcja animowanej tapety na dźwięk (Super+A → [m]): off/low/mid/high.
-# Domyślnie mid — właściciel chce „mocno, ale nie za mocno"; nasłuch to tylko
-# monitor wyjścia, więc włączenie z pudełka nie dotyka mikrofonu.
-seed_dat "$DATA_DIR/flux-wall-audio.dat" "mid"
 
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""

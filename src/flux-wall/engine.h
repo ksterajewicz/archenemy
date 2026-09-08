@@ -49,13 +49,16 @@ struct flux_params {
     float warmup;      /* SEKUNDY symulacji przed pierwszą klatką przy --once */
     int   warm;        /* kroki po odrodzeniu bez śladu (rozbieg orbity atraktora) */
     int   seed;        /* ziarno hasha h2 — jak `ziarno` generatora PNG */
-    /* reakcja na dźwięk (mnożone przez siłę z TUI; 0 = pasmo nie działa) */
+    /* dźwięk — TYLKO animacje do tego stworzone: `audio 1` włącza nasłuch
+     * monitora wyjścia (decyzja właściciela 2026-09-08: bez przełącznika,
+     * automatycznie); pozostałe pola to reakcje ogólne silnika, domyślnie 0 */
+    int   audio;         /* 1 = ta animacja jest wizualizacją muzyki — start wątku audio */
     float audio_tempo;   /* mid → tempo: czas animacji płynie 1 + tempo·mid razy szybciej */
-    float audio_glow;    /* bass → jasność śladów: inc · (1 + glow·bass) */
-    float audio_sparkle; /* high → iskrzenie rastra w .frag (uniform audio_high · sparkle) */
+    float audio_glow;    /* bass → jasność: gain · (1 + 1.5·glow·bass) w przebiegu finalnym */
+    float audio_sparkle; /* zarezerwowane dla shaderów (uniform audio_high) */
 };
 
-#define FLUX_PARAMS_DEFAULT { 20000, 4.0f, 60.0f, 0.006f, 14.0f, 0, 0.30f, 6.0f, 0, 2026, 1.0f, 0.7f, 1.0f }
+#define FLUX_PARAMS_DEFAULT { 20000, 4.0f, 60.0f, 0.006f, 14.0f, 0, 0.30f, 6.0f, 0, 2026, 0, 0.0f, 0.0f, 0.0f }
 
 /* Czyste funkcje (testowalne bez GL). */
 bool flux_params_parse(const char *src, struct flux_params *p, char *err, size_t errlen);
@@ -94,7 +97,7 @@ void flux_target_destroy(struct flux_target *t);
  * `warmup_once` = przed TĄ klatką przelicz `warmup` sekund symulacji
  * (dla --once, gdzie nie ma kolejnych klatek). */
 /* `audio` = NULL → bez reakcji (warp 1, uniformy audio = 0); `audio_strength`
- * skaluje wszystkie wzmocnienia (TUI: low 0.5 / mid 1.0 / high 1.6). */
+ * skaluje wzmocnienia (1.0 = wartości z pragm shadera). */
 void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint dest_fbo,
                         double time, const struct palette *pal, float detail,
                         const struct audio_features *audio, float audio_strength, bool warmup_once);

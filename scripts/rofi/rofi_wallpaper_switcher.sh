@@ -26,11 +26,16 @@
 #   właściciela: hyprlock wolny). Odznaczony — hyprlock wraca do domyślnego
 #   `path = screenshot` + blur.
 #
-#   Pozycje "Animation: <nazwa>" / "Animation: off" (tylko gdy flux-wall jest
-#   zbudowany): wybór animowanej tapety liczonej shaderem (src/flux-wall) —
-#   idzie do scripts/wallpapers/flux-wall.sh select|off, który zapisuje wybór
-#   w data/flux-wall.dat i stosuje go. Nie dotyka stanu tapety hyprpapera:
-#   animacja rysuje NAD nią (warstwa bottom), tapeta zostaje pod spodem.
+#   Menu jest dwupoziomowe (2026-09-08 — właściciel: „trudno się połapać"):
+#     [x] Upload to all monitors / [ ] Set as hyprlock background   (przełączniki)
+#     Wallpapers/     → podmenu: pliki z wallpapers/ (+ „← Back")
+#     Animations/     → podmenu: animacje flux-wall; wizualizacje muzyki
+#                       (shader z `#pragma flux audio 1`) mają dopisek
+#                       „♪ music visualisation" (+ „← Back")
+#     Animation: off  → wyłącza animację (pod folderami)
+#   Foldery animacji tylko gdy flux-wall jest zbudowany. Wybór animacji idzie
+#   do scripts/wallpapers/flux-wall.sh select|off (zapis w data/flux-wall.dat);
+#   nie dotyka stanu tapety hyprpapera — animacja rysuje NAD nią.
 #
 #   Stan: data/wallpaper.dat w formacie "monitor=ścieżka" (po linii na monitor).
 #   Stary format (sama nazwa zestawu) jest migrowany automatycznie.
@@ -64,6 +69,10 @@ LOCK_TOGGLE_OFF="[ ] Set as hyprlock background (no blur)"
 FLUX_WALL="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
 FLUX_WALL_BIN="$ARCHENEMY_DIR/src/flux-wall/build/flux-wall"
 ANIM_PREFIX="Animation: "
+FOLDER_WALL="Wallpapers/"
+FOLDER_ANIM="Animations/"
+BACK="← Back"
+AUDIO_SUFFIX="   ♪ music visualisation"
 ANIM_OFF="${ANIM_PREFIX}off"
 
 # ─── RESOLVE MONITORS FROM data/monitors/*.dat ───────────────────────────────
@@ -299,16 +308,22 @@ else
     done
 
     # Animacje (flux-wall) — tylko gdy binarka istnieje; bez niej pozycje
-    # obiecywałyby coś, czego install.sh nie zbudował.
+    # obiecywałyby coś, czego install.sh nie zbudował. Wizualizacje muzyki
+    # dostają dopisek — audio włącza się dla nich samo (flux-wall czyta pragmę).
     ANIM=()
     if [[ -x "$FLUX_WALL_BIN" && -f "$FLUX_WALL" ]]; then
+        mapfile -t AUDIO_NAMES < <(bash "$FLUX_WALL" list-audio 2>/dev/null)
         while IFS= read -r name; do
-            [[ -n "$name" ]] && ANIM+=("${ANIM_PREFIX}${name}")
+            [[ -n "$name" ]] || continue
+            label="$name"
+            for an in "${AUDIO_NAMES[@]}"; do [[ "$an" == "$name" ]] && label="${name}${AUDIO_SUFFIX}"; done
+            ANIM+=("$label")
         done < <(bash "$FLUX_WALL" list 2>/dev/null)
-        [[ ${#ANIM[@]} -gt 0 ]] && ANIM+=("$ANIM_OFF")
     fi
 
-    # Pętla menu: wybranie przełącznika odwraca ptaszek i otwiera menu ponownie.
+    # Pętla menu: przełączniki odwracają ptaszek i otwierają menu ponownie;
+    # foldery otwierają podmenu, „← Back" wraca na górę.
+    CHOICE=""; KIND=""
     while :; do
         if [[ "$MODE_ALL" -eq 1 ]]; then
             toggle="$TOGGLE_ON"
@@ -320,32 +335,38 @@ else
         else
             lock_toggle="$LOCK_TOGGLE_OFF"
         fi
-        CHOICE=$(printf '%s\n' "$toggle" "$lock_toggle" "${ANIM[@]}" "${REL[@]}" | rofi -dmenu -i -p "Select wallpaper:")
-        [[ -z "$CHOICE" ]] && exit 0
-        if [[ "$CHOICE" == "$TOGGLE_ON" ]]; then
-            MODE_ALL=0
-            continue
-        elif [[ "$CHOICE" == "$TOGGLE_OFF" ]]; then
-            MODE_ALL=1
-            continue
-        elif [[ "$CHOICE" == "$LOCK_TOGGLE_ON" ]]; then
-            MODE_LOCK=0
-            continue
-        elif [[ "$CHOICE" == "$LOCK_TOGGLE_OFF" ]]; then
-            MODE_LOCK=1
-            continue
-        fi
-        break
+        TOP=("$toggle" "$lock_toggle" "$FOLDER_WALL")
+        [[ ${#ANIM[@]} -gt 0 ]] && TOP+=("$FOLDER_ANIM" "$ANIM_OFF")
+        SEL=$(printf '%s\n' "${TOP[@]}" | rofi -dmenu -i -p "Select wallpaper:")
+        [[ -z "$SEL" ]] && exit 0
+        case "$SEL" in
+            "$TOGGLE_ON")      MODE_ALL=0; continue ;;
+            "$TOGGLE_OFF")     MODE_ALL=1; continue ;;
+            "$LOCK_TOGGLE_ON") MODE_LOCK=0; continue ;;
+            "$LOCK_TOGGLE_OFF") MODE_LOCK=1; continue ;;
+            "$ANIM_OFF")       KIND="anim-off"; break ;;
+            "$FOLDER_WALL")
+                SUB=$(printf '%s\n' "$BACK" "${REL[@]}" | rofi -dmenu -i -p "Wallpapers:")
+                [[ -z "$SUB" ]] && exit 0
+                [[ "$SUB" == "$BACK" ]] && continue
+                CHOICE="$SUB"; KIND="file"; break ;;
+            "$FOLDER_ANIM")
+                SUB=$(printf '%s\n' "$BACK" "${ANIM[@]}" | rofi -dmenu -i -p "Animations:")
+                [[ -z "$SUB" ]] && exit 0
+                [[ "$SUB" == "$BACK" ]] && continue
+                CHOICE="${SUB%"$AUDIO_SUFFIX"}"; KIND="anim"; break ;;
+            *) continue ;;   # wpisany tekst bez dopasowania — menu wraca
+        esac
     done
 
     # Animacja: osobna droga — wybór zapisuje i stosuje flux-wall.sh, stan tapety
     # hyprpapera zostaje nietknięty (animacja rysuje nad nią).
-    if [[ "$CHOICE" == "$ANIM_OFF" ]]; then
+    if [[ "$KIND" == "anim-off" ]]; then
         bash "$FLUX_WALL" off >/dev/null 2>&1
         notify-send "archenemy" "Animation off."
         exit 0
-    elif [[ "$CHOICE" == "$ANIM_PREFIX"* ]]; then
-        anim="${CHOICE#"$ANIM_PREFIX"}"
+    elif [[ "$KIND" == "anim" ]]; then
+        anim="$CHOICE"
         if bash "$FLUX_WALL" select "$anim" >/dev/null 2>&1; then
             notify-send "archenemy" "Animation '$anim' applied."
             exit 0

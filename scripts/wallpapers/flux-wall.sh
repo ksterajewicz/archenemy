@@ -18,11 +18,10 @@
 #                            (bez wyboru użytkownika), 0 = domyślnie wyłączona.
 #        Rice bez pliku: paleta domyślna binarki, autostart 0.
 #
-#   REAKCJA NA DŹWIĘK — data/flux-wall-audio.dat: off | low | mid | high
-#   (brak pliku = mid). Gdy ≠ off, flux-wall dostaje --audio=<monitor domyślnego
-#   sinku z pactl> i --audio-strength (low 0.5 / mid 1.0 / high 1.6). Nasłuch
-#   to WYŁĄCZNIE monitor wyjścia (to, co słychać), nigdy mikrofon. Ustawia TUI
-#   Super+A → [m]; bez pactl audio jest pomijane po cichu.
+#   WIZUALIZACJA MUZYKI — bez przełącznika (decyzja właściciela 2026-09-08):
+#   audio włącza sam flux-wall, gdy shader deklaruje `#pragma flux audio 1`.
+#   Wrapper podaje tylko nazwę monitora domyślnego sinku z pactl jako fallback
+#   po @DEFAULT_MONITOR@. Nasłuch to WYŁĄCZNIE wyjście (to, co słychać).
 #
 #   Użycie:
 #     flux-wall.sh autostart | restore   z hyprland.lua i z przełącznika rice'ów:
@@ -31,7 +30,7 @@
 #     flux-wall.sh select <nazwa>        Super+W: zapisz wybór i zastosuj
 #     flux-wall.sh off                   Super+W: wyłącz i zapamiętaj
 #     flux-wall.sh list                  nazwy dostępnych animacji (po linii)
-#     flux-wall.sh audio off|low|mid|high|status   reakcja na dźwięk (zapis + restart)
+#     flux-wall.sh list-audio            nazwy animacji będących wizualizacją muzyki
 #     flux-wall.sh start [opcje]         jak restore, ale głośno; opcje → flux-wall
 #     flux-wall.sh stop | status
 #
@@ -50,7 +49,6 @@ SHADERS_DIR="$ARCHENEMY_DIR/src/flux-wall/shaders"
 CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 DATA_DIR="$ARCHENEMY_DIR/data"
 CHOICE_DAT="$DATA_DIR/flux-wall.dat"
-AUDIO_DAT="$DATA_DIR/flux-wall-audio.dat"
 LOG="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
 
 # ─── odczyt konfiguracji ──────────────────────────────────────────────────────
@@ -96,33 +94,27 @@ list_shaders() {  # nazwy dostępnych animacji, po jednej na linię (bez .frag)
     done
 }
 
-read_audio_level() {   # → off | low | mid | high (brak pliku / śmieć = mid)
-    local a="mid"
-    [[ -f "$AUDIO_DAT" ]] && a="$(<"$AUDIO_DAT")"
-    a="${a//[[:space:]]/}"
-    case "$a" in off|low|mid|high) echo "$a" ;; *) echo "mid" ;; esac
+# Wizualizacje muzyki: shader (frag albo update) deklaruje `#pragma flux audio 1`.
+is_audio_shader() {  # nazwa → 0 gdy wizualizacja
+    local n="$1"
+    grep -qs '^#pragma flux audio 1' "$SHADERS_DIR/$n.update.glsl" "$SHADERS_DIR/$n.frag"
 }
 
-# Argumenty --audio dla flux-wall wg poziomu. Monitor domyślnego sinku z pactl
-# (libpulse, ciągnie go pipewire-pulse); flux-wall i tak próbuje najpierw
-# @DEFAULT_MONITOR@, a ta nazwa jest fallbackiem. Bez pactl → bez audio.
+list_audio_shaders() {
+    local n
+    while IFS= read -r n; do is_audio_shader "$n" && echo "$n"; done < <(list_shaders)
+}
+
+# Nazwa monitora domyślnego sinku jako fallback dla flux-walla (który najpierw
+# próbuje @DEFAULT_MONITOR@). Binarka sprzed wizualizacji (git pull bez
+# install.sh/make) nie zna --audio-device — wtedy nic nie podajemy.
 audio_args() {      # ustawia AUDIO_ARGS
     AUDIO_ARGS=()
-    local lvl strength sink
-    lvl="$(read_audio_level)"
-    [[ "$lvl" == "off" ]] && return 0
-    # Binarka sprzed reakcji na dźwięk (git pull bez install.sh/make) nie zna
-    # --audio i padłaby na getopt z kodem 1 — wtedy startujemy BEZ audio
-    # i mówimy, co zrobić. (2026-09-08: tak wyglądało „Animation failed to start”.)
-    if ! "$BIN" --help 2>&1 | grep -q -- '--audio'; then
-        echo "flux-wall.sh: binarka nie zna --audio — uruchom ./install/install.sh (krok [9.6]) albo make -C src/flux-wall; startuję bez reakcji na dźwięk" >&2
-        return 0
-    fi
+    local sink
     command -v pactl >/dev/null 2>&1 || return 0
+    "$BIN" --help 2>&1 | grep -q -- '--audio-device' || return 0
     sink="$(pactl get-default-sink 2>/dev/null)"
-    [[ -n "$sink" ]] || return 0
-    case "$lvl" in low) strength=0.5 ;; high) strength=1.6 ;; *) strength=1.0 ;; esac
-    AUDIO_ARGS=("--audio=${sink}.monitor" --audio-strength "$strength")
+    [[ -n "$sink" ]] && AUDIO_ARGS=("--audio-device=${sink}.monitor")
 }
 
 # Ustala, czy i z czym startować. Ustawia SHADER i PALETTE_ARGS.
@@ -198,19 +190,8 @@ case "${1:-}" in
         do_stop && echo "animacja wyłączona" || echo "animacja wyłączona (nie działała)"
         ;;
     list)      list_shaders ;;
-    audio)
-        case "${2:-}" in
-            off|low|mid|high)
-                mkdir -p "$DATA_DIR"
-                tmp=$(mktemp "$AUDIO_DAT.XXXXXX") || exit 1
-                printf '%s\n' "$2" > "$tmp"; chmod 644 "$tmp"; mv "$tmp" "$AUDIO_DAT"
-                echo "reakcja na dźwięk: $2"
-                exec "$0" restore ;;
-            status|"") echo "$(read_audio_level)" ;;
-            *) echo "flux-wall.sh audio off|low|mid|high|status" >&2; exit 1 ;;
-        esac
-        ;;
+    list-audio) list_audio_shaders ;;
     stop)      do_stop && echo "flux-wall zatrzymany" || echo "flux-wall nie działał" ;;
     status)    pgrep -x flux-wall >/dev/null ;;
-    *)         echo "Użycie: flux-wall.sh autostart|restore | select <nazwa> | off | list | audio off|low|mid|high|status | start [opcje] | stop | status" >&2; exit 1 ;;
+    *)         echo "Użycie: flux-wall.sh autostart|restore | select <nazwa> | off | list | list-audio | start [opcje] | stop | status" >&2; exit 1 ;;
 esac

@@ -18,8 +18,6 @@ uniform vec3  palette_bg;
 uniform vec3  palette_ink;
 uniform vec3  palette_accent;
 uniform float detail;
-uniform float audio_high;   /* dźwięk: wysokie 0..1 (iskrzenie rastra) */
-uniform float audio_bass;   /* dźwięk: bas 0..1 */
 
 out vec4 fragColor;
 
@@ -93,15 +91,10 @@ void main() {
     vec2 c = (px / resolution) * 2.0 - 1.0;
     f *= max(0.0, 1.0 - 0.35 * dot(c, c));
 
-    /* Dźwięk: bas rozjaśnia (do +35%), wysokie „szeleszczą" ziarnem — niżej. */
-    f = pow(clamp(f, 0.0, 1.0), GAMMA) * LEVEL * (1.0 + 0.35 * audio_bass);
+    f = pow(clamp(f, 0.0, 1.0), GAMMA) * LEVEL;
 
-    /* Iskrzenie z wysokich: macierz Bayera przesuwa się o high·(3,5) px, a próg
-     * akcentu spada o 0.15·high — hi-hat rozsypuje pianę po rastrze. Przy 0 = jak dotąd. */
-    vec2  bshift  = floor(vec2(3.0, 5.0) * audio_high);
-    float acc_cut = ACC_FROM - 0.15 * audio_high;
     vec3 col = palette_bg;
-    if (f > bayer8(px + bshift))
-        col = (f >= acc_cut * LEVEL) ? palette_accent : palette_ink;
+    if (f > bayer8(px))
+        col = (f >= ACC_FROM * LEVEL) ? palette_accent : palette_ink;
     fragColor = vec4(col, 1.0);
 }

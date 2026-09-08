@@ -102,6 +102,10 @@ int main(void) {
     CHECK(!flux_params_parse("#pragma flux life 4 5\n", &fp, err, sizeof err), "nadmiarowy token → błąd");
     fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
     CHECK(flux_params_parse("#pragma once\n#pragma fluxx 1 2\n", &fp, err, sizeof err) && fp.particles == 20000, "inne pragmy ignorowane");
+    fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
+    CHECK(fp.audio == 0 && fp.audio_tempo == 0.0f, "domyślnie bez dźwięku i bez reakcji");
+    CHECK(flux_params_parse("#pragma flux audio 1\n#pragma flux audio_tempo 0.6\n", &fp, err, sizeof err) && fp.audio == 1 && near(fp.audio_tempo, 0.6f), "audio 1 + audio_tempo");
+    CHECK(!flux_params_parse("#pragma flux audio 2\n", &fp, err, sizeof err), "audio 2 → poza zakresem");
 
     printf("flux_update_path\n");
     char up[64];
