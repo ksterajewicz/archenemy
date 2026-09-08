@@ -18,6 +18,12 @@
 #                            (bez wyboru użytkownika), 0 = domyślnie wyłączona.
 #        Rice bez pliku: paleta domyślna binarki, autostart 0.
 #
+#   REAKCJA NA DŹWIĘK — data/flux-wall-audio.dat: off | low | mid | high
+#   (brak pliku = mid). Gdy ≠ off, flux-wall dostaje --audio=<monitor domyślnego
+#   sinku z pactl> i --audio-strength (low 0.5 / mid 1.0 / high 1.6). Nasłuch
+#   to WYŁĄCZNIE monitor wyjścia (to, co słychać), nigdy mikrofon. Ustawia TUI
+#   Super+A → [m]; bez pactl audio jest pomijane po cichu.
+#
 #   Użycie:
 #     flux-wall.sh autostart | restore   z hyprland.lua i z przełącznika rice'ów:
 #                                        stop starej instancji, start wg reguł
@@ -25,6 +31,7 @@
 #     flux-wall.sh select <nazwa>        Super+W: zapisz wybór i zastosuj
 #     flux-wall.sh off                   Super+W: wyłącz i zapamiętaj
 #     flux-wall.sh list                  nazwy dostępnych animacji (po linii)
+#     flux-wall.sh audio off|low|mid|high|status   reakcja na dźwięk (zapis + restart)
 #     flux-wall.sh start [opcje]         jak restore, ale głośno; opcje → flux-wall
 #     flux-wall.sh stop | status
 #
@@ -43,6 +50,7 @@ SHADERS_DIR="$ARCHENEMY_DIR/src/flux-wall/shaders"
 CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 DATA_DIR="$ARCHENEMY_DIR/data"
 CHOICE_DAT="$DATA_DIR/flux-wall.dat"
+AUDIO_DAT="$DATA_DIR/flux-wall-audio.dat"
 LOG="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
 
 # ─── odczyt konfiguracji ──────────────────────────────────────────────────────
@@ -88,6 +96,28 @@ list_shaders() {  # nazwy dostępnych animacji, po jednej na linię (bez .frag)
     done
 }
 
+read_audio_level() {   # → off | low | mid | high (brak pliku / śmieć = mid)
+    local a="mid"
+    [[ -f "$AUDIO_DAT" ]] && a="$(<"$AUDIO_DAT")"
+    a="${a//[[:space:]]/}"
+    case "$a" in off|low|mid|high) echo "$a" ;; *) echo "mid" ;; esac
+}
+
+# Argumenty --audio dla flux-wall wg poziomu. Monitor domyślnego sinku z pactl
+# (libpulse, ciągnie go pipewire-pulse); flux-wall i tak próbuje najpierw
+# @DEFAULT_MONITOR@, a ta nazwa jest fallbackiem. Bez pactl → bez audio.
+audio_args() {      # ustawia AUDIO_ARGS
+    AUDIO_ARGS=()
+    local lvl strength sink
+    lvl="$(read_audio_level)"
+    [[ "$lvl" == "off" ]] && return 0
+    command -v pactl >/dev/null 2>&1 || return 0
+    sink="$(pactl get-default-sink 2>/dev/null)"
+    [[ -n "$sink" ]] || return 0
+    case "$lvl" in low) strength=0.5 ;; high) strength=1.6 ;; *) strength=1.0 ;; esac
+    AUDIO_ARGS=("--audio=${sink}.monitor" --audio-strength "$strength")
+}
+
 # Ustala, czy i z czym startować. Ustawia SHADER i PALETTE_ARGS.
 resolve() {
     local choice
@@ -130,8 +160,9 @@ do_start() {
         exit 4
     fi
     do_stop
+    audio_args
     # shellcheck disable=SC2086  # FLUX_WALL_ARGS to celowo lista argumentów
-    setsid "$BIN" -s "$SHADER" "${PALETTE_ARGS[@]}" $FLUX_WALL_ARGS "$@" >"$LOG" 2>&1 &
+    setsid "$BIN" -s "$SHADER" "${PALETTE_ARGS[@]}" "${AUDIO_ARGS[@]}" $FLUX_WALL_ARGS "$@" >"$LOG" 2>&1 &
     sleep 0.5
     if pgrep -x flux-wall >/dev/null; then
         [[ "$quiet" == quiet ]] || echo "flux-wall działa: $(basename "$SHADER" .frag) (log: $LOG)"
@@ -160,7 +191,19 @@ case "${1:-}" in
         do_stop && echo "animacja wyłączona" || echo "animacja wyłączona (nie działała)"
         ;;
     list)      list_shaders ;;
+    audio)
+        case "${2:-}" in
+            off|low|mid|high)
+                mkdir -p "$DATA_DIR"
+                tmp=$(mktemp "$AUDIO_DAT.XXXXXX") || exit 1
+                printf '%s\n' "$2" > "$tmp"; chmod 644 "$tmp"; mv "$tmp" "$AUDIO_DAT"
+                echo "reakcja na dźwięk: $2"
+                exec "$0" restore ;;
+            status|"") echo "$(read_audio_level)" ;;
+            *) echo "flux-wall.sh audio off|low|mid|high|status" >&2; exit 1 ;;
+        esac
+        ;;
     stop)      do_stop && echo "flux-wall zatrzymany" || echo "flux-wall nie działał" ;;
     status)    pgrep -x flux-wall >/dev/null ;;
-    *)         echo "Użycie: flux-wall.sh autostart|restore | select <nazwa> | off | list | start [opcje] | stop | status" >&2; exit 1 ;;
+    *)         echo "Użycie: flux-wall.sh autostart|restore | select <nazwa> | off | list | audio off|low|mid|high|status | start [opcje] | stop | status" >&2; exit 1 ;;
 esac

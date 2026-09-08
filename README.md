@@ -148,6 +148,8 @@ archenemy/
 │       ├── main.c                    #   Wayland/EGL: jedna powierzchnia na monitor, pętla, bateria;
 │       ├── engine.c / engine.h       #   rysowanie (GLES, bez Waylanda): przebieg jednoprzebiegowy
 │       │                             #   albo silnik cząstkowy (formy akumulacyjne — pole przepływu);
+│       ├── audio.c / audio.h         #   reakcja na dźwięk: FFT z monitora WYJŚCIA (libpulse przez
+│       │                             #   pipewire-pulse), pasma bass/mid/high, beat; Super+A → [m];
 │       ├── test.c                    #   testy funkcji czystych (paleta, bateria, #pragma flux);
 │       ├── Makefile                  #   kod protokołów generuje wayland-scanner z XML-i w repo;
 │       ├── protocols/                #   wlr-layer-shell + xdg-shell (XML, licencja MIT/X11);
@@ -198,10 +200,22 @@ Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`
 
 **Kto decyduje, co się wyświetla** — dwa źródła w tej kolejności: (1) wybór użytkownika z `Super+W` w `data/flux-wall.dat` (`off` albo nazwa animacji — działa w każdym rice'ie); (2) bez wyboru — deklaracja rice'a `rices/<rice>/flux-wall.conf`: `FLUX_WALL_PALETTE` (trzy kolory), `FLUX_WALL_SHADER` (domyślna animacja), `FLUX_WALL_ARGS` (`--battery`), `FLUX_WALL_AUTOSTART` (`1` tylko w `dither-flux`; `tron`, `white-blue`, `asia-n-rice` mają paletę, ale animację wyłączoną, dopóki jej nie wybierzesz). Autostart rice'a (`hyprland.lua`) i `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje wg tych reguł. Brak binarki = cicho nic.
 
+**Reakcja na dźwięk (Super+A → `[m] music reactivity`).** flux-wall może słuchać tego, co wychodzi z głośników — **wyłącznie monitora wyjścia, nigdy mikrofonu** — i reagować pasmami, jak wizualizery (cava nie jest używana ani potrzebna): `audio.c` liczy co 20 ms FFT 2048 z okna Hanna, auto-gain z podłogą, bramkę szumu (−60 dBFS → 0), wygładzanie attack/release i detektor uderzenia. Co robi które pasmo:
+
+| pasmo | Hz | efekt |
+|---|---|---|
+| **bas** | 20–150 | puls jasności całego obrazu (mnożnik `gain` w przebiegu finalnym) + w animacjach jednoprzebiegowych `LEVEL` do +35% |
+| **środek** | 500–2000 | **tempo**: czas animacji płynie `1 + tempo·mid` razy szybciej — pole dryfuje, kropki krążą, fala światła obiega, deszcz pada szybciej |
+| **wysokie** | 2000–10000 | **iskrzenie rastra**: macierz Bayera przesuwa się o `high·(3,5)` px, a próg akcentu spada — hi-hat rozsypuje pianę po ziarnie |
+| **uderzenie** | onset basu | uniform `audio_beat` (impulsy per animacja — w przygotowaniu) |
+
+Ślady gasną w sekundach REALNYCH (`life`), a przyspiesza tylko symulacja — muzyka nie zmienia charakteru animacji, tylko jej ruch i jasność. W ciszy wszystkie wartości są 0, a obraz jest **bit w bit** taki jak bez audio (sprawdzone `cmp`). Poziomy: `off` / `low` (0.5×) / `mid` (1.0× — domyślny, „mocno, ale nie za mocno") / `high` (1.6×); stan w `data/flux-wall-audio.dat`, zmiana w TUI restartuje flux-walla. Wrapper podaje monitor domyślnego sinku z `pactl get-default-sink`; sam flux-wall próbuje najpierw `@DEFAULT_MONITOR@` (podąża za zmianą wyjścia), potem tej nazwy. Brak serwera dźwięku nigdy nie jest błędem — tapeta działa bez reakcji, wątek ponawia co 1–30 s. Shadery mogą deklarować `audio_level/bass/lowmid/mid/high/beat` i `sampler2D audio_spectrum` (32 biny log) — silnik ustawia je, gdy istnieją; wzmocnienia per animacja: `#pragma flux audio_tempo|audio_glow|audio_sparkle` (także w `.frag`). Debug bez serwera: `--audio-file plik.f32` (surowy float32 mono 48 kHz).
+
 Ręcznie:
 
 ```
 scripts/wallpapers/flux-wall.sh list                 # dostępne animacje
+scripts/wallpapers/flux-wall.sh audio off|low|mid|high|status   # reakcja na dźwięk (to samo, co Super+A → [m])
 scripts/wallpapers/flux-wall.sh select dither-waves  # wybierz i zapamiętaj (to samo, co Super+W)
 scripts/wallpapers/flux-wall.sh off                  # wyłącz i zapamiętaj
 scripts/wallpapers/flux-wall.sh start -f 30          # uruchom wg reguł, opcje idą do flux-wall (log w $XDG_RUNTIME_DIR/flux-wall.log)

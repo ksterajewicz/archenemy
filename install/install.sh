@@ -863,6 +863,10 @@ seed_dat() {
 seed_dat "$DATA_DIR/timer-enabled.dat"  "0"
 seed_dat "$DATA_DIR/timer-duration.dat" "25"
 seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
+# Reakcja animowanej tapety na dźwięk (Super+A → [m]): off/low/mid/high.
+# Domyślnie mid — właściciel chce „mocno, ale nie za mocno"; nasłuch to tylko
+# monitor wyjścia, więc włączenie z pudełka nie dotyka mikrofonu.
+seed_dat "$DATA_DIR/flux-wall-audio.dat" "mid"
 
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
@@ -938,13 +942,13 @@ FLUX_WALL_MISSING=()
 for tool in gcc make pkg-config wayland-scanner; do
     command -v "$tool" &>/dev/null || FLUX_WALL_MISSING+=("$tool")
 done
-for mod in wayland-client wayland-egl egl glesv2; do
+for mod in wayland-client wayland-egl egl glesv2 libpulse-simple; do
     pkg-config --exists "$mod" 2>/dev/null || FLUX_WALL_MISSING+=("pkg-config:$mod")
 done
 
 if [[ ${#FLUX_WALL_MISSING[@]} -gt 0 ]]; then
     echo -e "  ${YELLOW}⚠ flux-wall pominięty — brakuje: ${FLUX_WALL_MISSING[*]}${NC}"
-    echo -e "    (pakiety: base-devel wayland mesa; tapety zostają w hyprpaper)"
+    echo -e "    (pakiety: base-devel wayland mesa libpulse; tapety zostają w hyprpaper)"
     SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — brakuje: ${FLUX_WALL_MISSING[*]} (tapety w hyprpaper)")
 elif ! FLUX_WALL_LOG=$(make -C "$FLUX_WALL_DIR" 2>&1); then
     echo -e "  ${RED}✗ flux-wall: błąd budowania — ostatnie linie:${NC}"

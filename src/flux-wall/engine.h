@@ -13,7 +13,12 @@
  *
  * Kontrakt uniformów przebiegu finalnego (.frag):
  *   resolution, time, palette_bg/ink/accent, detail   — jak dotąd,
- *   accum (sampler2D), gain                            — tylko tryb cząstkowy.
+ *   accum (sampler2D), gain                            — tylko tryb cząstkowy,
+ *   audio_level/bass/lowmid/mid/high/beat (0..1), audio_spectrum (sampler2D
+ *   32×1, jednostka 2) — dźwięk; ustawiane, jeśli shader je zadeklaruje.
+ *   `time` to CZAS ANIMACJI: przy muzyce płynie szybciej (audio_tempo·mid).
+ * `#pragma flux` wolno pisać także w .frag (np. audio_tempo dla animacji
+ * jednoprzebiegowych) — linie są usuwane przed kompilacją, `#version` zostaje.
  * Kontrakt kroku cząstek (.update.glsl) — prelude dokleja silnik:
  *   pos (sampler2D P×P: xy pozycja, z wiek w krokach, w numer wcielenia),
  *   time, dt (sekundy na krok), detail, resolution, aspect (w/h), seed,
@@ -28,6 +33,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <GLES3/gl3.h>
+#include "audio.h"
 
 struct palette { float bg[3], ink[3], accent[3]; };
 
@@ -43,12 +49,24 @@ struct flux_params {
     float warmup;      /* SEKUNDY symulacji przed pierwszą klatką przy --once */
     int   warm;        /* kroki po odrodzeniu bez śladu (rozbieg orbity atraktora) */
     int   seed;        /* ziarno hasha h2 — jak `ziarno` generatora PNG */
+    /* reakcja na dźwięk (mnożone przez siłę z TUI; 0 = pasmo nie działa) */
+    float audio_tempo;   /* mid → tempo: czas animacji płynie 1 + tempo·mid razy szybciej */
+    float audio_glow;    /* bass → jasność śladów: inc · (1 + glow·bass) */
+    float audio_sparkle; /* high → iskrzenie rastra w .frag (uniform audio_high · sparkle) */
 };
 
-#define FLUX_PARAMS_DEFAULT { 20000, 4.0f, 60.0f, 0.006f, 14.0f, 0, 0.30f, 6.0f, 0, 2026 }
+#define FLUX_PARAMS_DEFAULT { 20000, 4.0f, 60.0f, 0.006f, 14.0f, 0, 0.30f, 6.0f, 0, 2026, 1.0f, 0.7f, 1.0f }
 
 /* Czyste funkcje (testowalne bez GL). */
 bool flux_params_parse(const char *src, struct flux_params *p, char *err, size_t errlen);
+/* Mnożnik tempa z dźwięku: 1 + audio_tempo·strength·mid; 1.0 bez audio. */
+double flux_warp(const struct flux_params *p, const struct audio_features *audio, float strength);
+/* Maksimum kroków symulacji na klatkę: 4 · ceil(1 + audio_tempo·strength) — przy warpie
+ * stały limit 4 obcinałby tempo; bez audio zostaje 4. */
+int flux_step_cap(const struct flux_params *p, float strength);
+/* Kopia źródła z liniami `#pragma flux` zamienionymi na spacje (numery linii
+ * zostają); `keep_version` = zostaw `#version` (dla .frag bez prelude). */
+char *flux_strip_directives(const char *src, bool keep_version);
 /* Ścieżka `.update.glsl` dla `.frag`; false, gdy nazwa nie kończy się na .frag. */
 bool flux_update_path(const char *frag_path, char *out, size_t outlen);
 
@@ -75,7 +93,10 @@ void flux_target_destroy(struct flux_target *t);
  * (0 = powierzchnia okna) o rozmiarze celu. `time` w sekundach od startu;
  * `warmup_once` = przed TĄ klatką przelicz `warmup` sekund symulacji
  * (dla --once, gdzie nie ma kolejnych klatek). */
+/* `audio` = NULL → bez reakcji (warp 1, uniformy audio = 0); `audio_strength`
+ * skaluje wszystkie wzmocnienia (TUI: low 0.5 / mid 1.0 / high 1.6). */
 void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint dest_fbo,
-                        double time, const struct palette *pal, float detail, bool warmup_once);
+                        double time, const struct palette *pal, float detail,
+                        const struct audio_features *audio, float audio_strength, bool warmup_once);
 
 #endif

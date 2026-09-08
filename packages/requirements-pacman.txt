@@ -19,6 +19,9 @@ hyprshot
 # audio / media / brightness
 # pipewire-pulse: serwer PulseAudio — bez niego pavucontrol i moduł głośności waybara nie działają
 pipewire-pulse
+# libpulse: nagłówki pulse/simple.h + pactl — flux-wall (reakcja tapety na dźwięk) buduje się
+# z libpulse-simple i czyta monitor wyjścia; pipewire-pulse i tak go ciągnie, tu jawnie
+libpulse
 wireplumber
 pavucontrol
 playerctl
