@@ -533,16 +533,23 @@ case "$hw_choice" in
         HW_PROFILE="asus"
         echo -e "  ${GREEN}✓ ASUS ROG selected.${NC}"
         echo ""
-        # asusctl i rog-control-center są w OFICJALNYM repo (extra) — instalujemy
-        # pacmanem, nie yay. Stara ścieżka `yay -S asusctl` dawała menu „4 providers":
-        # pakiet `asusctl` nie istnieje już w AUR pod własną nazwą, a cztery inne
-        # (asusctl-git, -devel-git, -nosystemd, -x11) go tylko DOSTARCZAJĄ — yay
-        # z nieodświeżoną bazą pacmana nie widział extra/asusctl i pytał o AUR-owego
-        # dostawcę (zgłoszenie właściciela 2026-09-07). Instalator celowo nie robi
-        # `pacman -Sy` (częściowa aktualizacja na Archu) — przy nieznanym pakiecie
-        # mówi wprost, co zrobić.
-        echo -e "  Installing asusctl and rog-control-center (repo extra)..."
-        if sudo pacman -S --needed asusctl rog-control-center; then
+        # asusctl z AUR jako `asusctl-devel-git` — decyzja właściciela 2026-09-08:
+        # to jest wersja, która działa na jego ROG-u. Nazwę podajemy WPROST, więc
+        # yay nie pokazuje menu dostawców wirtualnego `asusctl` (zgłoszenie
+        # właściciela 2026-09-07: „menu 4 asusctl"); dostawców jest czterech
+        # (asusctl-git, -devel-git, -nosystemd, -x11) i tylko jawna nazwa je omija.
+        #
+        # rog-control-center NIE jest instalowany osobno, bo asusctl-devel-git ma go
+        # w `provides` (i w `conflicts`) — dostarcza tę binarkę sam. Instalacja
+        # extra/rog-control-center obok jest wręcz niemożliwa: ten pakiet zależy od
+        # `asusctl=6.4.0`, a zależności WERSJONOWANEJ nie spełnia bezwersyjne
+        # `provides` pakietu z AUR. Sprawdzone 2026-09-08 w AUR RPC i w API
+        # archlinux.org, nie zgadnięte.
+        echo -e "  Installing asusctl-devel-git (AUR; dostarcza także rog-control-center)..."
+        if ! command -v yay &>/dev/null; then
+            echo -e "  ${RED}✗ Brak yay — nie zainstaluję asusctl-devel-git z AUR.${NC}"
+            SUMMARY_SKIPPED+=("asusctl-devel-git (brak yay) — profile przez fallback ppd")
+        elif yay -S --needed asusctl-devel-git; then
             # asusd musi działać, inaczej przełącznik profili (asusctl profile) nie zadziała
             if systemctl list-unit-files asusd.service &>/dev/null; then
                 sudo systemctl enable --now asusd.service
@@ -551,10 +558,10 @@ case "$hw_choice" in
                 echo -e "  ${YELLOW}⚠ Brak asusd.service — włącz daemon asusd ręcznie.${NC}"
             fi
         else
-            echo -e "  ${RED}✗ asusctl/rog-control-center NIE zainstalowane.${NC}"
-            echo -e "    Jeśli pacman nie zna pakietu: baza jest nieodświeżona — zrób pełną"
-            echo -e "    aktualizację (sudo pacman -Syu) i uruchom instalator ponownie."
-            SUMMARY_SKIPPED+=("asusctl/rog-control-center (repo extra) — instalacja nie powiodła się; profile przez fallback ppd")
+            echo -e "  ${RED}✗ asusctl-devel-git NIE zainstalowany.${NC}"
+            echo -e "    Jeśli yay zgłosił konflikt z extra/asusctl lub extra/rog-control-center:"
+            echo -e "    to normalne — pakiet z AUR zastępuje oba, potwierdź ich usunięcie."
+            SUMMARY_SKIPPED+=("asusctl-devel-git — instalacja nie powiodła się; profile przez fallback ppd")
         fi
         # Domknięcie ścieżki ASUS: gdy asusctl mimo wszystko nie odpowiada
         # (brak yay, nieudana instalacja, asusd nie wstał), profile mają działać

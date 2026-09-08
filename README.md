@@ -38,7 +38,7 @@ chmod +x install.sh cpudrivers-installation.sh gpudrivers-installation.sh kernel
 ./install.sh
 ```
 
-Instalator: wykryje i skonfiguruje monitory (w tym ich numerację lewa→prawa i tryb workspace'ów — patrz sekcja „Workspace'y"), zainstaluje pakiety z `packages/`, ustawi przełącznik profili zasilania (ASUS ROG / uniwersalny — typ sprzętu wykrywany z DMI jako podpowiedź, na ASUS-ach bez działającego asusctl automatyczny fallback na power-profiles-daemon, na końcu samokontrola `profile-get.sh`), opcjonalnie odpali instalatory mikrokodu CPU / sterowników GPU / kernela, wygeneruje pliki maszynowe, podlinkuje domyślny rice do `~/.config`, ustawi pierwszą tapetę (jeśli jakaś jest w `wallpapers/`) i zadba o usługi: NetworkManager, audio (pipewire-pulse), asusd na ASUS-ach, opcjonalnie UFW i bluetooth.
+Instalator: wykryje i skonfiguruje monitory (w tym ich numerację lewa→prawa i tryb workspace'ów — patrz sekcja „Workspace'y"), zainstaluje pakiety z `packages/`, ustawi przełącznik profili zasilania (ASUS ROG / uniwersalny — typ sprzętu wykrywany z DMI jako podpowiedź; na ASUS-ach instaluje z AUR `asusctl-devel-git`, który dostarcza także `rog-control-center`, więc ten drugi NIE jest instalowany osobno; bez działającego asusctl automatyczny fallback na power-profiles-daemon, na końcu samokontrola `profile-get.sh`), opcjonalnie odpali instalatory mikrokodu CPU / sterowników GPU / kernela, wygeneruje pliki maszynowe, podlinkuje domyślny rice do `~/.config`, ustawi pierwszą tapetę (jeśli jakaś jest w `wallpapers/`) i zadba o usługi: NetworkManager, audio (pipewire-pulse), asusd na ASUS-ach, opcjonalnie UFW i bluetooth.
 
 **Aktualizujesz działającą maszynę po `git pull`?** Uruchom `install.sh` ponownie — wygeneruje brakujące pliki maszynowe.
 
