@@ -160,14 +160,14 @@ archenemy/
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
-    └── dither-flux/                  # Zestaw: 3 formy generatywne (pole przepływu ×2, atraktor) w rastrze
-                                      #   Bayera, paleta milford-woda — v1/v2 z repo; generated/ (poza gitem)
-                                      #   = te same formy pod REALNE monitory, install.sh [9.7].
+    └── dither-flux/                  # Zestaw generowany: 3 formy (pole przepływu ×2, atraktor) w rastrze
+                                      #   Bayera, paleta milford-woda — TYLKO generated/ (poza gitem), pod
+                                      #   REALNE monitory, install.sh [9.7]. W gicie żadnych PNG (2026-09-08).
 ```
 
 ## Tapety
 
-Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Wyjątek: zestaw `dither-flux` jest **generowany pod realne monitory** — `install.sh` krok **[9.7]** czyta rozdzielczości i role z `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, dalsze → `m-<nazwa>`; tryby nazwane jak `preferred` dopytuje `hyprctl`) i w tle uruchamia `gen_dither_flux_wallpaper.py` do `wallpapers/dither-flux/generated/` (poza gitem; log `generate.log`). Raster 1 px nie znosi skalowania, więc tapeta musi mieć dokładnie rozdzielczość ekranu. Pliki `v1`/`v2` z repo zostają jako zestaw awaryjny.
+Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Wyjątek: zestaw `dither-flux` jest **generowany pod realne monitory** — `install.sh` krok **[9.7]** czyta rozdzielczości i role z `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, dalsze → `m-<nazwa>`; tryby nazwane jak `preferred` dopytuje `hyprctl`) i w tle uruchamia `gen_dither_flux_wallpaper.py` do `wallpapers/dither-flux/generated/` (poza gitem; log `generate.log`). Raster 1 px nie znosi skalowania, więc tapeta musi mieć dokładnie rozdzielczość ekranu. Od 2026-09-08 repo nie trzyma żadnych gotowych PNG tego zestawu — do czasu zakończenia generowania (kilka minut po instalacji) pozycji `dither-flux` w `Super+W` po prostu nie ma; animacje flux-wall są niezależne od tych plików.
 
 Na górze menu `Super+W` (gdy flux-wall jest zbudowany) są też pozycje **`Animation: <nazwa>`** — jedna na każdy shader w `src/flux-wall/shaders/` — oraz **`Animation: off`**. Wybór animacji nie zmienia tapety hyprpapera: animacja rysuje nad nią i działa w **każdym** rice'ie, w jego palecie (deklaracja `rices/<rice>/flux-wall.conf`). Wybór jest zapamiętywany w `data/flux-wall.dat` i przeżywa `Super+T` oraz restart; `off` wyłącza animację wszędzie, a usunięcie pliku przywraca domyślne zachowanie rice'a (dither-flux: włączona, pozostałe: wyłączona). Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
 

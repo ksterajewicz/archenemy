@@ -38,3 +38,5 @@ __pycache__/
 # ─── flux-wall: artefakty budowania (kod protokołów z wayland-scanner, binarka) ──
 /src/flux-wall/build/
 /wallpapers/dither-flux/generated/
+# tapety dither-flux są generowane pod realne monitory (install.sh [9.7]) — PNG nie wracają do gita (2026-09-08)
+/wallpapers/dither-flux/*.png
