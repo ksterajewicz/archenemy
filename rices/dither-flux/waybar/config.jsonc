@@ -1,0 +1,137 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 32,
+    "spacing": 0,
+    "margin-top": 4,
+    "margin-left": 8,
+    "margin-right": 8,
+    "reload_style_on_change": true,
+    "modules-left":   ["custom/launcher", "hyprland/workspaces", "hyprland/window"],
+    "modules-center": ["clock", "custom/timer"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "battery", "tray"],
+    // Glif Archa jako launcher: LPM otwiera rofi, PPM menu zasilania.
+    "custom/launcher": {
+        "format": "󰣇",
+        "on-click": "rofi -show drun",
+        "on-click-right": "~/archenemy/scripts/rofi/rofi_power_menu.sh",
+        "tooltip": false
+    },
+    // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
+    // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
+    // który czyta tryb (decades: r±1, shared: e±1) — jak bindy klawiatury.
+    "hyprland/workspaces": {
+        "format": "{name}",
+        "on-scroll-up": "~/archenemy/scripts/hypr/ws-scroll.sh up",
+        "on-scroll-down": "~/archenemy/scripts/hypr/ws-scroll.sh down",
+        "all-outputs": false,
+        "show-special": false
+    },
+    "hyprland/window": {
+        "format": "{title}",
+        "max-length": 60,
+        "separate-outputs": true,
+        "rewrite": {
+            "(.*) - Alacritty": "  $1",
+            "(.*) - Brave":     "󰖟 $1"
+        }
+    },
+    "clock": {
+        // {0:...} = indeksowany placeholder fmt — pozwala rozbić czas na części
+        // i przygasić sekundy pango-spanem (zwykłe {:...} użyte 2x nie działa)
+        "format": "{0:%H:%M}<span color='#5c87a3'>:{0:%S}</span>",
+        "format-alt": "{0:%a, %d %b · %H:%M}<span color='#5c87a3'>:{0:%S}</span>",
+        "interval": 1,
+        // Nagłówek tooltipa = pełna data dnia w pianie; niżej siatka miesiąca.
+        "tooltip-format": "<tt><span color='#d8e6ee'><big>{:%A, %d %B %Y}</big></span>\n\n{calendar}</tt>",
+        // Kalendarz miesięczny BEZ kolumny numerów tygodni — ISO-tygodnie (31-36)
+        // po lewej w pionie myliły się z dniami sąsiedniego miesiąca; usunięte
+        // 2026-08-10. iso8601 zostaje = tydzień od poniedziałku. Nawigacja
+        // (actions): scroll na zegarze = miesiące, PPM = rok/miesiąc; LPM = format-alt.
+        "calendar": {
+            "mode": "month",
+            "on-scroll": 1,
+            "iso8601": true,
+            "format": {
+                "months":   "<span color='#d8e6ee'><b>{}</b></span>",
+                "days":     "<span color='#a8c4d4'>{}</span>",
+                "weekdays": "<span color='#5c87a3'>{}</span>",
+                "today":    "<span color='#0f1a24' background='#d8e6ee'><b>{}</b></span>"
+            }
+        },
+        "actions": {
+            "on-click-right": "mode",
+            "on-scroll-up": "shift_up",
+            "on-scroll-down": "shift_down"
+        }
+    },
+    // Timer (odliczanie) — OSOBNA wyspa tuż po prawej od zegara, z własną
+    // pigułką (nie doklejona do zegara). Opcjonalny: włącza się go w TUI
+    // Super+A → [t]; wyłączony zwraca pusty tekst, waybar chowa moduł i zegar
+    // wraca dokładnie na środek paska. Kolor cyfr ustawia skrypt pango-spanem
+    // (domyślnie czerwony, dowolny hex z TUI) — dlatego #custom-timer w
+    // style.css NIE ma reguły `color`, tylko pigułkę w palecie rice'a.
+    // LPM start/pauza, PPM reset, scroll ±1 min (tylko gdy stoi albo pauza).
+    "custom/timer": {
+        "exec": "~/archenemy/scripts/waybar/timer.sh",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 11,
+        "on-click": "~/archenemy/scripts/waybar/timer-ctl.sh toggle",
+        "on-click-right": "~/archenemy/scripts/waybar/timer-ctl.sh reset",
+        "on-scroll-up": "~/archenemy/scripts/waybar/timer-ctl.sh adjust +1",
+        "on-scroll-down": "~/archenemy/scripts/waybar/timer-ctl.sh adjust -1"
+    },
+    "custom/profileswitcher": {
+        "exec": "~/archenemy/scripts/waybar/profile-get.sh",
+        "interval": 0.5,
+        "format": "󰓅 {}",
+        "on-click": "~/archenemy/scripts/waybar/profile-switch.sh; pkill -RTMIN+8 waybar",
+        "signal": 8,
+        "tooltip": false
+    },
+    "custom/micmute": {
+        "exec": "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo '󰍭' || echo '󰍬'",
+        "interval": 1,
+        "format": "{}",
+        "on-click": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle; pkill -RTMIN+9 waybar",
+        "signal": 9,
+        "tooltip": false
+    },
+    // Pasek głośności (skrypt renderuje ▮▮▯ + %); styl przełączalny w Super+A
+    // → [v]. Reaguje: interval:1 (backstop) + signal:10 (klawisze/scroll wołają
+    // pkill -RTMIN+10). exec-on-event odświeża od razu po scrollu/kliknięciu.
+    "custom/volumebar": {
+        "exec": "~/archenemy/scripts/waybar/volume-bar.sh",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 10,
+        "on-scroll-up": "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+",
+        "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
+        "on-click": "pavucontrol",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    },
+    "network": {
+        "format-wifi":         "󰖩 {essid}",
+        "format-ethernet":     "󰈀 {ifname}",
+        "format-disconnected": "󰖪",
+        "tooltip-format-wifi":     "{essid} · {signalStrength}%\n{ipaddr}/{cidr}\n{bandwidthDownBits} ↓  {bandwidthUpBits} ↑",
+        "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
+        "on-click": "~/archenemy/scripts/rofi/rofi_network.sh"
+    },
+    "battery": {
+        "states": {
+            "warning":  25,
+            "critical": 10
+        },
+        "format":           "{icon} {capacity}%",
+        "format-charging":  "󰂄 {capacity}%",
+        "format-plugged":   "󰚥 {capacity}%",
+        "format-icons":     ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
+        "tooltip-format":   "{timeTo}\n{power}W"
+    },
+    "tray": {
+        "icon-size": 13,
+        "spacing":   6
+    }
+}

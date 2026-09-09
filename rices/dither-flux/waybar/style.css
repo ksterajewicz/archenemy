@@ -1,0 +1,204 @@
+ * {
+    font-family:   "Iosevka Nerd Font", monospace;
+    font-size:     12px;
+    font-weight:   500;
+    border:        none;
+    border-radius: 0;
+    min-height:    0;
+    transition:    background 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+window#waybar {
+    background: transparent;
+    color:      #a8c4d4;
+}
+/* dither-flux: wyspy jako płaskie, niemal nieprzezroczyste płyty z ramką 1 px
+   w kolorze wody. Zero zaokrągleń, zero poświaty, zero gradientów — raster
+   tapety i miękkie przejścia to sprzeczne materiały, a tekst interfejsu ma
+   stać na płaskim, nierastrowanym tle. Paleta milford-woda: tło #0F1A24,
+   płyta #14222E, woda #5C87A3, mgła #A8C4D4, piana #D8E6EE, bursztyn #E0A23C
+   wyłącznie dla ostrzeżeń. */
+.modules-left {
+    background:    rgba(20, 34, 46, 0.94);
+    color:         #a8c4d4;
+    border:        1px solid rgba(92, 135, 163, 0.28);
+    border-radius: 0;
+    padding:       0 4px;
+    margin:        0 4px 0 0;
+}
+.modules-right {
+    background:    rgba(20, 34, 46, 0.94);
+    color:         #a8c4d4;
+    border:        1px solid rgba(92, 135, 163, 0.28);
+    border-radius: 0;
+    padding:       0 10px;
+    margin:        0 0 0 4px;
+}
+.modules-center {
+    background: transparent;
+}
+#clock {
+    color:          #d8e6ee;
+    font-size:      12.5px;
+    font-weight:    600;
+    padding:        0 14px;
+    background:     rgba(20, 34, 46, 0.94);
+    border:         1px solid rgba(92, 135, 163, 0.28);
+    border-radius: 0;
+    letter-spacing: 0.04em;
+}
+/* Timer: druga wyspa środka, ta sama płyta co zegar, odsunięta o 4 px = rytm
+   odstępów paska. BEZ reguły `color` —
+   kolor cyfr ustawia timer.sh pango-spanem (czerwony domyślnie, hex
+   z Super+A → [t]); płyta zostaje, zmieniają się tylko cyfry. */
+#custom-timer {
+    font-size:      12.5px;
+    font-weight:    600;
+    padding:        0 14px;
+    margin-left:    4px;
+    background:     rgba(20, 34, 46, 0.94);
+    border:         1px solid rgba(92, 135, 163, 0.28);
+    border-radius: 0;
+    letter-spacing: 0.04em;
+}
+/* Wyłączony w TUI: skrypt zwraca pusty tekst i waybar chowa moduł. Ta klasa
+   zeruje płytę na wypadek, gdyby pusty moduł mimo wszystko został narysowany. */
+#custom-timer.off {
+    padding:    0;
+    margin:     0;
+    background: transparent;
+    border:     none;
+}
+/* Glif Archa jako launcher na początku lewej wyspy, oddzielony linią 1 px
+   w kolorze wody od workspace'ów. */
+#custom-launcher {
+    color:        #d8e6ee;
+    font-size:    15px;
+    padding:      0 12px 0 10px;
+    margin:       2px 2px 2px 0;
+    border-right: 1px solid rgba(92, 135, 163, 0.20);
+}
+#custom-launcher:hover {
+    color:       #a8c4d4;
+    background:  rgba(92, 135, 163, 0.10);
+}
+#workspaces {
+    padding: 0 4px;
+}
+#workspaces button {
+    color:         #5c87a3;
+    background:    transparent;
+    padding:       1px 7px;
+    margin:        2px 1px;
+    border-radius: 0;
+    min-width:     0;
+    /* Rozszerzająca się pigułka aktywnego workspace'a — wzorzec repo */
+    transition:    background 200ms ease, color 200ms ease,
+                   padding 200ms cubic-bezier(0.25, 0.10, 0.25, 1.00);
+}
+#workspaces button.empty {
+    color: #34546a;
+}
+#workspaces button:hover {
+    background:  rgba(92, 135, 163, 0.10);
+    color:       #d8e6ee;
+    box-shadow:  none;
+    text-shadow: none;
+}
+#workspaces button.active {
+    /* Aktywny workspace: ciemny tekst na pianie — jedyne miejsce paska, gdzie
+       najjaśniejszy kolor palety jest tłem, nie tekstem. */
+    background:  #d8e6ee;
+    color:       #0f1a24;
+    font-weight: 600;
+    padding:     1px 10px;
+}
+#workspaces button.urgent {
+    background: #e0a23c;
+    color:      #0f1a24;
+}
+#window {
+    color:       #5c87a3;
+    padding:     0 10px;
+    border-left: 1px solid rgba(92, 135, 163, 0.20);
+    margin-left: 2px;
+    font-style:  italic;
+    font-size:   11px;
+}
+window#waybar.empty #window,
+window#waybar.solo  #window {
+    background: transparent;
+    border:     none;
+    padding:    0;
+    margin:     0;
+}
+#custom-volumebar,
+#network,
+#battery,
+#tray,
+#custom-profileswitcher,
+#custom-micmute {
+    padding:    0 4px;
+    background: transparent;
+    color:      #a8c4d4;
+}
+/* #custom-micmute i #network zaczynają się od glifu ikony z dużym
+   wbudowanym odstępem po lewej (Nerd Font) — z pełnym 4px paddingu
+   przerwa po poprzednim module (profileswitcher/volumebar) wyglądała
+   szerzej niż pozostałe. */
+#custom-micmute,
+#network {
+    padding-left: 1px;
+}
+#custom-profileswitcher {
+    color: #d8e6ee;
+    font-weight: 600;
+}
+#custom-volumebar:hover,
+#network:hover,
+#battery:hover,
+#custom-profileswitcher:hover,
+#custom-micmute:hover {
+    color: #a8c4d4;
+}
+#custom-volumebar.muted {
+    color: #34546a;
+}
+#custom-volumebar.boost {
+    color: #e0a23c;
+}
+#network.disconnected {
+    color: #34546a;
+}
+#battery.warning {
+    color: #e0a23c;
+}
+#battery.critical {
+    /* Bursztyn — jedyny ciepły kolor palety, zarezerwowany dla alarmów */
+    color:         #0f1a24;
+    font-weight:   700;
+    background:    #e0a23c;
+    border-radius: 0;
+    margin:        2px 0;
+    padding:       1px 8px;
+}
+@keyframes pulse {
+    to { opacity: 0.4; }
+}
+#battery.critical:not(.charging) {
+    animation: pulse 1.0s ease-in-out infinite alternate;
+}
+#tray {
+    -gtk-icon-effect: none;
+}
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+}
+tooltip {
+    background:    rgba(20, 34, 46, 0.97);
+    border:        1px solid rgba(92, 135, 163, 0.35);
+    border-radius: 0;
+}
+tooltip label {
+    color:   #a8c4d4;
+    padding: 4px;
+}

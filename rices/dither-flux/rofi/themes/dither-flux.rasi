@@ -1,0 +1,116 @@
+/*
+ * rofi theme — dither-flux rice (paleta milford-woda)
+ * accent: #D8E6EE (piana) | urgent: #E0A23C (bursztyn, jedyny ciepły kolor)
+ * bg: płaska, niemal nieprzezroczysta płyta — blur w tym ricu wyłączony
+ * layout: center | corners: 0 — ostro, spójnie z waybarem i ramkami okien
+ */
+
+* {
+    bg:          rgba(20, 34, 46, 0.96);
+    bg-selected: rgba(92, 135, 163, 0.12);
+    fg:          #A8C4D4;
+    fg-dim:      rgba(168, 196, 212, 0.40);
+    accent:      #D8E6EE;
+    urgent:      #E0A23C;
+    border-col:  rgba(92, 135, 163, 0.45);
+
+    background-color: transparent;
+    text-color:       @fg;
+    font:             "JetBrainsMono Nerd Font 11";
+}
+
+window {
+    background-color: @bg;
+    border:           1px solid;
+    border-color:     @border-col;
+    border-radius:    0;
+    width:            520px;
+    padding:          0px;
+    location:         center;
+}
+
+mainbox {
+    background-color: transparent;
+    children:         [ inputbar, listview ];
+    spacing:          0px;
+    padding:          0px;
+}
+
+/* ── Input bar ──────────────────────────────────────── */
+inputbar {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          14px 18px;
+    spacing:          10px;
+    children:         [ prompt, entry ];
+    border:           0px 0px 1px 0px solid;
+    border-color:     rgba(92, 135, 163, 0.20);
+}
+
+prompt {
+    background-color: transparent;
+    text-color:       @accent;
+    font:             "JetBrainsMono Nerd Font 13";
+}
+
+entry {
+    background-color: transparent;
+    text-color:       #D8E6EE;
+    placeholder:      "Search…";
+    placeholder-color: @fg-dim;
+    cursor-color:     @accent;
+    cursor-width:     2px;
+    expand:           true;
+}
+
+/* ── List ───────────────────────────────────────────── */
+listview {
+    background-color: transparent;
+    padding:          8px;
+    spacing:          2px;
+    scrollbar:        false;
+    lines:            8;
+    fixed-height:     true;
+    cycle:            true;
+}
+
+element {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          9px 12px;
+    spacing:          10px;
+    orientation:      horizontal;
+    border-radius:    0;
+}
+
+element normal.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal {
+    background-color: @bg-selected;
+    text-color:       @accent;
+}
+
+element normal.urgent {
+    text-color: @urgent;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color:       #0F1A24;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             20px;
+    vertical-align:   0.5;
+}
+
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    vertical-align:   0.5;
+    expand:           true;
+}

@@ -38,7 +38,7 @@ chmod +x install.sh cpudrivers-installation.sh gpudrivers-installation.sh kernel
 ./install.sh
 ```
 
-Instalator: wykryje i skonfiguruje monitory (w tym ich numerację lewa→prawa i tryb workspace'ów — patrz sekcja „Workspace'y"), zainstaluje pakiety z `packages/`, ustawi przełącznik profili zasilania (ASUS ROG / uniwersalny — typ sprzętu wykrywany z DMI jako podpowiedź, na ASUS-ach bez działającego asusctl automatyczny fallback na power-profiles-daemon, na końcu samokontrola `profile-get.sh`), opcjonalnie odpali instalatory mikrokodu CPU / sterowników GPU / kernela, wygeneruje pliki maszynowe, podlinkuje domyślny rice do `~/.config`, ustawi pierwszą tapetę (jeśli jakaś jest w `wallpapers/`) i zadba o usługi: NetworkManager, audio (pipewire-pulse), asusd na ASUS-ach, opcjonalnie UFW i bluetooth.
+Instalator: wykryje i skonfiguruje monitory (w tym ich numerację lewa→prawa i tryb workspace'ów — patrz sekcja „Workspace'y"), zainstaluje pakiety z `packages/`, ustawi przełącznik profili zasilania (ASUS ROG / uniwersalny — typ sprzętu wykrywany z DMI jako podpowiedź; na ASUS-ach instaluje z AUR `asusctl-devel-git`, który dostarcza także `rog-control-center`, więc ten drugi NIE jest instalowany osobno; bez działającego asusctl automatyczny fallback na power-profiles-daemon, na końcu samokontrola `profile-get.sh`), opcjonalnie odpali instalatory mikrokodu CPU / sterowników GPU / kernela, wygeneruje pliki maszynowe, podlinkuje domyślny rice do `~/.config`, ustawi pierwszą tapetę (jeśli jakaś jest w `wallpapers/`) i zadba o usługi: NetworkManager, audio (pipewire-pulse), asusd na ASUS-ach, opcjonalnie UFW i bluetooth.
 
 **Aktualizujesz działającą maszynę po `git pull`?** Uruchom `install.sh` ponownie — wygeneruje brakujące pliki maszynowe.
 
@@ -106,14 +106,19 @@ archenemy/
 │   │                                 #   rogi 4-6px. Własny fastfetch (logo Archa w cyjanie) + launcher
 │   │                                 #   w waybarze i motyw nvim (neon cyjan);
 │   │                                 #   networkmanager-dmenu z white-blue (symlink).
-│   └── asia-n-rice/                  # Mauve/róż na granacie, płaski look. Własny hypr, rofi,
-│                                     #   mako, hyprlock, alacritty, waybar i motyw nvim (mauve);
-│                                     #   fastfetch domyślny;
-│                                     #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
+│   ├── asia-n-rice/                  # Mauve/róż na granacie, płaski look. Własny hypr, rofi,
+│   │                                 #   mako, hyprlock, alacritty, waybar i motyw nvim (mauve);
+│   │                                 #   fastfetch domyślny;
+│   │                                 #   MangoHud/networkmanager-dmenu z white-blue (symlinki).
+│   └── dither-flux/                  # Dither art + algorithmic art w palecie deszczowej
+│                                     #   milford-woda: zero zaokrągleń, bez blura i poświat,
+│                                     #   ramki 1 px, płaskie płyty. Własny komplet warstw;
+│                                     #   networkmanager-dmenu z white-blue (symlink).
 ├── scripts/
 │   ├── appbinds/                     # Terminalowy menedżer skrótów do aplikacji (Super+A);
 │   │                                 #   [w] przełącza tryb workspace'ów shared/decades na żywo;
 │   │                                 #   [v] przełącza styl paska głośności w waybarze;
+│   │                                 #   [t] timer waybara: włącz/wyłącz, domyślny czas, kolor;
 │   │                                 #   autostart-picker.sh — [u] wybór aplikacji do autostartu
 │   │                                 #   (checkboxy + filtr, czysty bash).
 │   ├── changing-theme-scripts/       # Po jednym stubie na rice (nazwa pliku = pozycja w menu);
@@ -128,18 +133,46 @@ archenemy/
 │   │                                 #   (współdzielony z install.sh i pickerem z Super+A → [u]).
 │   ├── rofi/                         # Menu rofi: rice'y, tapety, sieć (z reskanem), zasilanie.
 │   ├── wallpapers/                   # Matematyczne generatory tapet (czysty Python, zero zależności):
-│   │                                 #   logo Archa + siatka Tron (gen_tron_wallpaper.py).
+│   │                                 #   logo Archa (gen_arch_wallpaper.py), siatka Tron
+│   │                                 #   (gen_tron_wallpaper.py) i generatywne tapety ditherowe
+│   │                                 #   rice'a dither-flux (gen_dither_flux_wallpaper.py);
+│   │                                 #   flux-wall.sh — start/stop tapety liczonej shaderem.
 │   └── waybar/                       # Przełącznik profili zasilania (asus/uniwersalny) +
-│                                     #   volume-bar.sh — pasek głośności (▮▮▯) zamiast modułu pulseaudio;
-│                                     #   styl segments/blocks przełączalny w Super+A → [v].
+│                                     #   volume-bar.sh — pasek głośności zamiast modułu pulseaudio;
+│                                     #   styl line/ticks/solid przełączalny w Super+A → [v].
+│                                     #   timer.sh + timer-ctl.sh — timer (odliczanie) obok zegara,
+│                                     #   opcjonalny, włączany w Super+A → [t];
+│                                     #   lib/timer-state.sh — wspólny odczyt/zapis stanu timera.
+├── src/
+│   └── flux-wall/                    # Tapeta liczona shaderem na GPU (C, wlr-layer-shell + EGL/GLES 3):
+│       ├── main.c                    #   Wayland/EGL: jedna powierzchnia na monitor, pętla, bateria;
+│       ├── engine.c / engine.h       #   rysowanie (GLES, bez Waylanda): przebieg jednoprzebiegowy
+│       │                             #   albo silnik cząstkowy (formy akumulacyjne — pole przepływu);
+│       ├── audio.c / audio.h         #   reakcja na dźwięk: FFT z monitora WYJŚCIA (libpulse przez
+│       │                             #   pipewire-pulse), pasma bass/mid/high, beat — tylko wizualizacje;
+│       ├── test.c                    #   testy funkcji czystych (paleta, bateria, #pragma flux);
+│       ├── Makefile                  #   kod protokołów generuje wayland-scanner z XML-i w repo;
+│       ├── protocols/                #   wlr-layer-shell + xdg-shell (XML, licencja MIT/X11);
+│       └── shaders/                  #   animacje do wyboru w Super+W: dither-flux (domain warping),
+│                                     #   dither-waves (interferencja) — pojedyncze .frag; pary
+│                                     #   .frag + .update.glsl (silnik cząstkowy): dither-flow,
+│                                     #   dither-attractor, dither-thomas, dither-halvorsen,
+│                                     #   dither-aizawa, dither-dejong, dither-vortex, dither-rain,
+│                                     #   dither-orb (wizualizer w stylu kulki NCS — widmo, bas, beat).
+│                                     #   Buduje install.sh [9.6]; build/ poza gitem.
 └── wallpapers/                       # Tapety (w gicie) — dowolne pliki, opcjonalnie w folderach zestawów.
     ├── arch-white/                   # Zestaw: logo Archa (#0148ED) na bieli — v1 1920x1080, v2 2560x1600.
-    └── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
+    ├── tron-grid/                    # Zestaw: siatka Tron (neon cyjan na #020A0F) — v1/v2 jak wyżej.
+    └── dither-flux/                  # Zestaw generowany: 3 formy (pole przepływu ×2, atraktor) w rastrze
+                                      #   Bayera, paleta milford-woda — TYLKO generated/ (poza gitem), pod
+                                      #   REALNE monitory, install.sh [9.7]. W gicie żadnych PNG (2026-09-08).
 ```
 
 ## Tapety
 
-Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
+Tapety mieszkają w `wallpapers/` (mogą być luzem albo w podfolderach) i są wersjonowane w gicie — świeża instalacja ma je od razu. Wyjątek: zestaw `dither-flux` jest **generowany pod realne monitory** — `install.sh` krok **[9.7]** czyta rozdzielczości i role z `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, dalsze → `m-<nazwa>`; tryby nazwane jak `preferred` dopytuje `hyprctl`) i w tle uruchamia `gen_dither_flux_wallpaper.py` do `wallpapers/dither-flux/generated/` (poza gitem; log `generate.log`). Raster 1 px nie znosi skalowania, więc tapeta musi mieć dokładnie rozdzielczość ekranu. Od 2026-09-08 repo nie trzyma żadnych gotowych PNG tego zestawu — do czasu zakończenia generowania (kilka minut po instalacji) pozycji `dither-flux` w `Super+W` po prostu nie ma; animacje flux-wall są niezależne od tych plików.
+
+Menu `Super+W` jest dwupoziomowe: pod dwoma checkboxami są foldery **`Wallpapers/`** (pliki z `wallpapers/`) i **`Animations/`** (animacje flux-wall, gdy jest zbudowany; wizualizacje muzyki z dopiskiem `♪ music visualisation`), a pod nimi **`Animation: off`**; w podmenu `← Back` wraca na górę. Wybór animacji nie zmienia tapety hyprpapera: animacja rysuje nad nią i działa w **każdym** rice'ie, w jego palecie (deklaracja `rices/<rice>/flux-wall.conf`). Wybór jest zapamiętywany w `data/flux-wall.dat` i przeżywa `Super+T` oraz restart; `off` wyłącza animację wszędzie, a usunięcie pliku przywraca domyślne zachowanie rice'a (dither-flux: włączona, pozostałe: wyłączona). Przełączanie: `Super + W` — menu pokazuje wszystkie obrazy (jpg/jpeg/png/webp), na górze dwa checkboxy: `[x] Upload to all monitors` (domyślnie zaznaczony — tapeta na wszystkie monitory zamiast tylko na ten z fokusem) i `[ ] Set as hyprlock background (no blur)` (domyślnie odznaczony — zaznaczenie ustawia wybrany obraz jako tło ekranu blokady bez blura, zamiast domyślnego żywego zrzutu ekranu + blur; przeżywa przełączenie rice'a).
 
 Na górze menu jest przełącznik **`[x] Upload to all monitors`** (domyślnie zaznaczony):
 
@@ -150,6 +183,39 @@ Wybór per-monitor jest pamiętany w `data/wallpaper.dat` i przywracany przy zmi
 
 Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem workspace'ów rządzi co innego: **numeracja monitorów lewa→prawa** i **tryb workspace'ów** — oba ustawiane przy instalacji (patrz sekcja „Workspace'y").
 
+## Animowana tapeta liczona shaderem (flux-wall)
+
+`src/flux-wall` to mały klient Waylanda (C, ~1100 linii w `main.c` + `engine.c`): otwiera powierzchnię na warstwie tła (`wlr-layer-shell`) osobno na każdym monitorze, zakłada kontekst EGL z GLES 3.0 i w każdej klatce rysuje jeden fragment shader. Tapeta nie jest plikiem ani wideo — jest **kodem**: nie ma pętli, nie powtarza się, liczy się natywnie w pikselach fizycznych monitora (raster Bayera 1 px bez skalowania) i zmienia paletę bez regenerowania czegokolwiek.
+
+Shader (`src/flux-wall/shaders/dither-flux.frag`) dostaje uniformy: `resolution`, `time`, `palette_bg`/`palette_ink`/`palette_accent` (trzy kolory rice'a) i `detail` (0–1). **`detail` steruje szczegółowością z poziomu baterii** (`--battery`: `/sys/class/power_supply/BAT*`): mniej procent = mniej oktaw szumu i wolniejszy dryf, czyli mniej pracy GPU dokładnie wtedy, gdy energii ubywa; na zasilaniu sieciowym pełnia. Zmiana jest interpolowana płynnie.
+
+**Rozdzielczość i skala.** Każdy monitor dostaje własną powierzchnię w rozmiarze, który podaje kompozytor, pomnożonym przez skalę — także **ułamkową** (`wp_fractional_scale_v1` + `wp_viewporter`: bufor ma rozmiar logiczny × np. 1.25 zaokrąglony do pikseli fizycznych, a viewport mapuje go na rozmiar logiczny). Raster jest 1:1 przy każdej rozdzielczości i skali ustawionej w `install.sh` [3.5]; bez tych protokołów wraca skala całkowita `wl_output`.
+
+**Warstwa.** flux-wall rysuje na warstwie `bottom` — **nad** tapetą hyprpapera (warstwa `background`) i **pod** oknami. Hyprpaper działa zawsze i zostaje pod spodem: gdyby flux-wall padł albo nie został zbudowany, widać zwykłą tapetę. To jest cały fallback — bez osobnej logiki.
+
+**Out of the box.** `install.sh` krok **[9.6]** buduje binarkę (`make -C src/flux-wall`; wymaga `base-devel wayland mesa` z `requirements-pacman.txt`; XML-e protokołów są w repo, więc `wayland-protocols`/`wlr-protocols` nie są potrzebne). Build jest opcjonalny z definicji — brak narzędzi albo błąd `make` ląduje w podsumowaniu instalatora, nigdy nie przerywa instalacji.
+
+**Animacje do wyboru** (`src/flux-wall/shaders/`): `dither-flux` — domain warping, pole dryfuje bez końca; `dither-waves` — interferencja fal kołowych płynących od źródeł; `dither-flow` — **pole przepływu**, ta sama forma co tapeta statyczna `przeplyw`, tylko żywa: cząstki wędrują po polu i zostawiają gasnące smugi, a pole powoli dryfuje, więc linie prądu przebudowują się bez końca (obraz po starcie narasta przez kilka sekund — to zamierzone); `dither-attractor` — **atraktor Clifforda** z tapety `atraktor`, kształt i orientacja 1:1: ślady stoją, a po kształcie obiega spiralna fala jasności (decyzja: kształt ma stać, rusza się światło). Sześć kolejnych (wybór właściciela z arkusza 2026-09-08): `dither-thomas`, `dither-halvorsen`, `dither-aizawa` — **atraktory ciągłe** (równania różniczkowe całkowane RK2), w których kropki naprawdę płyną po nieruchomym kształcie; `dither-dejong` — mapa de Jonga z falą światła jak `dither-attractor`; `dither-vortex` — wiry z pola bezźródłowego (curl noise); `dither-rain` — deszcz z wiatrem z fBm, smugi gasnące w akumulatorze; `dither-orb` — **wizualizer w stylu kulki NCS**: tarcza, której promień oddycha basem, wokół 64 lustrzane słupki widma (32 biny log-freq, bas u góry, wysokie u dołu), pierścień rozchodzący się na uderzeniu i pył cząstek wyrzucanych od tarczy — pierwsza animacja napisana pod dźwięk (w ciszy: tarcza, krótkie słupki, wolny pył). Każda w palecie bieżącego rice'a, każda z `detail` z baterii. (Animacja `dither-drift` — nieruchoma kompozycja z wędrującym ziarnem — usunięta 2026-09-08; jeśli była wybrana, `install.sh` [9.6] czyści ten wybór i wraca do domyślnej animacji rice'a.)
+
+**Dwa rodzaje animacji — jeden kontrakt.** `dither-flux` i `dither-waves` to pojedynczy plik `.frag` liczony per piksel. Formy **akumulacyjne** (pole przepływu, atraktor) nie dają się tak policzyć — obraz jest sumą śladów tysięcy cząstek — więc `engine.c` ma dla nich **silnik cząstkowy**: pozycje cząstek żyją w teksturze (ping-pong), każda klatka to krok symulacji i dorysowanie śladów do akumulatora, który gaśnie w czasie (`exp(-dt/life)` — wygląd nie zależy od liczby klatek na sekundę), a `.frag` robi z akumulatora tone + dither. Silnik włącza się sam, gdy obok `<nazwa>.frag` leży **`<nazwa>.update.glsl`** (krok cząstki; parametry jako `#pragma flux klucz wartość`: `particles`, `life`, `rate`, `inc`, `gain`, `splat`, `scale`, `warmup`, `warm`, `seed`). Rozszerzenie jest celowo inne niż `.frag`, więc menu `Super+W`, wrapper i `flux-wall.conf` rice'ów nie wiedzą o różnicy — nowa animacja to nadal „wrzuć pliki do `shaders/`". Wymaga renderowalnych buforów zmiennoprzecinkowych (`GL_EXT_color_buffer_float`/`_half_float`); ich brak = kod 3 i zwykła tapeta hyprpapera pod spodem.
+
+**Kto decyduje, co się wyświetla** — dwa źródła w tej kolejności: (1) wybór użytkownika z `Super+W` w `data/flux-wall.dat` (`off` albo nazwa animacji — działa w każdym rice'ie); (2) bez wyboru — deklaracja rice'a `rices/<rice>/flux-wall.conf`: `FLUX_WALL_PALETTE` (trzy kolory), `FLUX_WALL_SHADER` (domyślna animacja), `FLUX_WALL_ARGS` (`--battery`), `FLUX_WALL_AUTOSTART` (`1` tylko w `dither-flux`; `tron`, `white-blue`, `asia-n-rice` mają paletę, ale animację wyłączoną, dopóki jej nie wybierzesz). Autostart rice'a (`hyprland.lua`) i `Super+T` wołają `scripts/wallpapers/flux-wall.sh autostart`, który zatrzymuje instancję poprzedniego rice'a i startuje wg tych reguł. Brak binarki = cicho nic.
+
+**Wizualizacja muzyki.** Zwykłe animacje NIE reagują na dźwięk (decyzja 2026-09-08: reaktywność tylko tam, gdzie animacja jest do tego stworzona). Animacja, której shader deklaruje `#pragma flux audio 1`, jest **wizualizacją muzyki**: flux-wall sam uruchamia dla niej nasłuch — **wyłącznie monitora wyjścia, nigdy mikrofonu** — i w `Super+W` ma dopisek `♪ music visualisation`. Żadnego przełącznika: włącza się z animacją, gaśnie z nią. Dziś jest jedna: `dither-orb`. Pod spodem `audio.c` (libpulse przez pipewire-pulse, bez cavy): co 20 ms FFT 2048 z okna Hanna, auto-gain z podłogą, bramka szumu, wygładzanie, detektor uderzenia; do shaderów idą `audio_level/bass/lowmid/mid/high/beat` i `sampler2D audio_spectrum` (32 biny log), a silnik umie dodatkowo warpować czas (`#pragma flux audio_tempo`) i pulsować jasnością (`audio_glow`) — ślady gasną w sekundach realnych, więc muzyka zmienia ruch, nie charakter. Brak serwera dźwięku nigdy nie jest błędem. Debug bez serwera: `--audio-file plik.f32`; wyłączenie na siłę: `--no-audio`.
+
+Ręcznie:
+
+```
+scripts/wallpapers/flux-wall.sh list                 # dostępne animacje
+scripts/wallpapers/flux-wall.sh list-audio           # które animacje są wizualizacją muzyki
+scripts/wallpapers/flux-wall.sh select dither-waves  # wybierz i zapamiętaj (to samo, co Super+W)
+scripts/wallpapers/flux-wall.sh off                  # wyłącz i zapamiętaj
+scripts/wallpapers/flux-wall.sh start -f 30          # uruchom wg reguł, opcje idą do flux-wall (log w $XDG_RUNTIME_DIR/flux-wall.log)
+scripts/wallpapers/flux-wall.sh stop | status
+```
+
+Bezpośrednio: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fps] [-o nazwa-monitora] [-l bottom|background] [--once] [-v]`. Kody wyjścia: 1 argumenty/plik, 2 brak Waylanda lub layer-shell, 3 błąd EGL/shadera. Testy funkcji czystych (paleta, bateria): `make -C src/flux-wall test`.
+
 ## Rice'y
 
 | Rice | Opis |
@@ -158,6 +224,7 @@ Rola dotyczy **tylko tapet** (primary→v1, secondary→v2). Przydziałem worksp
 | `white-blue_beta` | Pierwotny wygląd biało-niebieski, trzymany do wglądu/odwrotu. Tylko poprawki funkcjonalne, bez zmian wizualnych. Mako i hyprlock dziedziczy z `white-blue` przez symlinki w repo. |
 | `tron` | Tron: Legacy — ciemne szkło `#020A0F`, neon cyjan `#00E5FF` z poświatą (glow), pomarańcz CLU `#FF7B1C` tylko dla alarmów, rogi niemal ostre (4–6px). Własny motyw waybar (z launcherem „portal do Gridu" i podświetlanymi wyspami HUD), rofi (glif szukania), fastfetch (logo Archa w neonowym cyjanie), alacritty/mako/hyprlock (kinowa oprawa z neonowymi liniami)/MangoHud/nvim (ręczny colorscheme: neon cyjan na `#020A0F`, alarmy w pomarańczu CLU); networkmanager-dmenu dziedziczy z `white-blue` przez symlink w repo. Tapeta: zestaw `tron-grid` (generowany). |
 | `asia-n-rice` | Przygaszony mauve/róż (`#b47687`) na ciemnym granacie (`#2a3444`), płaski look: waybar z zaokrąglonymi wyspami (14px) i kursywnymi tytułami okien, ostre rogi okien, ramka `#131a2a`. Wygląd zaadaptowany z zewnętrznego rice'a i przepięty pod backend archenemy: alacritty zamiast kitty, rofi zamiast wofi, warstwa maszynowa (GPU/monitory/workspace'y) przez `source`, bez cava. Własny motyw waybar/rofi/mako/hyprlock/alacritty w palecie mauve; fastfetch domyślny (bez przebarwienia); własny motyw nvim (ręczny colorscheme w palecie mauve, płaski — bez boldów); MangoHud i networkmanager-dmenu dziedziczy z `white-blue` przez symlinki. Bez własnej tapety — używa aktualnej (warstwa maszynowa). |
+| `dither-flux` | Dither art + algorithmic art: tapety to generatywne pola (pole przepływu, atraktor Clifforda) kwantyzowane rastrem Bayera 8×8, w palecie deszczowej `milford-woda` z kadru Milford Sound — mokre góry `#0F1A24`, stalowa woda `#5C87A3`, mgła `#A8C4D4`, piana `#D8E6EE` jako akcent; bursztyn `#E0A23C` to jedyny ciepły kolor i służy wyłącznie alarmom. Geometria idzie za rastrem: **zero zaokrągleń**, ramki okien 1 px, **blur i cień wyłączone** (rozmycie i dither to sprzeczne materiały), wyspy waybara, rofi i mako jako płaskie, niemal nieprzezroczyste płyty. Własny komplet: waybar (z launcherem), rofi, alacritty (ANSI stonowane do palety, ale rozróżnialne), mako, swayosd, hyprlock (linie 1 px, bez poświaty), fastfetch (logo Archa w pianie), MangoHud, nvim (ręczny colorscheme); networkmanager-dmenu z `white-blue` przez symlink. Tapety: zestaw `dither-flux` z `gen_dither_flux_wallpaper.py`. |
 
 Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.config`. Przełączanie: `Super + T` — menu pokazuje skrypty z `scripts/changing-theme-scripts/` (nazwa pliku `.sh` to etykieta w menu: `white-blue`, `white-blue_beta`). Przy przełączeniu stare symlinki rice'a są sprzątane, więc motywy się nie mieszają.
 
@@ -167,13 +234,37 @@ Każdy rice to folder w `rices/`, którego podfoldery są linkowane do `~/.confi
 
 `Super + A` otwiera terminalowy menedżer skrótów: wybierasz klawisz (np. `g`, `F5`, `semicolon`) i polecenie (np. `spotify`), a skrót `Super + klawisz` działa od razu. Menedżer pilnuje kolizji z istniejącymi skrótami archenemy, a opcja `[s]` pokazuje pełną ściągę wszystkich obecnych skrótów — co jest pod którym klawiszem i jaką aplikację/akcję odpala. Twoje bindy trafiają do `config/hypr/appbinds.lua` — pliku osobistego poza gitem, więc przetrwają `git pull` i zmianę rice'a.
 
-To samo TUI ma dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y"), `[u] autostart apps` — wybór aplikacji odpalanych przy starcie Hyprlanda z listy wszystkich wpisów `.desktop` (checkboxy `[x]`/`[ ]`, filtrowanie po nazwie przez `/tekst`; wybór ląduje w `data/autostart-apps.dat`, a z niego generowany jest osobisty `config/hypr/autostart-apps.lua` — obok ręcznego `autostartpersonalisation.lua`, którego ta warstwa nie dotyka), `[v] volume bar` — styl paska głośności w waybarze (`segments` ▮▮▯ / `blocks` █░░), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara), oraz `[p] update archenemy` — aktualizator repo: wybierasz gałąź (`dev` — najnowsze zmiany / `main` — tylko stabilne wydania), skrypt robi `git fetch`/`checkout`/`pull --ff-only`, a lokalne zmiany w plikach śledzonych przez git chowa `git stash` na czas pull i przywraca po nim. Warstwa maszynowa i osobista (monitory, appbinds, autostart, rice, styl paska głośności...) jest poza gitem, więc update jej nie rusza — Twoje ustawienia zostają domyślnie bez zmian. Na końcu proponuje ponowne uruchomienie `install.sh`, żeby dogenerować ewentualne nowe pliki maszynowe.
+To samo TUI ma dodatkowe pozycje: `[w]` — przełącznik trybu workspace'ów shared/decades (sekcja „Workspace'y"), `[u] autostart apps` — wybór aplikacji odpalanych przy starcie Hyprlanda z listy wszystkich wpisów `.desktop` (checkboxy `[x]`/`[ ]`, filtrowanie po nazwie przez `/tekst`; wybór ląduje w `data/autostart-apps.dat`, a z niego generowany jest osobisty `config/hypr/autostart-apps.lua` — obok ręcznego `autostartpersonalisation.lua`, którego ta warstwa nie dotyka), `[v] volume bar` — styl paska głośności w waybarze (`line` ━━━━━━────, `ticks` ▮▮▮▮▮▮▯▯▯▯, `solid` ▬▬▬▬▬▬▬▬▬▬▬▬────────), zapisywany w `data/volume-bar-style.dat` i stosowany od razu (sygnał 10 do waybara), `[t] timer` — timer odliczający obok zegara (sekcja „Timer"), oraz `[p] update archenemy` — aktualizator repo: wybierasz gałąź (`dev` — najnowsze zmiany / `main` — tylko stabilne wydania), skrypt robi `git fetch`/`checkout`/`pull --ff-only`, a lokalne zmiany w plikach śledzonych przez git chowa `git stash` na czas pull i przywraca po nim. Warstwa maszynowa i osobista (monitory, appbinds, autostart, rice, styl paska głośności...) jest poza gitem, więc update jej nie rusza — Twoje ustawienia zostają domyślnie bez zmian. Na końcu proponuje ponowne uruchomienie `install.sh`, żeby dogenerować ewentualne nowe pliki maszynowe.
 
-Menu główne TUI (Super+A) i potwierdzenia w podmenu (`[v]`, `[w]`, `[p]`) odpowiadają na jeden klawisz bez Entera — `Escape` wychodzi/anuluje tak samo jak `q`/`N`.
+Menu główne TUI (Super+A) i potwierdzenia w podmenu (`[v]`, `[w]`, `[t]`, `[p]`) odpowiadają na jeden klawisz bez Entera (wyjątek: wpisywanie czasu i koloru w `[t]` kończysz Enterem) — `Escape` wychodzi/anuluje tak samo jak `q`/`N`.
 
-Głośność: moduł `pulseaudio` waybara zastąpiony własnym `custom/volumebar` (skrypt `scripts/waybar/volume-bar.sh`) — rysuje pasek wypełnienia z procentem zamiast samej ikony. Scroll na pasku i klawisze głośności działają jak dotąd (klawisze sprzętowe dodatkowo wysyłają do waybara sygnał 10 = natychmiastowe odświeżenie paska). Klik: LPM `pavucontrol`, PPM mute. Stan `>100%` (boost) ma osobną klasę koloru per rice. Ikona głośnika automatycznie zamienia się na słuchawki, gdy Active Port domyślnego sinka (z `pactl`) wskazuje na wyjście słuchawkowe — i wraca do głośnika po odpięciu; wykrywane w tym samym backstopie `interval:1`, bez osobnego triggera.
+Głośność: moduł `pulseaudio` waybara zastąpiony własnym `custom/volumebar` (skrypt `scripts/waybar/volume-bar.sh`) — rysuje pasek wypełnienia z procentem zamiast samej ikony. Scroll na pasku i klawisze głośności działają jak dotąd (klawisze sprzętowe dodatkowo wysyłają do waybara sygnał 10 = natychmiastowe odświeżenie paska). Klik: LPM `pavucontrol`, PPM mute. Trzy style do wyboru w `Super+A` → `[v]`: `line` (cienka kreska, 10 komórek), `ticks` (segmenty ▮▮▯, 10 komórek) i `solid` (gruby blok głośności na cienkiej linii, dłuższy — 20 komórek, po 5% na komórkę). Stan `>100%` (boost) ma osobną klasę koloru per rice. Ikona głośnika automatycznie zamienia się na słuchawki, gdy Active Port domyślnego sinka (z `pactl`) wskazuje na wyjście słuchawkowe — i wraca do głośnika po odpięciu; wykrywane w tym samym backstopie `interval:1`, bez osobnego triggera. Sam glif słuchawek siedzi w Iosevce niżej niż głośnik i mikrofon, więc skrypt podnosi go pango-spanem (`rise`) — wysokość korekty to jedna stała `ICON_RISE_HEADPHONES` na górze `volume-bar.sh` (dodatnia w górę, ujemna w dół, `0` = bez korekty).
+
+Profil zasilania: moduł `custom/profileswitcher` pokazuje aktualny profil, a klik cyklicznie go zmienia. Na ASUS-ach ROG to samo robi **górny klawisz sprzętowy profilu** (`XF86Launch4`) — od 2026-09-07 idzie tą samą drogą co klik, czyli przez `scripts/waybar/profile-switch.sh`: zmiana jest weryfikowana w `/sys/firmware/acpi/platform_profile`, przy martwym `asusd` następuje automatyczny fallback na `power-profiles-daemon`, a gdy nie zadziała nic — pojawia się krytyczne powiadomienie z prawdziwym błędem narzędzia. Wcześniej klawisz wołał surowe `asusctl profile -n`, które potrafi wyjść kodem 0 nic nie zmieniając (klient nowszy od demona po aktualizacji bez restartu `asusd`) — wtedy pasek się odświeżał, profil zostawał stary i klawisz wyglądał na martwy. Bind jest w warstwie maszynowej (`config/hypr/hardware-keys.lua`, generowany przez `install.sh`), więc po aktualizacji repo wymaga ponownego biegu instalatora.
 
 Jasność ekranu: klawisze `XF86MonBrightness*` wołają `swayosd-client` — zmieniają jasność i pokazują pasek OSD u dołu wszystkich monitorów (serwer `swayosd-server` startuje z każdym rice'em i jest restartowany przy przełączeniu rice'a, bo czyta motyw tylko przy starcie). Motyw OSD per rice: `rices/*/swayosd/style.css` (beta dziedziczy z white-blue przez symlink). Pakiet: `swayosd-git` (AUR).
+
+## Timer
+
+Opcjonalny timer odliczający, jako **osobna wyspa tuż po prawej od zegara**
+(własna pigułka, nie doklejona do zegara). Domyślnie wyłączony — włączasz go
+w `Super + A` → `[t] timer`, tam też ustawiasz domyślny czas (domyślnie 25 min)
+i kolor cyfr: **czerwony `#ff0000` niezależnie od rice'a**, zmienialny na
+dowolny `#rrggbb` wpisany w TUI. Kolor idzie przez pango prosto ze skryptu, więc
+zmienia się wyłącznie kolor cyfr — pigułka pod spodem zostaje w palecie rice'a.
+
+Sterowanie na pasku: **LPM** start / pauza / wznowienie (a na odliczonym timerze
+— skasowanie alarmu), **PPM** reset do domyślnego czasu, **scroll** ±1 minuta
+(działa tylko, gdy timer stoi albo jest zapauzowany — biegnącego odliczania
+scroll nie rusza). Po dojściu do zera leci jedno powiadomienie (`notify-send`).
+Odliczanie liczy się z zegara ściennego, więc przeładowanie waybara ani zmiana
+rice'a go nie przesuwają. Wyłączenie timera w TUI chowa moduł całkowicie —
+zegar wraca wtedy dokładnie na środek paska.
+
+Ustawienia i stan mieszkają w warstwie maszynowej (poza gitem):
+`data/timer-enabled.dat`, `timer-duration.dat`, `timer-color.dat`,
+`timer-state.dat`. `white-blue_beta` timera nie ma (rice zamrożony —
+tylko bugfixy).
 
 ## Skróty klawiszowe
 

@@ -533,9 +533,23 @@ case "$hw_choice" in
         HW_PROFILE="asus"
         echo -e "  ${GREEN}✓ ASUS ROG selected.${NC}"
         echo ""
-        if command -v yay &>/dev/null; then
-            echo -e "  Installing asusctl and rog-control-center..."
-            yay -S --needed asusctl rog-control-center
+        # asusctl z AUR jako `asusctl-devel-git` — decyzja właściciela 2026-09-08:
+        # to jest wersja, która działa na jego ROG-u. Nazwę podajemy WPROST, więc
+        # yay nie pokazuje menu dostawców wirtualnego `asusctl` (zgłoszenie
+        # właściciela 2026-09-07: „menu 4 asusctl"); dostawców jest czterech
+        # (asusctl-git, -devel-git, -nosystemd, -x11) i tylko jawna nazwa je omija.
+        #
+        # rog-control-center NIE jest instalowany osobno, bo asusctl-devel-git ma go
+        # w `provides` (i w `conflicts`) — dostarcza tę binarkę sam. Instalacja
+        # extra/rog-control-center obok jest wręcz niemożliwa: ten pakiet zależy od
+        # `asusctl=6.4.0`, a zależności WERSJONOWANEJ nie spełnia bezwersyjne
+        # `provides` pakietu z AUR. Sprawdzone 2026-09-08 w AUR RPC i w API
+        # archlinux.org, nie zgadnięte.
+        echo -e "  Installing asusctl-devel-git (AUR; dostarcza także rog-control-center)..."
+        if ! command -v yay &>/dev/null; then
+            echo -e "  ${RED}✗ Brak yay — nie zainstaluję asusctl-devel-git z AUR.${NC}"
+            SUMMARY_SKIPPED+=("asusctl-devel-git (brak yay) — profile przez fallback ppd")
+        elif yay -S --needed asusctl-devel-git; then
             # asusd musi działać, inaczej przełącznik profili (asusctl profile) nie zadziała
             if systemctl list-unit-files asusd.service &>/dev/null; then
                 sudo systemctl enable --now asusd.service
@@ -544,7 +558,10 @@ case "$hw_choice" in
                 echo -e "  ${YELLOW}⚠ Brak asusd.service — włącz daemon asusd ręcznie.${NC}"
             fi
         else
-            echo -e "  ${YELLOW}⚠ yay not available — install asusctl / rog-control-center manually.${NC}"
+            echo -e "  ${RED}✗ asusctl-devel-git NIE zainstalowany.${NC}"
+            echo -e "    Jeśli yay zgłosił konflikt z extra/asusctl lub extra/rog-control-center:"
+            echo -e "    to normalne — pakiet z AUR zastępuje oba, potwierdź ich usunięcie."
+            SUMMARY_SKIPPED+=("asusctl-devel-git — instalacja nie powiodła się; profile przez fallback ppd")
         fi
         # Domknięcie ścieżki ASUS: gdy asusctl mimo wszystko nie odpowiada
         # (brak yay, nieudana instalacja, asusd nie wstał), profile mają działać
@@ -685,7 +702,16 @@ echo -e "  ${GREEN}✓ workspaces-monitors.lua (tryb: $WS_MODE, ${#ORDERED_LR[@]
     if [[ "$HW_PROFILE" == "asus" ]]; then
         echo "-- Górne klawisze ASUS ROG"
         echo "hl.bind(\"XF86Launch1\", hl.dsp.exec_cmd(\"rog-control-center\"))"
-        echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"asusctl profile -n; pkill -RTMIN+8 waybar\"))"
+        # Klawisz profilu idzie DOKŁADNIE tą samą drogą co klik w module waybara:
+        # profile-switch.sh weryfikuje efekt w sysfs, przy martwym asusd spada na
+        # power-profiles-daemon, a przy totalnej awarii wysyła krytyczne
+        # powiadomienie z prawdziwym błędem. Surowe `asusctl profile -n` (tak było
+        # do 2026-09-07) potrafi wyjść zerem NIC nie zmieniając — pęknięcie
+        # asusctl↔asusd, decyzja 2026-07-15 — a `pkill` w tej samej linii odświeżał
+        # pasek również po nieudanej zmianie, więc klawisz wyglądał na martwy i nie
+        # dawał żadnej informacji. Odświeżenie paska (RTMIN+8) robią teraz skrypty
+        # profili, wyłącznie po POTWIERDZONEJ zmianie.
+        echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"~/archenemy/scripts/waybar/profile-switch.sh\"))"
     else
         echo "-- Brak bindów sprzętowych dla tego profilu ($HW_PROFILE)"
     fi
@@ -797,15 +823,18 @@ generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-white-blue.con
 # tron: ciemniej niż white-blue — blokada ma wyglądać jak zgaszony Grid.
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-tron.conf" "0.55"
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-asia-n-rice.conf" "0.85"
+# dither-flux: przygaszone jak fiord w ulewie, ale raster tapety ma zostać czytelny.
+generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-dither-flux.conf" "0.70"
 
 # 8i. Styl paska głośności waybara (przełączalny w Super+A → [v]) — seed
-# domyślny. volume-bar.sh ma fallback "segments", ale seed daje wykrywalność
-# i spójność z workspace-mode.dat.
+# domyślny. volume-bar.sh ma fallback "line", ale seed daje wykrywalność
+# i spójność z workspace-mode.dat. Istniejącego pliku NIE nadpisujemy — stare
+# nazwy stylów volume-bar.sh sam interpretuje jako "line".
 VOLSTYLE_DAT="$DATA_DIR/volume-bar-style.dat"
 if [[ ! -f "$VOLSTYLE_DAT" ]]; then
     mkdir -p "$DATA_DIR"
-    echo "segments" > "$VOLSTYLE_DAT"
-    echo -e "  ${GREEN}✓ volume-bar-style.dat (segments)${NC}"
+    echo "line" > "$VOLSTYLE_DAT"
+    echo -e "  ${GREEN}✓ volume-bar-style.dat (line)${NC}"
 else
     echo -e "  ${YELLOW}⚠ volume-bar-style.dat istnieje — nie ruszam.${NC}"
 fi
@@ -818,6 +847,26 @@ fi
 source "$ARCHENEMY_DIR/scripts/hypr/lib/gen-autostart.sh"
 generate_autostart_apps "$DATA_DIR/autostart-apps.dat" "$HYPR_LOCAL_DIR/autostart-apps.lua"
 echo -e "  ${GREEN}✓ autostart-apps.lua${NC}"
+
+# 8k. Timer waybara (moduł custom/timer; ustawienia w Super+A → [t]) — seed
+# domyślnych. Timer jest OPCJONALNY, dlatego enabled=0: świeża instalacja ma
+# pasek jak dotąd, dopóki właściciel go nie włączy. Skrypty timera mają własne
+# fallbacki, ale seed daje wykrywalność (pliki widać w data/) i spójność
+# z volume-bar-style.dat. Istniejących plików NIE nadpisujemy. Stanu biegu
+# (timer-state.dat) nie seedujemy — tworzy go pierwsze kliknięcie w pasek.
+seed_dat() {
+    local file="$1" value="$2"
+    if [[ ! -f "$file" ]]; then
+        mkdir -p "$DATA_DIR"
+        echo "$value" > "$file"
+        echo -e "  ${GREEN}✓ $(basename "$file") ($value)${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ $(basename "$file") istnieje — nie ruszam.${NC}"
+    fi
+}
+seed_dat "$DATA_DIR/timer-enabled.dat"  "0"
+seed_dat "$DATA_DIR/timer-duration.dat" "25"
+seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
 
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
@@ -877,6 +926,132 @@ if [[ -n "$FIRST_WP" ]]; then
 else
     echo -e "  ${YELLOW}⚠ No wallpapers found in wallpapers/ — use Super+W after adding some.${NC}"
     SUMMARY_SKIPPED+=("initial wallpaper (none in wallpapers/)")
+fi
+echo ""
+
+# ─── 9.6 FLUX-WALL (tapeta liczona shaderem) ─────────────────────────────────
+# Pierwszy komponent KOMPILOWANY w repo. Build jest opcjonalny z definicji:
+# każde niepowodzenie (brak kompilatora, brak nagłówków, błąd make) zostawia
+# tapety w hyprpaper jak dotąd i trafia do SUMMARY_SKIPPED — nigdy nie
+# przerywa instalacji i nigdy nie zostawia czarnego ekranu.
+
+echo -e "${CYAN}[9.6] Building flux-wall (shader wallpaper)...${NC}"
+
+FLUX_WALL_DIR="$ARCHENEMY_DIR/src/flux-wall"
+FLUX_WALL_MISSING=()
+for tool in gcc make pkg-config wayland-scanner; do
+    command -v "$tool" &>/dev/null || FLUX_WALL_MISSING+=("$tool")
+done
+for mod in wayland-client wayland-egl egl glesv2 libpulse-simple; do
+    pkg-config --exists "$mod" 2>/dev/null || FLUX_WALL_MISSING+=("pkg-config:$mod")
+done
+
+if [[ ${#FLUX_WALL_MISSING[@]} -gt 0 ]]; then
+    echo -e "  ${YELLOW}⚠ flux-wall pominięty — brakuje: ${FLUX_WALL_MISSING[*]}${NC}"
+    echo -e "    (pakiety: base-devel wayland mesa libpulse; tapety zostają w hyprpaper)"
+    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — brakuje: ${FLUX_WALL_MISSING[*]} (tapety w hyprpaper)")
+elif ! FLUX_WALL_LOG=$(make -C "$FLUX_WALL_DIR" 2>&1); then
+    echo -e "  ${RED}✗ flux-wall: błąd budowania — ostatnie linie:${NC}"
+    echo "$FLUX_WALL_LOG" | tail -5 | sed 's/^/    /'
+    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — błąd make (tapety w hyprpaper; szczegóły: make -C src/flux-wall)")
+elif [[ -x "$FLUX_WALL_DIR/build/flux-wall" ]]; then
+    echo -e "  ${GREEN}✓ flux-wall zbudowany: src/flux-wall/build/flux-wall${NC}"
+    echo -e "    start: scripts/wallpapers/flux-wall.sh start   stop: ... stop"
+    SUMMARY_DONE+=("flux-wall zbudowany (scripts/wallpapers/flux-wall.sh start)")
+else
+    echo -e "  ${RED}✗ flux-wall: make wyszedł czysto, ale binarki nie ma${NC}"
+    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — make bez błędu, brak binarki (tapety w hyprpaper)")
+fi
+
+# Wybór animacji z Super+W (data/flux-wall.dat) może wskazywać shader, którego
+# już nie ma (np. usunięty z repo). Wrapper i tak by go pominął, ale CICHO —
+# użytkownik widziałby tylko, że „animacja zniknęła". Decyzja właściciela
+# 2026-09-08: nieaktualny wpis kasujemy tutaj, jawnie, z wpisem w podsumowaniu.
+FLUX_CHOICE_DAT="$ARCHENEMY_DIR/data/flux-wall.dat"
+if [[ -f "$FLUX_CHOICE_DAT" ]]; then
+    FLUX_CHOICE="$(<"$FLUX_CHOICE_DAT")"; FLUX_CHOICE="${FLUX_CHOICE//[[:space:]]/}"
+    if [[ -n "$FLUX_CHOICE" && "$FLUX_CHOICE" != "off" && ! -f "$FLUX_WALL_DIR/shaders/$FLUX_CHOICE.frag" ]]; then
+        rm -f "$FLUX_CHOICE_DAT"
+        echo -e "  ${YELLOW}⚠ Wybrana animacja '$FLUX_CHOICE' już nie istnieje — wybór wyczyszczony,${NC}"
+        echo -e "    wraca domyślna animacja rice'a (Super+W → Animation, żeby wybrać inną)."
+        SUMMARY_DONE+=("flux-wall: usunięty wybór nieistniejącej animacji '$FLUX_CHOICE' (Super+W → Animation)")
+    fi
+fi
+echo ""
+
+# ─── 9.7 TAPETY DITHER-FLUX POD REALNE MONITORY ──────────────────────────────
+# Generator maluje raster 1 px, więc tapeta musi mieć DOKŁADNIE rozdzielczość
+# monitora — skalowanie przez hyprpaper rozmywa ziarno. Rozdzielczości i role
+# bierzemy z data/monitors/*.dat ([3.5]): primary → v1, secondary → v2 (tak
+# paruje je przełącznik Super+W), pozostałe → m-<nazwa>. Wynik do
+# wallpapers/dither-flux/generated/ (poza gitem). Czysty Python liczy kilka
+# minut, więc generowanie idzie W TLE — instalator nie czeka; pliki pojawiają
+# się w Super+W, gdy będą gotowe. Idempotentne: gotowe pliki pomijane.
+
+echo -e "${CYAN}[9.7] Generating dither-flux wallpapers for detected monitors...${NC}"
+
+FLUX_GEN="$ARCHENEMY_DIR/scripts/wallpapers/gen_dither_flux_wallpaper.py"
+FLUX_OUT="$ARCHENEMY_DIR/wallpapers/dither-flux/generated"
+FLUX_SIZES=()
+FLUX_SKIPPED_MONS=()
+if command -v python3 &>/dev/null && [[ -f "$FLUX_GEN" ]]; then
+    for dat in "$DATA_DIR"/monitors/*.dat; do
+        [[ -f "$dat" ]] || continue
+        mon=$(grep '^MONITOR='    "$dat" | cut -d= -f2)
+        res=$(grep '^RESOLUTION=' "$dat" | cut -d= -f2)
+        role=$(grep '^ROLE='      "$dat" | cut -d= -f2)
+        # Tryby nazwane (preferred/highres/highrr) nie mówią, ile to pikseli —
+        # pytamy działającego Hyprlanda; bez niego monitor pomijamy z komunikatem.
+        if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+            # Bez f-stringa: backslash w wyrażeniu f-stringa to SyntaxError, a błąd
+            # składni powstaje przed wykonaniem — `except` go nie złapie (złapane
+            # testem na atrapie 2026-09-07).
+            res=$(hyprctl -j monitors 2>/dev/null | python3 -c '
+import json, sys
+mon = sys.argv[1]
+try:
+    for m in json.load(sys.stdin):
+        if m.get("name") == mon and m.get("width") and m.get("height"):
+            print("%dx%d" % (int(m["width"]), int(m["height"]))); break
+except Exception:
+    pass' "$mon" 2>/dev/null)
+            if [[ ! "$res" =~ ^[0-9]+x[0-9]+$ ]]; then
+                FLUX_SKIPPED_MONS+=("$mon (tryb nazwany, brak hyprctl)")
+                continue
+            fi
+        fi
+        # Tag z NAZWY monitora, nie z licznika: numeracja zależałaby od kolejności
+        # plików .dat i nowy monitor przesuwałby numery już wygenerowanych plików
+        # (przeliczanie gotowych tapet — złapane testem na atrapie 2026-09-07).
+        case "$role" in
+            primary)   tag="v1" ;;
+            secondary) tag="v2" ;;
+            *)         tag="m-$mon" ;;
+        esac
+        # gotowe? (pierwsza forma jako wskaźnik kompletu tej rozdzielczości)
+        if [[ -f "$FLUX_OUT/dither-flux-przeplyw-$tag-$res.png" ]]; then
+            echo -e "  ${GREEN}✓ $mon $res ($tag) — już wygenerowane${NC}"
+            continue
+        fi
+        FLUX_SIZES+=("$tag:$res")
+        echo -e "  → $mon $res ($tag)"
+    done
+    if [[ ${#FLUX_SIZES[@]} -gt 0 ]]; then
+        mkdir -p "$FLUX_OUT"
+        nohup python3 "$FLUX_GEN" "$FLUX_OUT" milford-woda 2026 "${FLUX_SIZES[@]}" \
+            >"$FLUX_OUT/generate.log" 2>&1 &
+        echo -e "  ${GREEN}✓ generowanie w tle (${FLUX_SIZES[*]}); log: wallpapers/dither-flux/generated/generate.log${NC}"
+        SUMMARY_DONE+=("dither-flux: tapety pod ${FLUX_SIZES[*]} generują się w tle (Super+W pokaże je za kilka minut)")
+    elif [[ ${#FLUX_SKIPPED_MONS[@]} -eq 0 ]]; then
+        echo -e "  ${GREEN}✓ nic do zrobienia${NC}"
+    fi
+    if [[ ${#FLUX_SKIPPED_MONS[@]} -gt 0 ]]; then
+        echo -e "  ${YELLOW}⚠ pominięte: ${FLUX_SKIPPED_MONS[*]}${NC}"
+        SUMMARY_SKIPPED+=("dither-flux: tapety NIE wygenerowane dla: ${FLUX_SKIPPED_MONS[*]} — podaj rozdzielczość WxH w [3.5] albo uruchom z sesji Hyprlanda")
+    fi
+else
+    echo -e "  ${YELLOW}⚠ brak python3 albo generatora — tapety dither-flux tylko z repo (v1/v2)${NC}"
+    SUMMARY_SKIPPED+=("dither-flux: generowanie tapet pod monitory pominięte (brak python3)")
 fi
 echo ""
 

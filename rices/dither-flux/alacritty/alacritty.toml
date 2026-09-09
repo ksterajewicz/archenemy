@@ -1,0 +1,130 @@
+# made by kst - https://github.com/ksterajewicz
+
+# ─── Window ────────────────────────────────────────────
+[window]
+padding        = { x = 14, y = 10 }
+decorations    = "None"
+opacity        = 0.80
+blur           = true
+
+# ─── Font ──────────────────────────────────────────────
+[font]
+size = 11.5
+
+[font.normal]
+family = "JetBrainsMono Nerd Font"
+style  = "Regular"
+
+[font.bold]
+family = "JetBrainsMono Nerd Font"
+style  = "Bold"
+
+[font.italic]
+family = "JetBrainsMono Nerd Font"
+style  = "Italic"
+
+# ─── Cursor ────────────────────────────────────────────
+[cursor]
+style          = { shape = "Block", blinking = "On" }
+blink_interval = 550
+unfocused_hollow = true
+
+# ─── Selection — zaznaczenie = automatyczne kopiowanie ─
+[selection]
+save_to_clipboard = true   # samo zaznaczenie kopiuje do schowka
+
+# ─── Scrollback ────────────────────────────────────────
+[scrolling]
+history    = 10000
+multiplier = 3
+
+# ─── Kolory — dither-flux (paleta milford-woda) ────────
+# Tło mokrych gór #0F1A24, tekst w pianie #D8E6EE, kursor i selekcja w pianie.
+# Kolory ANSI są STONOWANE do rodziny rice'a, ale ROZRÓŻNIALNE — git diff, ls
+# i podświetlanie składni mają dalej nieść informację (decyzja właściciela
+# 2026-09-07: bez puryzmu dwutonowego w terminalu). Czerwień jest ceglana,
+# zieleń mokrego mchu, żółć = bursztyn słońca — jedyny ciepły kolor palety.
+[colors.primary]
+background = "#0F1A24"
+foreground = "#D8E6EE"
+
+[colors.cursor]
+text   = "#0F1A24"
+cursor = "#D8E6EE"
+
+[colors.vi_mode_cursor]
+text   = "#0F1A24"
+cursor = "#A8C4D4"
+
+[colors.selection]
+text       = "#0F1A24"
+background = "#5C87A3"
+
+[colors.search.matches]
+foreground = "#0F1A24"
+background = "#A8C4D4"
+
+[colors.search.focused_match]
+foreground = "#0F1A24"
+background = "#D8E6EE"
+
+[colors.hints.start]
+foreground = "#0F1A24"
+background = "#D8E6EE"
+
+[colors.hints.end]
+foreground = "#D8E6EE"
+background = "#1B3040"
+
+# ── Normal colors ──────────────────────────────────────
+[colors.normal]
+black   = "#1B3040"          # ciemny granat (widoczny na tle #0F1A24)
+red     = "#C96A5A"          # ceglany, stonowany
+green   = "#7FA383"          # mokry mech
+yellow  = "#E0A23C"          # bursztyn — jedyny ciepły kolor rice'a
+blue    = "#5C87A3"          # woda
+magenta = "#9A8DB5"          # przygaszony fiolet
+cyan    = "#7FB3C4"          # mgła nad wodą
+white   = "#A8C4D4"          # mgła
+
+# ── Bright colors ──────────────────────────────────────
+[colors.bright]
+black   = "#34546A"
+red     = "#E08A78"
+green   = "#9BC49E"
+yellow  = "#EEC07A"
+blue    = "#7FA8C4"
+magenta = "#B7A9D0"
+cyan    = "#A8D4E3"
+white   = "#D8E6EE"          # piana
+
+# ─── Keyboard bindings ─────────────────────────────────
+[[keyboard.bindings]]
+key    = "Return"
+mods   = "Control|Shift"
+action = "SpawnNewInstance"
+
+[[keyboard.bindings]]
+key    = "C"
+mods   = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key    = "V"
+mods   = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key    = "Plus"
+mods   = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Minus"
+mods   = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Key0"
+mods   = "Control"
+action = "ResetFontSize"

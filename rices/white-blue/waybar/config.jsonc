@@ -8,7 +8,7 @@
     "margin-right": 8,
     "reload_style_on_change": true,
     "modules-left":   ["hyprland/workspaces", "hyprland/window"],
-    "modules-center": ["clock"],
+    "modules-center": ["clock", "custom/timer"],
     "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "battery", "tray"],
     // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
     // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
@@ -57,6 +57,23 @@
             "on-scroll-up": "shift_up",
             "on-scroll-down": "shift_down"
         }
+    },
+    // Timer (odliczanie) — OSOBNA wyspa tuż po prawej od zegara, z własną
+    // pigułką (nie doklejona do zegara). Opcjonalny: włącza się go w TUI
+    // Super+A → [t]; wyłączony zwraca pusty tekst, waybar chowa moduł i zegar
+    // wraca dokładnie na środek paska. Kolor cyfr ustawia skrypt pango-spanem
+    // (domyślnie czerwony, dowolny hex z TUI) — dlatego #custom-timer w
+    // style.css NIE ma reguły `color`, tylko pigułkę w palecie rice'a.
+    // LPM start/pauza, PPM reset, scroll ±1 min (tylko gdy stoi albo pauza).
+    "custom/timer": {
+        "exec": "~/archenemy/scripts/waybar/timer.sh",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 11,
+        "on-click": "~/archenemy/scripts/waybar/timer-ctl.sh toggle",
+        "on-click-right": "~/archenemy/scripts/waybar/timer-ctl.sh reset",
+        "on-scroll-up": "~/archenemy/scripts/waybar/timer-ctl.sh adjust +1",
+        "on-scroll-down": "~/archenemy/scripts/waybar/timer-ctl.sh adjust -1"
     },
     "custom/profileswitcher": {
         "exec": "~/archenemy/scripts/waybar/profile-get.sh",

@@ -19,14 +19,18 @@ hyprshot
 # audio / media / brightness
 # pipewire-pulse: serwer PulseAudio — bez niego pavucontrol i moduł głośności waybara nie działają
 pipewire-pulse
+# libpulse: nagłówki pulse/simple.h + pactl — flux-wall (reakcja tapety na dźwięk) buduje się
+# z libpulse-simple i czyta monitor wyjścia; pipewire-pulse i tak go ciągnie, tu jawnie
+libpulse
 wireplumber
 pavucontrol
 playerctl
 brightnessctl
 # power profiles (universal profile switcher)
 power-profiles-daemon
-# libnotify: notify-send — powiadomienia z 6 skryptów (zmiana rice'a,
-# tapety, sieć, profile zasilania); mako tylko WYŚWIETLA, nie wysyła
+# libnotify: notify-send — powiadomienia z 7 skryptów (zmiana rice'a,
+# tapety, sieć, profile zasilania, koniec odliczania timera waybara);
+# mako tylko WYŚWIETLA, nie wysyła
 libnotify
 # socat: nasłuch zdarzeń Hyprlanda (socket2) w workspace-orphan-guard.sh —
 # scalanie workspace'ów po odpięciu monitora; bez socat guard
@@ -38,6 +42,20 @@ ufw
 # pciutils: lspci — wykrywanie GPU w install/gpudrivers-installation.sh;
 # minimalny Arch potrafi go nie mieć (skrypt też sam go dociąga w razie braku)
 pciutils
+# flux-wall (src/flux-wall): tapeta liczona shaderem na GPU — komponent
+# kompilowany przez install.sh. base-devel = gcc/make/pkgconf; wayland =
+# libwayland-client, libwayland-egl i wayland-scanner (XML-e protokołów są
+# w repo, więc wayland-protocols/wlr-protocols NIE są potrzebne); mesa = EGL
+# i GLES. wayland i mesa i tak ciągnie Hyprland — tu są jawnie, bo build
+# potrzebuje ich nagłówków i pkg-config, nie tylko bibliotek.
+base-devel
+wayland
+mesa
+# python: install.sh [9.7] generuje tapety dither-flux pod realne rozdzielczości
+# monitorów (scripts/wallpapers/gen_dither_flux_wallpaper.py, czysty Python bez
+# zależności); do 2026-09-07 był opcjonalny (regeneracja tapet), teraz wymagany —
+# bez niego rice dither-flux ma tylko zestaw awaryjny v1/v2 z repo
+python
 # fonts + icons
 # ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
 ttf-iosevka-nerd

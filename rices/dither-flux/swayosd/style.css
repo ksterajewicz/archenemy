@@ -1,0 +1,49 @@
+/* archenemy - swayosd (dither-flux)
+ * OSD jasności/głośności u dołu wszystkich monitorów. Paleta milford-woda:
+ * płyta #14222E, piana #d8e6ee; rogi ostre, jak wszędzie w tym ricu. */
+
+window#osd {
+    border-radius: 0;
+    border: 1px solid rgba(92, 135, 163, 0.35);
+    background: rgba(20, 34, 46, 0.92);
+}
+
+window#osd #container {
+    margin: 16px;
+}
+
+window#osd image,
+window#osd label {
+    color: #d8e6ee;
+}
+
+window#osd progressbar,
+window#osd segmentedprogress {
+    min-height: 8px;
+    border-radius: 0;
+    background: transparent;
+    border: none;
+}
+
+window#osd trough,
+window#osd segment {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: rgba(92, 135, 163, 0.22);
+}
+
+window#osd progress,
+window#osd segment.active {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: #d8e6ee;
+}
+
+window#osd segment {
+    margin-left: 8px;
+}
+window#osd segment:first-child {
+    margin-left: 0;
+}

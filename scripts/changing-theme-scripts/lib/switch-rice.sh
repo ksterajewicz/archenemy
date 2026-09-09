@@ -73,6 +73,14 @@ if [[ -f "$DATA_DIR/wallpaper.dat" && -f "$WALLPAPER_SWITCHER" ]]; then
     bash "$WALLPAPER_SWITCHER" --restore
 fi
 
+# ─── FLUX-WALL (tapeta liczona shaderem) ─────────────────────────────────────
+# Rice deklaruje ją plikiem rices/<rice>/flux-wall.conf. `autostart` zatrzymuje
+# instancję poprzedniego rice'a i startuje dla nowego, jeśli ma deklarację;
+# brak binarki (install.sh nie zbudował) lub brak deklaracji = cicho nic —
+# hyprpaper zostaje tapetą (działa zawsze, flux-wall rysuje nad nim).
+FLUX_WALL="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
+[[ -f "$FLUX_WALL" ]] && bash "$FLUX_WALL" autostart
+
 # ─── PRZEŁADOWANIE ───────────────────────────────────────────────────────────
 
 hyprctl reload
