@@ -89,13 +89,14 @@ hyprctl reload
 # Poczekaj, aż stara instancja REALNIE zniknie: start nowej obok umierającej
 # = dwa waybary (podwójny pasek na monitorze) + "Failed to register: Timeout"
 # przy rejestracji IPC. Po ~2 s dobij pkill -9 (gdyby waybar wisiał).
-pkill waybar
+# -x = dokładna nazwa procesu (parytet z pgrep -x niżej), nie regex „zawiera".
+pkill -x waybar
 for _ in $(seq 1 20); do
     pgrep -x waybar >/dev/null || break
     sleep 0.1
 done
 if pgrep -x waybar >/dev/null; then
-    pkill -9 waybar
+    pkill -9 -x waybar
     sleep 0.2
 fi
 waybar & disown

@@ -75,9 +75,15 @@
         "on-scroll-up": "~/archenemy/scripts/waybar/timer-ctl.sh adjust +1",
         "on-scroll-down": "~/archenemy/scripts/waybar/timer-ctl.sh adjust -1"
     },
+    // interval MUSI być liczbą całkowitą (sekundy). Waybar 0.15.0 (Arch) rzutuje
+    // ułamek na long PRZED pomnożeniem przez 1000 (src/ALabel.cpp:29): 0.5 → 0 →
+    // max(1, 0) = 1 ms — pasek odpalał profile-get.sh (bash + asusctl/ppd przez
+    // D-Bus) w pętli bez przerwy, osobno na każdym monitorze. Natychmiastowe
+    // odświeżenie daje sygnał 8; 1 s to tylko backstop. Poprawione dopiero
+    // w masterze waybara po wydaniu 0.15.0.
     "custom/profileswitcher": {
         "exec": "~/archenemy/scripts/waybar/profile-get.sh",
-        "interval": 0.5,
+        "interval": 1,
         "format": "󰓅 {}",
         "on-click": "~/archenemy/scripts/waybar/profile-switch.sh; pkill -RTMIN+8 waybar",
         "signal": 8,
