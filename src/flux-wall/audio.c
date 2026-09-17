@@ -66,14 +66,29 @@ void audio_fft_power(struct audio_fft *f, const float *in, float *power) {
 
 /* ── pasma ──────────────────────────────────────────────────────────────── */
 
+/* RMS pasma [lo, hi) Hz liczony z UŁAMKOWYM pokryciem binów FFT: każdy bin
+ * k obejmuje [k-0.5, k+0.5)·hz_per_bin, a do pasma wchodzi tylko część jego
+ * mocy proporcjonalna do nakładania się przedziałów. Dawna wersja brała bin
+ * w całości albo wcale (ceil/floor) — pasmo węższe niż jeden bin (przy
+ * 48 kHz / 2048 = 23.4 Hz/bin trzy dolne biny log: 48–57, 57–68, 98–117 Hz)
+ * nie zawierało żadnego całego binu i zwracało ZAWSZE 0 → sześć słupków
+ * dither-orb (lustro) nigdy nie drgnęło (zgłoszenie właściciela 2026-09-17). */
 static float band_rms(const float *power, int n_power, float hz_per_bin, float lo, float hi) {
-    int a = (int)ceilf(lo / hz_per_bin), b = (int)floorf(hi / hz_per_bin);
+    if (hi <= lo) return 0.0f;
+    float sum = 0.0f, weight = 0.0f;
+    int a = (int)floorf(lo / hz_per_bin + 0.5f), b = (int)floorf(hi / hz_per_bin + 0.5f);
     if (a < 1) a = 1;
     if (b > n_power - 1) b = n_power - 1;
-    if (b < a) return 0.0f;
-    float sum = 0.0f;
-    for (int k = a; k <= b; k++) sum += power[k];
-    return sqrtf(sum / (float)(b - a + 1));
+    for (int k = a; k <= b; k++) {
+        float k_lo = ((float)k - 0.5f) * hz_per_bin, k_hi = ((float)k + 0.5f) * hz_per_bin;
+        float ov = fminf(hi, k_hi) - fmaxf(lo, k_lo);
+        if (ov <= 0.0f) continue;
+        float w = ov / hz_per_bin;             /* 0..1 — część binu w paśmie */
+        sum += power[k] * w;
+        weight += w;
+    }
+    if (weight <= 0.0f) return 0.0f;
+    return sqrtf(sum / weight);
 }
 
 void audio_bands(const float *power, int n_power, float sample_rate,

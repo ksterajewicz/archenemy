@@ -142,6 +142,20 @@ int main(void) {
     CHECK(raw.high > 5.0f * raw.bass && raw.high > 5.0f * raw.mid, "6 kHz → energia w high");
     int nz = 0; for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) if (raw.spectrum[i] > 0.01f) nz++;
     CHECK(nz >= 1 && nz <= 3, "6 kHz w widmie log: 1–3 biny");
+    /* Regresja 2026-09-17: pasma log węższe niż bin FFT (48–57, 57–68, 98–117 Hz)
+     * były martwe — sinus w środku każdego z nich musi dać energię W TYM binie. */
+    int dead = 0;
+    for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) {
+        float lo = 40.0f * powf(300.0f, (float)i / AUDIO_SPECTRUM_BINS);
+        float hi = 40.0f * powf(300.0f, (float)(i + 1) / AUDIO_SPECTRUM_BINS);
+        float fc = sqrtf(lo * hi);
+        for (int j = 0; j < AUDIO_FFT_N; j++) sig[j] = 0.5f * sinf(2.0f * TEST_PI * fc * (float)j / AUDIO_RATE);
+        audio_fft_power(&fft, sig, pw);
+        audio_bands(pw, AUDIO_FFT_N / 2 + 1, AUDIO_RATE, sig, AUDIO_FFT_N, &raw);
+        int kmax = 0; for (int k = 1; k < AUDIO_SPECTRUM_BINS; k++) if (raw.spectrum[k] > raw.spectrum[kmax]) kmax = k;
+        if (raw.spectrum[i] < 0.05f || abs(kmax - i) > 1) dead++;
+    }
+    CHECK(dead == 0, "każde z 32 pasm log reaguje na sinus w swoim środku (żadnych martwych słupków)");
 
     printf("audio_agc_step / audio_smooth\n");
     struct audio_agc agc = {0};
