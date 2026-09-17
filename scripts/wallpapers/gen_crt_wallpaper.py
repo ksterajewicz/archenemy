@@ -6,8 +6,8 @@ Zero zależności (wzorzec gen_tron_wallpaper.py): PNG pisany przez zlib/struct.
 Obraz: zgaszony kineskop oscyloskopu — granatowe szkło z winietą, słaba
 siatka podziałki (graticule) z jaśniejszą osią, na niej świecąca krzywa
 Lissajous (3:2) w cyjanie fosforu z poświatą; delikatna mgła fosforu wokół
-środka ekranu. Scanlines NIE są wypalane w tapecie — nakłada je na żywo
-shader ekranowy rice'a (rices/crt/hypr/shaders/crt.frag).
+środka ekranu. Bez scanlines — efekt „starego monitora" właściciel odrzucił
+(2026-09-17); tapeta ma być czystym ekranem oscyloskopu.
 
 Paleta rice'a crt: szkło #031533 (= #043D7B ściemnione w tym samym odcieniu),
 podziałka #0B358B, oś #3069AD, poświata #36D2D8, rdzeń śladu #74DCE2.

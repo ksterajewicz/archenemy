@@ -133,26 +133,6 @@ hl.config({
     },
 })
 
--- Shader ekranowy CRT (scanlines + winieta + maska apertury) — serce rice'a.
--- Statyczny: bez uniformu `time`, więc damage tracking Hyprlanda zostaje
--- włączony i shader kosztuje jeden przebieg na przerysowanym obszarze
--- (sprawdzone w src/render/OpenGL.cpp v0.56.2: tylko `time`/`pointer_*`
--- wymagają debug:damage_tracking = 0). Ścieżka absolutna do repo, nie przez
--- symlink ~/.config/hypr — reload po zmianie rice'a resetuje wartość do pustej,
--- więc inny rice nie dziedziczy shadera.
--- Przełącznik: data/screen-shader.dat (`off` = wyłączony; brak pliku = włączony),
--- zmieniany z TUI Super+A → [c] screen shader (potem hyprctl reload).
-local function screen_shader_enabled()
-    local f = io.open(HOME .. "/archenemy/data/screen-shader.dat", "r")
-    if not f then return true end
-    local v = f:read("*l")
-    f:close()
-    return v ~= "off"
-end
-if screen_shader_enabled() then
-    hl.config({ decoration = { screen_shader = HOME .. "/archenemy/rices/crt/hypr/shaders/crt.frag" } })
-end
-
 -- Animacje (dawne animations{}: bezier → hl.curve, animation → hl.animation;
 -- speed w ds jak dawniej: 2 = 200 ms)
 hl.animation({ leaf = "global", enabled = true, speed = 10, bezier = "default" })

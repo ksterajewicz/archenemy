@@ -352,37 +352,6 @@ volume_style_menu() {
     echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
 }
 
-# ─── SHADER EKRANOWY (rice'y z decoration.screen_shader — dziś: crt) ────────
-
-# Włącza/wyłącza shader ekranowy rice'a (scanlines/winieta w crt). Stan
-# w data/screen-shader.dat (brak pliku = włączony) czyta hyprland.lua rice'a
-# przy (re)loadzie, więc po zapisie leci `hyprctl reload`. Rice bez shadera
-# ignoruje ten plik — przełącznik jest wtedy bez skutku, o czym mówimy wprost.
-screen_shader_menu() {
-    local dat="$ARCHENEMY_DIR/data/screen-shader.dat"
-    local cur="on"
-    [[ -f "$dat" && "$(<"$dat")" == "off" ]] && cur="off"
-    local other="off"; [[ "$cur" == "off" ]] && other="on"
-    local rice=""; [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
-
-    echo ""
-    echo -e "  Screen shader (CRT scanlines/vignette): ${CYAN}${cur}${NC}"
-    if [[ ! -f "$CONFIG_DIR/hypr/hyprland.lua" ]] || ! grep -q "screen_shader" "$CONFIG_DIR/hypr/hyprland.lua" 2>/dev/null; then
-        echo -e "  ${YELLOW}Current rice '${rice:-?}' has no screen shader — the switch only affects rices that do (crt).${NC}"
-    fi
-    echo ""
-    local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
-    [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
-
-    write_dat "$dat" "$other" || return
-    if command -v hyprctl &>/dev/null; then
-        hyprctl reload &>/dev/null
-        echo -e "  ${GREEN}✓ Screen shader: ${other} (Hyprland reloaded)${NC}"
-    else
-        echo -e "  ${GREEN}✓ Screen shader: ${other}${NC}  ${YELLOW}⚠ hyprctl unavailable — reload Hyprland manually.${NC}"
-    fi
-}
-
 # ─── TIMER (waybar) ──────────────────────────────────────────────────────────
 
 # Ustawienia modułu custom/timer: włączenie na pasku, domyślny czas odliczania
@@ -477,7 +446,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[c]${NC} screen shader   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")"
 
@@ -488,7 +457,6 @@ while :; do
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
         t|T) timer_menu ;;
-        c|C) screen_shader_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
         q|Q|$'\e') exit 0 ;;
