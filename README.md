@@ -126,6 +126,9 @@ archenemy/
 │   ├── hypr/                         # workspace-orphan-guard.sh — daemon (decades mode only): merges
 │   │                                 #   orphaned workspaces onto whatever screen exists — no more double
 │   │                                 #   "1" on the bar. ws-scroll.sh — waybar scroll per workspace mode.
+│   │                                 #   workspace-diag.sh — read-only dump of workspace state (mode,
+│   │                                 #   rules vs hyprctl, monitors, workspaces, binds, guard, log) for
+│   │                                 #   bug reports; run before and after Super+T and diff.
 │   │                                 #   workspace-mode-switch.sh — switches shared/decades live
 │   │                                 #   (regen + reload + guard); lib/gen-workspaces.sh — shared
 │   │                                 #   generator for workspace rules/binds (shared with install.sh);
