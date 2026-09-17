@@ -1,16 +1,16 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-orb-spinnin'” — wizualizer w stylu kulki NCS, przebieg finalny.
+ * archenemy — flux-wall: „orb-spinnin'” — wizualizer w stylu kulki NCS, przebieg finalny.
  *
  * Trzy warstwy, wszystkie w rastrze Bayera i trzech kolorach palety:
- *   1. pył cząstek z akumulatora (krok w dither-orb.update.glsl) — tło,
+ *   1. pył cząstek z akumulatora (krok w orb.update.glsl) — tło,
  *   2. 64 promieniste słupki widma wokół tarczy — 32 biny log-freq (uniform
  *      audio_spectrum) odbite lustrzanie lewo/prawo jak w NCS; bas przy górze,
  *      wysokie przy dole; wysokość słupka = poziom pasma; końcówki w akcencie,
  *   3. tarcza: promień oddycha z basem, obrys w akcencie, wnętrze w atramencie
  *      z delikatnym gradientem; całość obraca się powoli, a uderzenie (audio_beat)
  *      dorysowuje rozchodzący się pierścień.
- * Bliźniak bez obrotu: dither-orb-static (ta sama para plików, ORB_SPIN = 0).
+ * Bliźniak bez obrotu: orb-static (ta sama para plików, ORB_SPIN = 0).
  * Nazwa z apostrofem — decyzja właściciela 2026-09-17c; wrapper flux-wall.sh
  * dopuszcza `'` w nazwie animacji.
  * W ciszy: tarcza stoi, słupki mają tylko wysokość bazową, pył ledwo dryfuje.

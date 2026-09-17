@@ -1,6 +1,6 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-bars” — słupki widma jak w cavie, przebieg finalny.
+ * archenemy — flux-wall: „bars” — słupki widma jak w cavie, przebieg finalny.
  *
  * U dołu ekranu 64 słupki: 32 biny log-freq (uniform audio_spectrum) odbite
  * lustrzanie — BAS W ŚRODKU, wysokie na brzegach; pełne pasmo = ~40%
@@ -8,18 +8,18 @@
  *   1. słupki w atramencie, jaśniejsze ku górze, końcówka w akcencie; pod
  *      linią bazową ich przygaszone, ściśnięte odbicie (jak na szkle CRT),
  *   2. kreska szczytu (peak hold) nad każdym słupkiem: wysokość trzyma cząstka
- *      w dither-bars.update.glsl i stempluje ją do akumulatora w środkowej
+ *      w bars.update.glsl i stempluje ją do akumulatora w środkowej
  *      kolumnie słupka — tu czytamy ten jeden teksel i rysujemy kreskę na
  *      całą szerokość; gasnący ślad w akumulatorze daje poświatę fosforu,
  *   3. iskry z akumulatora (reszta cząstek) — lecą znad końcówek w górę,
  *   4. linia bazowa: na uderzeniu (audio_beat) rozbłyska w akcencie,
  *   5. wysokie → iskrzenie rastra (przesunięcie macierzy Bayera, jak w
- *      dither-orb), środek → gęstsze migotanie tła nad słupkami.
+ *      orb), środek → gęstsze migotanie tła nad słupkami.
  * W ciszy: słupki o wysokości bazowej 3 px, kreski leżą tuż nad nimi, tło
  * ledwo migocze pojedynczymi pikselami — spokojny, ale żywy obraz.
  *
  * Uniformy: kontrakt flux-wall + accum/gain + audio_* (engine.h).
- * Stałe układu muszą być 1:1 z dither-bars.update.glsl.
+ * Stałe układu muszą być 1:1 z bars.update.glsl.
  */
 precision highp float;
 precision highp int;         /* hash h2 na uint32 — mediump zgubiłby bity */

@@ -1,5 +1,5 @@
 /*
- * archenemy — flux-wall: „dither-waterfall” — spektrogram wodospadowy (sonar/SDR), krok cząstki.
+ * archenemy — flux-wall: „waterfall” — spektrogram wodospadowy (sonar/SDR), krok cząstki.
  *
  * Cząstki są „drukarką” wierszy widma. Co krok rodzi się jedna kohorta
  * (N / kroków_na_drogę cząstek) na górnej krawędzi: każda losuje kolumnę

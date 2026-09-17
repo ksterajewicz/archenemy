@@ -1,6 +1,6 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-scope” — oscyloskop, tryb Y-t (wizualizacja muzyki).
+ * archenemy — flux-wall: „scope” — oscyloskop, tryb Y-t (wizualizacja muzyki).
  *
  * Ekran oscyloskopu na pełnym pulpicie: podziałka (siatka + oś) w atramencie,
  * a przez środek biegnie PRZEBIEG dźwięku z wyjścia — 1024 próbki (21 ms)

@@ -1,5 +1,5 @@
 /*
- * archenemy — flux-wall: „dither-scope-xy” — oscyloskop w trybie XY, krok cząstki.
+ * archenemy — flux-wall: „scope-xy” — oscyloskop w trybie XY, krok cząstki.
  *
  * Tryb XY prawdziwego oscyloskopu: x = kanał lewy, y = kanał prawy — muzyka
  * rysuje figury Lissajous („oscilloscope music”). Każda cząstka to jeden

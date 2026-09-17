@@ -1,11 +1,11 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-scope-xy” — oscyloskop XY (Lissajous), przebieg finalny.
+ * archenemy — flux-wall: „scope-xy” — oscyloskop XY (Lissajous), przebieg finalny.
  *
  * Akumulator z kroku cząstek (ślad plamki z fosforowym ogonem) tonowany
  * logarytmicznie i kwantyzowany rastrem Bayera: rdzeń w akcencie, ogon
  * w atramencie. Pod spodem podziałka oscyloskopu (siatka + osie), jak
- * w tapecie crt-scope i w dither-scope.
+ * w tapecie crt-scope i w scope.
  *   level → wzmocnienie śladu (gain), beat → rozbłysk, high → iskrzenie rastra.
  * W ciszy: punkt w środku ekranu na podziałce.
  *

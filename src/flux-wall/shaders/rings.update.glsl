@@ -1,5 +1,5 @@
 /*
- * archenemy — flux-wall: „dither-rings” — koncentryczne pierścienie z uderzeń, krok cząstki.
+ * archenemy — flux-wall: „rings” — koncentryczne pierścienie z uderzeń, krok cząstki.
  *
  * Każde uderzenie (audio_beat) wystrzeliwuje ze środka ekranu pierścień:
  * budzi część uśpionych cząstek na małym okręgu wokół źródła, a te lecą

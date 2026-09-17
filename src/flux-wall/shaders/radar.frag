@@ -1,11 +1,11 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-radar” — ekran radaru PPI, przebieg finalny.
+ * archenemy — flux-wall: „radar” — ekran radaru PPI, przebieg finalny.
  *
  * Cztery warstwy, wszystkie w rastrze Bayera i trzech kolorach palety:
  *   1. podziałka (graticule): cztery koncentryczne kręgi, krzyż i obwód —
  *      bardzo słabe, w atramencie; zewnętrzny obwód rozjaśnia się z wysokimi,
- *   2. echa z akumulatora (krok w dither-radar.update.glsl): pierścieniowy
+ *   2. echa z akumulatora (krok w radar.update.glsl): pierścieniowy
  *      obraz widma — bas przy środku, wysokie na obwodzie (32 biny log);
  *      gaśnie za ramieniem jak fosfor (~3 s); najjaśniejsze echa w akcencie,
  *   3. ramię: obraca się raz na ~4 s (czas animacji, tempo lekko rośnie

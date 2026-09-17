@@ -1,10 +1,10 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-rings” — koncentryczne pierścienie z uderzeń, przebieg finalny.
+ * archenemy — flux-wall: „rings” — koncentryczne pierścienie z uderzeń, przebieg finalny.
  *
  * Obraz w trzech kolorach palety i rastrze Bayera 8×8:
- *   1. pierścienie z akumulatora (krok w dither-rings.update.glsl): tone
- *      logarytmiczny jak w dither-orb; front pierścienia jasny (akcent), smuga
+ *   1. pierścienie z akumulatora (krok w rings.update.glsl): tone
+ *      logarytmiczny jak w orb; front pierścienia jasny (akcent), smuga
  *      fosforu za nim gaśnie w atramencie,
  *   2. źródło: mała, nieruchoma tarczka w środku — obrys w akcencie, wnętrze
  *      w atramencie, którego gęstość rastra pulsuje z basem; wokół słaba

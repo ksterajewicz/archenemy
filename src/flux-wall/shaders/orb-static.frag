@@ -1,16 +1,16 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-orb-static” — wizualizer w stylu kulki NCS, przebieg finalny.
+ * archenemy — flux-wall: „orb-static” — wizualizer w stylu kulki NCS, przebieg finalny.
  *
  * Trzy warstwy, wszystkie w rastrze Bayera i trzech kolorach palety:
- *   1. pył cząstek z akumulatora (krok w dither-orb.update.glsl) — tło,
+ *   1. pył cząstek z akumulatora (krok w orb.update.glsl) — tło,
  *   2. 64 promieniste słupki widma wokół tarczy — 32 biny log-freq (uniform
  *      audio_spectrum) odbite lustrzanie lewo/prawo jak w NCS; bas przy górze,
  *      wysokie przy dole; wysokość słupka = poziom pasma; końcówki w akcencie,
  *   3. tarcza: promień oddycha z basem, obrys w akcencie, wnętrze w atramencie
  *      z delikatnym gradientem; całość STOI (bez obrotu), a uderzenie (audio_beat)
  *      dorysowuje rozchodzący się pierścień.
- * Bliźniak z obrotem: dither-orb-spinnin' (ta sama para plików, ORB_SPIN = 0.05).
+ * Bliźniak z obrotem: orb-spinnin' (ta sama para plików, ORB_SPIN = 0.05).
  * Zlecenie właściciela 2026-09-17: „wersja, która się nie kręci”.
  * W ciszy: tarcza stoi, słupki mają tylko wysokość bazową, pył ledwo dryfuje.
  *
@@ -46,7 +46,7 @@ const float BAR_GAP  = 0.035;    /* odstęp tarcza → słupki */
 const float BAR_BASE = 0.03;     /* wysokość w ciszy */
 const float BAR_MAX  = 0.42;     /* wysokość przy pełnym pasmie */
 const float BAR_FILL = 0.62;     /* część szczeliny kątowej zajęta przez słupek */
-const float ORB_SPIN = 0.0;      /* bez obrotu — jedyna różnica wobec dither-orb-spinnin' */
+const float ORB_SPIN = 0.0;      /* bez obrotu — jedyna różnica wobec orb-spinnin' */
 
 float bayer8(vec2 c) {
     ivec2 p = ivec2(mod(c, 8.0));

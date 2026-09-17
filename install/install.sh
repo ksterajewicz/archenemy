@@ -968,12 +968,18 @@ fi
 FLUX_CHOICE_DAT="$ARCHENEMY_DIR/data/flux-wall.dat"
 if [[ -f "$FLUX_CHOICE_DAT" ]]; then
     FLUX_CHOICE="$(<"$FLUX_CHOICE_DAT")"; FLUX_CHOICE="${FLUX_CHOICE//[[:space:]]/}"
-    # Migracja nazwy (2026-09-17): dither-orb → dither-orb-spinnin' — wybór zostaje,
-    # zamiast być skasowany jako „nieistniejący".
-    if [[ "$FLUX_CHOICE" == "dither-orb" ]]; then
-        FLUX_CHOICE="dither-orb-spinnin'"
+    # Migracja nazw (2026-09-17): wybór zostaje zamiast być skasowany jako
+    # „nieistniejący". dither-orb → orb-spinnin' (rename + static), a wizualizacje
+    # muzyki dla crt straciły przedrostek „dither-" (decyzja właściciela).
+    FLUX_OLD_CHOICE="$FLUX_CHOICE"
+    case "$FLUX_CHOICE" in
+        dither-orb|dither-orb-spinnin\') FLUX_CHOICE="orb-spinnin'" ;;
+        dither-orb-static|dither-scope|dither-scope-xy|dither-bars|dither-waterfall|dither-rings|dither-radar|dither-tunnel)
+            FLUX_CHOICE="${FLUX_CHOICE#dither-}" ;;
+    esac
+    if [[ "$FLUX_CHOICE" != "$FLUX_OLD_CHOICE" ]]; then
         printf '%s\n' "$FLUX_CHOICE" > "$FLUX_CHOICE_DAT"
-        echo -e "  ${GREEN}✓ flux-wall: wybór 'dither-orb' przepisany na \"$FLUX_CHOICE\" (zmiana nazwy)${NC}"
+        echo -e "  ${GREEN}✓ flux-wall: wybór '$FLUX_OLD_CHOICE' przepisany na \"$FLUX_CHOICE\" (zmiana nazwy)${NC}"
     fi
     if [[ -n "$FLUX_CHOICE" && "$FLUX_CHOICE" != "off" && ! -f "$FLUX_WALL_DIR/shaders/$FLUX_CHOICE.frag" ]]; then
         rm -f "$FLUX_CHOICE_DAT"

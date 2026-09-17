@@ -1,8 +1,8 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-waterfall” — spektrogram wodospadowy (sonar/SDR), przebieg finalny.
+ * archenemy — flux-wall: „waterfall” — spektrogram wodospadowy (sonar/SDR), przebieg finalny.
  *
- * Obraz to akumulator z dither-waterfall.update.glsl: u góry drukuje się
+ * Obraz to akumulator z waterfall.update.glsl: u góry drukuje się
  * najświeższy wiersz widma (32 biny log-freq na szerokość — bas po lewej,
  * wysokie po prawej; jasność = poziom pasma), historia płynie w dół i gaśnie
  * jak fosfor przy dolnej krawędzi. Tu:

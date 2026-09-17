@@ -1,6 +1,6 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-tunnel” — perspektywiczny tunel z pierścieni
+ * archenemy — flux-wall: „tunnel” — perspektywiczny tunel z pierścieni
  * widma (jak klasyczne wizualizacje Winampa), animacja jednoprzebiegowa.
  *
  * Patrzymy w głąb tunelu. Kolejne pierścienie to kolejne CHWILE: najnowszy
@@ -9,7 +9,7 @@
  * logarytmiczna (r = R0·RATIO^u), więc pierścienie równo rozłożone w czasie
  * wyglądają jak perspektywa. Obwód każdego pierścienia dzieli się na 64
  * segmenty = 32 biny widma (audio_spectrum) odbite lustrzanie lewo/prawo:
- * bas u góry, wysokie u dołu (jak w dither-orb). Segment to „ściana” tunelu
+ * bas u góry, wysokie u dołu (jak w orb). Segment to „ściana” tunelu
  * wystająca z obręczy ku kamerze — jej długość i jasność = poziom pasma;
  * najgłośniejsze segmenty mają końcówkę w akcencie. Do tego cienkie szprychy
  * na granicach segmentów (siatka tunelu) i obręcze w atramencie.

@@ -1,5 +1,5 @@
 /*
- * archenemy — flux-wall: „dither-radar” — ekran radaru PPI, krok cząstki.
+ * archenemy — flux-wall: „radar” — ekran radaru PPI, krok cząstki.
  *
  * Cząstki nie lecą — są „echami pod ramieniem”: w każdym kroku cząstka o
  * indeksie i staje w pierścieniu binu (i % 32) widma (bas blisko środka,

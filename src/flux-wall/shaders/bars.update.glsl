@@ -1,5 +1,5 @@
 /*
- * archenemy — flux-wall: „dither-bars” — słupki widma jak w cavie, krok cząstki.
+ * archenemy — flux-wall: „bars” — słupki widma jak w cavie, krok cząstki.
  *
  * Cząstki nie są tu pyłem, tylko PAMIĘCIĄ między klatkami (przebieg finalny
  * nie ma własnego stanu):
@@ -19,7 +19,7 @@
  * Stan: xy = pozycja w 0..1 ekranu, z = wiek w krokach (szczyt: od ostatniego
  * podbicia), w = wcielenie (szczyt: numer podbicia; iskra: numer lotu).
  * Stałe układu (BARS, BASE_FRAC, BAR_BASE, BAR_MAX, MARK_GAP, bar_center)
- * muszą być 1:1 z dither-bars.frag.
+ * muszą być 1:1 z bars.frag.
  * `particles 184`: 0.35·184 = 64 aktywnych przy detail 0 — szczyty działają
  * zawsze, iskry (id ≥ 64) dochodzą z detail. audio_tempo 0: czas symulacji
  * = czas realny, więc PEAK_HOLD jest w sekundach zegara.
