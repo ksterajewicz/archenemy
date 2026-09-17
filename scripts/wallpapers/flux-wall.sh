@@ -33,6 +33,8 @@
 #     flux-wall.sh list-audio            nazwy animacji będących wizualizacją muzyki
 #     flux-wall.sh start [opcje]         jak restore, ale głośno; opcje → flux-wall
 #     flux-wall.sh stop | status
+#     flux-wall.sh doctor               zrzut stanu do diagnozy (repo, binarka,
+#                                        shadery, wybór, proces, log) — tylko odczyt
 #
 #   Kody: 0 ok · 1 użycie/zła nazwa · 2 brak binarki · 3 start nieudany (log) ·
 #         4 nic do uruchomienia (off / rice bez autostartu)
@@ -185,6 +187,70 @@ do_start() {
     exit 3
 }
 
+# Zrzut stanu do diagnozy „animacje nie działają / nie ma ich w menu" — jedno
+# polecenie zamiast pięciu pytań (wzorzec scripts/hypr/workspace-diag.sh).
+# Tylko odczyt. Najczęstsze przyczyny, które ma wyłapać: klon za origin
+# (brak shaderów), binarka sprzed kontraktu audio (git pull bez install.sh —
+# rozpoznawana po nazwie uniformu `audio_wave_peak` w pliku), stary wybór
+# w flux-wall.dat, proces, który nie wstał (log).
+doctor() {
+    local newest_src bin_ok=0 n_all n_audio choice rice=""
+    echo "== repo"
+    if command -v git >/dev/null 2>&1 && git -C "$ARCHENEMY_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git -C "$ARCHENEMY_DIR" log --oneline -1 2>/dev/null
+        git -C "$ARCHENEMY_DIR" status -sb 2>/dev/null | head -1
+    else
+        echo "$ARCHENEMY_DIR: nie jest repozytorium gita"
+    fi
+    echo "== binarka"
+    if [[ -x "$BIN" ]]; then
+        bin_ok=1
+        echo "$BIN  ($(stat -c '%y' "$BIN" 2>/dev/null | cut -d. -f1))"
+        newest_src="$(ls -t "$ARCHENEMY_DIR"/src/flux-wall/*.c "$ARCHENEMY_DIR"/src/flux-wall/*.h 2>/dev/null | head -1)"
+        if [[ -n "$newest_src" && "$newest_src" -nt "$BIN" ]]; then
+            echo "  ⚠ źródła nowsze niż binarka (${newest_src##*/}) — uruchom ./install/install.sh albo make -C src/flux-wall"
+        fi
+        if grep -a -q 'audio_wave_peak' "$BIN"; then
+            echo "  kontrakt audio: stereo + przebieg (audio_wave) — aktualny"
+        else
+            echo "  ⚠ binarka NIE zna audio_wave — sprzed 2026-09-17; oscyloskop i nowe wizualizacje nie zadziałają, przebuduj"
+        fi
+    else
+        echo "⚠ brak $BIN — ./install/install.sh (krok [9.6]) albo make -C src/flux-wall"
+    fi
+    echo "== shadery ($SHADERS_DIR)"
+    n_all="$(list_shaders | wc -l)"; n_audio="$(list_audio_shaders | wc -l)"
+    echo "animacji: $n_all, w tym wizualizacji muzyki: $n_audio"
+    list_audio_shaders | sed 's/^/  ♪ /'
+    echo "== wybór"
+    choice="$(read_choice)"
+    [[ -f "$CURRENT_RICE_FILE" ]] && { rice="$(<"$CURRENT_RICE_FILE")"; rice="${rice//[[:space:]]/}"; }
+    echo "rice: ${rice:-<brak .current_rice>}"
+    if [[ -z "$choice" ]]; then
+        echo "flux-wall.dat: <brak pliku> → domyślne zachowanie rice'a"
+    elif [[ "$choice" == "off" ]]; then
+        echo "flux-wall.dat: off"
+    elif shader_path "$choice" >/dev/null; then
+        echo "flux-wall.dat: $choice (plik istnieje)"
+    else
+        echo "flux-wall.dat: $choice  ⚠ takiego shadera nie ma — wrapper cofnie się do domyślnego rice'a"
+    fi
+    load_rice_conf && echo "flux-wall.conf: PALETTE=${FLUX_WALL_PALETTE:-<brak>} SHADER=${FLUX_WALL_SHADER:-<brak>} AUTOSTART=$FLUX_WALL_AUTOSTART ARGS=${FLUX_WALL_ARGS:-<brak>}"
+    echo "== proces"
+    if pgrep -x flux-wall >/dev/null 2>&1; then
+        echo "flux-wall działa (pid $(pgrep -x flux-wall | tr '\n' ' '))"
+    else
+        echo "flux-wall nie działa"
+    fi
+    if [[ -f "$LOG" ]]; then
+        echo "== log ($LOG, ostatnie 10 linii)"
+        tail -10 "$LOG"
+    else
+        echo "== log: brak $LOG (proces nigdy nie wystartował z wrappera w tej sesji)"
+    fi
+    [[ $bin_ok -eq 1 ]]
+}
+
 case "${1:-}" in
     autostart|restore) shift; do_start quiet "$@" ;;
     start)             shift; do_start loud "$@" ;;
@@ -205,5 +271,6 @@ case "${1:-}" in
     list-audio) list_audio_shaders ;;
     stop)      do_stop && echo "flux-wall zatrzymany" || echo "flux-wall nie działał" ;;
     status)    pgrep -x flux-wall >/dev/null ;;
-    *)         echo "Użycie: flux-wall.sh autostart|restore | select <nazwa> | off | list | list-audio | start [opcje] | stop | status" >&2; exit 1 ;;
+    doctor)    doctor ;;
+    *)         echo "Użycie: flux-wall.sh autostart|restore | select <nazwa> | off | list | list-audio | start [opcje] | stop | status | doctor" >&2; exit 1 ;;
 esac

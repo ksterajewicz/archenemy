@@ -230,6 +230,7 @@ scripts/wallpapers/flux-wall.sh select dither-waves  # select and remember (same
 scripts/wallpapers/flux-wall.sh off                  # disable and remember
 scripts/wallpapers/flux-wall.sh start -f 30          # start per the rules, extra options go to flux-wall (log in $XDG_RUNTIME_DIR/flux-wall.log)
 scripts/wallpapers/flux-wall.sh stop | status
+scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump: repo HEAD, binary (stale? knows the audio_wave contract?), shaders, choice, process, log — paste it when "animations don't work"
 ```
 
 Directly: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fps] [-o monitor-name] [-l bottom|background] [--once] [-v]`. Exit codes: 1 arguments/file, 2 no Wayland or layer-shell, 3 EGL/shader error. Pure-function tests (palette, battery): `make -C src/flux-wall test`.
