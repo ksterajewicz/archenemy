@@ -239,16 +239,48 @@ apply_hyprlock_background() {
 }
 
 # Zaaplikuj stan przez IPC (hyprpaper >= 0.8); gdy IPC padnie — restart daemona,
-# który wczyta świeżo wygenerowany hyprpaper.conf.
+# który wczyta świeżo wygenerowany hyprpaper.conf (save_and_generate poszło
+# przed tym wywołaniem, więc świeży proces sam pokaże poprawny stan — IPC nie
+# trzeba powtarzać po restarcie).
+#
+# `timeout` na każde wywołanie: klient hyprctl czeka na odpowiedź hyprpapera
+# BEZ WŁASNEGO LIMITU CZASU (źródło: hyprctl/src/hyprpaper/Hyprpaper.cpp,
+# doWallpaper() — pętla `while (!canExit) socket->dispatchEvents(true);`).
+# Zawieszony/zajęty demon (np. dekodowanie dużej świeżo wygenerowanej tapety
+# dither-flux) zawiesiłby CAŁY skrót rofi bez żadnej informacji zwrotnej —
+# dokładnie objaw zgłoszony 2026-09-17 („tapety się nie chciały zmieniać”).
+#
+# Restart robiony jak waybar/swayosd-server w lib/switch-rice.sh: poczekaj,
+# aż stara instancja REALNIE zniknie, zanim odpalisz nową (start obok
+# umierającej = dwie instancje walczące o warstwę background), dobij -9 po
+# ~2 s, i POCZEKAJ na start nowej — bez tego restart mógł nie pomóc, a
+# skrypt i tak kończył z notyfikacją "applied" (fałszywy sukces).
+#
+# Zwraca 0 = tapeta poszła (IPC albo restart), 1 = restart też nie pomógł
+# (wołający pokazuje krytyczne powiadomienie zamiast fałszywego sukcesu).
 apply_ipc() {
-    local mon ok=1
+    local mon ok=1 err_log="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    : > "$err_log"
     for mon in "${!STATE[@]}"; do
-        hyprctl hyprpaper wallpaper "$mon, ${STATE[$mon]}, cover" &>/dev/null || ok=0
+        timeout 3 hyprctl hyprpaper wallpaper "$mon, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 || ok=0
     done
-    if [[ "$ok" -eq 0 ]]; then
-        pkill hyprpaper
-        hyprpaper & disown
+    [[ "$ok" -eq 1 ]] && return 0
+
+    pkill -x hyprpaper 2>/dev/null
+    for _ in $(seq 1 20); do
+        pgrep -x hyprpaper >/dev/null || break
+        sleep 0.1
+    done
+    if pgrep -x hyprpaper >/dev/null; then
+        pkill -9 -x hyprpaper 2>/dev/null
+        sleep 0.2
     fi
+    hyprpaper & disown
+    for _ in $(seq 1 20); do
+        pgrep -x hyprpaper >/dev/null && return 0
+        sleep 0.1
+    done
+    return 1
 }
 
 # ─── MIGRACJA STAREGO FORMATU ─────────────────────────────────────────────────
@@ -274,7 +306,7 @@ if [[ "$1" == "--restore" ]]; then
     apply_hyprlock_background "$LOCK_STATE"
     [[ ${#STATE[@]} -eq 0 ]] && exit 0
     save_and_generate
-    apply_ipc
+    apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
     exit 0
 elif [[ -n "$1" ]]; then
     # Wywołanie bezpośrednie: absolutny plik / plik względem wallpapers/ / folder zestawu.
@@ -401,7 +433,9 @@ fi
 # ─── APPLY + SAVE ─────────────────────────────────────────────────────────────
 
 save_and_generate
-apply_ipc
-
-[[ "$1" != "--restore" ]] && notify-send "archenemy" "Wallpaper '$CHOICE' applied."
+if apply_ipc; then
+    notify-send "archenemy" "Wallpaper '$CHOICE' applied."
+else
+    notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+fi
 exit 0

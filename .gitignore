@@ -14,6 +14,11 @@
 /config/hypr/hyprlock-background-tron.conf
 /config/hypr/hyprlock-background-asia-n-rice.conf
 /config/hypr/hyprlock-background-dither-flux.conf
+# Tymczasowe pliki zapisu atomowego (mktemp "$PLIK.XXXXXX" obok docelowego) —
+# powyższe wpisy pokrywają tylko dokładną nazwę; crash między mktemp a mv
+# (np. rofi_wallpaper_switcher.sh pisząc hyprpaper.conf/hyprlock-background-*)
+# zostawiał niepokryty ".XXXXXX" w repo. Wzorzec mktemp: dokładnie 6 znaków.
+/config/hypr/*.??????
 # stare nazwy sprzed migracji na Lua — mogą jeszcze leżeć na maszynie
 /config/hypr/monitorshyprl.conf
 /config/hypr/workspaces-monitors.conf

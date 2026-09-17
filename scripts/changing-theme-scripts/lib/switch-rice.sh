@@ -107,8 +107,15 @@ makoctl reload >/dev/null 2>&1
 
 # swayosd-server też czyta style.css tylko przy starcie (brak live-reloadu),
 # więc po zmianie rice'a restart, żeby OSD jasności miało motyw nowego rice'a.
+# Ten sam wyścig co przy waybarze wyżej (stara instancja obok nowej) —
+# poczekaj, aż naprawdę zniknie, zanim odpalisz kolejną.
 if command -v swayosd-server >/dev/null 2>&1; then
     pkill -x swayosd-server 2>/dev/null
+    for _ in $(seq 1 20); do
+        pgrep -x swayosd-server >/dev/null || break
+        sleep 0.1
+    done
+    pgrep -x swayosd-server >/dev/null && pkill -9 -x swayosd-server 2>/dev/null
     swayosd-server & disown
 fi
 
