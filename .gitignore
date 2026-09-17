@@ -14,6 +14,7 @@
 /config/hypr/hyprlock-background-tron.conf
 /config/hypr/hyprlock-background-asia-n-rice.conf
 /config/hypr/hyprlock-background-dither-flux.conf
+/config/hypr/hyprlock-background-crt.conf
 # Tymczasowe pliki zapisu atomowego (mktemp "$PLIK.XXXXXX" obok docelowego) —
 # powyższe wpisy pokrywają tylko dokładną nazwę; crash między mktemp a mv
 # (np. rofi_wallpaper_switcher.sh pisząc hyprpaper.conf/hyprlock-background-*)

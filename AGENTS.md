@@ -90,6 +90,13 @@ Rules that follow directly from the table:
   generated files, sourced (`source = `) from each rice's
   `hypr/hyprlock.conf` / `hyprpaper.conf`. Never write wallpaper/background
   state directly into `rices/` folders.
+- **Screen shaders (`decoration.screen_shader`, today `rices/crt/hypr/shaders/crt.frag`)
+  must stay STATIC**: never use the `time` or `pointer_*` uniforms. Hyprland
+  requires `debug:damage_tracking = 0` for those, which redraws the whole
+  screen every frame ("massively increases GPU utilization" — Hyprland's own
+  warning). A static shader costs one pass over the damaged area. The toggle
+  lives in `data/screen-shader.dat` (Super+A → `[c]`), read by the rice's
+  `hyprland.lua` on (re)load. Validate with `glslangValidator -S frag`.
 - Any binary used in a config or script must be covered by
   `packages/requirements-*.txt` (required) or
   `packages/additional-packages-*.txt` (optional — guarded with

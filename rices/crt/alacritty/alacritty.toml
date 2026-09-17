@@ -1,0 +1,131 @@
+# made by kst - https://github.com/ksterajewicz
+
+# ─── Window ────────────────────────────────────────────
+[window]
+padding        = { x = 14, y = 10 }
+decorations    = "None"
+opacity        = 0.80
+blur           = true
+
+# ─── Font ──────────────────────────────────────────────
+[font]
+size = 11.5
+
+[font.normal]
+family = "JetBrainsMono Nerd Font"
+style  = "Regular"
+
+[font.bold]
+family = "JetBrainsMono Nerd Font"
+style  = "Bold"
+
+[font.italic]
+family = "JetBrainsMono Nerd Font"
+style  = "Italic"
+
+# ─── Cursor ────────────────────────────────────────────
+[cursor]
+style          = { shape = "Block", blinking = "On" }
+blink_interval = 550
+unfocused_hollow = true
+
+# ─── Selection — zaznaczenie = automatyczne kopiowanie ─
+[selection]
+save_to_clipboard = true   # samo zaznaczenie kopiuje do schowka
+
+# ─── Scrollback ────────────────────────────────────────
+[scrolling]
+history    = 10000
+multiplier = 3
+
+# ─── Kolory — crt (błękit/cyjan fosforu) ─────────────
+# Tło #031533 = #043D7B ściemnione w tym samym odcieniu (lampa „zgaszona"),
+# tekst w jasnym cyjanie fosforu #74DCE2, kursor i selekcja w cyjanie #36D2D8.
+# Kolory ANSI są STONOWANE do rodziny błękitów, ale ROZRÓŻNIALNE — git diff,
+# ls i podświetlanie składni mają dalej nieść informację (decyzja 2026-09-07:
+# bez puryzmu dwutonowego w terminalu). Czerwień jest chłodna (róż), zieleń
+# to morska, żółć = bursztyn #FFB000 — fosfor alarmowy, jedyny ciepły kolor.
+[colors.primary]
+background = "#031533"
+foreground = "#74DCE2"
+
+[colors.cursor]
+text   = "#031533"
+cursor = "#36D2D8"
+
+[colors.vi_mode_cursor]
+text   = "#031533"
+cursor = "#5695D6"
+
+[colors.selection]
+text       = "#031533"
+background = "#36D2D8"
+
+[colors.search.matches]
+foreground = "#031533"
+background = "#5695D6"
+
+[colors.search.focused_match]
+foreground = "#031533"
+background = "#74DCE2"
+
+[colors.hints.start]
+foreground = "#031533"
+background = "#74DCE2"
+
+[colors.hints.end]
+foreground = "#74DCE2"
+background = "#0B358B"
+
+# ── Normal colors ──────────────────────────────────────
+[colors.normal]
+black   = "#0B358B"          # głęboki błękit (widoczny na tle #031533)
+red     = "#E0627E"          # chłodny róż — czerwień bez ciepła
+green   = "#4FCFA0"          # morska zieleń
+yellow  = "#FFB000"          # bursztyn — fosfor alarmowy, jedyny ciepły kolor
+blue    = "#5695D6"          # błękit (z palety)
+magenta = "#A78BFA"          # lawenda
+cyan    = "#36D2D8"          # cyjan fosforu (z palety)
+white   = "#9CC4E8"          # jasny błękit
+
+# ── Bright colors ──────────────────────────────────────
+[colors.bright]
+black   = "#3069AD"          # z palety
+red     = "#F08AA0"
+green   = "#7FE6C0"
+yellow  = "#FFC94D"
+blue    = "#7DB4EA"
+magenta = "#C4B0FF"
+cyan    = "#74DCE2"          # jasny cyjan (z palety)
+white   = "#D6F6F8"          # niemal biel z nutą fosforu
+
+# ─── Keyboard bindings ─────────────────────────────────
+[[keyboard.bindings]]
+key    = "Return"
+mods   = "Control|Shift"
+action = "SpawnNewInstance"
+
+[[keyboard.bindings]]
+key    = "C"
+mods   = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key    = "V"
+mods   = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key    = "Plus"
+mods   = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Minus"
+mods   = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Key0"
+mods   = "Control"
+action = "ResetFontSize"

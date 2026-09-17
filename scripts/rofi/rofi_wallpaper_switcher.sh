@@ -53,13 +53,14 @@ HYPRLOCK_DAT="$DATA_DIR/hyprlock-wallpaper.dat"
 # symlinkiem, więc hyprpaper czyta go przez ~/.config/hypr/hyprpaper.conf.
 HYPRPAPER_CONF="$ARCHENEMY_DIR/config/hypr/hyprpaper.conf"
 # Warstwa maszynowa (gitignore) — każdy rice'owy hyprlock.conf source'uje
-# swój plik (patrz install.sh [8h]); cztery realne rice'y, beta dziedziczy
+# swój plik (patrz install.sh [8h]); pięć realnych rice'ów, beta dziedziczy
 # symlinkiem hyprlock.conf z white-blue.
 HYPRLOCK_BG_FILES=(
     "$ARCHENEMY_DIR/config/hypr/hyprlock-background-white-blue.conf"
     "$ARCHENEMY_DIR/config/hypr/hyprlock-background-tron.conf"
     "$ARCHENEMY_DIR/config/hypr/hyprlock-background-asia-n-rice.conf"
     "$ARCHENEMY_DIR/config/hypr/hyprlock-background-dither-flux.conf"
+    "$ARCHENEMY_DIR/config/hypr/hyprlock-background-crt.conf"
 )
 
 TOGGLE_ON="[x] Upload to all monitors"
