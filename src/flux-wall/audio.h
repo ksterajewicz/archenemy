@@ -5,6 +5,11 @@
  * FFT 2048 z oknem Hanna i sprowadza widmo do pasm jak w wizualizerach:
  *   bass 20–150 Hz · lowmid 150–500 · mid 500–2000 · high 2000–10000
  * plus poziom RMS, detektor uderzenia (onset basu) i 32 biny log-freq.
+ * Od 2026-09-17 strumień jest STEREO: FFT/pasma liczone z miksu (L+R)/2,
+ * a osobno trzymany jest PRZEBIEG (ostatnie AUDIO_WAVE_N próbek L i R) dla
+ * wizualizacji oscyloskopowych — z triggerem jak w prawdziwym oscyloskopie
+ * (start okna na ostatnim narastającym przejściu przez zero, żeby ślad
+ * okresowego tonu stał w miejscu zamiast skakać co klatkę).
  * Każde pasmo przechodzi auto-gain (bieżące maksimum z zanikiem, z podłogą)
  * i wygładzanie attack/release — wynik w 0..1, w ciszy dokładnie 0.
  *
@@ -27,11 +32,17 @@
 #define AUDIO_FFT_N         2048
 #define AUDIO_HOP           960      /* 20 ms */
 #define AUDIO_SPECTRUM_BINS 32
+#define AUDIO_WAVE_N        1024     /* próbek przebiegu dla shaderów (21 ms) */
+#define AUDIO_CHANNELS      2
 
 /* Cechy dźwięku dla silnika — wszystko w 0..1, `beat` to impuls z zanikiem. */
 struct audio_features {
     float level, bass, lowmid, mid, high, beat;
     float spectrum[AUDIO_SPECTRUM_BINS];
+    /* przebieg po triggerze: wave[2*i] = L, wave[2*i+1] = R, i = 0..AUDIO_WAVE_N-1,
+     * próbki w -1..1 (bez auto-gain — oscyloskop ma pokazywać prawdziwą amplitudę,
+     * a `level` mówi shaderowi, jak głośno jest) */
+    float wave[AUDIO_WAVE_N * AUDIO_CHANNELS];
     double t;        /* czas snapshotu (sekundy, zegar monotoniczny); 0 = nigdy */
     bool   live;     /* strumień z serwera działa */
 };
@@ -66,6 +77,16 @@ float audio_smooth(float prev, float x, float dt, float attack, float release);
 struct audio_beat { float avg; float since; float out; };
 float audio_beat_step(struct audio_beat *b, float bass, float dt);
 
+/* Trigger oscyloskopu: w buforze `mono` (n próbek, najnowsza na końcu) szuka
+ * NAJPÓŹNIEJSZEGO narastającego przejścia przez zero (z histerezą `hyst`), po
+ * którym mieści się jeszcze `span` próbek; zwraca indeks startu okna.
+ * Bez przejścia (cisza, DC) → n - span (najświeższe okno). */
+int audio_trigger(const float *mono, int n, int span, float hyst);
+
+/* Wypełnia `out->wave` (L/R przeplatane) oknem `span` próbek od `start`
+ * z buforów L i R długości n. */
+void audio_wave_fill(struct audio_features *out, const float *l, const float *r, int n, int start);
+
 /* Zanik stęchłego snapshotu: gdy `now - t` > 0.1 s, cechy gasną z `release`. */
 void audio_features_age(struct audio_features *f, double now, float release);
 
@@ -86,8 +107,9 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
 struct audio;
 /* `device`: nazwa monitora dla libpulse (NULL = tylko `@DEFAULT_MONITOR@`);
  * silnik próbuje najpierw `@DEFAULT_MONITOR@`, potem `device`.
- * `file`: zamiast serwera — surowy float32 mono 48 kHz, czytany w tempie
- * realnym i zapętlony (tryb debug/testy). NULL przy braku pamięci/wątku. */
+ * `file`: zamiast serwera — surowy float32 STEREO (przeplatane L R) 48 kHz,
+ * czytany w tempie realnym i zapętlony (tryb debug/testy). NULL przy braku
+ * pamięci/wątku. */
 struct audio *audio_start(const char *device, const char *file, bool verbose);
 void audio_snapshot(struct audio *a, struct audio_features *out);
 void audio_stop(struct audio *a);

@@ -15,7 +15,9 @@
  *   resolution, time, palette_bg/ink/accent, detail   — jak dotąd,
  *   accum (sampler2D), gain                            — tylko tryb cząstkowy,
  *   audio_level/bass/lowmid/mid/high/beat (0..1), audio_spectrum (sampler2D
- *   32×1, jednostka 2) — dźwięk; ustawiane, jeśli shader je zadeklaruje.
+ *   32×1 R, jednostka 2), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
+ *   g = R, próbki -1..1 po triggerze — oscyloskop) — dźwięk; ustawiane,
+ *   jeśli shader je zadeklaruje (tekstury ładowane tylko wtedy).
  *   `time` to CZAS ANIMACJI: przy muzyce płynie szybciej (audio_tempo·mid).
  * `#pragma flux` wolno pisać także w .frag (np. audio_tempo dla animacji
  * jednoprzebiegowych) — linie są usuwane przed kompilacją, `#version` zostaje.

@@ -157,6 +157,30 @@ int main(void) {
     }
     CHECK(dead == 0, "każde z 32 pasm log reaguje na sinus w swoim środku (żadnych martwych słupków)");
 
+    printf("audio_trigger / audio_wave_fill\n");
+    {
+        static float mono[AUDIO_FFT_N], lft[AUDIO_FFT_N], rgt[AUDIO_FFT_N];
+        /* sinus 100 Hz: okres 480 próbek; trigger ma zwrócić start na zboczu narastającym */
+        for (int i = 0; i < AUDIO_FFT_N; i++) { mono[i] = 0.5f * sinf(2.0f * TEST_PI * 100.0f * (float)i / AUDIO_RATE); lft[i] = mono[i]; rgt[i] = -mono[i]; }
+        int st1 = audio_trigger(mono, AUDIO_FFT_N, AUDIO_WAVE_N, 0.01f);
+        CHECK(st1 >= 0 && st1 <= AUDIO_FFT_N - AUDIO_WAVE_N, "start mieści okno w buforze");
+        CHECK(mono[st1] >= 0.0f && mono[st1] < 0.05f && mono[st1 + 10] > mono[st1], "start = zbocze narastające przy zerze");
+        /* przesunięcie sygnału o 100 próbek → ślad ma zaczynać się w tej samej fazie */
+        for (int i = 0; i < AUDIO_FFT_N; i++) mono[i] = 0.5f * sinf(2.0f * TEST_PI * 100.0f * (float)(i + 100) / AUDIO_RATE);
+        int st2 = audio_trigger(mono, AUDIO_FFT_N, AUDIO_WAVE_N, 0.01f);
+        CHECK(fabsf(mono[st2] - lft[st1]) < 0.02f && fabsf(mono[st2 + 50] - lft[st1 + 50]) < 0.02f, "po przesunięciu o 100 próbek okno stoi w tej samej fazie");
+        for (int i = 0; i < AUDIO_FFT_N; i++) mono[i] = 0.0f;
+        CHECK(audio_trigger(mono, AUDIO_FFT_N, AUDIO_WAVE_N, 0.01f) == AUDIO_FFT_N - AUDIO_WAVE_N, "cisza → najświeższe okno");
+        for (int i = 0; i < AUDIO_FFT_N; i++) mono[i] = 0.004f * ((i & 1) ? 1.0f : -1.0f);
+        CHECK(audio_trigger(mono, AUDIO_FFT_N, AUDIO_WAVE_N, 0.01f) == AUDIO_FFT_N - AUDIO_WAVE_N, "szum pod histerezą nie wyzwala triggera");
+        struct audio_features wf; memset(&wf, 0, sizeof wf);
+        for (int i = 0; i < AUDIO_FFT_N; i++) { lft[i] = 2.0f; rgt[i] = -0.25f; }
+        audio_wave_fill(&wf, lft, rgt, AUDIO_FFT_N, AUDIO_FFT_N - AUDIO_WAVE_N);
+        CHECK(wf.wave[0] == 1.0f && wf.wave[1] == -0.25f && wf.wave[2 * (AUDIO_WAVE_N - 1)] == 1.0f, "wave_fill: przeplot L/R i przycięcie do ±1");
+        audio_wave_fill(&wf, lft, rgt, AUDIO_FFT_N, AUDIO_FFT_N);   /* start poza buforem → dosunięty */
+        CHECK(wf.wave[2 * (AUDIO_WAVE_N - 1)] == 1.0f, "wave_fill: start poza buforem dosunięty do końca");
+    }
+
     printf("audio_agc_step / audio_smooth\n");
     struct audio_agc agc = {0};
     CHECK(near(audio_agc_step(&agc, 0.5f, 0.02f, 0.004f), 1.0f), "pierwszy sygnał → 1.0 (peak = x)");
@@ -201,13 +225,21 @@ int main(void) {
     {
         char fpath[512]; snprintf(fpath, sizeof fpath, "%s/tone.f32", dir);
         FILE *tf = fopen(fpath, "wb");
-        for (int i = 0; i < AUDIO_RATE; i++) { float v = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE); fwrite(&v, sizeof v, 1, tf); }
+        /* stereo przeplatane: L = 80 Hz, R = cisza → miks ma bas, przebieg R pusty */
+        for (int i = 0; i < AUDIO_RATE; i++) {
+            float v = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE), z = 0.0f;
+            fwrite(&v, sizeof v, 1, tf); fwrite(&z, sizeof z, 1, tf);
+        }
         fclose(tf);
         struct audio *au = audio_start(NULL, fpath, false);
         CHECK(au != NULL, "wątek wystartował");
         struct timespec ts = { 0, 400000000L }; nanosleep(&ts, NULL);
         struct audio_features snap; audio_snapshot(au, &snap);
         CHECK(snap.live && snap.bass > 0.5f && snap.t > 0.0, "po 0.4 s: live, bass > 0.5, znacznik czasu");
+        float maxl = 0, maxr = 0;
+        for (int i = 0; i < AUDIO_WAVE_N; i++) { if (fabsf(snap.wave[2*i]) > maxl) maxl = fabsf(snap.wave[2*i]); if (fabsf(snap.wave[2*i+1]) > maxr) maxr = fabsf(snap.wave[2*i+1]); }
+        CHECK(maxl > 0.45f && maxr == 0.0f, "przebieg: L ma sinus 0.5, R jest ciszą (stereo rozdzielone)");
+        CHECK(snap.wave[0] >= 0.0f && snap.wave[0] < 0.1f && snap.wave[2 * 30] > snap.wave[0], "trigger: okno zaczyna się na narastającym przejściu przez zero");
         audio_stop(au);
         remove(fpath);
     }

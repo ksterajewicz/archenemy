@@ -6,6 +6,7 @@
 #
 #   make            zbuduj build/flux-wall
 #   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio)
+#   make tools      build/offscreen — klatki animacji do PNG bez ekranu (narzędzie dev)
 #   make clean
 # =============================================
 
@@ -52,7 +53,14 @@ $(BUILD)/flux-wall-test: test.c engine.c engine.h audio.c audio.h $(BUILD)/main-
 test: $(BUILD)/flux-wall-test
 	./$(BUILD)/flux-wall-test
 
+# Narzędzie deweloperskie (NIE budowane przez install.sh): klatki animacji do
+# PNG bez ekranu — EGL surfaceless + ten sam engine.c. `make tools`.
+$(BUILD)/offscreen: tools/offscreen.c engine.c engine.h audio.c audio.h | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ tools/offscreen.c engine.c audio.c $(shell pkg-config --libs egl glesv2 libpulse-simple) -lz -lm -lpthread
+
+tools: $(BUILD)/offscreen
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test clean
+.PHONY: all test tools clean

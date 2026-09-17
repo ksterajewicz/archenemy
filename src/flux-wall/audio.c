@@ -142,6 +142,37 @@ float audio_beat_step(struct audio_beat *b, float bass, float dt) {
     return b->out;
 }
 
+int audio_trigger(const float *mono, int n, int span, float hyst) {
+    if (span >= n) return 0;
+    int latest = n - span;                        /* najpóźniejszy dopuszczalny start */
+    /* Szukamy od końca w tył: ostatnia para (ujemna < -hyst, potem >= +hyst)
+     * w obrębie [0, latest]. Histereza chroni przed „triggerem" na szumie. */
+    bool seen_pos = false;
+    for (int i = latest; i >= 1; i--) {
+        if (mono[i] >= hyst) { seen_pos = true; continue; }
+        if (seen_pos && mono[i] < -hyst) {
+            /* i = ostatnia ujemna przed narastaniem; start = pierwsza dodatnia po niej */
+            int start = i + 1;
+            while (start < latest && mono[start] < hyst) start++;
+            return start;
+        }
+        if (mono[i] < -hyst) seen_pos = false;
+    }
+    return latest;
+}
+
+void audio_wave_fill(struct audio_features *out, const float *l, const float *r, int n, int start) {
+    if (start < 0) start = 0;
+    if (start > n - AUDIO_WAVE_N) start = n - AUDIO_WAVE_N;
+    if (start < 0) start = 0;
+    for (int i = 0; i < AUDIO_WAVE_N; i++) {
+        int k = start + i;
+        float vl = k < n ? l[k] : 0.0f, vr = k < n ? r[k] : 0.0f;
+        out->wave[2 * i]     = vl < -1.0f ? -1.0f : (vl > 1.0f ? 1.0f : vl);
+        out->wave[2 * i + 1] = vr < -1.0f ? -1.0f : (vr > 1.0f ? 1.0f : vr);
+    }
+}
+
 void audio_features_age(struct audio_features *f, double now, float release) {
     if (f->t <= 0.0) return;
     double age = now - f->t;
@@ -149,6 +180,7 @@ void audio_features_age(struct audio_features *f, double now, float release) {
     float k = expf(-(float)(age - 0.1) / release);
     f->level *= k; f->bass *= k; f->lowmid *= k; f->mid *= k; f->high *= k; f->beat *= k;
     for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) f->spectrum[i] *= k;
+    for (int i = 0; i < AUDIO_WAVE_N * AUDIO_CHANNELS; i++) f->wave[i] *= k;
 }
 
 /* ── pełna analiza okna ─────────────────────────────────────────────────── */
@@ -213,8 +245,9 @@ struct audio {
     char           *file;
     struct audio_features snap;
     struct audio_state    st;
-    float           ring[AUDIO_FFT_N];
-    float           hop[AUDIO_HOP];
+    float           ring[AUDIO_FFT_N];          /* miks (L+R)/2 — okno FFT */
+    float           ring_l[AUDIO_FFT_N], ring_r[AUDIO_FFT_N];   /* przebieg L/R dla oscyloskopu */
+    float           hop[AUDIO_HOP * AUDIO_CHANNELS];            /* przeplatane L R */
     bool            started;
 };
 
@@ -230,11 +263,23 @@ static void logv(const struct audio *a, const char *fmt, ...) {
     va_end(ap);
 }
 
-/* Dosuń hop do bufora pierścieniowego (tu: przesuwany), przeanalizuj, opublikuj. */
+/* Dosuń hop (stereo, przeplatany) do buforów przesuwanych: miks do okna FFT,
+ * L/R osobno do przebiegu; przeanalizuj, wytnij okno oscyloskopu po triggerze,
+ * opublikuj. */
 static void push_hop(struct audio *a) {
-    memmove(a->ring, a->ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
-    memcpy(a->ring + AUDIO_FFT_N - AUDIO_HOP, a->hop, AUDIO_HOP * sizeof(float));
+    const size_t keep = (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float);
+    memmove(a->ring,   a->ring   + AUDIO_HOP, keep);
+    memmove(a->ring_l, a->ring_l + AUDIO_HOP, keep);
+    memmove(a->ring_r, a->ring_r + AUDIO_HOP, keep);
+    for (int i = 0; i < AUDIO_HOP; i++) {
+        float l = a->hop[2 * i], r = a->hop[2 * i + 1];
+        a->ring_l[AUDIO_FFT_N - AUDIO_HOP + i] = l;
+        a->ring_r[AUDIO_FFT_N - AUDIO_HOP + i] = r;
+        a->ring[AUDIO_FFT_N - AUDIO_HOP + i]   = 0.5f * (l + r);
+    }
     audio_analyze(&a->st, a->ring, (float)AUDIO_HOP / AUDIO_RATE, now_s());
+    int start = audio_trigger(a->ring, AUDIO_FFT_N, AUDIO_WAVE_N, 0.01f);
+    audio_wave_fill(&a->st.out, a->ring_l, a->ring_r, AUDIO_FFT_N, start);
     pthread_mutex_lock(&a->lock);
     a->snap = a->st.out;
     a->snap.live = true;
@@ -252,10 +297,11 @@ static void run_file(struct audio *a) {
     if (!f) { logv(a, "nie mogę otworzyć %s: %s", a->file, strerror(errno)); return; }
     struct timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
     while (a->running) {
-        size_t got = fread(a->hop, sizeof(float), AUDIO_HOP, f);
-        if (got < AUDIO_HOP) {                      /* koniec pliku → od początku */
+        const size_t want = AUDIO_HOP * AUDIO_CHANNELS;
+        size_t got = fread(a->hop, sizeof(float), want, f);
+        if (got < want) {                           /* koniec pliku → od początku */
             if (got == 0 && feof(f) && ftell(f) == 0) break;   /* pusty plik */
-            memset(a->hop + got, 0, (AUDIO_HOP - got) * sizeof(float));
+            memset(a->hop + got, 0, (want - got) * sizeof(float));
             rewind(f);
         }
         push_hop(a);
@@ -267,10 +313,11 @@ static void run_file(struct audio *a) {
 }
 
 static pa_simple *open_stream(struct audio *a, const char **used) {
-    const pa_sample_spec ss = { .format = PA_SAMPLE_FLOAT32NE, .rate = AUDIO_RATE, .channels = 1 };
+    /* Stereo: przebieg L/R dla oscyloskopu XY; pasma liczone z miksu. */
+    const pa_sample_spec ss = { .format = PA_SAMPLE_FLOAT32NE, .rate = AUDIO_RATE, .channels = AUDIO_CHANNELS };
     const pa_buffer_attr attr = {
         .maxlength = (uint32_t)-1, .tlength = (uint32_t)-1, .prebuf = (uint32_t)-1,
-        .minreq = (uint32_t)-1, .fragsize = AUDIO_HOP * sizeof(float),
+        .minreq = (uint32_t)-1, .fragsize = AUDIO_HOP * AUDIO_CHANNELS * sizeof(float),
     };
     const char *candidates[2] = { "@DEFAULT_MONITOR@", a->device };
     for (int i = 0; i < 2; i++) {
