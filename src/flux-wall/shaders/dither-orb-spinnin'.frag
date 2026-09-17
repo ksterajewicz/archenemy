@@ -1,6 +1,6 @@
 #version 300 es
 /*
- * archenemy — flux-wall: „dither-orb” — wizualizer w stylu kulki NCS, przebieg finalny.
+ * archenemy — flux-wall: „dither-orb-spinnin'” — wizualizer w stylu kulki NCS, przebieg finalny.
  *
  * Trzy warstwy, wszystkie w rastrze Bayera i trzech kolorach palety:
  *   1. pył cząstek z akumulatora (krok w dither-orb.update.glsl) — tło,
@@ -10,6 +10,9 @@
  *   3. tarcza: promień oddycha z basem, obrys w akcencie, wnętrze w atramencie
  *      z delikatnym gradientem; całość obraca się powoli, a uderzenie (audio_beat)
  *      dorysowuje rozchodzący się pierścień.
+ * Bliźniak bez obrotu: dither-orb-static (ta sama para plików, ORB_SPIN = 0).
+ * Nazwa z apostrofem — decyzja właściciela 2026-09-17c; wrapper flux-wall.sh
+ * dopuszcza `'` w nazwie animacji.
  * W ciszy: tarcza stoi, słupki mają tylko wysokość bazową, pył ledwo dryfuje.
  *
  * Uniformy: kontrakt flux-wall + accum/gain + audio_* (engine.h).
@@ -44,6 +47,7 @@ const float BAR_GAP  = 0.035;    /* odstęp tarcza → słupki */
 const float BAR_BASE = 0.03;     /* wysokość w ciszy */
 const float BAR_MAX  = 0.42;     /* wysokość przy pełnym pasmie */
 const float BAR_FILL = 0.62;     /* część szczeliny kątowej zajęta przez słupek */
+const float ORB_SPIN = 0.05;     /* prędkość obrotu całości (rad/s); 0 = wersja static */
 
 float bayer8(vec2 c) {
     ivec2 p = ivec2(mod(c, 8.0));
@@ -80,7 +84,7 @@ void main() {
 
     /* 2. słupki widma — lustro: |ang| od góry (bas) do dołu (wysokie) */
     float R = ORB_R * (1.0 + ORB_BR * audio_bass);
-    float rot = time * 0.05;                         /* powolny obrót całości */
+    float rot = time * ORB_SPIN;                     /* powolny obrót całości */
     float am  = abs(mod(ang + rot + 3.14159265, 6.2831853) - 3.14159265);   /* 0..π */
     float slot = am / 3.14159265 * 32.0;             /* 0..32 */
     int   bin  = int(floor(slot));

@@ -1,5 +1,5 @@
 /*
- * archenemy — flux-wall: „dither-orb” — wizualizer w stylu kulki NCS, krok cząstki.
+ * archenemy — flux-wall: „dither-orb-spinnin'” — wizualizer w stylu kulki NCS, krok cząstki.
  *
  * Cząstki rodzą się na obwodzie tarczy (promień oddycha z basem, jak w .frag)
  * i lecą promieniście na zewnątrz; prędkość rośnie z poziomem dźwięku, a

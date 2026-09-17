@@ -165,12 +165,16 @@ void audio_wave_fill(struct audio_features *out, const float *l, const float *r,
     if (start < 0) start = 0;
     if (start > n - AUDIO_WAVE_N) start = n - AUDIO_WAVE_N;
     if (start < 0) start = 0;
+    float peak = 0.0f;
     for (int i = 0; i < AUDIO_WAVE_N; i++) {
         int k = start + i;
         float vl = k < n ? l[k] : 0.0f, vr = k < n ? r[k] : 0.0f;
         out->wave[2 * i]     = vl < -1.0f ? -1.0f : (vl > 1.0f ? 1.0f : vl);
         out->wave[2 * i + 1] = vr < -1.0f ? -1.0f : (vr > 1.0f ? 1.0f : vr);
+        float m = fmaxf(fabsf(out->wave[2 * i]), fabsf(out->wave[2 * i + 1]));
+        if (m > peak) peak = m;
     }
+    out->wave_peak = peak;
 }
 
 void audio_features_age(struct audio_features *f, double now, float release) {
@@ -181,6 +185,7 @@ void audio_features_age(struct audio_features *f, double now, float release) {
     f->level *= k; f->bass *= k; f->lowmid *= k; f->mid *= k; f->high *= k; f->beat *= k;
     for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) f->spectrum[i] *= k;
     for (int i = 0; i < AUDIO_WAVE_N * AUDIO_CHANNELS; i++) f->wave[i] *= k;
+    f->wave_peak *= k;
 }
 
 /* ── pełna analiza okna ─────────────────────────────────────────────────── */

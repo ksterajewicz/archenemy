@@ -53,6 +53,7 @@ static const char *UPDATE_PRELUDE =
     "uniform float audio_beat;\n"
     "uniform sampler2D audio_spectrum;\n"
     "uniform sampler2D audio_wave;   /* przebieg po triggerze: N×1 RG32F, r = L, g = R, w -1..1 */\n"
+    "uniform float audio_wave_peak;  /* szczyt |mono| okna przebiegu — auto-wzmocnienie oscyloskopu */\n"
     "out vec4 o;\n"
     "uint h2u(int x, int y, int s) {\n"
     "    uint n = uint(x) * 374761393u + uint(y) * 668265263u + uint(s) * 1013904223u;\n"
@@ -134,7 +135,7 @@ struct flux_engine {
     /* fade */
     GLint uf_keep;
     /* audio: present (p) i update (u): level, bass, lowmid, mid, high, beat, spectrum, wave */
-    GLint up_audio[8], uu_audio[8];
+    GLint up_audio[9], uu_audio[9];
 };
 
 struct flux_target {
@@ -312,10 +313,10 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->u_detail     = glGetUniformLocation(e->prog_present, "detail");
     e->u_accum      = glGetUniformLocation(e->prog_present, "accum");
     e->u_gain       = glGetUniformLocation(e->prog_present, "gain");
-    static const char *AUDIO_NAMES[8] = { "audio_level", "audio_bass", "audio_lowmid", "audio_mid",
-                                          "audio_high", "audio_beat", "audio_spectrum", "audio_wave" };
-    for (int i = 0; i < 8; i++) e->up_audio[i] = glGetUniformLocation(e->prog_present, AUDIO_NAMES[i]);
-    for (int i = 0; i < 8; i++) e->uu_audio[i] = -1;
+    static const char *AUDIO_NAMES[9] = { "audio_level", "audio_bass", "audio_lowmid", "audio_mid",
+                                          "audio_high", "audio_beat", "audio_spectrum", "audio_wave", "audio_wave_peak" };
+    for (int i = 0; i < 9; i++) e->up_audio[i] = glGetUniformLocation(e->prog_present, AUDIO_NAMES[i]);
+    for (int i = 0; i < 9; i++) e->uu_audio[i] = -1;
 
     glGenVertexArrays(1, &e->vao);
 
@@ -346,7 +347,7 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->uu_seed       = glGetUniformLocation(e->prog_update, "seed");
     e->uu_life       = glGetUniformLocation(e->prog_update, "life_steps");
     e->uu_accum      = glGetUniformLocation(e->prog_update, "accum");
-    for (int i = 0; i < 8; i++) e->uu_audio[i] = glGetUniformLocation(e->prog_update, AUDIO_NAMES[i]);
+    for (int i = 0; i < 9; i++) e->uu_audio[i] = glGetUniformLocation(e->prog_update, AUDIO_NAMES[i]);
 
     e->prog_splat = link(VS_SPLAT, FS_SPLAT, "splat", err, errlen);
     if (!e->prog_splat) { flux_engine_destroy(e); return NULL; }
@@ -483,12 +484,15 @@ void flux_target_destroy(struct flux_target *t) {
 /* ── GL: render ───────────────────────────────────────────────────────────── */
 
 /* Uniformy audio dla programu o lokacjach `loc` (NULL audio → zera). */
-static void set_audio_uniforms(const GLint loc[8], const struct audio_features *a, float strength, GLuint spec_tex, GLuint wave_tex) {
+static void set_audio_uniforms(const GLint loc[9], const struct audio_features *a, float strength, GLuint spec_tex, GLuint wave_tex) {
     float v[6] = {0, 0, 0, 0, 0, 0};
+    float peak = 0.0f;
     if (a && strength > 0.0f) {
         v[0] = a->level; v[1] = a->bass; v[2] = a->lowmid; v[3] = a->mid; v[4] = a->high; v[5] = a->beat;
+        peak = a->wave_peak;
     }
     for (int i = 0; i < 6; i++) if (loc[i] >= 0) glUniform1f(loc[i], v[i]);
+    if (loc[8] >= 0) glUniform1f(loc[8], peak);
     if (loc[6] >= 0) {
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, spec_tex);

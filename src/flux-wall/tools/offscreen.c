@@ -111,10 +111,14 @@ static void synth(double t, float *l, float *r) {
     double fb = bar ? 82.41 : 55.0;
     float bass = (float)sin(2 * M_PI * fb * t) * 0.35f * (float)(0.6 + 0.4 * (1.0 - fmod(t, 0.25) / 0.25));
     float pad = (float)(sin(2 * M_PI * 220.0 * t) + sin(2 * M_PI * 277.18 * t) * 0.8 + sin(2 * M_PI * 329.63 * t) * 0.6) * 0.08f;
+    /* prawy kanał: bas przesunięty o 90° i pad odstrojony o 1% — w trybie XY
+     * daje elipsy i pętle zamiast jednej kreski (stereo, którego mono nie ma) */
+    float bass_r = (float)cos(2 * M_PI * fb * t) * 0.35f * (float)(0.6 + 0.4 * (1.0 - fmod(t, 0.25) / 0.25));
+    float pad_r = (float)(sin(2 * M_PI * 222.2 * t) + sin(2 * M_PI * 280.0 * t) * 0.8 + sin(2 * M_PI * 332.9 * t) * 0.6) * 0.08f;
     double hb = fmod(t, 0.25);
     float hat = frand() * (float)exp(-hb * 40.0) * 0.18f * (fmod(t, 0.5) > 0.25 ? 1.0f : 0.6f);
     *l = kick + bass + pad * 1.2f + hat * 0.6f;
-    *r = kick + bass * 0.9f + pad * 0.7f + hat * 1.2f;
+    *r = kick + bass_r * 0.9f + pad_r * 0.7f + hat * 1.2f;
 }
 
 /* Cechy dźwięku na chwilę `t`: analiza okien co hop, jak wątek na żywo. */

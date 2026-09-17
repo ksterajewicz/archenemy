@@ -82,7 +82,9 @@ write_choice() {  # zapis atomowy tmp+mv (wzorzec repo)
 
 shader_path() {   # nazwa → ścieżka; pusto, gdy nie ma pliku
     local name="$1"
-    [[ "$name" =~ ^[a-z0-9-]+$ ]] || return 1
+    # Dozwolone: małe litery, cyfry, myślnik i apostrof (dither-orb-spinnin' —
+    # decyzja właściciela 2026-09-17c); nigdy `/` ani `..` — nazwa staje się ścieżką.
+    [[ "$name" =~ ^[a-z0-9\'-]+$ ]] || return 1
     [[ -f "$SHADERS_DIR/$name.frag" ]] && echo "$SHADERS_DIR/$name.frag"
 }
 

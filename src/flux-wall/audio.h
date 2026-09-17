@@ -43,6 +43,7 @@ struct audio_features {
      * próbki w -1..1 (bez auto-gain — oscyloskop ma pokazywać prawdziwą amplitudę,
      * a `level` mówi shaderowi, jak głośno jest) */
     float wave[AUDIO_WAVE_N * AUDIO_CHANNELS];
+    float wave_peak;   /* szczyt max(|L|,|R|) w oknie przebiegu (0..1) — auto-wzmocnienie oscyloskopu */
     double t;        /* czas snapshotu (sekundy, zegar monotoniczny); 0 = nigdy */
     bool   live;     /* strumień z serwera działa */
 };

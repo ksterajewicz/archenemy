@@ -968,6 +968,13 @@ fi
 FLUX_CHOICE_DAT="$ARCHENEMY_DIR/data/flux-wall.dat"
 if [[ -f "$FLUX_CHOICE_DAT" ]]; then
     FLUX_CHOICE="$(<"$FLUX_CHOICE_DAT")"; FLUX_CHOICE="${FLUX_CHOICE//[[:space:]]/}"
+    # Migracja nazwy (2026-09-17): dither-orb → dither-orb-spinnin' — wybór zostaje,
+    # zamiast być skasowany jako „nieistniejący".
+    if [[ "$FLUX_CHOICE" == "dither-orb" ]]; then
+        FLUX_CHOICE="dither-orb-spinnin'"
+        printf '%s\n' "$FLUX_CHOICE" > "$FLUX_CHOICE_DAT"
+        echo -e "  ${GREEN}✓ flux-wall: wybór 'dither-orb' przepisany na \"$FLUX_CHOICE\" (zmiana nazwy)${NC}"
+    fi
     if [[ -n "$FLUX_CHOICE" && "$FLUX_CHOICE" != "off" && ! -f "$FLUX_WALL_DIR/shaders/$FLUX_CHOICE.frag" ]]; then
         rm -f "$FLUX_CHOICE_DAT"
         echo -e "  ${YELLOW}⚠ Wybrana animacja '$FLUX_CHOICE' już nie istnieje — wybór wyczyszczony,${NC}"
