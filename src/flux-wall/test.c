@@ -157,6 +157,30 @@ int main(void) {
     }
     CHECK(dead == 0, "każde z 32 pasm log reaguje na sinus w swoim środku (żadnych martwych słupków)");
 
+    printf("audio_spectro_column / pasma spektrogramu\n");
+    {
+        /* sinus 1 kHz → maksimum spektrogramu w paśmie zawierającym 1 kHz */
+        for (int j = 0; j < AUDIO_FFT_N; j++) sig[j] = 0.5f * sinf(2.0f * TEST_PI * 1000.0f * (float)j / AUDIO_RATE);
+        audio_fft_power(&fft, sig, pw);
+        audio_bands(pw, AUDIO_FFT_N / 2 + 1, AUDIO_RATE, sig, AUDIO_FFT_N, &raw);
+        int expect = (int)floorf(logf(1000.0f / AUDIO_SPECTRO_LO) / logf(AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO) * AUDIO_SPECTRO_BINS);
+        int smax = 0; for (int k = 1; k < AUDIO_SPECTRO_BINS; k++) if (raw.spectro[k] > raw.spectro[smax]) smax = k;
+        CHECK(abs(smax - expect) <= 1, "1 kHz → maksimum w oczekiwanym paśmie spektrogramu (±1)");
+        static float col[AUDIO_SPECTRO_BINS];
+        audio_spectro_column(raw.spectro, raw.spectro[smax], col);
+        CHECK(near(col[smax], 1.0f), "pasmo szczytowe = 1.0 (0 dB względem szczytu)");
+        int lowcnt = 0; for (int k = 0; k < AUDIO_SPECTRO_BINS; k++) if (abs(k - smax) > 8 && col[k] > 0.3f) lowcnt++;
+        CHECK(lowcnt == 0, "daleko od tonu < 0.3 (poniżej -42 dB)");
+        float half[AUDIO_SPECTRO_BINS]; for (int k = 0; k < AUDIO_SPECTRO_BINS; k++) half[k] = raw.spectro[k];
+        half[smax] = raw.spectro[smax] * 0.1f;                   /* -20 dB */
+        audio_spectro_column(half, raw.spectro[smax], col);
+        CHECK(near(col[smax], 1.0f - 20.0f / AUDIO_SPECTRO_RANGE_DB), "-20 dB → 1 - 20/60");
+        for (int k = 0; k < AUDIO_SPECTRO_BINS; k++) half[k] = 0.0f;
+        audio_spectro_column(half, 0.0f, col);
+        int z = 0; for (int k = 0; k < AUDIO_SPECTRO_BINS; k++) if (col[k] != 0.0f) z++;
+        CHECK(z == 0, "cisza (peak 0) → cała kolumna 0");
+    }
+
     printf("audio_trigger / audio_wave_fill\n");
     {
         static float mono[AUDIO_FFT_N], lft[AUDIO_FFT_N], rgt[AUDIO_FFT_N];
@@ -220,6 +244,14 @@ int main(void) {
     for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.0f;
     for (int i = 0; i < 50; i++) audio_analyze(&st, sig, 0.02f, 2.0 + i * 0.02);
     CHECK(st.out.bass < 0.05f && st.out.level < 0.05f, "cisza 1 s → wszystko ~0");
+    { int z = 0; for (int k = 0; k < AUDIO_SPECTRO_BINS; k++) if (st.out.spectro[k] != 0.0f) z++;
+      CHECK(z == 0, "cisza → kolumna spektrogramu dokładnie 0"); }
+    for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.5f * sinf(2.0f * TEST_PI * 1000.0f * (float)i / AUDIO_RATE);
+    for (int i = 0; i < 10; i++) audio_analyze(&st, sig, 0.02f, 3.0 + i * 0.02);
+    { int smax = 0; for (int k = 1; k < AUDIO_SPECTRO_BINS; k++) if (st.out.spectro[k] > st.out.spectro[smax]) smax = k;
+      int expect = (int)floorf(logf(1000.0f / AUDIO_SPECTRO_LO) / logf(AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO) * AUDIO_SPECTRO_BINS);
+      /* szczyt AGC z basu 60 Hz jeszcze nie opadł (zanik ~2 s) → ton 1 kHz kilka dB pod 0 dB, ale > 0.9 */
+      CHECK(abs(smax - expect) <= 1 && st.out.spectro[smax] > 0.9f, "ton 1 kHz w łańcuchu → szczyt spektrogramu > 0.9 we właściwym paśmie"); }
 
     printf("audio_start z pliku (wątek, bez serwera)\n");
     {

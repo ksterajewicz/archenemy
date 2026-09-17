@@ -107,6 +107,24 @@ void audio_bands(const float *power, int n_power, float sample_rate,
         float hi = 40.0f * powf(300.0f, (float)(i + 1) / AUDIO_SPECTRUM_BINS);
         out->spectrum[i] = band_rms(power, n_power, hz_per_bin, lo, hi);
     }
+    /* drobne pasma spektrogramu (log od AUDIO_SPECTRO_LO do _HI) */
+    float ratio = AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO;
+    for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) {
+        float lo = AUDIO_SPECTRO_LO * powf(ratio, (float)i / AUDIO_SPECTRO_BINS);
+        float hi = AUDIO_SPECTRO_LO * powf(ratio, (float)(i + 1) / AUDIO_SPECTRO_BINS);
+        out->spectro[i] = band_rms(power, n_power, hz_per_bin, lo, hi);
+    }
+}
+
+void audio_spectro_column(const float *raw, float peak, float *out) {
+    for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) {
+        float v = 0.0f;
+        if (peak > 0.0f && raw[i] > 0.0f) {
+            float db = 20.0f * log10f(raw[i] / peak);        /* <= 0 przy raw <= peak */
+            v = 1.0f + db / AUDIO_SPECTRO_RANGE_DB;
+        }
+        out[i] = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+    }
 }
 
 /* ── auto-gain, wygładzanie, beat, starzenie ────────────────────────────── */
@@ -184,6 +202,7 @@ void audio_features_age(struct audio_features *f, double now, float release) {
     float k = expf(-(float)(age - 0.1) / release);
     f->level *= k; f->bass *= k; f->lowmid *= k; f->mid *= k; f->high *= k; f->beat *= k;
     for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) f->spectrum[i] *= k;
+    for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) f->spectro[i] *= k;
     for (int i = 0; i < AUDIO_WAVE_N * AUDIO_CHANNELS; i++) f->wave[i] *= k;
     f->wave_peak *= k;
 }
@@ -218,6 +237,8 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
         o->high   = audio_smooth(o->high,   0.0f, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
             o->spectrum[i] = audio_smooth(o->spectrum[i], 0.0f, dt, AUDIO_ATTACK, AUDIO_RELEASE);
+        /* spektrogram bez wygładzania — kolumna to jedna chwila; cisza = 0 od razu */
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) o->spectro[i] = 0.0f;
         o->beat = audio_beat_step(&st->beat, 0.0f, dt);
     } else {
         float lv = audio_agc_step(&st->agc_level,  raw.level,  dt, AUDIO_FLOOR);
@@ -235,6 +256,12 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
             o->spectrum[i] = audio_smooth(o->spectrum[i], v, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         }
         o->beat = audio_beat_step(&st->beat, ba, dt);
+        /* spektrogram: jeden szczyt globalny (najgłośniejsze pasmo, zanik ~2 s),
+         * kolumna w dB względem niego — proporcje między pasmami zostają */
+        float mx = 0.0f;
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) if (raw.spectro[i] > mx) mx = raw.spectro[i];
+        audio_agc_step(&st->agc_spectro, mx, dt, AUDIO_FLOOR);
+        audio_spectro_column(raw.spectro, st->agc_spectro.peak, o->spectro);
     }
     o->t = now;
 }

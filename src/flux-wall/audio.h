@@ -34,6 +34,14 @@
 #define AUDIO_SPECTRUM_BINS 32
 #define AUDIO_WAVE_N        1024     /* próbek przebiegu dla shaderów (21 ms) */
 #define AUDIO_CHANNELS      2
+/* Spektrogram: drobne pasma log-freq (40 Hz – 16 kHz) w skali dB względem
+ * wolnego szczytu globalnego (NIE per pasmo — spektrogram ma pokazywać
+ * prawdziwe proporcje między częstotliwościami, a auto-gain per pasmo by je
+ * spłaszczył). Historia kolumn żyje w silniku (tekstura), nie tutaj. */
+#define AUDIO_SPECTRO_BINS  128
+#define AUDIO_SPECTRO_LO    40.0f
+#define AUDIO_SPECTRO_HI    16000.0f
+#define AUDIO_SPECTRO_RANGE_DB 60.0f
 
 /* Cechy dźwięku dla silnika — wszystko w 0..1, `beat` to impuls z zanikiem. */
 struct audio_features {
@@ -44,6 +52,8 @@ struct audio_features {
      * a `level` mówi shaderowi, jak głośno jest) */
     float wave[AUDIO_WAVE_N * AUDIO_CHANNELS];
     float wave_peak;   /* szczyt max(|L|,|R|) w oknie przebiegu (0..1) — auto-wzmocnienie oscyloskopu */
+    /* kolumna spektrogramu: 0..1 = -RANGE_DB..0 dB względem szczytu globalnego; cisza = 0 */
+    float spectro[AUDIO_SPECTRO_BINS];
     double t;        /* czas snapshotu (sekundy, zegar monotoniczny); 0 = nigdy */
     bool   live;     /* strumień z serwera działa */
 };
@@ -61,7 +71,7 @@ void audio_fft_init(struct audio_fft *f);
 void audio_fft_power(struct audio_fft *f, const float *in, float *power);
 
 /* Surowe pasma z mocy widma i RMS z próbek czasu (bez auto-gain). */
-struct audio_bands_raw { float level, bass, lowmid, mid, high; float spectrum[AUDIO_SPECTRUM_BINS]; };
+struct audio_bands_raw { float level, bass, lowmid, mid, high; float spectrum[AUDIO_SPECTRUM_BINS]; float spectro[AUDIO_SPECTRO_BINS]; };
 void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out);
 
@@ -88,6 +98,10 @@ int audio_trigger(const float *mono, int n, int span, float hyst);
  * z buforów L i R długości n. */
 void audio_wave_fill(struct audio_features *out, const float *l, const float *r, int n, int start);
 
+/* Kolumna spektrogramu ze SUROWYCH pasm: dB względem `peak` (szczyt globalny
+ * po auto-gain), zakres AUDIO_SPECTRO_RANGE_DB → 0..1. Czyste, testowane. */
+void audio_spectro_column(const float *raw, float peak, float *out);
+
 /* Zanik stęchłego snapshotu: gdy `now - t` > 0.1 s, cechy gasną z `release`. */
 void audio_features_age(struct audio_features *f, double now, float release);
 
@@ -97,6 +111,7 @@ struct audio_state {
     struct audio_fft  fft;
     float             power[AUDIO_FFT_N / 2 + 1];
     struct audio_agc  agc_level, agc_bass, agc_lowmid, agc_mid, agc_high, agc_spec[AUDIO_SPECTRUM_BINS];
+    struct audio_agc  agc_spectro;   /* JEDEN szczyt dla całej kolumny spektrogramu */
     struct audio_beat beat;
     struct audio_features out;
 };
