@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ncmpcpp
+GenericName=Music Player
+Comment=mpd client in the terminal (archenemy)
+Exec=alacritty --class ncmpcpp -e ncmpcpp
+Icon=multimedia-audio-player
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;mpd;player;

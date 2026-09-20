@@ -1,0 +1,55 @@
+##############################################################################
+#  archenemy · rice white-blue · ncmpcpp
+#  Kolory pochodzą z TERMINALA (rices/white-blue/alacritty/alacritty.toml):
+#    nazwy = ANSI 0-7, liczby 9-16 = jasne ANSI 8-15
+#    (ncmpcpp numeruje kolory od 1: liczba N = kolor ncurses N-1).
+#  Tokeny: bg #1A1A2E · text #F8F8F8 · accent #0148ED (blue) · bright accent #4A7FFF (13) · dim #5C5C7A (9)
+#  Wszystko, co nie jest kolorem, zostaje na domyślnych ncmpcpp
+#  (decyzja właściciela 2026-09-20). Bindy: plik `bindings` obok.
+##############################################################################
+
+##### mpd #####
+mpd_host = localhost
+mpd_port = 6600
+mpd_music_dir = ~/Music
+
+##### pliki robocze POZA repo #####
+# ~/.config/ncmpcpp to symlink do rice'a w ~/archenemy — ncmpcpp dopisuje
+# error.log i patterns.list do ncmpcpp_directory, więc ten katalog musi
+# leżeć poza repozytorium (inaczej brudne working tree).
+ncmpcpp_directory = ~/.local/share/ncmpcpp/
+lyrics_directory = ~/.local/share/ncmpcpp/lyrics/
+
+##### wizualizer (wyjście fifo z config/mpd/mpd.conf) #####
+visualizer_data_source = /tmp/mpd.fifo
+visualizer_output_name = Visualizer feed
+visualizer_in_stereo = yes
+visualizer_color = blue, 13, 15, 16
+
+##### kolory #####
+colors_enabled = yes
+empty_tag_color = 9
+header_window_color = blue
+volume_color = 13
+state_line_color = 9
+state_flags_color = 13
+main_window_color = white
+color1 = white
+color2 = blue
+progressbar_color = 9
+progressbar_elapsed_color = blue
+statusbar_color = white
+statusbar_time_color = 13
+player_state_color = blue:b
+alternative_ui_separator_color = 9
+
+##### formaty (tylko kolory; układ = domyślny ncmpcpp) #####
+song_columns_list_format = (20)[13]{a} (6f)[9]{NE} (50)[white]{t|f:Title} (20)[blue]{b} (7f)[9]{l}
+current_item_prefix = $(blue)$r
+current_item_suffix = $/r$(end)
+current_item_inactive_column_prefix = $(9)$r
+current_item_inactive_column_suffix = $/r$(end)
+now_playing_prefix = $b$(13)
+now_playing_suffix = $/b$(end)
+selected_item_prefix = $(13)
+selected_item_suffix = $(end)

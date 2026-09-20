@@ -7,7 +7,18 @@ keepassxc
 libreoffice-fresh
 qbittorrent
 vlc
+# mpv: odtwarzacz wideo/audio; kolory OSD per rice w rices/*/mpv/mpv.conf
+# (wchodzi do ~/.config/mpv jak każdy folder rice'a — patrz README „Music stack”)
 mpv
+# ── music stack (OPCJONALNY — rekomendacja, nie wymóg; zalecany komplet: mpd + mpc + ncmpcpp) ──
+# mpd: demon muzyczny jako usługa użytkownika; config w config/mpd/ (pipewire +
+#      fifo dla wizualizera ncmpcpp); install.sh [8l] PYTA, zanim cokolwiek włączy
+mpd
+# mpc: CLI mpd — używa go Super+A → [o] (przełącznik wyjścia audio) i skrypty
+mpc
+# ncmpcpp: klient TUI ze skórką per rice (rices/*/ncmpcpp/); wpis .desktop dla
+#          rofi kopiuje install.sh [8l] (tylko gdy nie masz własnego)
+ncmpcpp
 pavucontrol
 mangohud
 # steam wymaga repo [multilib] w /etc/pacman.conf (włącza je instalator GPU)

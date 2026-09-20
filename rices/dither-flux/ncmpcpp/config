@@ -1,0 +1,55 @@
+##############################################################################
+#  archenemy · rice dither-flux · ncmpcpp
+#  Kolory pochodzą z TERMINALA (rices/dither-flux/alacritty/alacritty.toml):
+#    nazwy = ANSI 0-7, liczby 9-16 = jasne ANSI 8-15
+#    (ncmpcpp numeruje kolory od 1: liczba N = kolor ncurses N-1).
+#  Tokeny: bg #0F1A24 · mist #A8C4D4 (white) · foam #D8E6EE (16, accent) · water #5C87A3 (blue) · plate #1B3040 (black) · dim #34546A (9) · flat: no bold
+#  Wszystko, co nie jest kolorem, zostaje na domyślnych ncmpcpp
+#  (decyzja właściciela 2026-09-20). Bindy: plik `bindings` obok.
+##############################################################################
+
+##### mpd #####
+mpd_host = localhost
+mpd_port = 6600
+mpd_music_dir = ~/Music
+
+##### pliki robocze POZA repo #####
+# ~/.config/ncmpcpp to symlink do rice'a w ~/archenemy — ncmpcpp dopisuje
+# error.log i patterns.list do ncmpcpp_directory, więc ten katalog musi
+# leżeć poza repozytorium (inaczej brudne working tree).
+ncmpcpp_directory = ~/.local/share/ncmpcpp/
+lyrics_directory = ~/.local/share/ncmpcpp/lyrics/
+
+##### wizualizer (wyjście fifo z config/mpd/mpd.conf) #####
+visualizer_data_source = /tmp/mpd.fifo
+visualizer_output_name = Visualizer feed
+visualizer_in_stereo = yes
+visualizer_color = blue, cyan, white, 16
+
+##### kolory #####
+colors_enabled = yes
+empty_tag_color = 9
+header_window_color = 16
+volume_color = 16
+state_line_color = 9
+state_flags_color = 16
+main_window_color = white
+color1 = 16
+color2 = blue
+progressbar_color = black
+progressbar_elapsed_color = blue
+statusbar_color = white
+statusbar_time_color = 16
+player_state_color = 16
+alternative_ui_separator_color = 9
+
+##### formaty (tylko kolory; układ = domyślny ncmpcpp) #####
+song_columns_list_format = (20)[16]{a} (6f)[9]{NE} (50)[white]{t|f:Title} (20)[blue]{b} (7f)[9]{l}
+current_item_prefix = $(16)$r
+current_item_suffix = $/r$(end)
+current_item_inactive_column_prefix = $(9)$r
+current_item_inactive_column_suffix = $/r$(end)
+now_playing_prefix = $(cyan)
+now_playing_suffix = $(end)
+selected_item_prefix = $(blue)
+selected_item_suffix = $(end)

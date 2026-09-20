@@ -28,6 +28,12 @@
 /config/hypr/autostartpersonalisation.conf
 /config/hypr/appbinds.conf
 
+# ─── music stack (config/mpd): warstwa maszynowa + osobista, generowane przez
+# install.sh [8l] i przepisywane przez Super+A → [o]; mktemp obok pliku jak wyżej
+/config/mpd/output.conf
+/config/mpd/local.conf
+/config/mpd/*.??????
+
 # ─── editor / desktop-environment junk ────────────────────────────────────────
 .directory
 __pycache__/

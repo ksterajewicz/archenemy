@@ -1,0 +1,55 @@
+##############################################################################
+#  archenemy · rice crt · ncmpcpp
+#  Kolory pochodzą z TERMINALA (rices/crt/alacritty/alacritty.toml):
+#    nazwy = ANSI 0-7, liczby 9-16 = jasne ANSI 8-15
+#    (ncmpcpp numeruje kolory od 1: liczba N = kolor ncurses N-1).
+#  Tokeny: bg #031533 · text #5695D6 (blue) · accent #36D2D8 (cyan) · bright text #74DCE2 (15) · empty #0B358B (black) · frames #3069AD (9)
+#  Wszystko, co nie jest kolorem, zostaje na domyślnych ncmpcpp
+#  (decyzja właściciela 2026-09-20). Bindy: plik `bindings` obok.
+##############################################################################
+
+##### mpd #####
+mpd_host = localhost
+mpd_port = 6600
+mpd_music_dir = ~/Music
+
+##### pliki robocze POZA repo #####
+# ~/.config/ncmpcpp to symlink do rice'a w ~/archenemy — ncmpcpp dopisuje
+# error.log i patterns.list do ncmpcpp_directory, więc ten katalog musi
+# leżeć poza repozytorium (inaczej brudne working tree).
+ncmpcpp_directory = ~/.local/share/ncmpcpp/
+lyrics_directory = ~/.local/share/ncmpcpp/lyrics/
+
+##### wizualizer (wyjście fifo z config/mpd/mpd.conf) #####
+visualizer_data_source = /tmp/mpd.fifo
+visualizer_output_name = Visualizer feed
+visualizer_in_stereo = yes
+visualizer_color = cyan, 15, 16
+
+##### kolory #####
+colors_enabled = yes
+empty_tag_color = 9
+header_window_color = cyan
+volume_color = 15
+state_line_color = 9
+state_flags_color = 15
+main_window_color = blue
+color1 = 15
+color2 = cyan
+progressbar_color = black
+progressbar_elapsed_color = cyan
+statusbar_color = blue
+statusbar_time_color = 15
+player_state_color = cyan:b
+alternative_ui_separator_color = 9
+
+##### formaty (tylko kolory; układ = domyślny ncmpcpp) #####
+song_columns_list_format = (20)[15]{a} (6f)[9]{NE} (50)[blue]{t|f:Title} (20)[cyan]{b} (7f)[9]{l}
+current_item_prefix = $(cyan)$r
+current_item_suffix = $/r$(end)
+current_item_inactive_column_prefix = $(9)$r
+current_item_inactive_column_suffix = $/r$(end)
+now_playing_prefix = $b$(15)
+now_playing_suffix = $/b$(end)
+selected_item_prefix = $(16)
+selected_item_suffix = $(end)

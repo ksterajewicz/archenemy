@@ -1,0 +1,91 @@
+##############################################################################
+#  archenemy · ncmpcpp · bindy „jak w Neovimie” (decyzja właściciela 2026-09-20)
+#  Wspólne dla wszystkich rice'ów: plik żyje w rices/white-blue/ncmpcpp/,
+#  pozostałe rice'y wskazują na niego względnym symlinkiem (jak
+#  networkmanager-dmenu). Klawisze niewymienione tu zachowują domyślne
+#  akcje ncmpcpp (ncmpcpp dokłada „brakujące” bindy po wczytaniu pliku;
+#  klawisz zdefiniowany tutaj NADPISUJE swoje domyślne akcje w całości).
+#  Domyślne akcje przeniesione z klawiszy zajętych przez ruch:
+#    show_lyrics: l → L;  jump_to_position_in_song: g → ctrl-g;
+#    jump_to_browser / jump_to_playlist_editor: G → ctrl-b;
+#    move_selected_items_down/up (+ sort order): n/m → J/K.
+##############################################################################
+
+## ruch: j/k ##
+def_key "j"
+  scroll_down
+def_key "k"
+  scroll_up
+
+## h/l: kolumny, ekran master/slave, katalogi w przeglądarce ##
+def_key "h"
+  previous_column
+def_key "h"
+  master_screen
+def_key "h"
+  jump_to_parent_directory
+
+def_key "l"
+  next_column
+def_key "l"
+  slave_screen
+def_key "l"
+  enter_directory
+def_key "l"
+  run_action
+def_key "l"
+  play_item
+
+## g/G: początek/koniec listy ##
+def_key "g"
+  move_home
+def_key "G"
+  move_end
+
+## ctrl-d / ctrl-u: pół strony (ncmpcpp ma tylko całe strony) ##
+def_key "ctrl-d"
+  page_down
+def_key "ctrl-u"
+  page_up
+
+## szukanie: / ? n N ##
+def_key "/"
+  find
+def_key "/"
+  find_item_forward
+def_key "?"
+  find
+def_key "?"
+  find_item_backward
+def_key "n"
+  next_found_item
+def_key "N"
+  previous_found_item
+
+## J/K: przesuwanie zaznaczonych pozycji (dawne n/m) ##
+def_key "J"
+  move_sort_order_down
+def_key "J"
+  move_selected_items_down
+def_key "K"
+  move_sort_order_up
+def_key "K"
+  move_selected_items_up
+
+## d: usuń (jak delete) ##
+def_key "d"
+  delete_playlist_items
+def_key "d"
+  delete_browser_items
+def_key "d"
+  delete_stored_playlist
+
+## przeniesione akcje domyślne ##
+def_key "L"
+  show_lyrics
+def_key "ctrl-g"
+  jump_to_position_in_song
+def_key "ctrl-b"
+  jump_to_browser
+def_key "ctrl-b"
+  jump_to_playlist_editor
