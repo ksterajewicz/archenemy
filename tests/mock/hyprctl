@@ -63,8 +63,21 @@ Monitor eDP-1 (ID 1):
 
 M
     ;;
-  workspaces) printf 'workspace ID 2 (2) on monitor eDP-1:\n\twindows: 1\nworkspace ID 11 (1) on monitor eDP-1:\n\twindows: 1\n' ;;
-  clients) printf 'Window aaaa -> x:\n\tworkspace: 11 (1)\nWindow bbbb -> y:\n\tworkspace: 2 (2)\n' ;;
-  activeworkspace) echo 'workspace ID 2 (2) on monitor eDP-1:' ;;
+  workspaces)
+    # MOCK_WS=stale — realny zrzut 2026-09-21: reguły były na stare nazwy,
+    # Hyprland wziął pierwsze wolne numery poza dekadami (21 na HDMI, 22 na eDP)
+    if [[ "${MOCK_WS:-}" == stale ]]; then
+      printf 'workspace ID 21 (21) on monitor HDMI-A-3:\n\twindows: 2\nworkspace ID 22 (22) on monitor eDP-1:\n\twindows: 1\n'
+    else
+      printf 'workspace ID 2 (2) on monitor eDP-1:\n\twindows: 1\nworkspace ID 11 (1) on monitor eDP-1:\n\twindows: 1\n'
+    fi ;;
+  clients)
+    if [[ "${MOCK_WS:-}" == stale ]]; then
+      printf 'Window aaaa -> brave:\n\tworkspace: 21 (21)\nWindow cccc -> alacritty:\n\tworkspace: 21 (21)\nWindow bbbb -> y:\n\tworkspace: 22 (22)\n'
+    else
+      printf 'Window aaaa -> x:\n\tworkspace: 11 (1)\nWindow bbbb -> y:\n\tworkspace: 2 (2)\n'
+    fi ;;
+  activeworkspace)
+    if [[ "${MOCK_WS:-}" == stale ]]; then echo 'workspace ID 22 (22) on monitor eDP-1:'; else echo 'workspace ID 2 (2) on monitor eDP-1:'; fi ;;
   dispatch) echo "dispatch $*" >> "${MOCK_LOG:-/dev/null}" ;;
 esac

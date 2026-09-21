@@ -77,6 +77,18 @@ cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
 check "oba podłączone (nowe nazwy) → nic nie przenosi" '[[ ! -s "$MOCK_LOG" ]]'
 : > "$MOCK_LOG"; MOCK_MONS=edp bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
 check "HDMI odpięty → okno z 11 na 1"         'grep -q "movetoworkspacesilent 1,address:0xaaaa" "$MOCK_LOG"'
+# zrzut 2026-09-21 po naprawie reguł: 21 (HDMI, dekada 11-20) i 22 (eDP, 1-10) bez reguły
+# (reguły tylko dla dwóch realnych monitorów — z DP-9 z fixture wyżej 21 byłby zwykłą sierotą)
+generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP" "HDMI-A-1"$'\t'"desc:$DESC_HDMI"
+: > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "21 bez reguły na HDMI → okna na 11"     'grep -q "movetoworkspacesilent 11,address:0xaaaa" "$MOCK_LOG" && grep -q "movetoworkspacesilent 11,address:0xcccc" "$MOCK_LOG"'
+check "22 bez reguły na eDP → okno na 2, fokus za nim" 'grep -q "movetoworkspacesilent 2,address:0xbbbb" "$MOCK_LOG" && grep -q "dispatch workspace 2$" "$MOCK_LOG"'
+check "nic nie leci do dekady cudzego monitora" '! grep -q "movetoworkspacesilent 1,address:0xaaaa" "$MOCK_LOG"'
+# monitor bez własnej dekady (reguły tylko dla panelu) → jego 21 zostaje w spokoju
+generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP"
+: > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "monitor bez dekady → jego workspace nietknięty" '! grep -q "address:0xaaaa" "$MOCK_LOG" && grep -q "movetoworkspacesilent 2,address:0xbbbb" "$MOCK_LOG"'
+cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
 
 echo "== workspace-mode-switch.sh"
 MOCK_MONS=both bash "$A/scripts/hypr/workspace-mode-switch.sh" shared >/dev/null 2>&1 </dev/null
