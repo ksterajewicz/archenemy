@@ -9,8 +9,14 @@
  *      linią bazową ich przygaszone, ściśnięte odbicie (jak na szkle CRT),
  *   2. kreska szczytu (peak hold) nad każdym słupkiem: wysokość trzyma cząstka
  *      w bars.update.glsl i stempluje ją do akumulatora w środkowej
- *      kolumnie słupka — tu czytamy ten jeden teksel i rysujemy kreskę na
- *      całą szerokość; gasnący ślad w akumulatorze daje poświatę fosforu,
+ *      kolumnie słupka — tu czytamy PASMO trzech kolumn (xc-1..xc+1) i
+ *      rysujemy kreskę na całą szerokość; gasnący ślad daje poświatę fosforu.
+ *      Trzy kolumny, nie jedna: punkt GL_POINTS o rozmiarze 1 celowany w
+ *      środek piksela xc ląduje po rasteryzacji o piksel obok, gdy błąd
+ *      float przy NDC > 0 (prawa połowa ekranu) przesunie go pod xc — stąd
+ *      „kreski tylko na lewej połowie" (zmierzone offscreen 2026-09-21:
+ *      lewa połowa 937 stempli w xc, prawa 15 w xc i wszystkie w xc-1).
+ *      Iskry omijają całe pasmo (patrz .update.glsl), więc nie udają kreski,
  *   3. iskry z akumulatora (reszta cząstek) — lecą znad końcówek w górę,
  *   4. linia bazowa: na uderzeniu (audio_beat) rozbłyska w akcencie,
  *   5. wysokie → iskrzenie rastra (przesunięcie macierzy Bayera, jak w
@@ -123,9 +129,9 @@ void main() {
     /* wędrujący błysk: powoli przesuwa się po słupkach (w ciszy jedyny ruch prócz migotania) */
     float glint = exp(-pow((float(i) - (32.0 + 30.0 * sin(time * GLINT_W))) / 2.5, 2.0));
 
-    /* iskry z akumulatora (poza kolumną szczytu) */
+    /* iskry z akumulatora (poza pasmem szczytu xc-1..xc+1) */
     float a_self = texelFetch(accum, ivec2(px), 0).r;
-    if (px.x != xc && a_self > 0.0) {
+    if (abs(px.x - xc) > 1 && a_self > 0.0) {
         float fs = tone(a_self);
         if (fs > f) { f = fs; accent = fs >= ACC_FROM * LEVEL; }
     }
@@ -145,9 +151,12 @@ void main() {
             float d = (-yb - 2.0) / REFL_K;                     /* „wysokość” w odbiciu */
             if (d < h) f = max(f, LEVEL * (REFL_LVL + 0.2 * glint) * (1.0 - 0.6 * d / max(h, 1.0)));
         }
-        /* 2. kreska szczytu: teksel akumulatora w środkowej kolumnie, tym wierszu */
+        /* 2. kreska szczytu: pasmo trzech kolumn wokół środka, ten wiersz —
+         *    maksimum, bo stempel może wylądować o piksel obok (nagłówek) */
         if (yb >= h + MARK_GAP - 0.5) {
-            float a_m = texelFetch(accum, ivec2(xc, px.y), 0).r;
+            float a_m = max(max(texelFetch(accum, ivec2(xc - 1, px.y), 0).r,
+                                texelFetch(accum, ivec2(xc,     px.y), 0).r),
+                                texelFetch(accum, ivec2(xc + 1, px.y), 0).r);
             if (a_m >= 0.5 * MARK_INC) {                        /* świeży stempel lub trzymany szczyt */
                 f = LEVEL * clamp(0.75 + tone(a_m), 0.0, 1.0);
                 accent = true;

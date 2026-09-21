@@ -12,7 +12,9 @@
  *     gaśnie z `life`, więc po kresce zostaje krótka poświata jak na fosforze.
  *   - id 64..   — iskry: rodzą się na końcówce słupka, lecą pionowo w górę i
  *     gasną; częściej, gdy pasmo gra głośno, przy wysokich i na uderzeniu.
- *     Nigdy nie wchodzą w środkową kolumnę słupka (tam mieszka szczyt).
+ *     Nigdy nie wchodzą w PASMO środkowe słupka (xc-1..xc+1 — tam mieszka
+ *     szczyt; .frag czyta trzy kolumny, bo rasteryzacja punktu potrafi
+ *     przesunąć stempel o piksel — patrz nagłówek bars.frag).
  * W ciszy: szczyty leżą na wysokości bazowej, iskier prawie nie ma (rzadkie,
  * wolne żarzenie znad linii bazowej — obraz żyje, ale nie krzyczy).
  *
@@ -95,8 +97,12 @@ void main() {
         float sw   = resolution.x / float(BARS);
         int   xc   = bar_center(i);
         int   halfw = max(int(sw * 0.35), 1);
-        int   off  = int(h2(idx.x, idx.y, seed + int(g) * 13) * float(2 * halfw - 1)) - halfw + 1;   /* -halfw+1..halfw-1 */
-        if (off >= 0) off += 1;                                   /* nigdy kolumna środkowa */
+        if (halfw < 4) { o = vec4(-1.0, -1.0, 0.0, gen); return; }   /* za wąski słupek na iskry poza pasmem */
+        /* off ∈ [-(halfw-1)..-3] ∪ [3..halfw-1] — nigdy pasmo xc-1..xc+1 ani
+         * kolumny tuż obok niego (rasteryzacja może przesunąć iskrę o piksel) */
+        int   k    = int(h2(idx.x, idx.y, seed + int(g) * 13) * float(2 * (halfw - 3)));
+        int   off  = k - (halfw - 3);
+        if (off >= 0) off += 3; else off -= 2;
         float h    = BAR_BASE + lvl * BAR_MAX * resolution.y;
         float px   = (float(xc + off) + 0.5) / resolution.x;
         float py   = (y_base + h + 1.0) / resolution.y;

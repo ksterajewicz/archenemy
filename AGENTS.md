@@ -92,6 +92,13 @@ Rules that follow directly from the table:
   a drift must become **one visible notification with the fix**, not a
   silent fallback: extend `scripts/hypr/machine-layer-check.sh` when you
   add a generated file or a new kind of selector.
+- **flux-wall: never read the accumulator at exactly one computed column.**
+  A particle stamp (`GL_POINTS`, size 1) aimed at pixel centre `xc` lands at
+  `xc-1` on the right half of the screen (float error at NDC > 0 — measured
+  offscreen 2026-09-21: left half 937 stamps in `xc`, right half all in
+  `xc-1`). Read a band (`xc-1..xc+1`) and keep other stamps out of
+  `xc±2`; `bash tests/flux-wall-bars.sh` (after `make -C src/flux-wall
+  tools`) renders both monitor sizes and checks both halves.
 - **Machine generators are a single source of truth**:
   `scripts/hypr/lib/gen-workspaces.sh` and `gen-autostart.sh` are called
   from both `install.sh` and the live switchers (`workspace-mode-switch.sh`).

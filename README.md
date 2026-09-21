@@ -195,6 +195,8 @@ archenemy/
 ├── tests/                            # machine-layer.sh — regression tests on a fake hyprctl (tests/mock/)
 │                                     #   replaying the real 2026-09-21 dump: generators, guard, mode switch,
 │                                     #   self-check, installer step [3]. `bash tests/machine-layer.sh`.
+│                                     #   flux-wall-bars.sh — offscreen render of `bars` at both monitor sizes,
+│                                     #   peak marks must land on BOTH halves (needs `make -C src/flux-wall tools`).
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.
@@ -251,6 +253,8 @@ scripts/wallpapers/flux-wall.sh start -f 30          # start per the rules, extr
 scripts/wallpapers/flux-wall.sh stop | status
 scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump: repo HEAD, binary (stale? knows the audio_wave contract?), shaders, choice, process, log — paste it when "animations don't work"
 ```
+
+**Pixel-exact accumulator reads.** A particle stamp is a `GL_POINTS` point of size 1 aimed at a pixel centre; after the viewport transform it can land one pixel off (measured with llvmpipe: everywhere right of the screen centre, i.e. NDC > 0, it lands at `x-1`). A shader that reads the accumulator at a *computed* column therefore has to read a small band (`bars` reads `xc-1..xc+1` and keeps its sparks out of `xc±2`) — reading exactly one column gave "peak marks only on the left half of the screen" (2026-09-21). `tests/flux-wall-bars.sh` guards this. Reads at the fragment's own pixel are unaffected.
 
 Directly: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fps] [-o monitor-name] [-l bottom|background] [--once] [-v]`. Exit codes: 1 arguments/file, 2 no Wayland or layer-shell, 3 EGL/shader error. Pure-function tests (palette, battery): `make -C src/flux-wall test`.
 
