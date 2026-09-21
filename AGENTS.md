@@ -81,6 +81,17 @@ Rules that follow directly from the table:
   anything that writes a monitor into a generated file or talks to
   `hyprctl`/`hyprpaper` about a specific output; a raw `MONITOR=` value is
   only good for "is this the built-in panel" and for file names.
+- **Integrity rule for the machine layer (public project — other
+  people's machines).** A generated file describes the machine *on the day
+  of installation*, and Hyprland never complains when reality drifts — it
+  silently falls back. So: (1) every identifier written into a generated
+  file must be stable across reboots (`desc:` from EDID, not a connector
+  name), (2) every new mechanism must degrade to the previous behaviour on
+  the edge cases — missing EDID, duplicate descriptions, special
+  characters, `.dat` files from an older version — never below it, and (3)
+  a drift must become **one visible notification with the fix**, not a
+  silent fallback: extend `scripts/hypr/machine-layer-check.sh` when you
+  add a generated file or a new kind of selector.
 - **Machine generators are a single source of truth**:
   `scripts/hypr/lib/gen-workspaces.sh` and `gen-autostart.sh` are called
   from both `install.sh` and the live switchers (`workspace-mode-switch.sh`).
@@ -159,7 +170,15 @@ There's no pipeline. Verification has three levels:
    files, check via `lua5.4`/`loadfile` (if available in your environment).
 2. **Logic on a dummy** — symlinking/generation can be tested against a
    fake `~/.config` tree in a temp directory, without touching the real
-   system.
+   system. The machine layer has a ready-made suite: `bash
+   tests/machine-layer.sh` runs the generators, the orphan guard, the mode
+   switcher, the self-check and installer step [3] against a fake
+   `hyprctl` (`tests/mock/hyprctl`, replaying a real dump). **Run it after
+   any change to `install.sh` [3]–[8b], `scripts/hypr/`, or
+   `rofi_wallpaper_switcher.sh`, and extend it when you add a consumer of
+   `data/monitors/*.dat`** — the mock has three scenarios (renamed
+   connectors, external monitor unplugged, two identical monitors) and a
+   new consumer needs all three.
 3. **The real test** — `install.sh` and rice switching (`Super+T`) need a
    live Arch + Hyprland machine. If you don't have one, **say so
    explicitly** and write out exact "live-only" steps for a human to check
@@ -169,8 +188,9 @@ There's no pipeline. Verification has three levels:
 
 A task isn't done until:
 
-- touched scripts pass `bash -n` (logic verified on a dummy where
-  possible);
+- touched scripts pass `bash -n` and `shellcheck -x` (logic verified on a
+  dummy where possible; `bash tests/machine-layer.sh` green when the
+  machine layer was touched);
 - things testable only on a live machine are named explicitly as
   "live-only", with concrete steps to check;
 - `README.md` is updated (file tree and descriptions match reality);

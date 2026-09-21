@@ -13,21 +13,42 @@
 #   spada na regułę fallback (preferred/auto), a jego dekada workspace'ów
 #   staje się sierotą (Hyprland tworzy 21, 22…).
 #
-#   Rozwiązanie: selektor "desc:<opis>" — opis (producent + model + numer
-#   seryjny) pochodzi z EDID i nie zmienia się z gniazdem. Dopasowanie po
-#   prefiksie ("desc:"+opis zaczyna się od selektora) — tak samo robią
-#   Hyprland (Monitor.cpp matchesStaticSelector), hyprpaper
-#   (WallpaperMatcher.cpp) i hyprlock (Renderer.cpp).
+#   Rozwiązanie: selektor "desc:<producent model seria>" — z EDID, nie zmienia
+#   się z gniazdem. Składamy go z pól make/model/serial (to „krótki opis”
+#   Hyprlanda), NIE z linii description: — ta bywa dłuższa (backend potrafi
+#   doklejać sufiks z nazwą złącza w nawiasie), a krótka forma jest jej
+#   prefiksem. Dopasowanie po prefiksie ("desc:"+opis zaczyna się od
+#   selektora) robią tak samo Hyprland (Monitor.cpp matchesStaticSelector:
+#   pełny ALBO krótki opis), hyprpaper (WallpaperMatcher.cpp) i hyprlock
+#   (Renderer.cpp).
+#   INTEGRALNOŚĆ (projekt publiczny — cudze maszyny): desc: wchodzi TYLKO gdy
+#   opis jest niepusty, bez znaków specjalnych (monitor_desc_usable) i
+#   UNIKALNY wśród wykrytych monitorów (install.sh [3]: dwa identyczne
+#   monitory bez numeru seryjnego → oba zostają przy nazwie złącza, bo
+#   selektor po prefiksie trafiłby w oba). Każdy przypadek brzegowy = dawne
+#   zachowanie, nigdy gorsze.
 #   install.sh [3] zapisuje DESCRIPTION= do data/monitors/<nazwa>.dat; gdy
 #   opisu brak (stare .dat sprzed 2026-09-21, pusty EDID) selektorem zostaje
 #   nazwa złącza — dokładnie dawne zachowanie.
 # =============================================
 
+# Czy opis nadaje się na selektor: niepusty, bez znaków, które rozerwałyby
+# Lua/hyprlang/wallpaper.dat/regex guarda (cudzysłów, backslash, '#', '=',
+# znaki sterujące). Przecinki Hyprland sam usuwa z opisu (Monitor.cpp).
+# Nie nadaje się → wołający zostaje przy nazwie złącza (dawne zachowanie).
+monitor_desc_usable() {
+    local d="$1"
+    [[ -n "$d" ]] || return 1
+    [[ "$d" == *[\"\\#=]* ]] && return 1
+    [[ "$d" == *[[:cntrl:]]* ]] && return 1
+    return 0
+}
+
 # Selektor monitora z pliku .dat: "desc:<opis>" albo nazwa złącza.
 monitor_selector_from_dat() {
     local dat="$1" desc name
     desc=$(grep -m1 '^DESCRIPTION=' "$dat" 2>/dev/null | cut -d= -f2-)
-    if [[ -n "$desc" ]]; then
+    if monitor_desc_usable "$desc"; then
         printf 'desc:%s\n' "$desc"
     else
         name=$(grep -m1 '^MONITOR=' "$dat" 2>/dev/null | cut -d= -f2-)

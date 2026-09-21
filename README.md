@@ -152,6 +152,9 @@ archenemy/
 │   │                                 #   lib/monitor-id.sh — monitor identity for the machine layer:
 │   │                                 #   "desc:<EDID description>" selectors instead of connector
 │   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots).
+│   │                                 #   machine-layer-check.sh — read-only self-check at session start:
+│   │                                 #   one notification when the generated files no longer match the
+│   │                                 #   connected monitors (instead of Hyprland's silent fallback).
 │   ├── rofi/                         # Rofi menus: rices, wallpapers, network (with rescan), power.
 │   ├── wallpapers/                   # Mathematical wallpaper generators (pure Python, zero dependencies):
 │   │                                 #   Arch logo (gen_arch_wallpaper.py), Tron grid
@@ -189,6 +192,9 @@ archenemy/
 │                                     #   from L/R), spectrogram (plain scrolling spectrogram, dB scale);
 │                                     #   candidates 2026-09-17: bars, waterfall, rings, radar, tunnel.
 │                                     #   Built by install.sh [9.6]; build/ outside git.
+├── tests/                            # machine-layer.sh — regression tests on a fake hyprctl (tests/mock/)
+│                                     #   replaying the real 2026-09-21 dump: generators, guard, mode switch,
+│                                     #   self-check, installer step [3]. `bash tests/machine-layer.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.
@@ -345,6 +351,8 @@ frozen — bugfixes only).
 At install time monitors get **numbers 1, 2, 3… counted left to right** (the installer proposes an order based on screen positions; you can correct it) and you pick one of two modes:
 
 **Monitor identity.** Connector names (`eDP-2`, `HDMI-A-1`) are **not stable** — after a reboot or a replug Hyprland may hand the very same screens `eDP-1` and `HDMI-A-3`. Since 2026-09-21 the machine layer therefore targets monitors by their EDID description (`desc:<make model serial>`, saved as `DESCRIPTION=` in `data/monitors/<name>.dat` by step [3]): `monitorshyprl.lua`, `workspaces-monitors.lua`, `hyprpaper.conf` and the orphan guard all use that selector, which Hyprland, hyprpaper and hyprlock match by prefix. The connector name is still stored (it decides which monitor is the built-in panel, and it names the generated `dither-flux` files). `.dat` files from before that date have no description — re-run `install.sh` once after pulling, otherwise the rules keep targeting the old connector names and, after a rename, both monitors fall back to `preferred`/`auto` and all workspaces end up orphaned (the bar shows `21`, `22`…).
+
+The `desc:` selector is used **only when it is safe**: the description must be non-empty, free of characters that would break Lua/hyprlang (`"`, `\`, `#`, `=`), and **unique among the detected monitors** — two identical monitors without a serial number would both match the same prefix, so in that case (and for virtual/headless outputs without EDID) the installer keeps connector names for them and says so. Every edge case therefore degrades to the pre-2026-09-21 behaviour, never below it. At session start `scripts/hypr/machine-layer-check.sh` (read-only, started from the shared `workspaces.lua`) verifies that the generated files still match the connected monitors and shows a single notification with the fix (`re-run install.sh`) when they don't — an unplugged external monitor is not an alarm, only a state where nothing matches anything is.
 
 - **`shared`** — 10 workspaces (1-10) shared across all monitors. Monitor number k has workspace k as its "home" (that's where it opens on startup), but `Super + 1..0` works globally — you summon a workspace onto whichever screen you're on. Resilient to unplugging a monitor: each workspace always exists exactly once, so nothing gets duplicated.
 - **`decades`** — each monitor has **its own** workspaces numbered 1 to 10 (isolated decades). The bar shows only the focused monitor's workspaces, and `Super + 1..0` works within the focused monitor. External monitors' decades follow the left→right numbering; exception: the laptop's built-in panel (eDP/LVDS/DSI) always keeps the first decade — it's the only screen guaranteed to exist, otherwise working without an external monitor would create orphaned workspaces (a double "1" on the bar). When a monitor is unplugged, a guard daemon merges its workspaces (windows from workspace N land on N); when it's replugged, the monitor gets its own back.

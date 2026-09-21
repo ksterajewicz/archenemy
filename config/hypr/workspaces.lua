@@ -15,4 +15,9 @@
 -- hl.exec_cmd odpala asynchronicznie (dawne exec-once, bez & disown).
 hl.on("hyprland.start", function()
     hl.exec_cmd("~/archenemy/scripts/hypr/workspace-orphan-guard.sh")
+    -- Samokontrola warstwy maszynowej (tylko odczyt): gdy reguły monitorów/
+    -- workspace'ów z dnia instalacji nie pasują do podłączonych monitorów
+    -- (np. zmiana nazw złączy po restarcie — 2026-09-21), Hyprland stosuje
+    -- cichy fallback; skrypt zamienia go w jedno powiadomienie z instrukcją.
+    hl.exec_cmd("sleep 3; ~/archenemy/scripts/hypr/machine-layer-check.sh --quiet")
 end)

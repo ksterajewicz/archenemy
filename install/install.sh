@@ -96,6 +96,7 @@ declare -A CUR_SCALE
 # przepięciu i rozjeżdżała reguły warstwy maszynowej (live 2026-09-21).
 # Generatory [8a]/[8b] i tapety celują w "desc:<opis>" — lib/monitor-id.sh.
 declare -A CUR_DESC
+declare -A CUR_MAKE CUR_MODEL CUR_SERIAL
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
 
 cur_mon=""
@@ -111,8 +112,12 @@ while IFS= read -r line; do
         CUR_POS[$cur_mon]="${BASH_REMATCH[5]}"
     elif [[ -n "$cur_mon" && "$line" =~ scale:[[:space:]]*([0-9]+(\.[0-9]+)?) ]]; then
         CUR_SCALE[$cur_mon]="${BASH_REMATCH[1]}"
-    elif [[ -n "$cur_mon" && "$line" =~ ^[[:space:]]*description:[[:space:]]*(.*)$ ]]; then
-        CUR_DESC[$cur_mon]="${BASH_REMATCH[1]}"
+    elif [[ -n "$cur_mon" && "$line" =~ ^[[:space:]]*make:[[:space:]]*(.*)$ ]]; then
+        CUR_MAKE[$cur_mon]="${BASH_REMATCH[1]}"
+    elif [[ -n "$cur_mon" && "$line" =~ ^[[:space:]]*model:[[:space:]]*(.*)$ ]]; then
+        CUR_MODEL[$cur_mon]="${BASH_REMATCH[1]}"
+    elif [[ -n "$cur_mon" && "$line" =~ ^[[:space:]]*serial:[[:space:]]*(.*)$ ]]; then
+        CUR_SERIAL[$cur_mon]="${BASH_REMATCH[1]}"
     fi
 done < <(hyprctl monitors)
 
@@ -120,6 +125,28 @@ if [[ ${#MONITOR_NAMES[@]} -eq 0 ]]; then
     echo -e "${RED}No monitors detected. Make sure Hyprland is running.${NC}"
     exit 1
 fi
+
+# Opis = "make model serial" (krótki opis Hyprlanda, prefiks pełnego), bez
+# przecinków (Hyprland je usuwa). Do selektora desc: trafia TYLKO opis
+# użyteczny (monitor_desc_usable) i UNIKALNY: gdy opis jednego monitora jest
+# prefiksem opisu innego (identyczne modele bez numeru seryjnego), dopasowanie
+# po prefiksie objęłoby oba — wtedy oba zostają przy nazwie złącza.
+for mon in "${MONITOR_NAMES[@]}"; do
+    d="${CUR_MAKE[$mon]:-} ${CUR_MODEL[$mon]:-} ${CUR_SERIAL[$mon]:-}"
+    d="${d//,/}"
+    d="$(echo "$d" | tr -s ' ' | sed 's/^ //; s/ $//')"
+    monitor_desc_usable "$d" && CUR_DESC[$mon]="$d" || CUR_DESC[$mon]=""
+done
+for mon in "${MONITOR_NAMES[@]}"; do
+    [[ -n "${CUR_DESC[$mon]}" ]] || continue
+    for other in "${MONITOR_NAMES[@]}"; do
+        [[ "$other" == "$mon" || -z "${CUR_DESC[$other]:-}" ]] && continue
+        if [[ "${CUR_DESC[$other]}" == "${CUR_DESC[$mon]}"* || "${CUR_DESC[$mon]}" == "${CUR_DESC[$other]}"* ]]; then
+            echo -e "  ${YELLOW}⚠ $mon i $other mają nierozróżnialny opis EDID: ${CUR_DESC[$mon]} — reguły dostaną nazwy złączy.${NC}"
+            CUR_DESC[$mon]=""; CUR_DESC[$other]=""
+        fi
+    done
+done
 
 echo -e "  ${GREEN}Detected monitors:${NC}"
 for i in "${!MONITOR_NAMES[@]}"; do

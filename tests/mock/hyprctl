@@ -1,0 +1,70 @@
+#!/bin/bash
+# Atrapa hyprctl do tests/machine-layer.sh.
+# MOCK_MONS = both (eDP-1 + HDMI-A-3 — realny zrzut 2026-09-21, nazwy złączy
+#             zmienione względem eDP-2/HDMI-A-1 z dnia instalacji)
+#           | edp   (tylko panel — HDMI odpięty)
+#           | twins (dwa identyczne monitory bez numeru seryjnego)
+# Formaty tekstowe wg src/debug/HyprCtl.cpp v0.56.2. dispatch → $MOCK_LOG.
+case "$1" in
+  monitors)
+    if [[ "${MOCK_MONS:-both}" == twins ]]; then
+cat <<'M'
+Monitor DP-1 (ID 0):
+	1920x1080@60.00000 at 0x0
+	description: Acme Twin 24
+	make: Acme
+	model: Twin 24
+	serial: 
+	active workspace: 1 (1)
+	scale: 1.00
+	focused: yes
+	disabled: false
+
+Monitor DP-2 (ID 1):
+	1920x1080@60.00000 at 1920x0
+	description: Acme Twin 24
+	make: Acme
+	model: Twin 24
+	serial: 
+	active workspace: 2 (2)
+	scale: 1.00
+	focused: no
+	disabled: false
+
+M
+      exit 0
+    fi
+    if [[ "${MOCK_MONS:-both}" == both ]]; then
+cat <<'M'
+Monitor HDMI-A-3 (ID 0):
+	1920x1080@144.00000 at 1925x123
+	description: Microstep MSI G241 0x00000603
+	make: Microstep
+	model: MSI G241
+	serial: 0x00000603
+	active workspace: 11 (1)
+	scale: 1.00
+	focused: no
+	disabled: false
+
+M
+    fi
+cat <<'M'
+Monitor eDP-1 (ID 1):
+	2560x1600@240.00000 at 0x0
+	description: Thermotrex Corporation TL160ADMP03-0
+	make: Thermotrex Corporation
+	model: TL160ADMP03-0
+	serial: 
+	active workspace: 2 (2)
+	scale: 1.33
+	focused: yes
+	disabled: false
+
+M
+    ;;
+  workspaces) printf 'workspace ID 2 (2) on monitor eDP-1:\n\twindows: 1\nworkspace ID 11 (1) on monitor eDP-1:\n\twindows: 1\n' ;;
+  clients) printf 'Window aaaa -> x:\n\tworkspace: 11 (1)\nWindow bbbb -> y:\n\tworkspace: 2 (2)\n' ;;
+  activeworkspace) echo 'workspace ID 2 (2) on monitor eDP-1:' ;;
+  dispatch) echo "dispatch $*" >> "${MOCK_LOG:-/dev/null}" ;;
+esac

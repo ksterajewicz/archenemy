@@ -280,14 +280,17 @@ apply_hyprlock_background() {
 apply_ipc() {
     local mon ok=1 err_log="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
     : > "$err_log"
-    local live
+    local live applied=0
     for mon in "${!STATE[@]}"; do
         # selektor desc: → nazwa złącza TERAZ; odpięty monitor pomijamy
         # (hyprpaper.conf i tak trzyma jego wpis na następne podpięcie)
         live=$(monitor_live_name "$mon")
         [[ -n "$live" ]] || continue
+        applied=1
         timeout 3 hyprctl hyprpaper wallpaper "$live, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 || ok=0
     done
+    # Nic nie poszło (hyprctl milczy / żaden monitor nie pasuje) — to nie sukces.
+    [[ "$applied" -eq 1 ]] || ok=0
     [[ "$ok" -eq 1 ]] && return 0
 
     pkill -x hyprpaper 2>/dev/null
