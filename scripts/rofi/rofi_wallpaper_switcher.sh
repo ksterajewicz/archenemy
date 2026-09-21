@@ -78,13 +78,20 @@ ANIM_OFF="${ANIM_PREFIX}off"
 
 # ─── RESOLVE MONITORS FROM data/monitors/*.dat ───────────────────────────────
 
+# Monitory jako SELEKTORY ("desc:<opis EDID>" z lib/monitor-id.sh, albo nazwa
+# złącza dla starych .dat) — nazwa złącza zmienia się po restarcie
+# (eDP-2 → eDP-1), a hyprpaper.conf i hyprlock rozumieją desc: tak samo jak
+# Hyprland. Do IPC hyprpapera idzie ŻYWA nazwa (monitor_live_name).
+# shellcheck source=scripts/hypr/lib/monitor-id.sh
+source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+
 MONITOR1=""   # primary  -> dostaje v1
 MONITOR2=""   # secondary -> dostaje v2
 
 if [[ -d "$DATA_DIR/monitors" ]]; then
     for dat in "$DATA_DIR/monitors"/*.dat; do
         [[ -f "$dat" ]] || continue
-        mon=$(grep '^MONITOR='  "$dat" | cut -d= -f2)
+        mon=$(monitor_selector_from_dat "$dat")
         role=$(grep '^ROLE='    "$dat" | cut -d= -f2)
         if [[ "$role" == "primary" && -z "$MONITOR1" ]]; then
             MONITOR1="$mon"
@@ -119,11 +126,15 @@ fi
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-# Monitor z fokusem (fallback: primary, gdy hyprctl nie odpowie).
+# Monitor z fokusem jako SELEKTOR (klucz STATE); fallback: primary, gdy
+# hyprctl nie odpowie albo fokus stoi na monitorze spoza data/monitors.
 focused_monitor() {
-    local m
+    local m sel
     m=$(hyprctl monitors 2>/dev/null | awk '/^Monitor/{m=$2} /focused: yes/{print m; exit}')
-    echo "${m:-$MONITOR1}"
+    for sel in "$MONITOR1" "$MONITOR2"; do
+        [[ -n "$sel" && -n "$m" && "$(monitor_live_name "$sel")" == "$m" ]] && { echo "$sel"; return; }
+    done
+    echo "$MONITOR1"
 }
 
 declare -A STATE   # monitor -> ścieżka tapety
@@ -132,7 +143,14 @@ declare -A STATE   # monitor -> ścieżka tapety
 load_state() {
     [[ -f "$WALLPAPER_DAT" ]] || return 0
     while IFS='=' read -r mon path; do
-        [[ -n "$mon" && -n "$path" ]] && STATE[$mon]="$path"
+        [[ -n "$mon" && -n "$path" ]] || continue
+        # Klucz sprzed selektorów desc: (goła nazwa złącza) — trzymaj tylko,
+        # gdy to nie jest po prostu stara nazwa monitora znanego dziś z .dat
+        # (inaczej hyprpaper.conf rósłby o martwe bloki po każdej zmianie nazwy).
+        if [[ "$mon" != desc:* && "$mon" != "$MONITOR1" && "$mon" != "$MONITOR2" ]]; then
+            [[ -n "$(monitor_live_name "$mon")" ]] || continue
+        fi
+        STATE[$mon]="$path"
     done < "$WALLPAPER_DAT"
 }
 
@@ -262,8 +280,13 @@ apply_hyprlock_background() {
 apply_ipc() {
     local mon ok=1 err_log="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
     : > "$err_log"
+    local live
     for mon in "${!STATE[@]}"; do
-        timeout 3 hyprctl hyprpaper wallpaper "$mon, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 || ok=0
+        # selektor desc: → nazwa złącza TERAZ; odpięty monitor pomijamy
+        # (hyprpaper.conf i tak trzyma jego wpis na następne podpięcie)
+        live=$(monitor_live_name "$mon")
+        [[ -n "$live" ]] || continue
+        timeout 3 hyprctl hyprpaper wallpaper "$live, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 || ok=0
     done
     [[ "$ok" -eq 1 ]] && return 0
 

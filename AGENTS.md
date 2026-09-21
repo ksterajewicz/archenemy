@@ -72,6 +72,15 @@ Rules that follow directly from the table:
   name). ALL the logic lives in `scripts/changing-theme-scripts/lib/switch-rice.sh`
   — edit the library, never paste logic back into a stub (that's how
   copy-paste parity drift happens).
+- **Monitors are identified by `desc:<EDID description>`, never by connector
+  name.** `eDP-2`/`HDMI-A-1` became `eDP-1`/`HDMI-A-3` after a reboot on the
+  owner's laptop (2026-09-21) and every rule of the machine layer stopped
+  matching. `scripts/hypr/lib/monitor-id.sh` (`monitor_selector_from_dat`,
+  `monitor_live_name`, `lua_string`) is the only place that turns a
+  `data/monitors/*.dat` into a selector or a live connector name — use it in
+  anything that writes a monitor into a generated file or talks to
+  `hyprctl`/`hyprpaper` about a specific output; a raw `MONITOR=` value is
+  only good for "is this the built-in panel" and for file names.
 - **Machine generators are a single source of truth**:
   `scripts/hypr/lib/gen-workspaces.sh` and `gen-autostart.sh` are called
   from both `install.sh` and the live switchers (`workspace-mode-switch.sh`).

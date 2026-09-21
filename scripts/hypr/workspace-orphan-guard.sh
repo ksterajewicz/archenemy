@@ -35,6 +35,20 @@ set -uo pipefail
 WS_MON_CONF="$HOME/archenemy/config/hypr/workspaces-monitors.lua"
 WS_MODE_DAT="$HOME/archenemy/data/workspace-mode.dat"
 
+# Reguły celują w selektor "desc:<opis>" (albo nazwę złącza w starych
+# generacjach) — dopasowanie jak w Hyprlandzie: nazwa równa albo
+# "desc:"+opis zaczyna się od selektora. Patrz lib/monitor-id.sh.
+selector_is_connected() {
+    local sel="$1" d
+    if [[ "$sel" == desc:* ]]; then
+        for d in "${connected_desc[@]}"; do
+            [[ "desc:$d" == "$sel"* ]] && return 0
+        done
+        return 1
+    fi
+    [[ -n "${connected[$sel]:-}" ]]
+}
+
 # Tryb shared (globalne workspace'y 1-10): dekady-sieroty nie istnieją,
 # demon jest zbędny. Sprawdzane też w merge_orphans, żeby żywy demon
 # z poprzedniej sesji stał się bezczynny po zmianie trybu bez re-loginu.
@@ -47,11 +61,22 @@ merge_orphans() {
     [[ -f "$WS_MON_CONF" ]] || return 0
 
     # Podłączone (aktywne) monitory — hyprctl monitors pomija wyłączone.
+    # Nazwy i opisy (EDID) — reguły mogą celować w jedno albo drugie.
     local -A connected=()
-    local name
-    while IFS= read -r name; do
-        [[ -n "$name" ]] && connected["$name"]=1
-    done < <(hyprctl monitors 2>/dev/null | sed -n 's/^Monitor \(\S\+\) (ID [0-9]\+):$/\1/p')
+    local -a connected_desc=()
+    local name line
+    while IFS= read -r line; do
+        case "$line" in
+            'Monitor '*)
+                name="${line#Monitor }"
+                name="${name%% *}"
+                [[ -n "$name" ]] && connected["$name"]=1
+                ;;
+            *'description: '*)
+                connected_desc+=("${line#*description: }")
+                ;;
+        esac
+    done < <(hyprctl monitors 2>/dev/null)
     # hyprctl nie odpowiada / zero monitorów — nie ruszaj niczego
     ((${#connected[@]})) || return 0
 
@@ -59,13 +84,13 @@ merge_orphans() {
     # → sieroty (monitor odpięty) + baza dekady pierwszego żywego monitora.
     local -a orphan_ids=()
     local min_alive="" id mon
-    while read -r id mon; do
-        if [[ -n "${connected[$mon]:-}" ]]; then
+    while IFS=$'\t' read -r id mon; do
+        if selector_is_connected "$mon"; then
             [[ -z "$min_alive" || "$id" -lt "$min_alive" ]] && min_alive=$id
         else
             orphan_ids+=("$id")
         fi
-    done < <(sed -n 's/^hl\.workspace_rule({ workspace = "\([0-9]\+\)", monitor = "\([^"]\+\)".*$/\1 \2/p' "$WS_MON_CONF")
+    done < <(sed -n 's/^hl\.workspace_rule({ workspace = "\([0-9]\+\)", monitor = "\([^"]\+\)".*$/\1\t\2/p' "$WS_MON_CONF")
     ((${#orphan_ids[@]})) || return 0
 
     local base=0

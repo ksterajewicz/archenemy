@@ -149,6 +149,9 @@ archenemy/
 │   │                                 #   generator for workspace rules/binds (shared with install.sh);
 │   │                                 #   lib/gen-autostart.sh — generator for autostart-apps.lua
 │   │                                 #   (shared with install.sh and the Super+A → [u] picker).
+│   │                                 #   lib/monitor-id.sh — monitor identity for the machine layer:
+│   │                                 #   "desc:<EDID description>" selectors instead of connector
+│   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots).
 │   ├── rofi/                         # Rofi menus: rices, wallpapers, network (with rescan), power.
 │   ├── wallpapers/                   # Mathematical wallpaper generators (pure Python, zero dependencies):
 │   │                                 #   Arch logo (gen_arch_wallpaper.py), Tron grid
@@ -340,6 +343,8 @@ frozen — bugfixes only).
 ### Workspaces — two modes to choose from
 
 At install time monitors get **numbers 1, 2, 3… counted left to right** (the installer proposes an order based on screen positions; you can correct it) and you pick one of two modes:
+
+**Monitor identity.** Connector names (`eDP-2`, `HDMI-A-1`) are **not stable** — after a reboot or a replug Hyprland may hand the very same screens `eDP-1` and `HDMI-A-3`. Since 2026-09-21 the machine layer therefore targets monitors by their EDID description (`desc:<make model serial>`, saved as `DESCRIPTION=` in `data/monitors/<name>.dat` by step [3]): `monitorshyprl.lua`, `workspaces-monitors.lua`, `hyprpaper.conf` and the orphan guard all use that selector, which Hyprland, hyprpaper and hyprlock match by prefix. The connector name is still stored (it decides which monitor is the built-in panel, and it names the generated `dither-flux` files). `.dat` files from before that date have no description — re-run `install.sh` once after pulling, otherwise the rules keep targeting the old connector names and, after a rename, both monitors fall back to `preferred`/`auto` and all workspaces end up orphaned (the bar shows `21`, `22`…).
 
 - **`shared`** — 10 workspaces (1-10) shared across all monitors. Monitor number k has workspace k as its "home" (that's where it opens on startup), but `Super + 1..0` works globally — you summon a workspace onto whichever screen you're on. Resilient to unplugging a monitor: each workspace always exists exactly once, so nothing gets duplicated.
 - **`decades`** — each monitor has **its own** workspaces numbered 1 to 10 (isolated decades). The bar shows only the focused monitor's workspaces, and `Super + 1..0` works within the focused monitor. External monitors' decades follow the left→right numbering; exception: the laptop's built-in panel (eDP/LVDS/DSI) always keeps the first decade — it's the only screen guaranteed to exist, otherwise working without an external monitor would create orphaned workspaces (a double "1" on the bar). When a monitor is unplugged, a guard daemon merges its workspaces (windows from workspace N land on N); when it's replugged, the monitor gets its own back.

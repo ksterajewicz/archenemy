@@ -58,20 +58,26 @@ if [[ ! -f "$LIB" ]]; then
 fi
 # shellcheck source=/dev/null
 source "$LIB"
+# shellcheck source=/dev/null
+source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
 
 # ─── Kolejność monitorów L->P z data/monitors/*.dat (ORDER=k) ───
-# To ten sam wkład, który install.sh podaje generatorowi. Brak plików = brak
-# wiedzy o numeracji → nie zgadujemy, każemy przejść install.sh.
+# To ten sam wkład, który install.sh podaje generatorowi: wpis
+# "<nazwa złącza><TAB><selektor desc:>" (lib/monitor-id.sh). Brak plików =
+# brak wiedzy o numeracji → nie zgadujemy, każemy przejść install.sh.
 ORDERED_LR=()
+NAMES_LR=()
 if [[ -d "$MON_DIR" ]]; then
-    while IFS= read -r mon; do
-        [[ -n "$mon" ]] && ORDERED_LR+=("$mon")
+    while IFS=$'\t' read -r mon sel; do
+        [[ -n "$mon" ]] || continue
+        ORDERED_LR+=("$mon"$'\t'"$sel")
+        NAMES_LR+=("$mon")
     done < <(
         for f in "$MON_DIR"/*.dat; do
             [[ -e "$f" ]] || continue
             ord="$(grep -m1 '^ORDER=' "$f" | cut -d= -f2)"
-            [[ -n "$ord" ]] && printf '%s\t%s\n' "$ord" "$(basename "$f" .dat)"
-        done | sort -n -s -k1,1 | cut -f2
+            [[ -n "$ord" ]] && printf '%s\t%s\t%s\n' "$ord" "$(basename "$f" .dat)" "$(monitor_selector_from_dat "$f")"
+        done | sort -n -s -k1,1 | cut -f2,3
     )
 fi
 
@@ -92,7 +98,7 @@ mv "$tmp" "$WS_CONF"
 # ─── Zapis trybu (atomowo) ───
 tmp_mode="$(mktemp "${MODE_DAT}.XXXXXX")" && printf '%s\n' "$TARGET" > "$tmp_mode" && mv "$tmp_mode" "$MODE_DAT"
 
-echo -e "  ${GREEN}✓ Workspace mode: ${CYAN}${CURRENT}${NC} → ${CYAN}${TARGET}${NC}  (${#ORDERED_LR[@]} monitors, L→R: ${ORDERED_LR[*]})"
+echo -e "  ${GREEN}✓ Workspace mode: ${CYAN}${CURRENT}${NC} → ${CYAN}${TARGET}${NC}  (${#ORDERED_LR[@]} monitors, L→R: ${NAMES_LR[*]})"
 
 # ─── Reload Hyprlanda ───
 if command -v hyprctl &>/dev/null; then
