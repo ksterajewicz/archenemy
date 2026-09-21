@@ -10,7 +10,10 @@
 #       faktycznie trzyma (hyprctl workspacerules),
 #     - monitory, workspace'y i okna (id + nazwa + monitor),
 #     - bindy Super+cyfra, błędy configu, stan guarda sierot i waybara,
-#     - linie z logu Hyprlanda o przenoszeniu workspace'ów.
+#     - nazwy/opisy monitorów TERAZ vs reguły hl.monitor z monitorshyprl.lua
+#       (nazwa złącza potrafi się zmienić między restartami),
+#     - linie z logu Hyprlanda o przenoszeniu workspace'ów i o tym, którą
+#       regułę monitora zastosowano (brak reguły / nadpisanie z wlr-output-management).
 #
 #   Użycie: workspace-diag.sh [> plik]
 #   Najlepiej: zrzut PRZED Super+T i zaraz PO — i porównać (diff).
@@ -54,6 +57,21 @@ fi
 section "hyprctl monitors"
 hyprctl monitors 2>/dev/null | grep -E '^Monitor|active workspace|focused|disabled'
 
+# Monitory: nazwa złącza (DP-1, HDMI-A-1…) potrafi się ZMIENIĆ między
+# restartami/przepięciami (dock USB-C, inne gniazdo) — a reguły hl.monitor
+# i hl.workspace_rule z warstwy maszynowej celują w nazwę z dnia instalacji.
+# Zestawienie: co widzi Hyprland teraz (z opisem, który jest stały) vs. do
+# jakich nazw strzela monitorshyprl.lua. Rozjazd = monitor spada na regułę
+# fallback (preferred/auto), a jego dekada workspace'ów staje się sierotą.
+section "monitory: nazwy i opisy TERAZ vs reguły z monitorshyprl.lua"
+hyprctl monitors all 2>/dev/null | grep -E '^Monitor|^\s*(description|make|model|serial|disabled):' | sed 's/^\s*/  /'
+MON_CONF="$ARCHENEMY_DIR/config/hypr/monitorshyprl.lua"
+if [[ -f "$MON_CONF" ]]; then
+    grep -n '^hl\.monitor' "$MON_CONF"
+else
+    echo "BRAK $MON_CONF"
+fi
+
 section "hyprctl workspaces (id / nazwa / monitor / okna)"
 hyprctl workspaces 2>/dev/null | grep -E '^workspace ID|^\s*windows:' | paste - - | sed 's/\t/  /g'
 echo "activeworkspace: $(hyprctl activeworkspace 2>/dev/null | head -n 1)"
@@ -84,7 +102,7 @@ echo "waybar procesów: $(pgrep -xc waybar)"
 section "log Hyprlanda — przenoszenie workspace'ów (ostatnie 40 linii)"
 LOG="${XDG_RUNTIME_DIR:-}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/hyprland.log"
 if [[ -f "$LOG" ]]; then
-    grep -E 'moveWorkspaceToMonitor|ensurePersistentWorkspacesPresent|ensureWorkspacesOnAssignedMonitors|Plugging gap|seen this monitor|config reload|Removed monitor|onDisconnect|Your config' "$LOG" | tail -n 40
+    grep -E 'moveWorkspaceToMonitor|ensurePersistentWorkspacesPresent|ensureWorkspacesOnAssignedMonitors|Plugging gap|seen this monitor|config reload|Removed monitor|onDisconnect|Your config|No rule found for|No rules configured|wlr_output_manager override|failed to apply rule' "$LOG" | tail -n 40
 else
     echo "BRAK $LOG"
 fi
