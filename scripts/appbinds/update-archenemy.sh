@@ -11,7 +11,13 @@
 #   plikach śledzonych przez git (np. ręcznie poprawiony rice) — te
 #   są chowane przez `git stash` przed pull i przywracane po nim, więc
 #   też nie giną.
+#
+#   Każdy krok gita idzie przez `| sed` (wcięcie wyjścia), więc bez
+#   pipefail `if !` sprawdzałby kod seda, nie gita — nieudany fetch/pull/
+#   stash pop kończył się „✓” (audyt 2026-09-23, tests/update-archenemy.sh).
 # =============================================
+
+set -o pipefail
 
 ARCHENEMY_DIR="$HOME/archenemy"
 
@@ -21,6 +27,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+pause() { read -rp "  Enter, aby wrócić..." _; }
 
 # Jeden klawisz bez Enter — spójne z appbinds.sh (Escape = anuluj).
 read_key() {
@@ -54,15 +62,29 @@ target=""
 case "$ans" in
     1) target="dev" ;;
     2) target="main" ;;
-    ""|$'\e') echo -e "  ${YELLOW}Anulowano.${NC}"; read -rp "  Enter, aby wrócić..." _; exit 0 ;;
-    *)  echo -e "  ${RED}✗ Wybierz 1 albo 2.${NC}"; read -rp "  Enter, aby wrócić..." _; exit 0 ;;
+    ""|$'\e') echo -e "  ${YELLOW}Anulowano.${NC}"; pause; exit 0 ;;
+    *)  echo -e "  ${RED}✗ Wybierz 1 albo 2.${NC}"; pause; exit 0 ;;
 esac
 
 echo ""
 echo -e "  ${CYAN}→ Pobieram zmiany z origin/${target}...${NC}"
 if ! git -C "$ARCHENEMY_DIR" fetch origin "$target" 2>&1 | sed 's/^/    /'; then
     echo -e "  ${RED}✗ Fetch nie powiódł się — sprawdź sieć / klucz SSH.${NC}"
-    read -rp "  Enter, aby wrócić..." _
+    pause
+    exit 0
+fi
+
+# Nie cofaj systemu: przełączenie na gałąź, która NIE zawiera obecnego stanu
+# (np. main dziesiątki commitów za dev, sprzed migracji configu na Lua),
+# podmieniłoby configi na starsze — linki w ~/.config wskazywałyby na
+# nieistniejące pliki, a z menu nie byłoby drogi powrotu. Ta sama gałąź
+# idzie dalej: rozjazd historii i tak zatrzyma pull --ff-only.
+if [[ "$target" != "$cur_branch" ]] \
+   && ! git -C "$ARCHENEMY_DIR" merge-base --is-ancestor HEAD "origin/$target" 2>/dev/null; then
+    missing="$(git -C "$ARCHENEMY_DIR" rev-list --count "origin/$target..HEAD" 2>/dev/null)"
+    echo -e "  ${RED}✗ Gałąź ${target} jest starsza niż to, co masz teraz: ${missing:-?} commitów Twojego obecnego stanu na niej nie ma.${NC}"
+    echo -e "  ${RED}  Przełączenie cofnęłoby konfigurację — zostaję na ${cur_branch}.${NC}"
+    pause
     exit 0
 fi
 
@@ -75,7 +97,7 @@ if [[ -n "$(git -C "$ARCHENEMY_DIR" status --porcelain --untracked-files=no)" ]]
     sans="$(read_key "  Schować je i przywrócić po aktualizacji? [Y/n]: ")"
     if [[ "$sans" =~ ^[Nn]$ ]]; then
         echo -e "  ${RED}✗ Anulowano — najpierw scommituj albo odrzuć zmiany.${NC}"
-        read -rp "  Enter, aby wrócić..." _
+        pause
         exit 0
     fi
     if git -C "$ARCHENEMY_DIR" stash push -u -m "update-archenemy.sh $(date +%FT%T)" >/dev/null; then
@@ -83,50 +105,68 @@ if [[ -n "$(git -C "$ARCHENEMY_DIR" status --porcelain --untracked-files=no)" ]]
         echo -e "  ${GREEN}✓ Lokalne zmiany schowane.${NC}"
     else
         echo -e "  ${RED}✗ Schowanie (stash) nie powiodło się — przerywam.${NC}"
-        read -rp "  Enter, aby wrócić..." _
+        pause
         exit 0
     fi
 fi
 
+# Przywrócenie schowka z RZETELNYM wynikiem: przy konflikcie git zostawia
+# wpis w `git stash list`, więc zmiany nie giną — mówimy, gdzie są.
+restore_stash() {
+    [[ $stashed -eq 1 ]] || return 0
+    echo -e "  ${CYAN}→ Przywracam Twoje lokalne zmiany...${NC}"
+    if git -C "$ARCHENEMY_DIR" stash pop 2>&1 | sed 's/^/    /'; then
+        echo -e "  ${GREEN}✓ Lokalne zmiany przywrócone.${NC}"
+    else
+        echo -e "  ${RED}✗ Nie udało się przywrócić automatycznie — zmiany leżą w schowku (git stash list); rozwiąż konflikt ręcznie.${NC}"
+    fi
+}
+
 echo -e "  ${CYAN}→ Przełączam na ${target}...${NC}"
 if ! git -C "$ARCHENEMY_DIR" checkout "$target" 2>&1 | sed 's/^/    /'; then
     echo -e "  ${RED}✗ Checkout nie powiódł się.${NC}"
-    [[ $stashed -eq 1 ]] && git -C "$ARCHENEMY_DIR" stash pop
-    read -rp "  Enter, aby wrócić..." _
+    restore_stash
+    pause
     exit 0
 fi
 
 echo -e "  ${CYAN}→ Ściągam najnowsze ${target}...${NC}"
 if ! git -C "$ARCHENEMY_DIR" pull --ff-only origin "$target" 2>&1 | sed 's/^/    /'; then
     echo -e "  ${RED}✗ Pull nie powiódł się (brak fast-forward?). Rozwiąż ręcznie przez git.${NC}"
-    if [[ $stashed -eq 1 ]]; then
-        echo -e "  ${YELLOW}Przywracam Twoje schowane zmiany...${NC}"
-        git -C "$ARCHENEMY_DIR" stash pop
-    fi
-    read -rp "  Enter, aby wrócić..." _
+    restore_stash
+    pause
     exit 0
 fi
 
-if [[ $stashed -eq 1 ]]; then
-    echo -e "  ${CYAN}→ Przywracam Twoje lokalne zmiany...${NC}"
-    if git -C "$ARCHENEMY_DIR" stash pop 2>&1 | sed 's/^/    /'; then
-        echo -e "  ${GREEN}✓ Lokalne zmiany przywrócone.${NC}"
-    else
-        echo -e "  ${RED}✗ Nie udało się przywrócić automatycznie — rozwiąż konflikt ręcznie (git stash list).${NC}"
-    fi
-fi
+restore_stash
 
-echo -e "  ${GREEN}✓ Zaktualizowano do najnowszego ${target}.${NC}"
+# Sukces = zaobserwowany stan, nie kod wyjścia: HEAD musi równać się
+# origin/<gałąź>. Lokalne commity ponad origin (pull --ff-only mówi wtedy
+# „Already up to date”) to nie błąd, ale kod ≠ repozytorium — mówimy o tym.
+head_now="$(git -C "$ARCHENEMY_DIR" rev-parse HEAD 2>/dev/null)"
+head_remote="$(git -C "$ARCHENEMY_DIR" rev-parse "origin/$target" 2>/dev/null)"
+if [[ -n "$head_now" && "$head_now" == "$head_remote" ]]; then
+    echo -e "  ${GREEN}✓ Zaktualizowano do najnowszego ${target}.${NC}"
+elif git -C "$ARCHENEMY_DIR" merge-base --is-ancestor "origin/$target" HEAD 2>/dev/null; then
+    ahead="$(git -C "$ARCHENEMY_DIR" rev-list --count "origin/$target..HEAD" 2>/dev/null)"
+    echo -e "  ${YELLOW}⚠ Masz ${ahead} lokalnych commitów ponad origin/${target} — kod różni się od repozytorium.${NC}"
+else
+    echo -e "  ${RED}✗ Po aktualizacji HEAD nie zgadza się z origin/${target} — sprawdź: git -C ~/archenemy status${NC}"
+    pause
+    exit 0
+fi
 echo ""
 echo -e "  Twoje ustawienia (bindy, autostart, rice, monitory, wolumin...) są poza"
 echo -e "  gitem — ${GREEN}zostają bez zmian${NC}."
 echo ""
 rerun="$(read_key "  Uruchomić teraz install.sh, żeby dogenerować pliki maszynowe? [Y/n]: ")"
 if [[ ! "$rerun" =~ ^[Nn]$ ]]; then
-    if [[ -x "$ARCHENEMY_DIR/install/install.sh" ]]; then
+    # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
+    # (brak bitu w indeksie gita blokował tu instalację — audyt 2026-09-23).
+    if [[ -f "$ARCHENEMY_DIR/install/install.sh" ]]; then
         bash "$ARCHENEMY_DIR/install/install.sh"
     else
-        echo -e "  ${RED}✗ Nie znaleziono install/install.sh albo brak praw wykonywania.${NC}"
-        read -rp "  Enter, aby wrócić..." _
+        echo -e "  ${RED}✗ Nie znaleziono install/install.sh.${NC}"
+        pause
     fi
 fi
