@@ -121,6 +121,27 @@ check "A: [3] składa opis z make/model/serial" '[[ "$out" == "$DESC_EDP|$DESC_H
 out=$(MOCK_MONS=twins ARCHENEMY_DIR="$REPO" DATA_DIR="$T/inst2" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash -c "source '$T/step3.sh'; echo \"[\${CUR_DESC[DP-1]}|\${CUR_DESC[DP-2]}]\"" 2>/dev/null | tail -n1)
 check "C: dwa identyczne monitory → bez desc:" '[[ "$out" == "[|]" ]]'
 
+echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
+# Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie
+# mówiło. Alarm tylko przy zmianach w katalogach przetwarzanych przez
+# install.sh; brak pliku (instalacja sprzed zmiany) = cisza.
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+git -C "$A" init -q && git -C "$A" add -A && git -C "$A" commit -qm start
+ver_msg() { MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null | grep -c "od ostatniego install.sh\|wersji ostatniej instalacji"; }
+check "brak installed-head.dat → cisza"        '[[ $(ver_msg) -eq 0 ]]'
+printf 'COMMIT=%s\nDATE=x\n' "$(git -C "$A" rev-parse HEAD)" > "$A/data/installed-head.dat"
+check "HEAD = zainstalowany → cisza"           '[[ $(ver_msg) -eq 0 ]]'
+echo doc > "$A/README.md"; git -C "$A" add README.md; git -C "$A" commit -qm doc
+check "zmiana tylko w dokumentacji → cisza"    '[[ $(ver_msg) -eq 0 ]]'
+mkdir -p "$A/scripts/nowe"; echo x > "$A/scripts/nowe/x.sh"; git -C "$A" add scripts/nowe; git -C "$A" commit -qm kod
+check "zmiana w scripts/ → ALARM"              '[[ $(ver_msg) -eq 1 ]]'
+printf 'COMMIT=%s\n' 0123456789abcdef0123456789abcdef01234567 > "$A/data/installed-head.dat"
+check "nieznany commit (przepisana historia) → ALARM" '[[ $(ver_msg) -eq 1 ]]'
+rep=$(MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null)   # całość, bez grep -q (SIGPIPE + pipefail)
+check "raport podaje obie wersje"              '[[ "$rep" == *"installed from: 0123456 · repo HEAD:"* ]]'
+
 echo ""
 echo "passed: $PASS, failed: $FAIL"
 (( FAIL == 0 ))

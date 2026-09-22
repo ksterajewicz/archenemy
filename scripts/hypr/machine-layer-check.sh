@@ -18,7 +18,9 @@
 #     2. każda reguła hl.monitor (poza fallbackiem output = "") pasuje do
 #        jakiegoś PODŁĄCZONEGO monitora (nazwa albo desc: po prefiksie),
 #     3. każdy monitor w reguły hl.workspace_rule jest podłączony,
-#     4. żaden podłączony monitor nie został bez własnej reguły hl.monitor.
+#     4. żaden podłączony monitor nie został bez własnej reguły hl.monitor,
+#     5. kod repo nie zmienił się od ostatniego install.sh w katalogach, które
+#        install.sh przetwarza (data/installed-head.dat — audyt 2026-09-23).
 #   Odpięty monitor zewnętrzny to normalna sytuacja (laptop w drodze) —
 #   dlatego 2/3 alarmują dopiero, gdy ŻADNA reguła nie pasuje do NICZEGO
 #   (to znaczy zmieniły się nazwy, a nie że czegoś chwilowo nie ma).
@@ -47,6 +49,28 @@ for f in monitorshyprl.lua workspaces-monitors.lua hardware-keys.lua gpu-env.lua
          autostartpersonalisation.lua appbinds.lua hyprpaper.conf; do
     [[ -e "$HYPR_DIR/$f" ]] || problem "brak config/hypr/$f"
 done
+
+# 5. wersja kodu a ostatni install.sh. Kod powstaje gdzie indziej, a maszyna
+#    bywa na innej wersji niż ta, z której wygenerowano warstwę maszynową
+#    (2026-09-17: laptop 10 commitów za origin, zgłoszenia dotyczyły starego
+#    kodu). install.sh zapisuje COMMIT do data/installed-head.dat; alarm tylko
+#    przy zmianach w install/ scripts/ config/ rices/ src/ packages/ —
+#    dokumentacja nie wymaga ponownej instalacji. Brak pliku (instalacja
+#    sprzed tej zmiany) albo brak gita = cisza, jak dotąd.
+INSTALLED_DAT="$ARCHENEMY_DIR/data/installed-head.dat"
+if [[ -f "$INSTALLED_DAT" ]] && git -C "$ARCHENEMY_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    inst="$(sed -n 's/^COMMIT=//p' "$INSTALLED_DAT")"
+    head="$(git -C "$ARCHENEMY_DIR" rev-parse HEAD 2>/dev/null)"
+    if [[ -n "$inst" && -n "$head" && "$inst" != "$head" ]]; then
+        if ! git -C "$ARCHENEMY_DIR" cat-file -e "${inst}^{commit}" 2>/dev/null; then
+            problem "kod repo (${head:0:7}) nie pochodzi z wersji ostatniej instalacji (${inst:0:7}) — uruchom ponownie install.sh"
+        else
+            n=$(git -C "$ARCHENEMY_DIR" diff --name-only "$inst" HEAD -- install scripts config rices src packages 2>/dev/null | wc -l)
+            (( n > 0 )) && problem "kod zaktualizowany od ostatniego install.sh (${inst:0:7} → ${head:0:7}, zmienione pliki: $n) — pliki generowane mogą być nieaktualne"
+        fi
+    fi
+    (( QUIET )) || echo "installed from: ${inst:0:7} · repo HEAD: ${head:0:7}"
+fi
 
 # Podłączone monitory: nazwy + opisy (pełny i krótki „make model serial”).
 declare -A LIVE_NAMES=()

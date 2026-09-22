@@ -1287,6 +1287,15 @@ if command -v mpd >/dev/null 2>&1 || command -v ncmpcpp >/dev/null 2>&1; then
     SUMMARY_DONE+=("Music stack (optional): mpd + mpc + ncmpcpp go together; audio output: Super+A → [o]")
 fi
 
+# Wersja kodu, z której powstała warstwa maszynowa — machine-layer-check.sh
+# porównuje ją z HEAD na starcie sesji i mówi, gdy po pullu trzeba ponownie
+# przejść install.sh (audyt 2026-09-23). data/ jest poza gitem.
+if git -C "$ARCHENEMY_DIR" rev-parse HEAD >/dev/null 2>&1; then
+    mkdir -p "$ARCHENEMY_DIR/data"
+    printf 'COMMIT=%s\nDATE=%s\n' "$(git -C "$ARCHENEMY_DIR" rev-parse HEAD)" "$(date -Iseconds)" \
+        > "$ARCHENEMY_DIR/data/installed-head.dat"
+fi
+
 echo -e "${CYAN}[11] Summary${NC}"
 if [[ ${#SUMMARY_DONE[@]} -gt 0 ]]; then
     for item in "${SUMMARY_DONE[@]}"; do
