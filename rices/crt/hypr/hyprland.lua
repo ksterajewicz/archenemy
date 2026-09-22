@@ -47,13 +47,13 @@ hl.on("hyprland.start", function()
     -- flux-wall: tapeta liczona shaderem (deklaracja w rices/crt/flux-wall.conf).
     -- Rysuje na warstwie bottom — nad hyprpaperem, pod oknami; hyprpaper zostaje
     -- pod spodem jako fallback. Brak binarki = cicho nic.
-    hl.exec_cmd("~/archenemy/scripts/wallpapers/flux-wall.sh autostart")
     hl.exec_cmd("mako")
     hl.exec_cmd("swayosd-server")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("wl-paste --type text  --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
+require(HOME .. "/archenemy/config/hypr/autostart-common.lua")
 require(HOME .. "/archenemy/config/hypr/autostartpersonalisation.lua")
 require_optional(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
 
