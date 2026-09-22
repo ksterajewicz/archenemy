@@ -8,6 +8,10 @@
 #   Użycie:
 #     rofi_wallpaper_switcher.sh              interaktywnie (menu rofi)
 #     rofi_wallpaper_switcher.sh --restore    przywróć ostatnie tapety po cichu
+#     rofi_wallpaper_switcher.sh --init CEL   install.sh [9.5]: zapisany wybór
+#                                             wskazuje istniejący plik → jak
+#                                             --restore; inaczej jak CEL. Na
+#                                             stdout: restored | initial | none
 #     rofi_wallpaper_switcher.sh CEL          bez menu: plik (ścieżka względem
 #                                             wallpapers/ albo absolutna) → wszystkie
 #                                             monitory (para v1/v2 jeśli istnieje);
@@ -427,6 +431,28 @@ MODE_LOCK=0   # ptaszek "Set as hyprlock background" — domyślnie odznaczony
 LOCK_STATE="off"
 [[ -f "$HYPRLOCK_DAT" ]] && LOCK_STATE="$(<"$HYPRLOCK_DAT")"
 [[ "$LOCK_STATE" != "off" ]] && MODE_LOCK=1
+
+if [[ "$1" == "--init" ]]; then
+    # Ponowny bieg install.sh (zalecany po każdym pullu) nie może kasować
+    # wyboru z Super+W — dawniej [9.5] zawsze ustawiał pierwszy plik z
+    # wallpapers/ (audyt 2026-09-23). Stan „żywy” = choć jeden wpis wskazuje
+    # istniejący plik; inaczej (brak .dat, skasowane pliki) — CEL jak dotąd.
+    init_target="${2:-}"
+    has_state=0
+    for m in "${!STATE[@]}"; do
+        [[ -f "${STATE[$m]}" ]] && { has_state=1; break; }
+    done
+    if (( has_state )); then
+        echo restored
+        set -- --restore
+    elif [[ -n "$init_target" ]]; then
+        echo initial
+        set -- "$init_target"
+    else
+        echo none
+        exit 0
+    fi
+fi
 
 if [[ "$1" == "--restore" ]]; then
     # Stan już wczytany (plus ewentualna migracja) — tylko odtwórz. Hyprlock

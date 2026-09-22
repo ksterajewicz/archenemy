@@ -221,6 +221,34 @@ MOCK_MONS=both bash "$SW" --restore >/dev/null 2>&1
 check "--restore: jeden wpis na monitor"      '[[ $(wc -l < "$A/data/wallpaper.dat") -eq 2 ]] && ! grep -q "^eDP-1=" "$A/data/wallpaper.dat"'
 check "--restore: ekran bez zmian"            '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
 
+echo "== G: --init (install.sh [9.5]) nie nadpisuje wyboru użytkownika"
+# Audyt 2026-09-23: każdy ponowny bieg install.sh (zalecany po pullu) wołał
+# przełącznik z PIERWSZYM plikiem z wallpapers/ i kasował wybór z Super+W.
+setup_dat a
+boot_daemon_with "wallpaper {
+    monitor = desc:$DESC_HDMI
+    path = $WP/nowa-v1.png
+}
+wallpaper {
+    monitor = desc:$DESC_EDP
+    path = $WP/nowa-v2.png
+}"
+printf 'desc:%s=%s\ndesc:%s=%s\n' "$DESC_HDMI" "$WP/nowa-v1.png" "$DESC_EDP" "$WP/nowa-v2.png" > "$A/data/wallpaper.dat"
+out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init z zapisanym wyborem → restored"  '[[ "$out" == *restored* ]]'
+check "--init: wybór w .dat bez zmian"         'grep -q "nowa-v1.png" "$A/data/wallpaper.dat" && ! grep -q "stara" "$A/data/wallpaper.dat"'
+check "--init: ekran dalej pokazuje wybór"     '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/nowa-v1.png" ]]'
+setup_dat a
+boot_daemon_with ""
+out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init bez stanu → initial"             '[[ "$out" == *initial* ]]'
+check "--init bez stanu: pierwsza tapeta"      '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]]'
+setup_dat a
+printf 'desc:%s=%s\n' "$DESC_HDMI" "$WP/skasowana.png" > "$A/data/wallpaper.dat"
+boot_daemon_with ""
+out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init ze stanem na skasowany plik → initial" '[[ "$out" == *initial* && "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]]'
+
 echo ""
 echo "passed: $PASS, failed: $FAIL"
 (( FAIL == 0 ))

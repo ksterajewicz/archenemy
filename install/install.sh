@@ -1063,19 +1063,27 @@ echo -e "  ${GREEN}✓ Scripts made executable.${NC}"
 # Screenshots directory (hyprshot output)
 mkdir -p "$HOME/Screenshots"
 
-# Ustaw pierwszą tapetę, żeby hyprpaper miał poprawny config od pierwszego startu
+# Tapeta: przy pierwszej instalacji pierwszy plik z wallpapers/, żeby hyprpaper
+# miał poprawny config od pierwszego startu; przy ponownym biegu (zalecanym po
+# każdym pullu) zostaje wybór użytkownika z Super+W — `--init` przywraca go,
+# gdy data/wallpaper.dat wskazuje istniejący plik (audyt 2026-09-23: dawniej
+# każdy bieg nadpisywał wybór pierwszą tapetą).
 WALLPAPER_SWITCHER="$ARCHENEMY_DIR/scripts/rofi/rofi_wallpaper_switcher.sh"
 FIRST_WP=$(find "$ARCHENEMY_DIR/wallpapers" -type f \
     \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
     2>/dev/null | sort | head -n1)
-if [[ -n "$FIRST_WP" ]]; then
-    bash "$WALLPAPER_SWITCHER" "$FIRST_WP"
-    echo -e "  ${GREEN}✓ Initial wallpaper applied.${NC}"
-    SUMMARY_DONE+=("Initial wallpaper applied")
-else
-    echo -e "  ${YELLOW}⚠ No wallpapers found in wallpapers/ — use Super+W after adding some.${NC}"
-    SUMMARY_SKIPPED+=("initial wallpaper (none in wallpapers/)")
-fi
+WP_RESULT="$(bash "$WALLPAPER_SWITCHER" --init "$FIRST_WP")"
+case "${WP_RESULT%%$'\n'*}" in
+    restored)
+        echo -e "  ${GREEN}✓ Wallpaper kept — your last choice restored.${NC}"
+        SUMMARY_DONE+=("Wallpaper kept (last choice restored)") ;;
+    initial)
+        echo -e "  ${GREEN}✓ Initial wallpaper applied.${NC}"
+        SUMMARY_DONE+=("Initial wallpaper applied") ;;
+    *)
+        echo -e "  ${YELLOW}⚠ No wallpapers found in wallpapers/ — use Super+W after adding some.${NC}"
+        SUMMARY_SKIPPED+=("initial wallpaper (none in wallpapers/)") ;;
+esac
 echo ""
 
 # ─── 9.6 FLUX-WALL (tapeta liczona shaderem) ─────────────────────────────────
