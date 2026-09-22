@@ -36,6 +36,9 @@ libnotify
 # scalanie workspace'ów po odpięciu monitora; bez socat guard
 # przechodzi w awaryjny tryb sondy co 5 s
 socat
+# util-linux: flock — blokady w workspace-orphan-guard.sh i przełączniku
+# rice'ów (lib/switch-rice.sh: dwa szybkie Super+T czekają na siebie)
+util-linux
 # network + firewall
 networkmanager
 ufw

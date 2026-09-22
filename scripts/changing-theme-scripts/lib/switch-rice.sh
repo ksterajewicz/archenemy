@@ -32,6 +32,20 @@ if [[ ! -d "$RICE_DIR" ]]; then
     exit 1
 fi
 
+# ─── BLOKADA ──────────────────────────────────────────────────────────────────
+# Dwa szybkie Super+T to dwa równoległe procesy: bez blokady jeden kasował
+# link, drugi robił `ln -s` do jeszcze istniejącego linku-katalogu i nowy
+# link lądował WEWNĄTRZ rices/<rice>/<folder>/ (mieszany rice, śmieci w repo
+# — audyt 2026-09-23). Drugie przełączenie czeka na pierwsze i nakłada się
+# po nim (wygrywa ostatni wybór). Procesy tła (waybar, swayosd, tapety)
+# dostają `9>&-` — inaczej trzymałyby blokadę do końca sesji.
+LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-switch-rice.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -w 30 9; then
+    notify-send "archenemy" "Another rice switch is still running — try again."
+    exit 1
+fi
+
 # Już aktywny? Nakładamy MIMO TO (re-apply): wcześniejszy early-exit czynił
 # na wpół nałożony rice (przerwane przełączenie, ręcznie skasowany symlink)
 # nienaprawialnym z menu — .current_rice mówił „aktywny", a stan był popsuty.
@@ -57,11 +71,17 @@ for src in "$RICE_DIR"/*/; do
     name=$(basename "$src")
     dest="$CONFIG_DIR/$name"
 
-    # Prawdziwy katalog użytkownika (nie symlink)? Odłóż kopię zapasową.
-    [[ -e "$dest" && ! -L "$dest" ]] && mv "$dest" "$dest.bak-$(date +%Y%m%d_%H%M%S)"
-    [[ -L "$dest" ]] && rm "$dest"
+    # Coś użytkownika na miejscu folderu rice'a? Odłóż kopię zapasową, nigdy
+    # nie kasuj: prawdziwy katalog ALBO symlink spoza rices/ (np. GNU stow —
+    # repo jest publiczne, cudza konfiguracja nie może zniknąć; linki do
+    # rices/ usunęła już pętla sprzątająca wyżej).
+    if [[ -e "$dest" || -L "$dest" ]]; then
+        mv "$dest" "$dest.bak-$(date +%Y%m%d_%H%M%S)"
+    fi
 
-    ln -s "${src%/}" "$dest"
+    # -n: link-katalog na miejscu docelowym to plik do podmiany, nie katalog
+    # do wejścia (bez -n link lądował wewnątrz starego rice'a).
+    ln -sfn "${src%/}" "$dest"
 done
 
 echo "$RICE_NAME" > "$CURRENT_RICE"
@@ -70,7 +90,7 @@ echo "$RICE_NAME" > "$CURRENT_RICE"
 
 WALLPAPER_SWITCHER="$ARCHENEMY_DIR/scripts/rofi/rofi_wallpaper_switcher.sh"
 if [[ -f "$DATA_DIR/wallpaper.dat" && -f "$WALLPAPER_SWITCHER" ]]; then
-    bash "$WALLPAPER_SWITCHER" --restore
+    bash "$WALLPAPER_SWITCHER" --restore 9>&-
 fi
 
 # ─── FLUX-WALL (tapeta liczona shaderem) ─────────────────────────────────────
@@ -79,11 +99,11 @@ fi
 # brak binarki (install.sh nie zbudował) lub brak deklaracji = cicho nic —
 # hyprpaper zostaje tapetą (działa zawsze, flux-wall rysuje nad nim).
 FLUX_WALL="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
-[[ -f "$FLUX_WALL" ]] && bash "$FLUX_WALL" autostart
+[[ -f "$FLUX_WALL" ]] && bash "$FLUX_WALL" autostart 9>&-
 
 # ─── PRZEŁADOWANIE ───────────────────────────────────────────────────────────
 
-hyprctl reload
+hyprctl reload 9>&-
 
 # Waybar nie łapie zmian configu po hyprctl reload — trzeba go zrestartować.
 # Poczekaj, aż stara instancja REALNIE zniknie: start nowej obok umierającej
@@ -99,7 +119,7 @@ if pgrep -x waybar >/dev/null; then
     pkill -9 -x waybar
     sleep 0.2
 fi
-waybar & disown
+waybar 9>&- & disown
 
 # Mako czyta config tylko przy starcie — bez reloadu notyfikacje zostają
 # w motywie POPRZEDNIEGO rice'a (np. białe mako w tronie).
@@ -116,7 +136,7 @@ if command -v swayosd-server >/dev/null 2>&1; then
         sleep 0.1
     done
     pgrep -x swayosd-server >/dev/null && pkill -9 -x swayosd-server 2>/dev/null
-    swayosd-server & disown
+    swayosd-server 9>&- & disown
 fi
 
 # hyprpaper.conf jest wspólny (warstwa maszynowa, symlink w każdym rice),
