@@ -25,11 +25,10 @@ cd ~
 git clone https://github.com/ksterajewicz/archenemy
 ```
 
-2. Go into the installer folder and make the scripts executable:
+2. Go into the installer folder (the scripts are already executable in git — no `chmod` needed; changing file modes by hand makes `git pull` refuse to update):
 
 ```bash
 cd ~/archenemy/install/
-chmod +x install.sh cpudrivers-installation.sh gpudrivers-installation.sh kernel-install.sh
 ```
 
 3. Run the installer:
