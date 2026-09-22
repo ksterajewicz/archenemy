@@ -10,7 +10,7 @@ Personal Arch Linux rice for Hyprland. A single installer sets up the entire des
 ## Requirements
 
 - Arch Linux with Hyprland (the installer will offer to install it if missing)
-- **hyprpaper >= 0.8** — we use the new `wallpaper {}` syntax and the `hyprctl hyprpaper wallpaper "mon, path, fit_mode"` IPC
+- **hyprpaper >= 0.8.2** — we use the new `wallpaper {}` syntax, `desc:` monitor selectors (added in 0.8.2, matched by prefix since 0.8.4) and the `hyprctl hyprpaper wallpaper "mon, path, fit_mode"` IPC. Arch ships 0.8.4.
 
 ## Before you install
 
@@ -197,6 +197,9 @@ archenemy/
 │                                     #   self-check, installer step [3]. `bash tests/machine-layer.sh`.
 │                                     #   flux-wall-bars.sh — offscreen render of `bars` at both monitor sizes,
 │                                     #   peak marks must land on BOTH halves (needs `make -C src/flux-wall tools`).
+│                                     #   wallpaper-switcher.sh — Super+W against a fake hyprpaper daemon
+│                                     #   (settings list + first-match rule): the picked wallpaper must end up
+│                                     #   ON SCREEN in all three .dat scenarios. `bash tests/wallpaper-switcher.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.
@@ -219,6 +222,8 @@ At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked b
 - **Unchecked** (click the entry to toggle) — the wallpaper goes only to the monitor you have focus on; the others stay unchanged.
 
 The per-monitor choice is remembered in `data/wallpaper.dat` and restored when you switch rice. Which monitor is "primary" is decided at install time (primary/secondary role) — the installer proposes it itself: first one = primary, second = secondary.
+
+**One monitor = one entry, and the switcher checks the screen.** `data/wallpaper.dat` and the generated `hyprpaper.conf` are keyed by the same monitor selector the rest of the machine layer uses (`desc:<EDID description>`, connector name for older `.dat` files) — and the live IPC call uses that very same key. hyprpaper keeps its settings as a list and gives a monitor the **first matching** entry, while IPC appends its entry at the end and only replaces one with an identical key: a leftover entry for the same screen under its old connector name (or an IPC call keyed by connector name against a `desc:` config) would therefore win the match and the newly picked wallpaper would never show up — with `hyprctl` still reporting success. Old connector-name entries are migrated to today's selector on read, and after applying, the switcher asks `hyprctl hyprpaper listactive` what is actually on screen; if it doesn't match, it restarts hyprpaper (which re-reads the freshly written config) and checks again before claiming success.
 
 The role only applies to **wallpapers** (primary→v1, secondary→v2). Workspace assignment is governed by something else: **left→right monitor numbering** and **workspace mode** — both set at install time (see the "Workspaces" section).
 

@@ -1,11 +1,80 @@
 #!/bin/bash
-# Atrapa hyprctl do tests/machine-layer.sh.
+# Atrapa hyprctl do tests/machine-layer.sh i tests/wallpaper-switcher.sh.
 # MOCK_MONS = both (eDP-1 + HDMI-A-3 — realny zrzut 2026-09-21, nazwy złączy
 #             zmienione względem eDP-2/HDMI-A-1 z dnia instalacji)
 #           | edp   (tylko panel — HDMI odpięty)
 #           | twins (dwa identyczne monitory bez numeru seryjnego)
 # Formaty tekstowe wg src/debug/HyprCtl.cpp v0.56.2. dispatch → $MOCK_LOG.
+#
+# Gałąź `hyprpaper` modeluje DEMONA hyprpapera 0.8.4 w tym jednym aspekcie,
+# który decyduje o widocznej tapecie (źródła: hyprpaper 0.8.4
+# src/config/WallpaperMatcher.cpp i src/ipc/IPC.cpp; klient: Hyprland v0.56.2
+# hyprctl/src/hyprpaper/Hyprpaper.cpp):
+#   * ustawienia to LISTA wpisów "klucz → ścieżka" w kolejności dodania;
+#     config wchodzi przy starcie demona, IPC dokłada NA KONIEC, kasując
+#     wcześniej tylko wpis o IDENTYCZNYM kluczu (addState),
+#   * monitor dostaje PIERWSZY pasujący wpis (matchSetting): klucz równy
+#     nazwie złącza albo "desc:<opis>" pasujący po PREFIKSIE opisu,
+#   * `wallpaper` odrzuca monitor, którego nie ma (outputExists: nazwa
+#     dosłownie albo "desc:"+opis DOKŁADNIE) i ścieżkę, której nie ma,
+#   * `listactive` wypisuje "<nazwa złącza>: <ścieżka>" dla monitorów
+#     z dopasowanym wpisem.
+# Stan demona: plik $MOCK_HYPRPAPER_STATE (linie "klucz<TAB>ścieżka"); brak
+# pliku = demon nie działa (jak po pkill) → IPC kończy się błędem.
+mock_desc() {   # nazwa złącza → opis EDID (jak w zrzutach niżej)
+    case "$1" in
+        eDP-1)     echo "Thermotrex Corporation TL160ADMP03-0" ;;
+        HDMI-A-3)  echo "Microstep MSI G241 0x00000603" ;;
+        DP-1|DP-2) echo "Acme Twin 24" ;;
+    esac
+}
+mock_live_names() {
+    case "${MOCK_MONS:-both}" in
+        twins) printf 'DP-1\nDP-2\n' ;;
+        edp)   printf 'eDP-1\n' ;;
+        *)     printf 'HDMI-A-3\neDP-1\n' ;;
+    esac
+}
+mock_match() {   # pierwszy pasujący wpis dla monitora (matchSetting)
+    local name="$1" desc key path
+    desc="desc:$(mock_desc "$name")"
+    while IFS=$'\t' read -r key path; do
+        [[ -n "$key" ]] || continue
+        if [[ "$key" == "$name" || "$desc" == "$key"* ]]; then
+            printf '%s\n' "$path"
+            return 0
+        fi
+    done < "$MOCK_HYPRPAPER_STATE"
+    return 1
+}
+
 case "$1" in
+  hyprpaper)
+    [[ -f "${MOCK_HYPRPAPER_STATE:-/nonexistent}" ]] || { echo "can't send: failed to connect to hyprpaper (is it running?)" >&2; exit 1; }
+    case "$2" in
+      wallpaper)
+        IFS=',' read -r MON WP_PATH _FIT <<< "$3"
+        MON="${MON#"${MON%%[![:space:]]*}"}"; MON="${MON%"${MON##*[![:space:]]}"}"
+        WP_PATH="${WP_PATH#"${WP_PATH%%[![:space:]]*}"}"; WP_PATH="${WP_PATH%"${WP_PATH##*[![:space:]]}"}"
+        exists=0
+        while IFS= read -r n; do
+            [[ "$MON" == "$n" || "$MON" == "desc:$(mock_desc "$n")" ]] && exists=1
+        done < <(mock_live_names)
+        [[ "$exists" -eq 1 ]] || { echo "failed to set wallpaper: Invalid monitor" >&2; exit 1; }
+        [[ "$WP_PATH" == /* && -e "$WP_PATH" ]] || { echo "failed to set wallpaper: Invalid path" >&2; exit 1; }
+        echo "IPC wallpaper $MON -> $WP_PATH" >> "${MOCK_LOG:-/dev/null}"
+        tmp=$(mktemp)
+        awk -F'\t' -v m="$MON" '$1 != m' "$MOCK_HYPRPAPER_STATE" > "$tmp"
+        printf '%s\t%s\n' "$MON" "$WP_PATH" >> "$tmp"
+        mv "$tmp" "$MOCK_HYPRPAPER_STATE"
+        exit 0 ;;
+      listactive)
+        while IFS= read -r n; do
+            p=$(mock_match "$n") && printf '%s: %s\n' "$n" "$p"
+        done < <(mock_live_names)
+        exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
   monitors)
     if [[ "${MOCK_MONS:-both}" == twins ]]; then
 cat <<'M'

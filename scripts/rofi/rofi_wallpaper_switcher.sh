@@ -81,18 +81,24 @@ ANIM_OFF="${ANIM_PREFIX}off"
 # Monitory jako SELEKTORY ("desc:<opis EDID>" z lib/monitor-id.sh, albo nazwa
 # złącza dla starych .dat) — nazwa złącza zmienia się po restarcie
 # (eDP-2 → eDP-1), a hyprpaper.conf i hyprlock rozumieją desc: tak samo jak
-# Hyprland. Do IPC hyprpapera idzie ŻYWA nazwa (monitor_live_name).
+# Hyprland. TYM SAMYM selektorem idzie polecenie IPC (patrz apply_ipc).
 # shellcheck source=scripts/hypr/lib/monitor-id.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
 
 MONITOR1=""   # primary  -> dostaje v1
 MONITOR2=""   # secondary -> dostaje v2
 
+declare -A SELECTOR_KNOWN   # selektor z .dat -> 1 (dzisiejszy format klucza)
+declare -A SEL_OF_LIVE      # żywa nazwa złącza -> selektor tego samego monitora
+
 if [[ -d "$DATA_DIR/monitors" ]]; then
     for dat in "$DATA_DIR/monitors"/*.dat; do
         [[ -f "$dat" ]] || continue
         mon=$(monitor_selector_from_dat "$dat")
         role=$(grep '^ROLE='    "$dat" | cut -d= -f2)
+        SELECTOR_KNOWN[$mon]=1
+        live=$(monitor_live_name "$mon")
+        [[ -n "$live" ]] && SEL_OF_LIVE[$live]="$mon"
         if [[ "$role" == "primary" && -z "$MONITOR1" ]]; then
             MONITOR1="$mon"
         elif [[ -z "$MONITOR2" && "$role" != "primary" ]]; then
@@ -139,19 +145,39 @@ focused_monitor() {
 
 declare -A STATE   # monitor -> ścieżka tapety
 
-# Wczytaj data/wallpaper.dat (nowy format monitor=ścieżka; inne linie pomija).
+# Wczytaj data/wallpaper.dat (format monitor=ścieżka; inne linie pomija).
+#
+# JEDEN MONITOR = JEDEN KLUCZ. Plik sprzed przejścia na selektory desc:
+# (2026-09-21) trzyma klucze po nazwie złącza; gdy nazwa dalej istnieje, ten
+# sam ekran miałby DWA wpisy ("eDP-1" i "desc:<opis>") — a hyprpaper bierze
+# PIERWSZY pasujący blok (WallpaperMatcher.cpp::matchSetting, 0.8.4), więc
+# martwy wpis potrafił przesłonić nowy wybór i tapeta „nie chciała się
+# zmieniać". Stary klucz migrujemy więc na dzisiejszy selektor i nigdy nie
+# trzymamy obu naraz; wpis selektora (świeższy format) ma pierwszeństwo.
 load_state() {
     [[ -f "$WALLPAPER_DAT" ]] || return 0
+    local -a legacy_mon=() legacy_path=()
+    local mon path sel i
     while IFS='=' read -r mon path; do
         [[ -n "$mon" && -n "$path" ]] || continue
-        # Klucz sprzed selektorów desc: (goła nazwa złącza) — trzymaj tylko,
-        # gdy to nie jest po prostu stara nazwa monitora znanego dziś z .dat
-        # (inaczej hyprpaper.conf rósłby o martwe bloki po każdej zmianie nazwy).
-        if [[ "$mon" != desc:* && "$mon" != "$MONITOR1" && "$mon" != "$MONITOR2" ]]; then
-            [[ -n "$(monitor_live_name "$mon")" ]] || continue
+        if [[ "$mon" == desc:* || -n "${SELECTOR_KNOWN[$mon]:-}" ]]; then
+            STATE[$mon]="$path"
+        else
+            legacy_mon+=("$mon"); legacy_path+=("$path")
         fi
-        STATE[$mon]="$path"
     done < "$WALLPAPER_DAT"
+    for i in "${!legacy_mon[@]}"; do
+        mon="${legacy_mon[$i]}"
+        sel="${SEL_OF_LIVE[$mon]:-}"
+        if [[ -n "$sel" ]]; then
+            # Ta sama fizyczna matryca, tylko stary klucz — przepisz na selektor.
+            [[ -z "${STATE[$sel]:-}" ]] && STATE[$sel]="${legacy_path[$i]}"
+        elif [[ -n "$(monitor_live_name "$mon")" ]]; then
+            # Monitor spoza data/monitors, ale podłączony — zostaje po nazwie.
+            [[ -z "${STATE[$mon]:-}" ]] && STATE[$mon]="${legacy_path[$i]}"
+        fi
+        # Nazwa, której dziś nie ma (np. eDP-2 po zmianie złącza) — wpis znika.
+    done
 }
 
 # Zestaw folderowy (stary model): v1 → primary, v2 → secondary.
@@ -193,6 +219,11 @@ apply_file_allmon() {
 # psuł stan przy przerwaniu między truncate a append).
 save_and_generate() {
     local mon tmp_dat tmp_conf
+    # Kolejność bloków ma znaczenie dla hyprpapera (pierwszy pasujący wygrywa),
+    # a kolejność kluczy tablicy asocjacyjnej zależy od haszy — sortujemy, żeby
+    # ten sam stan dawał zawsze ten sam plik.
+    local -a mons=()
+    mapfile -t mons < <(printf '%s\n' "${!STATE[@]}" | LC_ALL=C sort)
     mkdir -p "$DATA_DIR" "$(dirname "$HYPRPAPER_CONF")"
     tmp_dat=$(mktemp "$WALLPAPER_DAT.XXXXXX") || return 1
     tmp_conf=$(mktemp "$HYPRPAPER_CONF.XXXXXX") || { rm -f "$tmp_dat"; return 1; }
@@ -202,7 +233,7 @@ save_and_generate() {
         # Wyłącz splash hyprpapera (cytat/wersja Hyprlanda rysowana na tapecie).
         echo "splash = false"
     } > "$tmp_conf"
-    for mon in "${!STATE[@]}"; do
+    for mon in "${mons[@]}"; do
         echo "$mon=${STATE[$mon]}" >> "$tmp_dat"
         {
             echo ""
@@ -257,10 +288,67 @@ apply_hyprlock_background() {
     mv "$tmp" "$HYPRLOCK_DAT"
 }
 
-# Zaaplikuj stan przez IPC (hyprpaper >= 0.8); gdy IPC padnie — restart daemona,
-# który wczyta świeżo wygenerowany hyprpaper.conf (save_and_generate poszło
-# przed tym wywołaniem, więc świeży proces sam pokaże poprawny stan — IPC nie
-# trzeba powtarzać po restarcie).
+# Ta sama ścieżka co w hyprpaperze: hyprctl kanonizuje ją przed wysłaniem
+# (hyprctl/src/hyprpaper/Hyprpaper.cpp::resolvePath → std::filesystem::canonical),
+# więc `listactive` może zwrócić rozwiniętą postać (symlinki, ~) i porównanie
+# gołych stringów dawałoby fałszywy rozjazd.
+same_path() {
+    local a="$1" b="$2" ra rb
+    [[ "$a" == "$b" ]] && return 0
+    ra=$(realpath -m -- "$a" 2>/dev/null) || return 1
+    rb=$(realpath -m -- "$b" 2>/dev/null) || return 1
+    [[ "$ra" == "$rb" ]]
+}
+
+# Czy hyprpaper POKAZUJE to, o co go poprosiliśmy (a nie tylko przyjął
+# polecenie)? `hyprctl hyprpaper listactive` (hyprctl v0.56.2, doListActive)
+# wypisuje po linii na monitor: "<nazwa złącza>: <ścieżka>" — bierzemy to za
+# obserwację stanu, bo samo `sendSuccess` znaczy tylko „wpis dodany", a nie
+# „wpis wygrał dopasowanie" (patrz komentarz przy apply_ipc).
+#
+# Kody: 0 = zgadza się, 1 = rozjazd, 2 = nie wiadomo (stary hyprpaper bez
+# protokołu v2 albo brak odpowiedzi) — wołający traktuje 2 jak dawniej, czyli
+# ufa kodowi wyjścia IPC.
+wallpaper_shown_matches() {
+    local tries="${1:-5}" out mon live have all_ok answered=0
+    while (( tries-- > 0 )); do
+        # Demon po restarcie podnosi gniazdo chwilę po procesie — brak
+        # odpowiedzi jest powodem do ponowienia, nie do werdyktu.
+        if out=$(timeout 3 hyprctl hyprpaper listactive 2>/dev/null) && [[ -n "$out" ]]; then
+            answered=1
+            all_ok=1
+            for mon in "${!STATE[@]}"; do
+                live=$(monitor_live_name "$mon")
+                [[ -n "$live" ]] || continue
+                # ścieżka może zawierać ": ", więc ucinamy tylko pierwszy prefiks
+                have=$(grep -m1 -F "$live: " <<< "$out")
+                have="${have#"$live": }"
+                same_path "$have" "${STATE[$mon]}" || all_ok=0
+            done
+            (( all_ok == 1 )) && return 0
+        fi
+        sleep 0.2
+    done
+    (( answered == 1 )) && return 1
+    return 2
+}
+
+# Zaaplikuj stan przez IPC (hyprpaper >= 0.8.2); gdy IPC padnie albo ekran
+# pokaże co innego — restart daemona, który wczyta świeżo wygenerowany
+# hyprpaper.conf (save_and_generate poszło przed tym wywołaniem, więc świeży
+# proces sam pokaże poprawny stan).
+#
+# KLUCZ IPC = TEN SAM SELEKTOR, KTÓRY IDZIE DO hyprpaper.conf (2026-09-22).
+# hyprpaper trzyma ustawienia jako listę i dopasowuje PIERWSZYM pasującym
+# wpisem (WallpaperMatcher.cpp::matchSetting 0.8.4: `desc:<opis>` po prefiksie,
+# nazwa złącza dosłownie), a IPC dokłada swój wpis na KONIEC listy, kasując
+# wcześniej tylko wpis o IDENTYCZNYM kluczu (addState). Gdy config miał
+# `monitor = desc:…`, a IPC szło po nazwie złącza, wpis z configu wygrywał
+# dopasowanie i nowa tapeta nie pojawiała się na ekranie — hyprctl i tak
+# meldował sukces (IPC.cpp::apply → sendSuccess). Dokładnie objaw zgłoszony
+# 2026-09-22: „wybieram inną, nic się nie zmienia".
+# Fallback na żywą nazwę zostaje dla hyprpapera bez obsługi desc: w
+# outputExists (< 0.8.2) — tam selektor byłby odrzucony jako Invalid monitor.
 #
 # `timeout` na każde wywołanie: klient hyprctl czeka na odpowiedź hyprpapera
 # BEZ WŁASNEGO LIMITU CZASU (źródło: hyprctl/src/hyprpaper/Hyprpaper.cpp,
@@ -280,18 +368,26 @@ apply_hyprlock_background() {
 apply_ipc() {
     local mon ok=1 err_log="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
     : > "$err_log"
-    local live applied=0
+    local live applied=0 shown
     for mon in "${!STATE[@]}"; do
         # selektor desc: → nazwa złącza TERAZ; odpięty monitor pomijamy
         # (hyprpaper.conf i tak trzyma jego wpis na następne podpięcie)
         live=$(monitor_live_name "$mon")
         [[ -n "$live" ]] || continue
         applied=1
-        timeout 3 hyprctl hyprpaper wallpaper "$live, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 || ok=0
+        timeout 3 hyprctl hyprpaper wallpaper "$mon, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 \
+            || timeout 3 hyprctl hyprpaper wallpaper "$live, ${STATE[$mon]}, cover" >>"$err_log" 2>&1 \
+            || ok=0
     done
     # Nic nie poszło (hyprctl milczy / żaden monitor nie pasuje) — to nie sukces.
     [[ "$applied" -eq 1 ]] || ok=0
-    [[ "$ok" -eq 1 ]] && return 0
+    if [[ "$ok" -eq 1 ]]; then
+        wallpaper_shown_matches 5; shown=$?
+        # 0 = widać to, co trzeba; 2 = hyprpaper nie umie listactive (stary) —
+        # zostaje dawne zachowanie, czyli zaufanie kodowi wyjścia IPC.
+        [[ "$shown" -eq 0 || "$shown" -eq 2 ]] && return 0
+        echo "listactive: ekran pokazuje inną tapetę niż wysłana — restart hyprpapera" >> "$err_log"
+    fi
 
     pkill -x hyprpaper 2>/dev/null
     for _ in $(seq 1 20); do
@@ -304,10 +400,15 @@ apply_ipc() {
     fi
     hyprpaper & disown
     for _ in $(seq 1 20); do
-        pgrep -x hyprpaper >/dev/null && return 0
+        pgrep -x hyprpaper >/dev/null && break
         sleep 0.1
     done
-    return 1
+    pgrep -x hyprpaper >/dev/null || return 1
+    # Świeży demon czyta wygenerowany hyprpaper.conf — ale „proces żyje" to
+    # jeszcze nie „tapeta jest na ekranie" (zasada: sukces = zaobserwowana
+    # zmiana stanu). Pula dłuższa, bo doliczamy start gniazda i dekodowanie.
+    wallpaper_shown_matches 15; shown=$?
+    [[ "$shown" -eq 0 || "$shown" -eq 2 ]]
 }
 
 # ─── MIGRACJA STAREGO FORMATU ─────────────────────────────────────────────────

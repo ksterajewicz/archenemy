@@ -92,6 +92,17 @@ Rules that follow directly from the table:
   a drift must become **one visible notification with the fix**, not a
   silent fallback: extend `scripts/hypr/machine-layer-check.sh` when you
   add a generated file or a new kind of selector.
+- **One monitor = one key, and the runtime call uses the same key as the
+  generated file.** hyprpaper stores its settings as a list, gives a monitor
+  the **first matching** entry (`WallpaperMatcher.cpp::matchSetting`: connector
+  name literally, `desc:` by prefix) and lets IPC append an entry at the end,
+  replacing only one with an identical key (`addState`). So a second entry for
+  the same screen (its old connector name left in `data/wallpaper.dat`) or an
+  IPC call keyed differently than the config **silently wins the match** and
+  the change never reaches the screen, while `hyprctl` reports success
+  (2026-09-22: "I pick another wallpaper, nothing changes"). Migrate old keys
+  on read, and confirm the result (`hyprctl hyprpaper listactive`) instead of
+  trusting an exit code — success is an observed state change.
 - **flux-wall: never read the accumulator at exactly one computed column.**
   A particle stamp (`GL_POINTS`, size 1) aimed at pixel centre `xc` lands at
   `xc-1` on the right half of the screen (float error at NDC > 0 — measured
@@ -180,9 +191,11 @@ There's no pipeline. Verification has three levels:
    system. The machine layer has a ready-made suite: `bash
    tests/machine-layer.sh` runs the generators, the orphan guard, the mode
    switcher, the self-check and installer step [3] against a fake
-   `hyprctl` (`tests/mock/hyprctl`, replaying a real dump). **Run it after
-   any change to `install.sh` [3]–[8b], `scripts/hypr/`, or
-   `rofi_wallpaper_switcher.sh`, and extend it when you add a consumer of
+   `hyprctl` (`tests/mock/hyprctl`, replaying a real dump), and `bash
+   tests/wallpaper-switcher.sh` drives `Super+W` against a fake hyprpaper
+   daemon built into the same mock. **Run both after any change to
+   `install.sh` [3]–[8b], `scripts/hypr/`, or
+   `rofi_wallpaper_switcher.sh`, and extend them when you add a consumer of
    `data/monitors/*.dat`** — the mock has three scenarios (renamed
    connectors, external monitor unplugged, two identical monitors) and a
    new consumer needs all three.
