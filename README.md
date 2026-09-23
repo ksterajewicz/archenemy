@@ -94,6 +94,8 @@ archenemy/
 │   │                                 #   local.conf (personal overrides, include_optional).
 │   └── hypr/
 │   │   ├── workspaces.lua            # Workspace guard autostart (shared across all machines).
+│   │   ├── autostart-common.lua      # Shared autostart required by every rice (flux-wall wallpaper
+│   │                                 #   animation — your Super+W choice comes back after login in any rice).
 │   │   ├── keyboard.lua              # Media keys (shared).
 │   │   ├── gpu_wayland_scaling.lua   # Universal Wayland variables (shared).
 │   │   ├── custom_window_rules.lua   # Window rules (shared).
@@ -153,7 +155,9 @@ archenemy/
 │   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots).
 │   │                                 #   machine-layer-check.sh — read-only self-check at session start:
 │   │                                 #   one notification when the generated files no longer match the
-│   │                                 #   connected monitors (instead of Hyprland's silent fallback).
+│   │                                 #   connected monitors (instead of Hyprland's silent fallback),
+│   │                                 #   and when the code changed since the last install.sh
+│   │                                 #   (data/installed-head.dat vs HEAD — re-run the installer).
 │   ├── rofi/                         # Rofi menus: rices, wallpapers, network (with rescan), power.
 │   ├── wallpapers/                   # Mathematical wallpaper generators (pure Python, zero dependencies):
 │   │                                 #   Arch logo (gen_arch_wallpaper.py), Tron grid
@@ -199,6 +203,17 @@ archenemy/
 │                                     #   wallpaper-switcher.sh — Super+W against a fake hyprpaper daemon
 │                                     #   (settings list + first-match rule): the picked wallpaper must end up
 │                                     #   ON SCREEN in all three .dat scenarios. `bash tests/wallpaper-switcher.sh`.
+│                                     #   update-archenemy.sh — the Super+A → [p] updater on real git
+│                                     #   (bare origin in a temp dir): no false "✓" on failure, no
+│                                     #   switching to a branch older than what you run.
+│                                     #   switch-rice.sh — rice switching on a fake ~/.config: foreign
+│                                     #   symlinks backed up, two quick Super+T don't race.
+│                                     #   rice-autostart.sh — runs every rice's hyprland.lua on a fake
+│                                     #   `hl` API (lua5.4) and checks what starts with the session.
+│                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
+│                                     #   fake /etc: no initramfs changes without a built nvidia module.
+│                                     #   repo-hygiene.sh — every tracked *.sh is executable in git.
+│                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.
@@ -220,7 +235,7 @@ At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked b
 - **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and the secondary gets `v2`; without a pair, the same image goes everywhere.
 - **Unchecked** (click the entry to toggle) — the wallpaper goes only to the monitor you have focus on; the others stay unchanged.
 
-The per-monitor choice is remembered in `data/wallpaper.dat` and restored when you switch rice. Which monitor is "primary" is decided at install time (primary/secondary role) — the installer proposes it itself: first one = primary, second = secondary.
+The per-monitor choice is remembered in `data/wallpaper.dat` and restored when you switch rice — and when you re-run `install.sh` (only a fresh install, or a choice pointing at deleted files, falls back to the first wallpaper). Which monitor is "primary" is decided at install time (primary/secondary role) — the installer proposes it itself: first one = primary, second = secondary.
 
 **One monitor = one entry, and the switcher checks the screen.** `data/wallpaper.dat` and the generated `hyprpaper.conf` are keyed by the same monitor selector the rest of the machine layer uses (`desc:<EDID description>`, connector name for older `.dat` files) — and the live IPC call uses that very same key. hyprpaper keeps its settings as a list and gives a monitor the **first matching** entry, while IPC appends its entry at the end and only replaces one with an identical key: a leftover entry for the same screen under its old connector name (or an IPC call keyed by connector name against a `desc:` config) would therefore win the match and the newly picked wallpaper would never show up — with `hyprctl` still reporting success. Old connector-name entries are migrated to today's selector on read, and after applying, the switcher asks `hyprctl hyprpaper listactive` what is actually on screen; if it doesn't match, it restarts hyprpaper (which re-reads the freshly written config) and checks again before claiming success.
 
@@ -281,7 +296,7 @@ Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config
 
 `Super + A` opens a terminal shortcut manager: you pick a key (e.g. `g`, `F5`, `semicolon`) and a command (e.g. `spotify`), and the `Super + key` shortcut works right away. The manager guards against collisions with existing archenemy shortcuts, and the `[s]` option shows a full cheat sheet of every current shortcut — what's under each key and which app/action it launches. Your binds go into `config/hypr/appbinds.lua` — a personal file outside git, so they survive `git pull` and switching rice.
 
-The same TUI has extra entries: `[w]` — shared/decades workspace mode switcher (see "Workspaces"), `[o] mpd audio output` — pipewire (recommended) or an exclusive ALSA `hw:` device for mpd (see "Music stack"), `[u] autostart apps` — pick which apps launch at Hyprland startup from the list of all `.desktop` entries (checkboxes `[x]`/`[ ]`, filter by name via `/text`; the selection lands in `data/autostart-apps.dat`, from which a personal `config/hypr/autostart-apps.lua` is generated — alongside the manual `autostartpersonalisation.lua`, which this layer doesn't touch), `[v] volume bar` — the waybar volume bar style (`line` ━━━━━━────, `ticks` ▮▮▮▮▮▮▯▯▯▯, `solid` ▬▬▬▬▬▬▬▬▬▬▬▬────────), saved in `data/volume-bar-style.dat` and applied immediately (signal 10 to waybar), `[t] timer` — a countdown timer next to the clock (see "Timer"), and `[p] update archenemy` — the repo updater: pick a branch (`dev` — latest changes / `main` — stable releases only), the script runs `git fetch`/`checkout`/`pull --ff-only`, stashing any local changes to git-tracked files with `git stash` for the duration of the pull and restoring them afterward. The machine and personal layers (monitors, appbinds, autostart, rice, volume bar style...) are outside git, so the update doesn't touch them — your settings stay unchanged by default. At the end it offers to re-run `install.sh` to generate any new machine files.
+The same TUI has extra entries: `[w]` — shared/decades workspace mode switcher (see "Workspaces"), `[o] mpd audio output` — pipewire (recommended) or an exclusive ALSA `hw:` device for mpd (see "Music stack"), `[u] autostart apps` — pick which apps launch at Hyprland startup from the list of all `.desktop` entries (checkboxes `[x]`/`[ ]`, filter by name via `/text`; the selection lands in `data/autostart-apps.dat`, from which a personal `config/hypr/autostart-apps.lua` is generated — alongside the manual `autostartpersonalisation.lua`, which this layer doesn't touch), `[v] volume bar` — the waybar volume bar style (`line` ━━━━━━────, `ticks` ▮▮▮▮▮▮▯▯▯▯, `solid` ▬▬▬▬▬▬▬▬▬▬▬▬────────), saved in `data/volume-bar-style.dat` and applied immediately (signal 10 to waybar), `[t] timer` — a countdown timer next to the clock (see "Timer"), and `[p] update archenemy` — the repo updater: pick a branch (`dev` — latest changes / `main` — stable releases only), the script runs `git fetch`/`checkout`/`pull --ff-only`, stashing any local changes to git-tracked files with `git stash` for the duration of the pull and restoring them afterward. It reports what really happened: "✓ updated" only when your checkout equals `origin/<branch>`; a failed fetch/pull or a stash that can't be restored is shown as an error (the stash stays in `git stash list`, nothing is lost); local commits on top of origin get a warning. It refuses to switch to a branch that doesn't contain what you currently run (e.g. `main` while it's behind `dev`) — that would roll your configs back. The machine and personal layers (monitors, appbinds, autostart, rice, volume bar style...) are outside git, so the update doesn't touch them — your settings stay unchanged by default. At the end it offers to re-run `install.sh` to generate any new machine files.
 
 The main TUI menu (Super+A) and the submenu confirmations (`[v]`, `[w]`, `[t]`, `[o]`, `[p]`) respond to a single keypress without Enter (exception: entering the duration and color in `[t]` is finished with Enter) — `Escape` exits/cancels just like `q`/`N`.
 

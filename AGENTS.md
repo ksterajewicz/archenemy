@@ -119,6 +119,25 @@ Rules that follow directly from the table:
   `rices/` before linking the new rice.** Without this, the previous rice's
   theme leaks through folders the new rice doesn't overwrite. Preserve this
   invariant whenever you change the switcher.
+- **Never delete the user's own config in `~/.config`.** A real directory OR
+  a symlink pointing outside `rices/` (e.g. GNU stow) where a rice folder
+  goes is moved to `<name>.bak-<timestamp>`, never `rm`'d; links are made
+  with `ln -sfn`. The switcher runs under `flock` (a second `Super+T` waits
+  and wins); every background process it starts gets `9>&-`, or it would
+  hold the lock for the whole session. `bash tests/switch-rice.sh`.
+- **Shared autostart lives in `config/hypr/autostart-common.lua`**, required
+  by every rice — today the flux-wall animation (the `Super+W` choice is
+  global). Don't add `flux-wall.sh autostart` to a rice's `hyprland.lua`
+  (it would start twice); `bash tests/rice-autostart.sh` checks "exactly
+  once" per rice.
+- **Every tracked `*.sh` is mode `100755` in git.** The installer runs
+  `chmod +x` on `scripts/**/*.sh`; a file without the bit in the index shows
+  up as modified after every install and makes `git pull` refuse
+  (`bash tests/repo-hygiene.sh`).
+- **Report real state, not exit codes.** Anything that pipes a command
+  through `sed`/`tee` needs `pipefail` (the updater used to print "✓
+  updated" after a failed pull); success is an observed state (`HEAD ==
+  origin/<branch>`, `hyprctl hyprpaper listactive`, `modinfo nvidia`).
 - **`white-blue` / `tron` parity:** every NON-visual change (functionality,
   binds, sources, window rules, script hooks) goes to BOTH at once, never
   to just one. `white-blue_beta` is legacy — bug fixes ONLY for what it
@@ -198,7 +217,11 @@ There's no pipeline. Verification has three levels:
    `rofi_wallpaper_switcher.sh`, and extend them when you add a consumer of
    `data/monitors/*.dat`** — the mock has three scenarios (renamed
    connectors, external monitor unplugged, two identical monitors) and a
-   new consumer needs all three.
+   new consumer needs all three. **`bash tests/run-all.sh` runs every
+   suite** (updater on real git, rice switcher, per-rice autostart on a
+   fake `hl` API, GPU installer on a fake `/etc`, repo hygiene, …) — keep
+   it green. In suites with `pipefail`, capture a script's output into a
+   variable instead of `… | grep -q` (SIGPIPE turns a pass into a fail).
 3. **The real test** — `install.sh` and rice switching (`Super+T`) need a
    live Arch + Hyprland machine. If you don't have one, **say so
    explicitly** and write out exact "live-only" steps for a human to check
