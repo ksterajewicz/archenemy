@@ -74,18 +74,23 @@ if ! git -C "$ARCHENEMY_DIR" fetch origin "$target" 2>&1 | sed 's/^/    /'; then
     exit 0
 fi
 
-# Nie cofaj systemu: przełączenie na gałąź, która NIE zawiera obecnego stanu
-# (np. main dziesiątki commitów za dev, sprzed migracji configu na Lua),
-# podmieniłoby configi na starsze — linki w ~/.config wskazywałyby na
-# nieistniejące pliki, a z menu nie byłoby drogi powrotu. Ta sama gałąź
-# idzie dalej: rozjazd historii i tak zatrzyma pull --ff-only.
+# Przełączenie na gałąź, która NIE zawiera obecnego stanu (np. main dziesiątki
+# commitów za dev, sprzed migracji configu na Lua), cofa configi — wybór
+# zostaje (właściciel testuje main na żywym sprzęcie, decyzja 2026-09-23),
+# ale tylko po jawnym potwierdzeniu, domyślnie NIE. Po cofnięciu instalator
+# (pytanie na końcu) przelinkowuje rice z tamtej wersji. Ta sama gałąź idzie
+# dalej bez pytania: rozjazd historii i tak zatrzyma pull --ff-only.
 if [[ "$target" != "$cur_branch" ]] \
    && ! git -C "$ARCHENEMY_DIR" merge-base --is-ancestor HEAD "origin/$target" 2>/dev/null; then
     missing="$(git -C "$ARCHENEMY_DIR" rev-list --count "origin/$target..HEAD" 2>/dev/null)"
-    echo -e "  ${RED}✗ Gałąź ${target} jest starsza niż to, co masz teraz: ${missing:-?} commitów Twojego obecnego stanu na niej nie ma.${NC}"
-    echo -e "  ${RED}  Przełączenie cofnęłoby konfigurację — zostaję na ${cur_branch}.${NC}"
-    pause
-    exit 0
+    echo -e "  ${YELLOW}⚠ Gałąź ${target} jest starsza niż to, co masz teraz: ${missing:-?} commitów Twojego obecnego stanu na niej nie ma.${NC}"
+    echo -e "  ${YELLOW}  Przełączenie cofnie konfigurację do wersji z ${target} (rice'y i skrypty, których tam nie ma, znikną z ~/.config).${NC}"
+    back="$(read_key "  Mimo to przełączyć na ${target}? [y/N]: ")"
+    if [[ ! "$back" =~ ^[Yy]$ ]]; then
+        echo -e "  ${YELLOW}Zostaję na ${cur_branch}.${NC}"
+        pause
+        exit 0
+    fi
 fi
 
 # Lokalne zmiany w plikach śledzonych przez git → schowaj (git stash), żeby

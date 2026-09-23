@@ -94,13 +94,16 @@ check "jawny błąd fetcha"                      '[[ "$out" == *"✗ Fetch"* ]]'
 check "brak fałszywego „✓ Zaktualizowano”"     '[[ "$out" != *"✓ Zaktualizowano"* ]]'
 check "HEAD bez zmian"                         '[[ "$(head_of HEAD)" == "$before" ]]'
 
-echo "== N3: przełączenie na gałąź starszą niż obecny stan (main za dev)"
+echo "== N3: gałąź starsza niż obecny stan (main za dev) — wybór zostaje, ale z potwierdzeniem"
 fresh_clone dev
 before=$(head_of HEAD)
 out=$(run_upd '2\n\n')
-check "odmowa przełączenia"                    '[[ "$out" == *"zostaję na dev"* ]]'
-check "dalej na dev, ten sam commit"           '[[ "$(git -C "$A" branch --show-current)" == dev && "$(head_of HEAD)" == "$before" ]]'
+check "ostrzeżenie o cofnięciu"                '[[ "$out" == *"jest starsza niż to, co masz teraz"* ]]'
+check "domyślnie (Enter) zostaje na dev"       '[[ "$(git -C "$A" branch --show-current)" == dev && "$(head_of HEAD)" == "$before" ]]'
 check "brak „✓ Zaktualizowano”"                '[[ "$out" != *"✓ Zaktualizowano"* ]]'
+fresh_clone dev
+out=$(run_upd '2yn\n')
+check "potwierdzone „y” → przełączone na main" '[[ "$(git -C "$A" branch --show-current)" == main && "$(head_of HEAD)" == "$(head_of origin/main)" ]]'
 
 echo "== N3: przełączenie do przodu (main → dev) dalej działa"
 fresh_clone main
