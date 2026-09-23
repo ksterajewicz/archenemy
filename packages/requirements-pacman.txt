@@ -39,6 +39,10 @@ socat
 # util-linux: flock — blokady w workspace-orphan-guard.sh i przełączniku
 # rice'ów (lib/switch-rice.sh: dwa szybkie Super+T czekają na siebie)
 util-linux
+# xdg-desktop-portal-hyprland: portal Hyprlanda — udostępnianie ekranu
+# (Discord, przeglądarki, RustDesk) i zrzuty przez portal; hyprland ma go
+# tylko jako zależność opcjonalną (decyzja właściciela 2026-09-23)
+xdg-desktop-portal-hyprland
 # network + firewall
 networkmanager
 ufw
