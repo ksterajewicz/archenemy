@@ -589,7 +589,7 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, t->pos_tex[t->src]);
     if (e->uu_pos        >= 0) glUniform1i(e->uu_pos, 0);
-    if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)step_time);
+    if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)fmod(step_time, FLUX_TIME_PERIOD));
     if (e->uu_dt         >= 0) glUniform1f(e->uu_dt, 1.0f / p->rate);
     if (e->uu_detail     >= 0) glUniform1f(e->uu_detail, detail);
     if (e->uu_resolution >= 0) glUniform2f(e->uu_resolution, (float)t->w, (float)t->h);
@@ -725,7 +725,7 @@ void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint des
     }
     set_audio_uniforms(e->up_audio, audio, audio_strength, t->spec_tex, t->wave_tex, t->spectro_tex, t->spectro_head);
     if (e->u_resolution >= 0) glUniform2f(e->u_resolution, (float)t->w, (float)t->h);
-    if (e->u_time       >= 0) glUniform1f(e->u_time, (float)anim_time);
+    if (e->u_time       >= 0) glUniform1f(e->u_time, (float)fmod(anim_time, FLUX_TIME_PERIOD));
     if (e->u_bg         >= 0) glUniform3fv(e->u_bg, 1, pal->bg);
     if (e->u_ink        >= 0) glUniform3fv(e->u_ink, 1, pal->ink);
     if (e->u_accent     >= 0) glUniform3fv(e->u_accent, 1, pal->accent);

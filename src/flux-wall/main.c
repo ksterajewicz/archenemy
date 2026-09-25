@@ -8,7 +8,7 @@
  *   Rysowaniem zajmuje się silnik z engine.c (bez Waylanda — ten sam kod
  *   działa offscreen w testach). Fragment shader dostaje uniformy:
  *     vec2  resolution       rozmiar powierzchni w pikselach
- *     float time             sekundy od startu (animacja)
+ *     float time             sekundy od startu (animacja; zawijane co FLUX_TIME_PERIOD — engine.h)
  *     vec3  palette_bg/ink/accent   paleta rice'a (0..1)
  *     float detail           szczegółowość 0..1 (z baterii albo stała)
  *   a gdy obok `<shader>.frag` leży `<shader>.update.glsl`, silnik przechodzi

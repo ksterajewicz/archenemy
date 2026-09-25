@@ -44,6 +44,15 @@
 
 struct palette { float bg[3], ink[3], accent[3]; };
 
+/* Uniform `time` jest floatem (24 bity mantysy: ulp = t·2⁻²³, po dobie
+ * ~10 ms — animacje zaczynają drgać). Silnik liczy dt na double'ach, a do
+ * shaderów wysyła fmod(time, FLUX_TIME_PERIOD): przy 3600 s ulp ≈ 0.43 ms.
+ * Zawinięcie raz na godzinę jest ciągłe dla okresów dzielących 3600 (obrót
+ * radaru 4 s, oddech rings 3 s, tiki int(time·k)); shadery z fazą liniową
+ * (dither-flux, dither-waves, orb-spinnin', tunnel, dryf szumu pól) widzą
+ * wtedy jeden skok fazy na godzinę — świadomy kompromis wobec ciągłego drżenia. */
+#define FLUX_TIME_PERIOD 3600.0
+
 /* Parametry animacji cząstkowej — z `#pragma flux` (wartości domyślne niżej). */
 struct flux_params {
     int   particles;   /* liczba cząstek przy detail = 1 (zaokrąglana w górę do P×P) */
