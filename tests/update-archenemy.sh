@@ -117,6 +117,25 @@ out=$(run_upd '1n\n')
 check "ostrzeżenie o lokalnych commitach"      '[[ "$out" == *"lokalnych commitów"* ]]'
 check "brak „✓ Zaktualizowano”"                '[[ "$out" != *"✓ Zaktualizowano"* ]]'
 
+echo "== plik nieśledzony (własna tapeta w wallpapers/) zostaje na dysku przez aktualizację"
+fresh_clone dev
+mkdir -p "$A/wallpapers"; echo moja > "$A/wallpapers/moja.jpg"
+echo lokalna-wersja > "$A/f.txt"                   # zmiana śledzona → stash
+upstream_commit dev g.txt v6
+out=$(run_upd '1yn\n')
+check "tapeta na dysku po udanej aktualizacji"     '[[ -f "$A/wallpapers/moja.jpg" && "$(cat "$A/wallpapers/moja.jpg")" == moja ]]'
+check "HEAD = origin/dev"                          '[[ "$(head_of HEAD)" == "$(head_of origin/dev)" ]]'
+# Ten sam plik przy KONFLIKCIE pop: ze `stash -u` tapeta lądowała w schowku
+# (trzeci rodzic wpisu stash), bez -u nigdy nie opuszcza dysku.
+fresh_clone dev
+mkdir -p "$A/wallpapers"; echo moja > "$A/wallpapers/moja.jpg"
+echo lokalna-wersja > "$A/f.txt"
+upstream_commit dev f.txt upstream-wersja-2
+out=$(run_upd '1yn\n\n')
+check "konflikt pop zgłoszony"                     '[[ "$out" == *"✗ Nie udało się przywrócić"* ]]'
+check "tapeta na dysku mimo konfliktu schowka"     '[[ -f "$A/wallpapers/moja.jpg" ]]'
+check "schowek bez plików nieśledzonych"           '[[ -z "$(git -C "$A" show --stat "stash@{0}^3" 2>/dev/null)" ]]'
+
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev
 check "install.sh w klonie jest 100644"        '[[ ! -x "$A/install/install.sh" ]]'
