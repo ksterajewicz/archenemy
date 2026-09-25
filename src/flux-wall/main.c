@@ -34,6 +34,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <getopt.h>
+#include <math.h>
 #include <poll.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -95,6 +96,8 @@ struct output {
     int32_t width, height;       /* piksele fizyczne */
     bool configured;
     bool needs_frame;            /* klatka czeka na limit fps */
+    double last_render;          /* do limitu fps — osobno na monitor, inaczej dwa
+                                  * monitory z -f N dławiłyby się nawzajem */
     struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
     struct output *next;
 };
@@ -118,7 +121,6 @@ struct state {
 
     struct audio *audio;         /* wątek analizy dźwięku (NULL = bez audio) */
     struct timespec start;
-    double last_render;          /* do limitu fps */
     float  detail_current;       /* interpolowana wartość uniformu */
     float  detail_target;
     double last_battery_poll;
@@ -290,7 +292,15 @@ static void render_output(struct output *o) {
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
     eglSwapBuffers(s->egl_display, o->egl_surface);
-    s->last_render = now_seconds();
+    o->last_render = now_seconds();
+}
+
+/* Ile sekund brakuje TEMU monitorowi do następnej klatki przy limicie -f
+ * (<= 0 = można rysować; bez limitu zawsze 0). */
+static double frame_wait(const struct output *o, double now) {
+    const struct state *s = o->state;
+    if (s->cfg.fps <= 0) return 0.0;
+    return 1.0 / s->cfg.fps - (now - o->last_render);
 }
 
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
@@ -299,11 +309,7 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
     wl_callback_destroy(cb);
     o->frame_cb = NULL;
 
-    struct state *s = o->state;
-    if (s->cfg.fps > 0) {
-        double min_dt = 1.0 / s->cfg.fps;
-        if (now_seconds() - s->last_render < min_dt) { o->needs_frame = true; return; }
-    }
+    if (frame_wait(o, now_seconds()) > 0) { o->needs_frame = true; return; }
     render_output(o);
 }
 
@@ -556,10 +562,18 @@ static void main_loop(struct state *s) {
             wl_display_dispatch_pending(s->display);
         wl_display_flush(s->display);
 
+        /* Limit fps: czekamy tylko RESZTĘ okresu (najkrótszą spośród monitorów
+         * z zaległą klatką), zaokrągloną w górę do ms, nie mniej niż 1 ms.
+         * Pełny okres 1000/fps dawał przy -f 30 na 60 Hz ~20 fps. */
         int timeout = -1;
         if (s->cfg.fps > 0) {
-            for (struct output *o = s->outputs; o; o = o->next)
-                if (o->needs_frame) { timeout = (int)(1000.0 / s->cfg.fps); break; }
+            double now = now_seconds();
+            for (struct output *o = s->outputs; o; o = o->next) {
+                if (!o->needs_frame) continue;
+                int ms = (int)ceil(frame_wait(o, now) * 1000.0);
+                if (ms < 1) ms = 1;
+                if (timeout < 0 || ms < timeout) timeout = ms;
+            }
         }
         int r = poll(&pfd, 1, timeout);
         if (r < 0 && errno != EINTR) { wl_display_cancel_read(s->display); die(2, "poll: %s", strerror(errno)); }
@@ -572,9 +586,9 @@ static void main_loop(struct state *s) {
 
         update_detail(s);
         if (s->cfg.fps > 0) {
-            double min_dt = 1.0 / s->cfg.fps;
+            double now = now_seconds();
             for (struct output *o = s->outputs; o; o = o->next)
-                if (o->needs_frame && now_seconds() - s->last_render >= min_dt) {
+                if (o->needs_frame && frame_wait(o, now) <= 0) {
                     o->needs_frame = false;
                     render_output(o);
                 }
