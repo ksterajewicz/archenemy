@@ -1231,13 +1231,26 @@ echo -e "${CYAN}[10] Optional configuration...${NC}"
 
 read -rp "Auto-configure UFW firewall? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    sudo pacman -S --needed ufw
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    sudo ufw enable
-    sudo systemctl enable ufw
-    echo -e "  ${GREEN}✓ UFW configured.${NC}"
-    SUMMARY_DONE+=("UFW configured")
+    # Każdy krok sprawdzany osobno — dotąd „✓ UFW configured" leciało nawet
+    # gdy pacman/ufw/systemctl zawiodły (audyt 2026-09-25). Sukces = ufw
+    # zgłasza „Status: active" I usługa jest włączona, nie kod wyjścia.
+    UFW_FAIL=""
+    if ! sudo pacman -S --needed ufw; then
+        UFW_FAIL="pacman (pakiet ufw)"
+    elif ! sudo ufw default deny incoming || ! sudo ufw default allow outgoing; then
+        UFW_FAIL="ufw default deny/allow"
+    elif ! sudo ufw enable || ! sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+        UFW_FAIL="ufw enable (status nie jest 'active')"
+    elif ! sudo systemctl enable ufw || ! systemctl is-enabled --quiet ufw; then
+        UFW_FAIL="systemctl enable ufw"
+    fi
+    if [[ -z "$UFW_FAIL" ]]; then
+        echo -e "  ${GREEN}✓ UFW configured.${NC}"
+        SUMMARY_DONE+=("UFW configured")
+    else
+        echo -e "  ${RED}✗ UFW NIE skonfigurowany — nie powiodło się: $UFW_FAIL${NC}"
+        SUMMARY_SKIPPED+=("UFW — nie powiodło się: $UFW_FAIL (dokończ ręcznie: sudo ufw enable && sudo systemctl enable ufw)")
+    fi
 fi
 
 # NetworkManager to twarde wymaganie (moduł sieci waybara, Super+N) — pomijamy
@@ -1248,8 +1261,14 @@ else
     echo -e "  ${YELLOW}Uwaga: jeśli używasz iwd/systemd-networkd, NetworkManager przejmie sieć.${NC}"
     read -rp "Enable NetworkManager (wymagany przez moduł sieci)? [Y/n]: " ans
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
-        sudo systemctl enable --now NetworkManager
-        SUMMARY_DONE+=("NetworkManager enabled")
+        # Sukces = usługa realnie włączona (is-enabled), nie kod systemctl.
+        if sudo systemctl enable --now NetworkManager && systemctl is-enabled --quiet NetworkManager; then
+            echo -e "  ${GREEN}✓ NetworkManager enabled.${NC}"
+            SUMMARY_DONE+=("NetworkManager enabled")
+        else
+            echo -e "  ${RED}✗ NetworkManager NIE włączony — sprawdź: systemctl status NetworkManager${NC}"
+            SUMMARY_SKIPPED+=("NetworkManager — enable nie powiódł się (moduł sieci i Super+N nie zadziałają): sudo systemctl enable --now NetworkManager")
+        fi
     else
         SUMMARY_SKIPPED+=("NetworkManager (moduł sieci i Super+N nie zadziałają)")
     fi
@@ -1259,10 +1278,18 @@ fi
 # błędu o nieistniejącym bluetooth.service.
 read -rp "Set up bluetooth (installs bluez)? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    sudo pacman -S --needed bluez bluez-utils
-    sudo systemctl enable --now bluetooth
-    echo -e "  ${GREEN}✓ Bluetooth enabled.${NC}"
-    SUMMARY_DONE+=("Bluetooth enabled")
+    # pacman i systemctl sprawdzane osobno; sukces = bluetooth.service
+    # realnie włączony, nie kod wyjścia (audyt 2026-09-25).
+    if ! sudo pacman -S --needed bluez bluez-utils; then
+        echo -e "  ${RED}✗ bluez NIE zainstalowany — pomijam bluetooth.service.${NC}"
+        SUMMARY_SKIPPED+=("Bluetooth — pacman nie zainstalował bluez/bluez-utils")
+    elif sudo systemctl enable --now bluetooth && systemctl is-enabled --quiet bluetooth; then
+        echo -e "  ${GREEN}✓ Bluetooth enabled.${NC}"
+        SUMMARY_DONE+=("Bluetooth enabled")
+    else
+        echo -e "  ${RED}✗ bluetooth.service NIE włączony — sprawdź: systemctl status bluetooth${NC}"
+        SUMMARY_SKIPPED+=("Bluetooth — bluez jest, ale enable bluetooth.service nie powiódł się")
+    fi
 fi
 
 # Audio: pavucontrol i moduł głośności waybara mówią po PulseAudio — serwer
@@ -1321,6 +1348,12 @@ echo -e "${NC}"
 
 read -rp "Reload Hyprland now? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    hyprctl reload
-    echo -e "${GREEN}✓ Hyprland reloaded.${NC}"
+    # hyprctl reload wypisuje „ok" przy sukcesie; błąd configu lub brak
+    # socketu = inny tekst / niezerowy kod — dotąd ✓ leciało bezwarunkowo.
+    if RELOAD_OUT="$(hyprctl reload 2>&1)" && [[ "$RELOAD_OUT" == ok* ]]; then
+        echo -e "${GREEN}✓ Hyprland reloaded.${NC}"
+    else
+        echo -e "${RED}✗ Hyprland reload nie powiódł się:${NC} ${RELOAD_OUT:-brak odpowiedzi}"
+        echo -e "  Sprawdź config (hyprctl reload) lub wyloguj się i zaloguj ponownie."
+    fi
 fi
