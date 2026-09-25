@@ -3,6 +3,7 @@
  */
 #define _GNU_SOURCE          /* pthread_timedjoin_np */
 #include "audio.h"
+#include "util.h"       /* flux_now_seconds — wspólne z main.c i tools/offscreen.c */
 
 #include <errno.h>
 #include <math.h>
@@ -283,11 +284,6 @@ struct audio {
     bool            started;
 };
 
-static double now_s(void) {
-    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec + ts.tv_nsec / 1e9;
-}
-
 static void logv(const struct audio *a, const char *fmt, ...) {
     if (!a->verbose) return;
     va_list ap; va_start(ap, fmt);
@@ -309,7 +305,7 @@ static void push_hop(struct audio *a) {
         a->ring_r[AUDIO_FFT_N - AUDIO_HOP + i] = r;
         a->ring[AUDIO_FFT_N - AUDIO_HOP + i]   = 0.5f * (l + r);
     }
-    audio_analyze(&a->st, a->ring, (float)AUDIO_HOP / AUDIO_RATE, now_s());
+    audio_analyze(&a->st, a->ring, (float)AUDIO_HOP / AUDIO_RATE, flux_now_seconds());
     int start = audio_trigger(a->ring, AUDIO_FFT_N, AUDIO_WAVE_N, 0.01f);
     audio_wave_fill(&a->st.out, a->ring_l, a->ring_r, AUDIO_FFT_N, start);
     pthread_mutex_lock(&a->lock);

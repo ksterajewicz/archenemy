@@ -235,7 +235,9 @@ char *flux_strip_directives(const char *src, bool keep_version) {
         char *nl = strchr(line, '\n');
         char *s = line;
         while (*s == ' ' || *s == '\t') s++;
-        bool pragma = strncmp(s, "#pragma flux", 12) == 0;
+        /* jak w flux_params_parse: po „#pragma flux" musi być biały znak —
+         * „#pragma fluxx" to cudza pragma, zostaje w źródle */
+        bool pragma = strncmp(s, "#pragma flux", 12) == 0 && isspace((unsigned char)s[12]);
         bool version = !keep_version && strncmp(s, "#version", 8) == 0;
         if (pragma || version) {
             size_t len = nl ? (size_t)(nl - line) : strlen(line);
@@ -431,9 +433,13 @@ static void target_free_gl(struct flux_target *t) {
     t->pos_fbo[0] = t->pos_fbo[1] = t->pos_tex[0] = t->pos_tex[1] = 0;
 }
 
-static bool target_alloc_accum(struct flux_target *t, char *err, size_t errlen) {
-    t->acc_tex = make_tex(t->w, t->h, GL_R16F, GL_RED, GL_HALF_FLOAT, NULL);
-    if (!make_fbo(t->acc_tex, &t->acc_fbo)) {
+/* Nowy, wyczyszczony akumulator w×h; przy błędzie nic nie zostaje przydzielone
+ * (tekstura zwolniona), więc wołający może zachować stary. */
+static bool alloc_accum(int w, int h, GLuint *tex, GLuint *fbo, char *err, size_t errlen) {
+    *tex = make_tex(w, h, GL_R16F, GL_RED, GL_HALF_FLOAT, NULL);
+    if (!make_fbo(*tex, fbo)) {
+        glDeleteTextures(1, tex);
+        *tex = 0;
         snprintf(err, errlen, "akumulator R16F nie jest renderowalny (brak GL_EXT_color_buffer_half_float?)");
         return false;
     }
@@ -459,7 +465,7 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
          * gładka interpolacja między pasmami i kolumnami), REPEAT po x robi
          * z tekstury pierścień: shader czyta (head - wiek) bez własnego modulo */
         unsigned char *zero = calloc((size_t)SPECTRO_COLS * AUDIO_SPECTRO_BINS, 1);
-        if (!zero) { free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
+        if (!zero) { target_free_gl(t); free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
         t->spectro_tex = make_tex(SPECTRO_COLS, AUDIO_SPECTRO_BINS, GL_R8, GL_RED, GL_UNSIGNED_BYTE, zero);
         free(zero);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -470,7 +476,7 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
 
     int P = e->P;
     float *zero = calloc((size_t)P * P * 4, sizeof(float));
-    if (!zero) { free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
+    if (!zero) { target_free_gl(t); free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
     for (int i = 0; i < 2; i++) {
         t->pos_tex[i] = make_tex(P, P, GL_RGBA32F, GL_RGBA, GL_FLOAT, zero);
         if (!make_fbo(t->pos_tex[i], &t->pos_fbo[i])) {
@@ -481,23 +487,27 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
         }
     }
     free(zero);
-    if (!target_alloc_accum(t, err, errlen)) { target_free_gl(t); free(t); return NULL; }
+    if (!alloc_accum(t->w, t->h, &t->acc_tex, &t->acc_fbo, err, errlen)) { target_free_gl(t); free(t); return NULL; }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return t;
 }
 
 /* Zmiana rozmiaru odtwarza i CZYŚCI akumulator (pozycje są znormalizowane,
- * więc zostają — cząstki nie skaczą). */
-void flux_target_resize(struct flux_target *t, int w, int h) {
-    if (w == t->w && h == t->h) return;
-    t->w = w; t->h = h;
-    if (!t->e->particle) return;
+ * więc zostają — cząstki nie skaczą). Nowy akumulator powstaje PRZED
+ * zwolnieniem starego: gdy sterownik odmówi (brak pamięci przy dużym
+ * buforze), cel zostaje w starym rozmiarze z działającym FBO — fade/splat
+ * nigdy nie rysują do okna przez acc_fbo = 0. */
+bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t errlen) {
+    if (w == t->w && h == t->h) return true;
+    if (!t->e->particle) { t->w = w; t->h = h; return true; }
+    GLuint tex = 0, fbo = 0;
+    if (!alloc_accum(w, h, &tex, &fbo, err, errlen)) { glBindFramebuffer(GL_FRAMEBUFFER, 0); return false; }
     if (t->acc_fbo) glDeleteFramebuffers(1, &t->acc_fbo);
     if (t->acc_tex) glDeleteTextures(1, &t->acc_tex);
-    t->acc_fbo = t->acc_tex = 0;
-    char err[128];
-    target_alloc_accum(t, err, sizeof err);   /* format już raz przeszedł — nie może paść */
+    t->acc_tex = tex; t->acc_fbo = fbo;
+    t->w = w; t->h = h;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
 }
 
 void flux_target_destroy(struct flux_target *t) {
@@ -581,7 +591,7 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, t->pos_tex[t->src]);
     if (e->uu_pos        >= 0) glUniform1i(e->uu_pos, 0);
-    if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)step_time);
+    if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)fmod(step_time, FLUX_TIME_PERIOD));
     if (e->uu_dt         >= 0) glUniform1f(e->uu_dt, 1.0f / p->rate);
     if (e->uu_detail     >= 0) glUniform1f(e->uu_detail, detail);
     if (e->uu_resolution >= 0) glUniform2f(e->uu_resolution, (float)t->w, (float)t->h);
@@ -717,7 +727,7 @@ void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint des
     }
     set_audio_uniforms(e->up_audio, audio, audio_strength, t->spec_tex, t->wave_tex, t->spectro_tex, t->spectro_head);
     if (e->u_resolution >= 0) glUniform2f(e->u_resolution, (float)t->w, (float)t->h);
-    if (e->u_time       >= 0) glUniform1f(e->u_time, (float)anim_time);
+    if (e->u_time       >= 0) glUniform1f(e->u_time, (float)fmod(anim_time, FLUX_TIME_PERIOD));
     if (e->u_bg         >= 0) glUniform3fv(e->u_bg, 1, pal->bg);
     if (e->u_ink        >= 0) glUniform3fv(e->u_ink, 1, pal->ink);
     if (e->u_accent     >= 0) glUniform3fv(e->u_accent, 1, pal->accent);

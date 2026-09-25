@@ -8,7 +8,7 @@
  *   Rysowaniem zajmuje się silnik z engine.c (bez Waylanda — ten sam kod
  *   działa offscreen w testach). Fragment shader dostaje uniformy:
  *     vec2  resolution       rozmiar powierzchni w pikselach
- *     float time             sekundy od startu (animacja)
+ *     float time             sekundy od startu (animacja; zawijane co FLUX_TIME_PERIOD — engine.h)
  *     vec3  palette_bg/ink/accent   paleta rice'a (0..1)
  *     float detail           szczegółowość 0..1 (z baterii albo stała)
  *   a gdy obok `<shader>.frag` leży `<shader>.update.glsl`, silnik przechodzi
@@ -16,7 +16,8 @@
  *   `sampler2D accum` + `gain` — kontrakt w engine.h.
  *
  *   Kody wyjścia (install.sh i przełącznik używają ich do fallbacku na hyprpaper):
- *     0 ok   1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
+ *     0 ok (także: SIGTERM/SIGINT albo kompozytor zamknął połączenie)
+ *     1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
  *     3 błąd EGL/GLES (shader, kontekst)
  *
  *   Skalowanie: przy wp_fractional_scale_v1 + wp_viewporter bufor ma rozmiar
@@ -32,9 +33,12 @@
  * =============================================
  */
 #define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
+#include <math.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -55,6 +59,7 @@
 #include "viewporter-client-protocol.h"
 #include "engine.h"
 #include "audio.h"
+#include "util.h"       /* flux_now_seconds, flux_read_file — wspólne z audio.c i tools/offscreen.c */
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
 
@@ -81,6 +86,7 @@ struct output {
     struct state *state;
     struct wl_output *wl_output;
     uint32_t global_name;
+    uint32_t version;            /* zbindowana wersja wl_output (release od v3) */
     char name[64];
     int32_t scale;
     struct wl_surface *surface;
@@ -95,6 +101,9 @@ struct output {
     int32_t width, height;       /* piksele fizyczne */
     bool configured;
     bool needs_frame;            /* klatka czeka na limit fps */
+    bool recreate;               /* po `closed`: pętla ma utworzyć powierzchnię od nowa */
+    double last_render;          /* do limitu fps — osobno na monitor, inaczej dwa
+                                  * monitory z -f N dławiłyby się nawzajem */
     struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
     struct output *next;
 };
@@ -118,7 +127,6 @@ struct state {
 
     struct audio *audio;         /* wątek analizy dźwięku (NULL = bez audio) */
     struct timespec start;
-    double last_render;          /* do limitu fps */
     float  detail_current;       /* interpolowana wartość uniformu */
     float  detail_target;
     double last_battery_poll;
@@ -139,11 +147,6 @@ static void die(int code, const char *fmt, ...) {
     exit(code);
 }
 
-static double now_seconds(void) {
-    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec + ts.tv_nsec / 1e9;
-}
-
 /* ── paleta i bateria (bez Waylanda — testowalne osobno) ──────────────────── */
 
 /* "0F1A24" albo "#0F1A24" → rgb 0..1; false przy śmieciach. */
@@ -151,12 +154,12 @@ bool parse_hex_color(const char *hex, float out[3]) {
     if (!hex) return false;
     if (*hex == '#') hex++;
     if (strlen(hex) != 6) return false;
+    /* dokładnie 6 cyfr hex — strtol łykało spacje i znak („ F", „-1") */
+    for (int i = 0; i < 6; i++)
+        if (!isxdigit((unsigned char)hex[i])) return false;
     for (int i = 0; i < 3; i++) {
         char buf[3] = { hex[2 * i], hex[2 * i + 1], 0 };
-        char *end;
-        long v = strtol(buf, &end, 16);
-        if (*end != 0) return false;
-        out[i] = (float)v / 255.0f;
+        out[i] = (float)strtol(buf, NULL, 16) / 255.0f;
     }
     return true;
 }
@@ -202,21 +205,6 @@ float battery_detail(const char *power_supply_dir) {
 }
 
 /* ── GLES ─────────────────────────────────────────────────────────────────── */
-
-static char *read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (n < 0) { fclose(f); return NULL; }
-    char *buf = malloc((size_t)n + 1);
-    if (!buf) { fclose(f); return NULL; }
-    size_t got = fread(buf, 1, (size_t)n, f);
-    fclose(f);
-    buf[got] = 0;
-    return buf;
-}
 
 /* Programy GL budujemy przy PIERWSZEJ powierzchni (kompilacja wymaga bieżącego
  * kontekstu). Źródła są już wczytane — błąd pliku wyszedł na starcie kodem 1. */
@@ -270,27 +258,47 @@ static void egl_init(struct state *s) {
 /* ── render ───────────────────────────────────────────────────────────────── */
 
 static void output_request_frame(struct output *o);
+static void output_teardown_surface(struct output *o);
 
 static void render_output(struct output *o) {
     struct state *s = o->state;
     if (!o->configured || !o->egl_surface || !o->target) return;
 
-    eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
-    double t = now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
+    /* Pojedyncza odmowa EGL (np. sterownik w trakcie wybudzania) nie kończy
+     * procesu: klatkę pomijamy, `needs_frame` każe pętli spróbować ponownie
+     * (frame callback bez commitu by nie przyszedł). */
+    if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
+        o->needs_frame = true;
+        return;
+    }
+    double t = flux_now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
     /* Snapshot audio raz na klatkę; stęchły (sink śpi → read blokuje) gaśnie tu. */
     struct audio_features feat;
     const struct audio_features *audio = NULL;
     if (s->audio) {
         audio_snapshot(s->audio, &feat);
-        audio_features_age(&feat, now_seconds(), 0.25f);
+        audio_features_age(&feat, flux_now_seconds(), 0.25f);
         audio = &feat;
     }
     flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current,
                        audio, 1.0f, s->cfg.once);
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
-    eglSwapBuffers(s->egl_display, o->egl_surface);
-    s->last_render = now_seconds();
+    if (!eglSwapBuffers(s->egl_display, o->egl_surface)) {
+        logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
+        o->needs_frame = true;               /* bez commitu callback nie przyjdzie — pętla ponowi */
+    }
+    o->last_render = flux_now_seconds();
+}
+
+/* Ile sekund brakuje TEMU monitorowi do następnej klatki z `needs_frame`
+ * (<= 0 = można rysować): przy limicie -f reszta okresu, bez limitu
+ * (klatka zaległa tylko po nieudanym EGL) ponowienie po 100 ms. */
+static double frame_wait(const struct output *o, double now) {
+    const struct state *s = o->state;
+    double min_dt = s->cfg.fps > 0 ? 1.0 / s->cfg.fps : 0.1;
+    return min_dt - (now - o->last_render);
 }
 
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
@@ -299,11 +307,7 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
     wl_callback_destroy(cb);
     o->frame_cb = NULL;
 
-    struct state *s = o->state;
-    if (s->cfg.fps > 0) {
-        double min_dt = 1.0 / s->cfg.fps;
-        if (now_seconds() - s->last_render < min_dt) { o->needs_frame = true; return; }
-    }
+    if (o->state->cfg.fps > 0 && frame_wait(o, flux_now_seconds()) > 0) { o->needs_frame = true; return; }
     render_output(o);
 }
 
@@ -348,7 +352,8 @@ static void output_apply_size(struct output *o) {
         o->egl_surface = eglCreateWindowSurface(s->egl_display, s->egl_config,
                                                 (EGLNativeWindowType)o->egl_window, NULL);
         if (o->egl_surface == EGL_NO_SURFACE) die(3, "%s: eglCreateWindowSurface", o->name);
-        eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+        if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context))
+            die(3, "%s: eglMakeCurrent nie powiodło się (0x%x)", o->name, eglGetError());
         /* Własne frame callbacks sterują tempem — swap nie może blokować. */
         eglSwapInterval(s->egl_display, 0);
         /* Program budujemy przy PIERWSZEJ powierzchni, nie na starcie: kompilacja
@@ -359,13 +364,19 @@ static void output_apply_size(struct output *o) {
     } else if (changed) {
         wl_egl_window_resize(o->egl_window, pw, ph, 0, 0);
     }
-    eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+    if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+        /* na starcie (jeszcze bez silnika) bez kontekstu nie ma tapety — kod 3;
+         * później pojedyncza odmowa = pomijamy ten configure, przyjdzie następny */
+        if (!s->engine) die(3, "%s: eglMakeCurrent nie powiodło się (0x%x)", o->name, eglGetError());
+        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam configure", o->name, eglGetError());
+        return;
+    }
+    char err[256];
     if (!o->target) {
-        char err[256];
         o->target = flux_target_create(s->engine, pw, ph, err, sizeof err);
         if (!o->target) die(3, "%s: %s", o->name, err);
-    } else if (changed) {
-        flux_target_resize(o->target, pw, ph);
+    } else if (changed && !flux_target_resize(o->target, pw, ph, err, sizeof err)) {
+        logv(s, "%s: zmiana rozmiaru akumulatora nie powiodła się (%s) — rysuję w starym rozmiarze", o->name, err);
     }
     o->configured = true;
     render_output(o);
@@ -393,11 +404,17 @@ static const struct wp_fractional_scale_v1_listener fractional_listener = {
     .preferred_scale = fractional_preferred,
 };
 
+/* Po `closed` powierzchni nie wolno już używać (protokół wlr-layer-shell):
+ * zwalniamy ją całą i prosimy pętlę o nową — dopiero PO tej turze
+ * zdarzeń, bo gdy zaraz za `closed` przychodzi global_remove tego
+ * monitora, nie ma na czym jej tworzyć (i nie kręcimy się w pętli
+ * closed → create → closed). Bez odtworzenia tapeta zostawałaby czarna. */
 static void layer_closed(void *data, struct zwlr_layer_surface_v1 *ls) {
     (void)ls;
     struct output *o = data;
-    logv(o->state, "%s: layer surface zamknięta przez kompozytor", o->name);
-    o->configured = false;
+    logv(o->state, "%s: layer surface zamknięta przez kompozytor — odtwarzam", o->name);
+    output_teardown_surface(o);
+    o->recreate = true;
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_listener = {
@@ -433,25 +450,52 @@ static void output_create_surface(struct output *o) {
     logv(s, "%s: layer surface utworzona", o->name);
 }
 
-static void output_destroy(struct output *o) {
+/* Zwolnienie powierzchni monitora (layer surface, EGL, cel silnika) z
+ * zachowaniem samego wl_output — po `closed` od kompozytora powierzchnię
+ * tworzymy od nowa, po odpięciu monitora zwalniamy wszystko. */
+static void output_teardown_surface(struct output *o) {
     struct state *s = o->state;
     if (o->frame_cb) wl_callback_destroy(o->frame_cb);
+    o->frame_cb = NULL;
     if (o->target && o->egl_surface) {
-        /* obiekty GL zwalniamy przy bieżącym kontekście — inaczej wyciekną */
-        eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+        /* obiekty GL zwalniamy przy bieżącym kontekście — inaczej wyciekną
+         * (bez kontekstu wywołania GL są pustymi operacjami; strukturę i tak
+         * zwalniamy, żeby nie wisiał wskaźnik) */
+        if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context))
+            logv(s, "%s: eglMakeCurrent przy sprzątaniu nie powiodło się (0x%x) — obiekty GL celu mogą wyciec", o->name, eglGetError());
         flux_target_destroy(o->target);
         o->target = NULL;
     }
     if (o->egl_surface) {
         eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroySurface(s->egl_display, o->egl_surface);
+        o->egl_surface = EGL_NO_SURFACE;
     }
     if (o->egl_window) wl_egl_window_destroy(o->egl_window);
+    o->egl_window = NULL;
     if (o->fractional) wp_fractional_scale_v1_destroy(o->fractional);
+    o->fractional = NULL;
     if (o->viewport) wp_viewport_destroy(o->viewport);
+    o->viewport = NULL;
     if (o->layer_surface) zwlr_layer_surface_v1_destroy(o->layer_surface);
+    o->layer_surface = NULL;
     if (o->surface) wl_surface_destroy(o->surface);
-    if (o->wl_output) wl_output_destroy(o->wl_output);
+    o->surface = NULL;
+    o->configured = false;
+    o->needs_frame = false;
+    o->logical_w = o->logical_h = 0;
+    o->width = o->height = 0;
+    o->frac_scale120 = 0;
+}
+
+static void output_destroy(struct output *o) {
+    output_teardown_surface(o);
+    if (o->wl_output) {
+        /* `release` (v3+) mówi kompozytorowi, że obiekt jest zwolniony;
+         * starsze wersje mają tylko lokalne destroy. */
+        if (o->version >= WL_OUTPUT_RELEASE_SINCE_VERSION) wl_output_release(o->wl_output);
+        else wl_output_destroy(o->wl_output);
+    }
     free(o);
 }
 
@@ -502,12 +546,14 @@ static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
         s->fractional_manager = wl_registry_bind(reg, name, &wp_fractional_scale_manager_v1_interface, 1);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         struct output *o = calloc(1, sizeof *o);
+        if (!o) die(2, "brak pamięci na stan monitora (wl_output %u)", name);
         o->state = s;
         o->global_name = name;
         o->scale = 1;
         snprintf(o->name, sizeof o->name, "output-%u", name);
         /* v4 daje zdarzenie `name` (potrzebne do -o); starsze wersje — sama skala. */
-        o->wl_output = wl_registry_bind(reg, name, &wl_output_interface, version < 4 ? version : 4);
+        o->version = version < 4 ? version : 4;
+        o->wl_output = wl_registry_bind(reg, name, &wl_output_interface, o->version);
         wl_output_add_listener(o->wl_output, &output_listener, o);
         o->next = s->outputs;
         s->outputs = o;
@@ -536,8 +582,18 @@ static const struct wl_registry_listener registry_listener = {
 
 /* ── pętla ────────────────────────────────────────────────────────────────── */
 
+/* SIGTERM/SIGINT (kill przy zmianie rice'a, wylogowanie): handler tylko
+ * zapisuje numer sygnału, poll() wraca z EINTR i pętla kończy się czysto
+ * kodem 0 — bez SA_RESTART, żeby poll faktycznie wrócił. */
+static volatile sig_atomic_t stop_requested;
+static void on_stop_signal(int sig) { stop_requested = sig; }
+
+/* Normalne zamknięcie połączenia przez kompozytor (wylogowanie, restart
+ * kompozytora) — to nie jest błąd, kończymy kodem 0. */
+static bool connection_closed(int err) { return err == EPIPE || err == ECONNRESET; }
+
 static void update_detail(struct state *s) {
-    double t = now_seconds();
+    double t = flux_now_seconds();
     if (s->cfg.battery && t - s->last_battery_poll > 30.0) {
         s->detail_target = battery_detail("/sys/class/power_supply");
         s->last_battery_poll = t;
@@ -556,31 +612,101 @@ static void main_loop(struct state *s) {
             wl_display_dispatch_pending(s->display);
         wl_display_flush(s->display);
 
+        /* Limit fps: czekamy tylko RESZTĘ okresu (najkrótszą spośród monitorów
+         * z zaległą klatką), zaokrągloną w górę do ms, nie mniej niż 1 ms.
+         * Pełny okres 1000/fps dawał przy -f 30 na 60 Hz ~20 fps. */
         int timeout = -1;
-        if (s->cfg.fps > 0) {
-            for (struct output *o = s->outputs; o; o = o->next)
-                if (o->needs_frame) { timeout = (int)(1000.0 / s->cfg.fps); break; }
+        {
+            double now = flux_now_seconds();
+            for (struct output *o = s->outputs; o; o = o->next) {
+                if (!o->needs_frame) continue;
+                int ms = (int)ceil(frame_wait(o, now) * 1000.0);
+                if (ms < 1) ms = 1;
+                if (timeout < 0 || ms < timeout) timeout = ms;
+            }
         }
         int r = poll(&pfd, 1, timeout);
         if (r < 0 && errno != EINTR) { wl_display_cancel_read(s->display); die(2, "poll: %s", strerror(errno)); }
+        if (stop_requested) {                       /* SIGTERM/SIGINT: poll wraca z EINTR */
+            wl_display_cancel_read(s->display);
+            logv(s, "sygnał %d — kończę", (int)stop_requested);
+            s->running = false;
+            break;
+        }
         if (r > 0 && (pfd.revents & POLLIN)) {
-            if (wl_display_read_events(s->display) < 0) die(2, "połączenie z kompozytorem zerwane");
+            if (wl_display_read_events(s->display) < 0) {
+                if (connection_closed(errno)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
+                die(2, "połączenie z kompozytorem zerwane: %s", strerror(errno));
+            }
         } else {
             wl_display_cancel_read(s->display);
+            if (r > 0 && (pfd.revents & (POLLHUP | POLLERR))) {
+                logv(s, "kompozytor zamknął połączenie — kończę");
+                s->running = false;
+                break;
+            }
         }
-        if (wl_display_dispatch_pending(s->display) < 0) die(2, "dispatch: %s", strerror(errno));
+        if (wl_display_dispatch_pending(s->display) < 0) {
+            if (connection_closed(errno)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
+            die(2, "dispatch: %s", strerror(errno));
+        }
+
+        /* Powierzchnie zamknięte przez kompozytor (`closed`) — monitor wciąż
+         * istnieje (global_remove zdjąłby go z listy), więc tworzymy nową. */
+        for (struct output *o = s->outputs; o; o = o->next)
+            if (o->recreate) { o->recreate = false; output_create_surface(o); }
 
         update_detail(s);
-        if (s->cfg.fps > 0) {
-            double min_dt = 1.0 / s->cfg.fps;
+        {
+            double now = flux_now_seconds();
             for (struct output *o = s->outputs; o; o = o->next)
-                if (o->needs_frame && now_seconds() - s->last_render >= min_dt) {
+                if (o->needs_frame && frame_wait(o, now) <= 0) {
                     o->needs_frame = false;
                     render_output(o);
                 }
         }
-        if (wl_display_get_error(s->display)) die(2, "błąd protokołu Waylanda");
+        int err = wl_display_get_error(s->display);
+        if (err) {
+            if (connection_closed(err)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
+            die(2, "błąd protokołu Waylanda: %s", strerror(err));
+        }
     }
+}
+
+/* Sprzątanie przy czystym wyjściu (sygnał, kompozytor zamknął połączenie):
+ * audio, programy GL (przy bieżącym kontekście którejś powierzchni — bez
+ * niej nie da się ich zwolnić, ale proces i tak kończy się za chwilę),
+ * powierzchnie z celami, EGL, obiekty globalne i połączenie. Po zerwanym
+ * połączeniu żądania Waylanda idą w pustkę — to nieszkodliwe. */
+static void state_cleanup(struct state *s) {
+    audio_stop(s->audio);
+    s->audio = NULL;
+    if (s->engine) {
+        for (struct output *o = s->outputs; o; o = o->next)
+            if (o->egl_surface && eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+                flux_engine_destroy(s->engine);
+                break;
+            }
+        s->engine = NULL;
+    }
+    while (s->outputs) {
+        struct output *o = s->outputs;
+        s->outputs = o->next;
+        output_destroy(o);
+    }
+    if (s->egl_display != EGL_NO_DISPLAY) {
+        eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (s->egl_context != EGL_NO_CONTEXT) eglDestroyContext(s->egl_display, s->egl_context);
+        eglTerminate(s->egl_display);
+    }
+    if (s->fractional_manager) wp_fractional_scale_manager_v1_destroy(s->fractional_manager);
+    if (s->viewporter) wp_viewporter_destroy(s->viewporter);
+    if (s->layer_shell) zwlr_layer_shell_v1_destroy(s->layer_shell);
+    if (s->compositor) wl_compositor_destroy(s->compositor);
+    if (s->registry) wl_registry_destroy(s->registry);
+    wl_display_disconnect(s->display);
+    free(s->frag_src);
+    free(s->update_src);
 }
 
 /* ── main ─────────────────────────────────────────────────────────────────── */
@@ -620,9 +746,22 @@ int main(int argc, char **argv) {
         switch (c) {
         case 's': s.cfg.shader_path = optarg; break;
         case 'p': if (!parse_palette(optarg, &s.cfg.palette)) die(1, "zła paleta: %s (oczekiwane bg,ink,acc jako hex)", optarg); break;
-        case 'd': s.cfg.detail = strtof(optarg, NULL); if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1"); break;
+        case 'd': {
+            char *end;
+            s.cfg.detail = strtof(optarg, &end);
+            if (end == optarg || *end) die(1, "detail: '%s' nie jest liczbą", optarg);
+            if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1");
+            break;
+        }
         case 'B': s.cfg.battery = true; break;
-        case 'f': s.cfg.fps = atoi(optarg); if (s.cfg.fps < 0) die(1, "fps < 0"); break;
+        case 'f': {
+            char *end;
+            long v = strtol(optarg, &end, 10);
+            if (end == optarg || *end) die(1, "fps: '%s' nie jest liczbą", optarg);
+            if (v < 0 || v > 1000) die(1, "fps poza 0..1000");
+            s.cfg.fps = (int)v;
+            break;
+        }
         case 'o': s.cfg.output_name = optarg; break;
         case 'l':
             if (strcmp(optarg, "bottom") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
@@ -642,7 +781,18 @@ int main(int argc, char **argv) {
 
     s.detail_target = s.cfg.battery ? battery_detail("/sys/class/power_supply") : s.cfg.detail;
     s.detail_current = s.detail_target;
-    s.last_battery_poll = now_seconds();
+    s.last_battery_poll = flux_now_seconds();
+
+    /* Źródła wczytujemy od razu, PRZED Waylandem (błąd pliku = kod 1 zanim
+     * cokolwiek wstanie), kompilujemy dopiero przy pierwszej powierzchni —
+     * patrz output_apply_size. Plik `<nazwa>.update.glsl` obok `.frag`
+     * włącza tryb cząstkowy. */
+    s.frag_src = flux_read_file(s.cfg.shader_path);
+    if (!s.frag_src) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
+    if (flux_update_path(s.cfg.shader_path, s.update_path, sizeof s.update_path))
+        s.update_src = flux_read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
+    else
+        snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
 
     s.display = wl_display_connect(NULL);
     if (!s.display) die(2, "brak połączenia z Waylandem (WAYLAND_DISPLAY?)");
@@ -654,15 +804,6 @@ int main(int argc, char **argv) {
     logv(&s, "skala ułamkowa: %s", (s.fractional_manager && s.viewporter) ? "dostępna" : "brak (skala całkowita)");
 
     egl_init(&s);
-    /* Źródła wczytujemy od razu (błąd pliku = kod 1 zanim cokolwiek wstanie),
-     * kompilujemy dopiero przy pierwszej powierzchni — patrz output_apply_size.
-     * Plik `<nazwa>.update.glsl` obok `.frag` włącza tryb cząstkowy. */
-    s.frag_src = read_file(s.cfg.shader_path);
-    if (!s.frag_src) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
-    if (flux_update_path(s.cfg.shader_path, s.update_path, sizeof s.update_path))
-        s.update_src = read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
-    else
-        snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
 
     /* Audio: TYLKO gdy shader deklaruje `#pragma flux audio 1` (wizualizacja
      * muzyki) albo podano --audio-file; nigdy przy --once i --no-audio; nigdy
@@ -687,12 +828,18 @@ int main(int argc, char **argv) {
 
     clock_gettime(CLOCK_MONOTONIC, &s.start);
     s.running = true;
+    {
+        struct sigaction sa = { .sa_handler = on_stop_signal };
+        sigemptyset(&sa.sa_mask);          /* bez SA_RESTART — poll ma wrócić z EINTR */
+        sigaction(SIGTERM, &sa, NULL);
+        sigaction(SIGINT, &sa, NULL);
+    }
     /* Monitory znane po pierwszym roundtripie dostały listenery; drugi roundtrip
      * dowozi ich zdarzenia (scale/name/done) — i w `done` powstają powierzchnie. */
     wl_display_roundtrip(s.display);
     for (struct output *o = s.outputs; o; o = o->next) output_create_surface(o);
 
     main_loop(&s);
-    audio_stop(s.audio);
+    state_cleanup(&s);
     return 0;
 }

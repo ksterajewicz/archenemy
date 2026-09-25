@@ -43,6 +43,9 @@ int main(void) {
     CHECK(!parse_hex_color("D8E6EEFF", c), "z alfą (8 znaków) → odrzucony");
     CHECK(!parse_hex_color("GGGGGG", c), "nie-hex → odrzucony");
     CHECK(!parse_hex_color(NULL, c),     "NULL → odrzucony");
+    CHECK(!parse_hex_color(" F1A24", c), "spacja w środku (strtol by ją łyknął) → odrzucony");
+    CHECK(!parse_hex_color("-1-1-1", c), "znaki minus (strtol by je łyknął) → odrzucony");
+    CHECK(!parse_hex_color("#-F-F-F", c), "z # i minusami → odrzucony");
 
     struct palette p;
     printf("parse_palette\n");
@@ -112,6 +115,52 @@ int main(void) {
     CHECK(flux_update_path("shaders/dither-flow.frag", up, sizeof up) && strcmp(up, "shaders/dither-flow.update.glsl") == 0, ".frag → .update.glsl");
     CHECK(!flux_update_path("shaders/dither-flow.glsl", up, sizeof up), "nie-.frag → false");
     CHECK(!flux_update_path("shaders/dither-flow.frag", up, 8), "za mały bufor → false");
+
+    printf("flux_strip_directives\n");
+    {
+        const char *src = "#version 300 es\n  #pragma flux life 4\nvoid main() {}\n\t#pragma flux seed 7";
+        char *out = flux_strip_directives(src, true);
+        CHECK(out && strlen(out) == strlen(src), "długość zachowana (numery linii w błędach kompilatora zgodne)");
+        CHECK(out && strncmp(out, "#version 300 es\n", 16) == 0, "keep_version = true: #version zostaje");
+        CHECK(out && strncmp(out + 16, "                     \n", 22) == 0, "linia #pragma flux (z wcięciem) → same spacje, \\n zostaje");
+        CHECK(out && strstr(out, "void main() {}\n") == out + 38, "zwykła linia nietknięta");
+        CHECK(out && strcmp(out + 53, "                    ") == 0, "ostatnia linia bez \\n też wyczyszczona");
+        free(out);
+        out = flux_strip_directives(src, false);
+        CHECK(out && strncmp(out, "               \n", 16) == 0, "keep_version = false: #version → spacje (wersję niesie prelude)");
+        free(out);
+        out = flux_strip_directives("#pragma once\n#pragma fluxx 1\n#versionx\n", true);
+        CHECK(out && strcmp(out, "#pragma once\n#pragma fluxx 1\n#versionx\n") == 0, "inne pragmy i podobne słowa nietknięte");
+        free(out);
+        out = flux_strip_directives("", true);
+        CHECK(out && out[0] == 0, "pusty tekst → pusty");
+        free(out);
+    }
+
+    printf("flux_warp / flux_step_cap\n");
+    {
+        struct flux_params wp = FLUX_PARAMS_DEFAULT;
+        struct audio_features af = { .mid = 1.0f };
+        CHECK(flux_warp(&wp, NULL, 1.0f) == 1.0, "bez audio → 1.0 (bit w bit jak bez muzyki)");
+        CHECK(flux_warp(&wp, &af, 0.0f) == 1.0, "strength 0 → 1.0");
+        CHECK(flux_warp(&wp, &af, 1.0f) == 1.0, "audio_tempo 0 (domyślne) → 1.0 nawet z mid = 1");
+        wp.audio_tempo = 0.6f;
+        CHECK(near((float)flux_warp(&wp, &af, 1.0f), 1.6f), "tempo 0.6 · mid 1 → 1.6");
+        af.mid = 0.5f;
+        CHECK(near((float)flux_warp(&wp, &af, 0.5f), 1.15f), "tempo 0.6 · strength 0.5 · mid 0.5 → 1.15");
+        af.mid = -1.0f;
+        CHECK(flux_warp(&wp, &af, 1.0f) == 1.0, "ujemne mid → nie spowalnia poniżej 1.0");
+
+        CHECK(flux_step_cap(&wp, 0.0f) == 4, "bez audio → limit 4 kroków/klatkę");
+        CHECK(flux_step_cap(&wp, 1.0f) == 8, "tempo 0.6 → 4·ceil(1.6) = 8");
+        wp.audio_tempo = 0.0f;
+        CHECK(flux_step_cap(&wp, 1.0f) == 4, "tempo 0 z audio → 4");
+        wp.audio_tempo = 2.0f;
+        CHECK(flux_step_cap(&wp, 0.5f) == 8, "tempo 2 · strength 0.5 → 4·ceil(2.0) = 8 (bez zaokrąglenia w górę)");
+        CHECK(flux_step_cap(&wp, 1.0f) == 12, "tempo 2 · strength 1 → 4·ceil(3.0) = 12");
+        wp.audio_tempo = 2.5f;
+        CHECK(flux_step_cap(&wp, 1.0f) == 16, "tempo 2.5 → 4·ceil(3.5) = 16");
+    }
 
     /* ── DSP audio (czyste funkcje) ─────────────────────────────────────── */
     printf("audio_fft_power\n");
