@@ -157,9 +157,26 @@ done
 echo ""
 
 mkdir -p "$DATA_DIR/monitors"
-# Sprzątamy .dat po monitorach, których już nie ma — inaczej wallpaper switcher
-# mógłby wybrać odłączony monitor jako primary/secondary.
-rm -f "$DATA_DIR/monitors"/*.dat
+# Nowe .dat powstają w katalogu tymczasowym OBOK data/monitors/ i trafiają na
+# miejsce dopiero po ostatnim pytaniu [3.7] (commit_monitor_dats) — dotąd
+# `rm -f *.dat` szło tutaj, PRZED pytaniami [3.5]–[3.7], i Ctrl-C w trakcie
+# zostawiał data/monitors/ pusty (audyt 2026-09-25). Konsumenci
+# (gen-workspaces.sh, wallpaper switcher, [8a], [9.7]) czytają
+# data/monitors/*.dat — do commitu widzą stary komplet, po nim tylko nowy.
+# Katalog po biegu zabitym bez trapa (SIGKILL) sprzątamy tu; własny — trapem.
+rm -rf "$DATA_DIR"/monitors.new.*
+MON_TMP="$(mktemp -d "$DATA_DIR/monitors.new.XXXXXX")"
+trap 'rm -rf "$MON_TMP"' EXIT
+# Podmiana: stare .dat (także po monitorach, których już nie ma — inaczej
+# wallpaper switcher mógłby wybrać odłączony monitor jako primary/secondary)
+# znikają w tej samej chwili, w której wchodzą nowe (mv w obrębie data/ =
+# rename, bez okna z pustym katalogiem dłuższym niż kilka syscalli).
+commit_monitor_dats() {
+    rm -f "$DATA_DIR/monitors"/*.dat
+    mv "$MON_TMP"/*.dat "$DATA_DIR/monitors/"
+    rmdir "$MON_TMP"
+    trap - EXIT
+}
 
 declare -A MON_RES
 declare -A MON_RATE
@@ -246,9 +263,9 @@ for mon in "${MONITOR_NAMES[@]}"; do
         echo "SCALE=$scale"
         echo "ROLE=$role"
         echo "DESCRIPTION=${CUR_DESC[$mon]:-}"
-    } > "$DATA_DIR/monitors/$mon.dat"
+    } > "$MON_TMP/$mon.dat"
 
-    echo -e "  ${GREEN}✓ Saved data/monitors/$mon.dat${NC}"
+    echo -e "  ${GREEN}✓ $mon.dat gotowy (do data/monitors/ trafi po [3.7])${NC}"
     echo ""
     mon_idx=$((mon_idx + 1))
 done
@@ -287,7 +304,7 @@ fi
 if [[ ${#MONITOR_NAMES[@]} -eq 1 ]]; then
     mon="${MONITOR_NAMES[0]}"
     MON_ORDER[$mon]=1
-    echo "ORDER=1" >> "$DATA_DIR/monitors/$mon.dat"
+    echo "ORDER=1" >> "$MON_TMP/$mon.dat"
     echo -e "  ${GREEN}✓ Jeden monitor ($mon) — numer 1.${NC}"
 else
     while :; do
@@ -328,7 +345,7 @@ else
     for i in "${ORDER_PROPOSED[@]}"; do
         mon="${MONITOR_NAMES[$i]}"
         MON_ORDER[$mon]=$ordk
-        echo "ORDER=$ordk" >> "$DATA_DIR/monitors/$mon.dat"
+        echo "ORDER=$ordk" >> "$MON_TMP/$mon.dat"
         echo -e "  ${GREEN}✓ $ordk → $mon${NC}"
         ordk=$((ordk + 1))
     done
@@ -354,6 +371,10 @@ while :; do
         *) echo -e "  ${YELLOW}⚠ Wpisz 1 albo 2.${NC}" ;;
     esac
 done
+# Ostatnie pytanie o monitory za nami — dopiero teraz podmieniamy
+# data/monitors/*.dat (patrz [3]).
+commit_monitor_dats
+echo -e "  ${GREEN}✓ data/monitors/*.dat zapisane (${#MONITOR_NAMES[@]} monitors)${NC}"
 echo "$WS_MODE" > "$DATA_DIR/workspace-mode.dat"
 echo -e "  ${GREEN}✓ Tryb workspace'ów: $WS_MODE${NC}"
 echo ""
