@@ -303,7 +303,10 @@ workspace_mode_menu() {
     local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
     [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
 
-    if [[ ! -x "$switch" ]]; then
+    # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
+    # (brak bitu w indeksie gita blokował tak install.sh w update-archenemy.sh
+    # — audyt 2026-09-23; tu ta sama zasada).
+    if [[ ! -f "$switch" ]]; then
         echo -e "  ${RED}✗ Missing ${switch} — run ./install/install.sh once.${NC}"
         return
     fi
