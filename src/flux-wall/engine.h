@@ -5,7 +5,7 @@
  *   - jednoprzebiegowy: `shaders/<nazwa>.frag` liczony per piksel (jak dotąd);
  *   - cząstkowy:        do tego `shaders/<nazwa>.update.glsl` — krok symulacji
  *                       cząstek; ślady akumulują się w buforze, który gaśnie
- *                       w czasie, a `<nazwa>.frag` robi z niego tone + dither.
+ *                       w czasie, a `<nazwa>.frag` robi z niego ton (+ raster przy dither = 1).
  *
  * Silnik nie wie nic o Waylandzie ani EGL: dostaje bieżący kontekst GL i cel
  * (framebuffer + rozmiar). Dzięki temu ten sam kod działa pod kompozytorem
@@ -13,6 +13,10 @@
  *
  * Kontrakt uniformów przebiegu finalnego (.frag):
  *   resolution, time, palette_bg/ink/accent, detail   — jak dotąd,
+ *   dither (1.0 = raster Bayera 8×8 do trzech kolorów palety, 0.0 = gładko:
+ *   ciągły ton na gradiencie tło → atrament → akcent; ustawia `--dither` /
+ *   `--no-dither`, domyślnie 0 — raster to cecha rice'a dither-flux, nie
+ *   animacji; shader bez tego uniformu działa jak dotąd),
  *   accum (sampler2D), gain                            — tylko tryb cząstkowy,
  *   audio_level/bass/lowmid/mid/high/beat (0..1), audio_spectrum (sampler2D
  *   32×1 R, jednostka 2), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
@@ -114,10 +118,11 @@ void flux_target_destroy(struct flux_target *t);
  * (0 = powierzchnia okna) o rozmiarze celu. `time` w sekundach od startu;
  * `warmup_once` = przed TĄ klatką przelicz `warmup` sekund symulacji
  * (dla --once, gdzie nie ma kolejnych klatek). */
-/* `audio` = NULL → bez reakcji (warp 1, uniformy audio = 0); `audio_strength`
+/* `dither` → uniform `dither` przebiegu finalnego (1 = raster Bayera, 0 = gładko).
+ * `audio` = NULL → bez reakcji (warp 1, uniformy audio = 0); `audio_strength`
  * skaluje wzmocnienia (1.0 = wartości z pragm shadera). */
 void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint dest_fbo,
-                        double time, const struct palette *pal, float detail,
+                        double time, const struct palette *pal, float detail, float dither,
                         const struct audio_features *audio, float audio_strength, bool warmup_once);
 
 #endif

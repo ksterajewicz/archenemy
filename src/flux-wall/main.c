@@ -11,6 +11,7 @@
  *     float time             sekundy od startu (animacja; zawijane co FLUX_TIME_PERIOD — engine.h)
  *     vec3  palette_bg/ink/accent   paleta rice'a (0..1)
  *     float detail           szczegółowość 0..1 (z baterii albo stała)
+ *     float dither           1 = raster Bayera (--dither), 0 = gładko (--no-dither, domyślnie)
  *   a gdy obok `<shader>.frag` leży `<shader>.update.glsl`, silnik przechodzi
  *   w tryb cząstkowy (formy akumulacyjne: pole przepływu, atraktor) i dokłada
  *   `sampler2D accum` + `gain` — kontrakt w engine.h.
@@ -27,6 +28,7 @@
  *
  *   Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]
  *                     [-f fps] [-o output] [-l background|bottom] [--once] [-v]
+ *                     [--dither | --no-dither]
  *                     [--audio-device=monitor] [--no-audio] [--audio-file plik]
  *   Dźwięk (audio.c): tylko animacje z `#pragma flux audio 1` (wizualizacje
  *   muzyki) — pasma z monitora WYJŚCIA → uniformy audio_* i reakcje silnika.
@@ -69,6 +71,8 @@ struct config {
     struct palette palette;
     float detail;                /* wartość stała, gdy battery == false */
     bool  battery;               /* detail z /sys/class/power_supply */
+    float dither;                /* uniform `dither`: 1 = raster Bayera, 0 = gładko (domyślnie) —
+                                  * cecha rice'a (FLUX_WALL_DITHER), nie animacji */
     int   fps;                   /* 0 = każda klatka kompozytora */
     bool  once;                  /* jedna klatka po configure, bez animacji */
     bool  verbose;
@@ -281,7 +285,7 @@ static void render_output(struct output *o) {
         audio_features_age(&feat, flux_now_seconds(), 0.25f);
         audio = &feat;
     }
-    flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current,
+    flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current, s->cfg.dither,
                        audio, 1.0f, s->cfg.once);
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
@@ -715,6 +719,9 @@ static void usage(void) {
     fputs("Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]\n"
           "                  [-f fps] [-o output] [-l background|bottom] [--once] [-v]\n"
           "                  [--audio-device=monitor] [--no-audio] [--audio-file plik.f32]\n"
+          "                  [--dither | --no-dither]\n"
+          "  --dither     raster Bayera 8x8 do trzech kolorów palety (rice dither-flux)\n"
+          "  --no-dither  gładki gradient palety bez rastra (domyślnie)\n"
           "  -l  warstwa: bottom (domyślnie — nad tapetą hyprpapera, pod oknami)\n"
           "      albo background (na równi z hyprpaperem)\n"
           "  Plik <shader>.update.glsl obok .frag włącza silnik cząstkowy (engine.h).\n"
@@ -726,6 +733,7 @@ static void usage(void) {
 int main(int argc, char **argv) {
     struct state s = {0};
     s.cfg.detail = 1.0f;
+    s.cfg.dither = 0.0f;         /* gładko; raster tylko na jawne --dither (rice dither-flux) */
     /* bottom: zawsze NAD hyprpaperem (warstwa background) i POD oknami —
      * hyprpaper zostaje pod spodem jako fallback, gdyby flux-wall padł. */
     s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
@@ -738,6 +746,7 @@ int main(int argc, char **argv) {
         {"layer", required_argument, 0, 'l'},
         {"audio-device", required_argument, 0, 'A'}, {"no-audio", no_argument, 0, 'N'},
         {"audio-file", required_argument, 0, 'F'},
+        {"dither", no_argument, 0, 'D'},        {"no-dither", no_argument, 0, 'n'},
         {"once", no_argument, 0, '1'},          {"verbose", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},          {0, 0, 0, 0},
     };
@@ -771,6 +780,8 @@ int main(int argc, char **argv) {
         case 'A': s.cfg.audio_device = optarg; break;
         case 'N': s.cfg.no_audio = true; break;
         case 'F': s.cfg.audio_file = optarg; break;
+        case 'D': s.cfg.dither = 1.0f; break;
+        case 'n': s.cfg.dither = 0.0f; break;
         case '1': s.cfg.once = true; break;
         case 'v': s.cfg.verbose = true; break;
         case 'h': usage(); return 0;
@@ -778,6 +789,7 @@ int main(int argc, char **argv) {
         }
     }
     if (!s.cfg.shader_path) { usage(); return 1; }
+    logv(&s, "dither: %s", s.cfg.dither > 0.5f ? "1 (raster Bayera)" : "0 (gładko)");
 
     s.detail_target = s.cfg.battery ? battery_detail("/sys/class/power_supply") : s.cfg.detail;
     s.detail_current = s.detail_target;

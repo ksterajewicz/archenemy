@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "engine.h"
@@ -19,6 +20,7 @@
 bool  parse_hex_color(const char *hex, float out[3]);
 bool  parse_palette(const char *spec, struct palette *p);
 float battery_detail(const char *power_supply_dir);
+int   flux_wall_main(int argc, char **argv);   /* main() z main.c (-Dmain=flux_wall_main) */
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (cond) printf("  ok   %s\n", msg); \
@@ -31,6 +33,33 @@ static void write_file(const char *path, const char *content) {
     if (!f) { perror(path); exit(1); }
     fputs(content, f);
     fclose(f);
+}
+
+/* CLI binarki bez Waylanda: flux_wall_main w procesie potomnym (die() woła
+ * exit), WAYLAND_DISPLAY na nieistniejące gniazdo — poprawne argumenty kończą
+ * się kodem 2 (brak Waylanda) DOPIERO po parsowaniu i logu -v. Zwraca kod
+ * wyjścia, stderr potomka trafia do `log`. */
+static int run_cli(const char *dir, char **args, char *log, size_t loglen) {
+    char lpath[600];
+    snprintf(lpath, sizeof lpath, "%s/cli.log", dir);
+    fflush(stdout); fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); exit(1); }
+    if (pid == 0) {
+        if (!freopen(lpath, "w", stderr)) _exit(99);
+        setenv("XDG_RUNTIME_DIR", dir, 1);
+        setenv("WAYLAND_DISPLAY", "flux-wall-test-brak-gniazda", 1);
+        int argc = 0;
+        while (args[argc]) argc++;
+        exit(flux_wall_main(argc, args));
+    }
+    int st = 0;
+    waitpid(pid, &st, 0);
+    log[0] = 0;
+    FILE *f = fopen(lpath, "r");
+    if (f) { size_t n = fread(log, 1, loglen - 1, f); log[n] = 0; fclose(f); }
+    remove(lpath);
+    return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 }
 
 int main(void) {
@@ -323,6 +352,29 @@ int main(void) {
         CHECK(snap.wave[0] >= 0.0f && snap.wave[0] < 0.1f && snap.wave[2 * 30] > snap.wave[0], "trigger: okno zaczyna się na narastającym przejściu przez zero");
         audio_stop(au);
         remove(fpath);
+    }
+
+    printf("CLI: --dither / --no-dither (uniform dither)\n");
+    {
+        char shader[600], log[4096];
+        snprintf(shader, sizeof shader, "%s/cli.frag", dir);
+        write_file(shader, "#version 300 es\nvoid main(){}\n");
+        char *a_def[]  = { "flux-wall", "-s", shader, "-v", NULL };
+        char *a_on[]   = { "flux-wall", "-s", shader, "-v", "--dither", NULL };
+        char *a_last[] = { "flux-wall", "--dither", "-s", shader, "--no-dither", "-v", NULL };
+        char *a_arg[]  = { "flux-wall", "-s", shader, "--dither=1", NULL };
+        char *a_help[] = { "flux-wall", "--help", NULL };
+        int rc = run_cli(dir, a_def, log, sizeof log);
+        CHECK(rc == 2 && strstr(log, "dither: 0"), "domyślnie dither 0 (gładko), argumenty przyjęte (kod 2 = brak Waylanda)");
+        rc = run_cli(dir, a_on, log, sizeof log);
+        CHECK(rc == 2 && strstr(log, "dither: 1"), "--dither → dither 1");
+        rc = run_cli(dir, a_last, log, sizeof log);
+        CHECK(rc == 2 && strstr(log, "dither: 0"), "--dither … --no-dither → wygrywa ostatni (0)");
+        rc = run_cli(dir, a_arg, log, sizeof log);
+        CHECK(rc == 1, "--dither=1 (flaga bez wartości) → kod 1");
+        rc = run_cli(dir, a_help, log, sizeof log);
+        CHECK(rc == 0 && strstr(log, "--dither") && strstr(log, "--no-dither"), "--help zna --dither/--no-dither (wrapper po tym rozpoznaje binarkę)");
+        remove(shader);
     }
 
     /* sprzątanie */
