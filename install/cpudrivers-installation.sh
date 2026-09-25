@@ -9,7 +9,7 @@
 
 set -uo pipefail
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 # Wspólna obsługa bootloadera (regeneracja configu po instalacji mikrokodu).
 source "$(dirname "$(readlink -f "$0")")/bootloader.sh"
@@ -34,9 +34,18 @@ esac
 
 read -rp "Install $UCODE? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    sudo pacman -S --needed "$UCODE"
-    echo -e "${GREEN}✓ $UCODE installed.${NC}"
-    # Mikrokod ładuje bootloader wczesnym initrd — sam pakiet nic nie robi,
-    # dopóki config bootloadera się do niego nie odwoła.
-    regenerate_bootloader "mikrokod $UCODE"
+    # Sukces = pakiet realnie w bazie pacmana, nie sam kod wyjścia (audyt
+    # 2026-09-25: „✓ installed" i regeneracja GRUB-a leciały także po
+    # nieudanym pacmanie — wpis initrd wskazywałby nieistniejący obraz).
+    if sudo pacman -S --needed "$UCODE" && pacman -Qi "$UCODE" &>/dev/null; then
+        echo -e "${GREEN}✓ $UCODE installed.${NC}"
+        # Mikrokod ładuje bootloader wczesnym initrd — sam pakiet nic nie robi,
+        # dopóki config bootloadera się do niego nie odwoła.
+        regenerate_bootloader "mikrokod $UCODE"
+    else
+        echo -e "${RED}✗ $UCODE NIE zainstalowany — sprawdź wyjście pacmana wyżej; bootloader bez zmian.${NC}"
+        # Skrypt jest wołany przez install.sh jako osobny proces (bash …),
+        # więc niezerowy kod nie przerywa instalatora — tylko sygnalizuje stan.
+        exit 1
+    fi
 fi
