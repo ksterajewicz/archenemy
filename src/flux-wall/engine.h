@@ -96,7 +96,9 @@ const struct flux_params *flux_engine_params(const struct flux_engine *e);
  * bieżącego kontekstu. NULL + `err`, gdy FBO zmiennoprzecinkowy nie jest
  * dostępny na tym sterowniku. */
 struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char *err, size_t errlen);
-void flux_target_resize(struct flux_target *t, int w, int h);
+/* false + `err` = nowy akumulator się nie udał; cel zostaje w STARYM rozmiarze
+ * z działającym FBO (wołający może dalej rysować). */
+bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t errlen);
 void flux_target_destroy(struct flux_target *t);
 
 /* Jedna klatka: symulacja (tryb cząstkowy) + przebieg finalny do `dest_fbo`

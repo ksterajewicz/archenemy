@@ -282,7 +282,14 @@ static void render_output(struct output *o) {
     struct state *s = o->state;
     if (!o->configured || !o->egl_surface || !o->target) return;
 
-    eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+    /* Pojedyncza odmowa EGL (np. sterownik w trakcie wybudzania) nie kończy
+     * procesu: klatkę pomijamy, `needs_frame` każe pętli spróbować ponownie
+     * (frame callback bez commitu by nie przyszedł). */
+    if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
+        o->needs_frame = true;
+        return;
+    }
     double t = now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
     /* Snapshot audio raz na klatkę; stęchły (sink śpi → read blokuje) gaśnie tu. */
     struct audio_features feat;
@@ -296,16 +303,20 @@ static void render_output(struct output *o) {
                        audio, 1.0f, s->cfg.once);
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
-    eglSwapBuffers(s->egl_display, o->egl_surface);
+    if (!eglSwapBuffers(s->egl_display, o->egl_surface)) {
+        logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
+        o->needs_frame = true;               /* bez commitu callback nie przyjdzie — pętla ponowi */
+    }
     o->last_render = now_seconds();
 }
 
-/* Ile sekund brakuje TEMU monitorowi do następnej klatki przy limicie -f
- * (<= 0 = można rysować; bez limitu zawsze 0). */
+/* Ile sekund brakuje TEMU monitorowi do następnej klatki z `needs_frame`
+ * (<= 0 = można rysować): przy limicie -f reszta okresu, bez limitu
+ * (klatka zaległa tylko po nieudanym EGL) ponowienie po 100 ms. */
 static double frame_wait(const struct output *o, double now) {
     const struct state *s = o->state;
-    if (s->cfg.fps <= 0) return 0.0;
-    return 1.0 / s->cfg.fps - (now - o->last_render);
+    double min_dt = s->cfg.fps > 0 ? 1.0 / s->cfg.fps : 0.1;
+    return min_dt - (now - o->last_render);
 }
 
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
@@ -314,7 +325,7 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
     wl_callback_destroy(cb);
     o->frame_cb = NULL;
 
-    if (frame_wait(o, now_seconds()) > 0) { o->needs_frame = true; return; }
+    if (o->state->cfg.fps > 0 && frame_wait(o, now_seconds()) > 0) { o->needs_frame = true; return; }
     render_output(o);
 }
 
@@ -359,7 +370,8 @@ static void output_apply_size(struct output *o) {
         o->egl_surface = eglCreateWindowSurface(s->egl_display, s->egl_config,
                                                 (EGLNativeWindowType)o->egl_window, NULL);
         if (o->egl_surface == EGL_NO_SURFACE) die(3, "%s: eglCreateWindowSurface", o->name);
-        eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+        if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context))
+            die(3, "%s: eglMakeCurrent nie powiodło się (0x%x)", o->name, eglGetError());
         /* Własne frame callbacks sterują tempem — swap nie może blokować. */
         eglSwapInterval(s->egl_display, 0);
         /* Program budujemy przy PIERWSZEJ powierzchni, nie na starcie: kompilacja
@@ -370,13 +382,19 @@ static void output_apply_size(struct output *o) {
     } else if (changed) {
         wl_egl_window_resize(o->egl_window, pw, ph, 0, 0);
     }
-    eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+    if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+        /* na starcie (jeszcze bez silnika) bez kontekstu nie ma tapety — kod 3;
+         * później pojedyncza odmowa = pomijamy ten configure, przyjdzie następny */
+        if (!s->engine) die(3, "%s: eglMakeCurrent nie powiodło się (0x%x)", o->name, eglGetError());
+        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam configure", o->name, eglGetError());
+        return;
+    }
+    char err[256];
     if (!o->target) {
-        char err[256];
         o->target = flux_target_create(s->engine, pw, ph, err, sizeof err);
         if (!o->target) die(3, "%s: %s", o->name, err);
-    } else if (changed) {
-        flux_target_resize(o->target, pw, ph);
+    } else if (changed && !flux_target_resize(o->target, pw, ph, err, sizeof err)) {
+        logv(s, "%s: zmiana rozmiaru akumulatora nie powiodła się (%s) — rysuję w starym rozmiarze", o->name, err);
     }
     o->configured = true;
     render_output(o);
@@ -458,8 +476,11 @@ static void output_teardown_surface(struct output *o) {
     if (o->frame_cb) wl_callback_destroy(o->frame_cb);
     o->frame_cb = NULL;
     if (o->target && o->egl_surface) {
-        /* obiekty GL zwalniamy przy bieżącym kontekście — inaczej wyciekną */
-        eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
+        /* obiekty GL zwalniamy przy bieżącym kontekście — inaczej wyciekną
+         * (bez kontekstu wywołania GL są pustymi operacjami; strukturę i tak
+         * zwalniamy, żeby nie wisiał wskaźnik) */
+        if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context))
+            logv(s, "%s: eglMakeCurrent przy sprzątaniu nie powiodło się (0x%x) — obiekty GL celu mogą wyciec", o->name, eglGetError());
         flux_target_destroy(o->target);
         o->target = NULL;
     }
@@ -543,6 +564,7 @@ static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
         s->fractional_manager = wl_registry_bind(reg, name, &wp_fractional_scale_manager_v1_interface, 1);
     } else if (strcmp(iface, wl_output_interface.name) == 0) {
         struct output *o = calloc(1, sizeof *o);
+        if (!o) die(2, "brak pamięci na stan monitora (wl_output %u)", name);
         o->state = s;
         o->global_name = name;
         o->scale = 1;
@@ -612,7 +634,7 @@ static void main_loop(struct state *s) {
          * z zaległą klatką), zaokrągloną w górę do ms, nie mniej niż 1 ms.
          * Pełny okres 1000/fps dawał przy -f 30 na 60 Hz ~20 fps. */
         int timeout = -1;
-        if (s->cfg.fps > 0) {
+        {
             double now = now_seconds();
             for (struct output *o = s->outputs; o; o = o->next) {
                 if (!o->needs_frame) continue;
@@ -653,7 +675,7 @@ static void main_loop(struct state *s) {
             if (o->recreate) { o->recreate = false; output_create_surface(o); }
 
         update_detail(s);
-        if (s->cfg.fps > 0) {
+        {
             double now = now_seconds();
             for (struct output *o = s->outputs; o; o = o->next)
                 if (o->needs_frame && frame_wait(o, now) <= 0) {
