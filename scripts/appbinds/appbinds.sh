@@ -64,6 +64,7 @@ write_dat() {
     mkdir -p "$(dirname "$file")"
     tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
     printf '%s\n' "$value" > "$tmp"
+    chmod 644 "$tmp"   # mktemp daje 600 — zachowaj zwykłe prawa (jak inne data/*.dat)
     mv "$tmp" "$file"
 }
 
