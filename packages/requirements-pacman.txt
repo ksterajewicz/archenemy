@@ -3,7 +3,6 @@
 hyprland
 hyprpaper
 hyprlock
-hyprpicker
 hyprpolkitagent
 waybar
 rofi-wayland
@@ -63,6 +62,13 @@ mesa
 # zależności); do 2026-09-07 był opcjonalny (regeneracja tapet), teraz wymagany —
 # bez niego rice dither-flux ma tylko zestaw awaryjny v1/v2 z repo
 python
+# gtk3: gtk-launch — uruchamia wpisy .desktop z autostartu wybranego w
+# Super+A → [u] (scripts/hypr/lib/gen-autostart.sh emituje `gtk-launch <id>`
+# do config/hypr/autostart-apps.lua); bez niego wybrane aplikacje cicho nie startują
+gtk3
+# git: aktualizator (scripts/appbinds/update-archenemy.sh) i kontrola wersji
+# warstwy maszynowej (scripts/hypr/machine-layer-check.sh, data/installed-head.dat)
+git
 # fonts + icons
 # ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
 ttf-iosevka-nerd
