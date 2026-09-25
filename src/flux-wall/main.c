@@ -84,6 +84,7 @@ struct output {
     struct state *state;
     struct wl_output *wl_output;
     uint32_t global_name;
+    uint32_t version;            /* zbindowana wersja wl_output (release od v3) */
     char name[64];
     int32_t scale;
     struct wl_surface *surface;
@@ -98,6 +99,7 @@ struct output {
     int32_t width, height;       /* piksele fizyczne */
     bool configured;
     bool needs_frame;            /* klatka czeka na limit fps */
+    bool recreate;               /* po `closed`: pętla ma utworzyć powierzchnię od nowa */
     double last_render;          /* do limitu fps — osobno na monitor, inaczej dwa
                                   * monitory z -f N dławiłyby się nawzajem */
     struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
@@ -274,6 +276,7 @@ static void egl_init(struct state *s) {
 /* ── render ───────────────────────────────────────────────────────────────── */
 
 static void output_request_frame(struct output *o);
+static void output_teardown_surface(struct output *o);
 
 static void render_output(struct output *o) {
     struct state *s = o->state;
@@ -401,11 +404,17 @@ static const struct wp_fractional_scale_v1_listener fractional_listener = {
     .preferred_scale = fractional_preferred,
 };
 
+/* Po `closed` powierzchni nie wolno już używać (protokół wlr-layer-shell):
+ * zwalniamy ją całą i prosimy pętlę o nową — dopiero PO tej turze
+ * zdarzeń, bo gdy zaraz za `closed` przychodzi global_remove tego
+ * monitora, nie ma na czym jej tworzyć (i nie kręcimy się w pętli
+ * closed → create → closed). Bez odtworzenia tapeta zostawałaby czarna. */
 static void layer_closed(void *data, struct zwlr_layer_surface_v1 *ls) {
     (void)ls;
     struct output *o = data;
-    logv(o->state, "%s: layer surface zamknięta przez kompozytor", o->name);
-    o->configured = false;
+    logv(o->state, "%s: layer surface zamknięta przez kompozytor — odtwarzam", o->name);
+    output_teardown_surface(o);
+    o->recreate = true;
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_listener = {
@@ -441,9 +450,13 @@ static void output_create_surface(struct output *o) {
     logv(s, "%s: layer surface utworzona", o->name);
 }
 
-static void output_destroy(struct output *o) {
+/* Zwolnienie powierzchni monitora (layer surface, EGL, cel silnika) z
+ * zachowaniem samego wl_output — po `closed` od kompozytora powierzchnię
+ * tworzymy od nowa, po odpięciu monitora zwalniamy wszystko. */
+static void output_teardown_surface(struct output *o) {
     struct state *s = o->state;
     if (o->frame_cb) wl_callback_destroy(o->frame_cb);
+    o->frame_cb = NULL;
     if (o->target && o->egl_surface) {
         /* obiekty GL zwalniamy przy bieżącym kontekście — inaczej wyciekną */
         eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context);
@@ -453,13 +466,33 @@ static void output_destroy(struct output *o) {
     if (o->egl_surface) {
         eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroySurface(s->egl_display, o->egl_surface);
+        o->egl_surface = EGL_NO_SURFACE;
     }
     if (o->egl_window) wl_egl_window_destroy(o->egl_window);
+    o->egl_window = NULL;
     if (o->fractional) wp_fractional_scale_v1_destroy(o->fractional);
+    o->fractional = NULL;
     if (o->viewport) wp_viewport_destroy(o->viewport);
+    o->viewport = NULL;
     if (o->layer_surface) zwlr_layer_surface_v1_destroy(o->layer_surface);
+    o->layer_surface = NULL;
     if (o->surface) wl_surface_destroy(o->surface);
-    if (o->wl_output) wl_output_destroy(o->wl_output);
+    o->surface = NULL;
+    o->configured = false;
+    o->needs_frame = false;
+    o->logical_w = o->logical_h = 0;
+    o->width = o->height = 0;
+    o->frac_scale120 = 0;
+}
+
+static void output_destroy(struct output *o) {
+    output_teardown_surface(o);
+    if (o->wl_output) {
+        /* `release` (v3+) mówi kompozytorowi, że obiekt jest zwolniony;
+         * starsze wersje mają tylko lokalne destroy. */
+        if (o->version >= WL_OUTPUT_RELEASE_SINCE_VERSION) wl_output_release(o->wl_output);
+        else wl_output_destroy(o->wl_output);
+    }
     free(o);
 }
 
@@ -515,7 +548,8 @@ static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
         o->scale = 1;
         snprintf(o->name, sizeof o->name, "output-%u", name);
         /* v4 daje zdarzenie `name` (potrzebne do -o); starsze wersje — sama skala. */
-        o->wl_output = wl_registry_bind(reg, name, &wl_output_interface, version < 4 ? version : 4);
+        o->version = version < 4 ? version : 4;
+        o->wl_output = wl_registry_bind(reg, name, &wl_output_interface, o->version);
         wl_output_add_listener(o->wl_output, &output_listener, o);
         o->next = s->outputs;
         s->outputs = o;
@@ -612,6 +646,11 @@ static void main_loop(struct state *s) {
             if (connection_closed(errno)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
             die(2, "dispatch: %s", strerror(errno));
         }
+
+        /* Powierzchnie zamknięte przez kompozytor (`closed`) — monitor wciąż
+         * istnieje (global_remove zdjąłby go z listy), więc tworzymy nową. */
+        for (struct output *o = s->outputs; o; o = o->next)
+            if (o->recreate) { o->recreate = false; output_create_surface(o); }
 
         update_detail(s);
         if (s->cfg.fps > 0) {
