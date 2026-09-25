@@ -20,10 +20,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
 # Pliki, w których klawisz może już być zajęty (bindy Super+klawisz archenemy).
 # workspaces-monitors.lua: od 2026-07-17 bindy Super+1..0 są GENEROWANE tam
 # (zależą od trybu shared/decades) — bez tego wpisu TUI pozwoliłoby przykryć
-# nawigację workspace'ów własnym bindem.
+# nawigację workspace'ów własnym bindem. Tracked workspaces.lua trzyma już
+# tylko autostart guarda (zero hl.bind) — nie ma go tu celowo.
 CONFLICT_FILES=(
     "$CONFIG_DIR/hypr/hyprland.lua"
-    "$ARCHENEMY_DIR/config/hypr/workspaces.lua"
     "$ARCHENEMY_DIR/config/hypr/workspaces-monitors.lua"
     "$BINDS_CONF"
 )
