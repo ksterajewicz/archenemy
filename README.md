@@ -111,7 +111,9 @@ archenemy/
 │   ├── white-blue/                   # Default rice: alacritty, fastfetch, hypr(+hyprlock), mako,
 │   │                                 #   MangoHud, networkmanager-dmenu, nvim, rofi, waybar,
 │   │                                 #   ncmpcpp (colors + the shared vim-like `bindings`), mpv (OSD colors),
-│   │                                 #   swayosd; every rice also carries flux-wall.conf (palette + default animation).
+│   │                                 #   swayosd; every rice also carries flux-wall.conf (palette + default animation)
+│   │                                 #   and preview.png — its picture in the Super+T menu (a generated mock-up;
+│   │                                 #   replace it with a real screenshot at the same path).
 │   ├── white-blue_beta/              # Original look, kept for reference/rollback (frozen: no ncmpcpp,
 │   │                                 #   mpv, flux-wall.conf, timer). mako, hyprlock and swayosd inherit
 │   │                                 #   from white-blue (symlinks in the repo).
@@ -163,11 +165,15 @@ archenemy/
 │   │                                 #   and when the code changed since the last install.sh
 │   │                                 #   (data/installed-head.dat vs HEAD — re-run the installer).
 │   ├── rofi/                         # Rofi menus: rices, wallpapers, network (with rescan), power.
+│   │                                 #   lib/rofi-preview.sh — PNG previews in Super+W / Super+T (3-column
+│   │                                 #   grid with big icons; lazy wallpaper thumbnails in data/thumbs/).
 │   ├── wallpapers/                   # Mathematical wallpaper generators (pure Python, zero dependencies):
 │   │                                 #   Arch logo (gen_arch_wallpaper.py), Tron grid
 │   │                                 #   (gen_tron_wallpaper.py), and generative dither wallpapers
 │   │                                 #   for the dither-flux rice (gen_dither_flux_wallpaper.py),
 │   │                                 #   oscilloscope Lissajous for crt (gen_crt_wallpaper.py);
+│   │                                 #   gen_rice_preview.py — the rices' preview.png mock-ups for Super+T
+│   │                                 #   (drawn from each rice's waybar/alacritty/hypr/flux-wall colors);
 │   │                                 #   flux-wall.sh — start/stop the shader-driven wallpaper.
 │   └── waybar/                       # Power profile switcher (asus/universal: profile-get.sh /
 │                                     #   profile-switch.sh — also the ASUS hardware key path) +
@@ -191,7 +197,10 @@ archenemy/
 │       ├── tools/                    #   offscreen.c — dev tool: render animation frames to PNG without
 │       │                             #   a screen (EGL surfaceless + the same engine.c); `make tools`,
 │       │                             #   never built by install.sh; pngstat.py + bars-accum-debug.frag —
-│       │                             #   helpers for tests/flux-wall-bars.sh;
+│       │                             #   helpers for tests/flux-wall-bars.sh; render-previews.sh — renders
+│       │                             #   shaders/previews/<rice>/<animation>.png (256x144, the rice's palette,
+│       │                             #   synth audio for visualizations) for the Super+W menu — dev tool, run
+│       │                             #   by hand after adding a shader or changing a palette, then commit;
 │       └── shaders/                  #   animations selectable in Super+W: dither-flux (domain warping),
 │                                     #   dither-waves (interference) — single .frag files; pairs of
 │                                     #   .frag + .update.glsl (particle engine): dither-flow,
@@ -202,6 +211,7 @@ archenemy/
 │                                     #   scope (oscilloscope, waveform with trigger), scope-xy (Lissajous
 │                                     #   from L/R), spectrogram (plain scrolling spectrogram, dB scale);
 │                                     #   candidates 2026-09-17: bars, waterfall, rings, radar, tunnel.
+│                                     #   previews/<rice>/<animation>.png — menu pictures (render-previews.sh).
 │                                     #   Built by install.sh [9.6]; build/ outside git.
 ├── tests/                            # machine-layer.sh — regression tests on a fake hyprctl (tests/mock/)
 │                                     #   replaying the real 2026-09-21 dump: generators, guard, mode switch,
@@ -210,7 +220,11 @@ archenemy/
 │                                     #   peak marks must land on BOTH halves (needs `make -C src/flux-wall tools`).
 │                                     #   wallpaper-switcher.sh — Super+W against a fake hyprpaper daemon
 │                                     #   (settings list + first-match rule): the picked wallpaper must end up
-│                                     #   ON SCREEN in all three .dat scenarios. `bash tests/wallpaper-switcher.sh`.
+│                                     #   ON SCREEN in all three .dat scenarios; plus the menu previews on a
+│                                     #   fake rofi (thumbnail cache by mtime, no tool → original image).
+│                                     #   `bash tests/wallpaper-switcher.sh`.
+│                                     #   rofi-theme-switcher.sh — Super+T previews on a fake rofi; every rice
+│                                     #   stub has a valid rices/<RICE_NAME>/preview.png.
 │                                     #   update-archenemy.sh — the Super+A → [p] updater on real git
 │                                     #   (bare origin in a temp dir): no false "✓" on failure, no
 │                                     #   switching to a branch older than what you run.
@@ -241,6 +255,8 @@ archenemy/
 Wallpapers live in `wallpapers/` (loose files or in subfolders) and are versioned in git — a fresh install has them right away. Exception: the `dither-flux` set is **generated for the real monitors** — `install.sh` step **[9.7]** reads resolutions and roles from `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, further ones → `m-<name>`; modes named like `preferred` are resolved via `hyprctl`) and runs `gen_dither_flux_wallpaper.py` in the background into `wallpapers/dither-flux/generated/` (outside git; logged to `generate.log`). A 1px raster doesn't tolerate scaling, so the wallpaper must exactly match the screen resolution. As of 2026-09-08 the repo keeps no ready-made PNGs for this set — until generation finishes (a few minutes after install) the `dither-flux` entry in `Super+W` simply isn't there; the flux-wall animations are independent of these files.
 
 The `Super+W` menu is two-level: under two checkboxes are the **`Wallpapers/`** folder (files from `wallpapers/`) and **`Animations/`** (flux-wall animations, when built; music visualizations tagged `♪ music visualisation`), and below them **`Animation: off`**; `← Back` in the submenu returns to the top. Picking an animation doesn't change the hyprpaper wallpaper: the animation draws on top of it and works in **every** rice, in that rice's palette (declared in `rices/<rice>/flux-wall.conf`). The choice is remembered in `data/flux-wall.dat` and survives `Super+T` and reboots; `off` disables the animation everywhere, and deleting the file restores the rice's default behavior (dither-flux: enabled, the rest: disabled). Switching: `Super + W` — the menu shows all images (jpg/jpeg/png/webp), with two checkboxes at the top: `[x] Upload to all monitors` (checked by default — wallpaper goes to all monitors instead of just the focused one) and `[ ] Set as hyprlock background (no blur)` (unchecked by default — checking it sets the chosen image as the lock-screen background without blur, instead of the default live screenshot + blur; survives switching rices).
+
+**Previews.** Both submenus show pictures: a 3-column grid with a large image above each name (set via `-theme-str` only for these menus — each rice's rofi colors, borders and rounding stay; the top level with the checkboxes stays a plain list, and `← Back` has no image). `Wallpapers/` shows thumbnails generated on first use into `data/thumbs/` (machine layer, outside git), keyed by path + modification time — an edited file gets a fresh thumbnail, the stale one is removed. The tool is whichever is present: `glycin-thumbnailer` (comes with rofi itself: rofi → `gdk-pixbuf2` → `glycin`), `gdk-pixbuf-thumbnailer` (older `gdk-pixbuf2`), or ImageMagick's `magick`; with none of them, or on an error, the original image is used as the icon (rofi loads it, just more slowly). Generation is capped at 3 s per file and 6 s per menu opening, so the shortcut never hangs — anything left over shows the original and gets its thumbnail next time. `Animations/` shows ready-made frames from `src/flux-wall/shaders/previews/<active rice>/<animation>.png` (committed, rendered in each rice's palette by `src/flux-wall/tools/render-previews.sh`); an animation without a frame is listed without a picture, and a rice with no frames at all (e.g. `white-blue_beta`) gets the plain list.
 
 At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked by default):
 
@@ -302,7 +318,9 @@ Directly: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fp
 
 Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config`. Switching: `Super + T` — the menu shows scripts from `scripts/changing-theme-scripts/` (the `.sh` file name is the menu label: `white-blue`, `tron`, `asia-n-rice`, `dither-flux`, `crt`, `white-blue_beta`). On switching, the old rice's symlinks are cleaned up, so themes don't mix.
 
-**New rice:** create `rices/<folder>/`, copy `scripts/changing-theme-scripts/white-blue.sh` as `<label>.sh`, and set `RICE_NAME` inside it to your folder's name. The script is a two-line stub — all the switching logic lives in the shared `lib/switch-rice.sh`, so a new rice doesn't require copying any logic. The installer's step [9] calls the same library with `SWITCH_RICE_LINK_ONLY=1` (links + `.current_rice` only, no wallpaper/reload/waybar restart), so a foreign symlink or a real directory in `~/.config` always ends up as `<name>.bak-<timestamp>`, never deleted.
+The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/preview.png` (`RICE_NAME` read from the stub, so the label doesn't have to match the folder). The committed files are **mock-ups** drawn by `scripts/wallpapers/gen_rice_preview.py` from the colors each rice actually declares — the wallpaper motif in the `flux-wall.conf` palette, waybar islands from `waybar/style.css`, a terminal with the border/rounding from `hypr/hyprland.lua` and the ANSI palette from `alacritty/alacritty.toml` (`python3 scripts/wallpapers/gen_rice_preview.py [rice…]` regenerates them). A real screenshot is better: take one with `Super + Print` (drag over the whole screen; it lands in `~/Screenshots`) and copy it over `rices/<rice>/preview.png` — any size works, the menu just scales it. A rice without the file is listed without a picture.
+
+**New rice:** create `rices/<folder>/`, copy `scripts/changing-theme-scripts/white-blue.sh` as `<label>.sh`, and set `RICE_NAME` inside it to your folder's name. The script is a two-line stub — all the switching logic lives in the shared `lib/switch-rice.sh`, so a new rice doesn't require copying any logic. For its `Super + T` picture, run `python3 scripts/wallpapers/gen_rice_preview.py <folder>` (a plain gradient background until you add a motif for it in the script) or drop a screenshot in as `rices/<folder>/preview.png`; if the rice has a `flux-wall.conf`, `src/flux-wall/tools/render-previews.sh -r <folder>` renders its animation previews. The installer's step [9] calls the same library with `SWITCH_RICE_LINK_ONLY=1` (links + `.current_rice` only, no wallpaper/reload/waybar restart), so a foreign symlink or a real directory in `~/.config` always ends up as `<name>.bak-<timestamp>`, never deleted.
 
 ## Custom app shortcuts (Super + A)
 
