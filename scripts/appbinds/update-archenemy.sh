@@ -96,6 +96,9 @@ fi
 # Lokalne zmiany w plikach śledzonych przez git → schowaj (git stash), żeby
 # pull ich nie zgubił ani nie odmówił z powodu konfliktu. --untracked-files=no,
 # bo pliki nieśledzone (warstwa maszynowa/osobista) i tak nie kolidują z pull.
+# Stash też BEZ -u (spójnie z tym sprawdzeniem): -u zdejmowało z dysku pliki
+# nieśledzone (np. własne tapety w wallpapers/) na czas aktualizacji, a gdy
+# pop nie przeszedł, wracały tylko do schowka (audyt 2026-09-25).
 stashed=0
 if [[ -n "$(git -C "$ARCHENEMY_DIR" status --porcelain --untracked-files=no)" ]]; then
     echo -e "  ${YELLOW}⚠ Masz lokalne zmiany w plikach śledzonych przez git.${NC}"
@@ -105,7 +108,7 @@ if [[ -n "$(git -C "$ARCHENEMY_DIR" status --porcelain --untracked-files=no)" ]]
         pause
         exit 0
     fi
-    if git -C "$ARCHENEMY_DIR" stash push -u -m "update-archenemy.sh $(date +%FT%T)" >/dev/null; then
+    if git -C "$ARCHENEMY_DIR" stash push -m "update-archenemy.sh $(date +%FT%T)" >/dev/null; then
         stashed=1
         echo -e "  ${GREEN}✓ Lokalne zmiany schowane.${NC}"
     else

@@ -73,14 +73,15 @@ if [[ -f "$INSTALLED_DAT" ]] && git -C "$ARCHENEMY_DIR" rev-parse --git-dir >/de
 fi
 
 # Podłączone monitory: nazwy + opisy (pełny i krótki „make model serial”).
-declare -A LIVE_NAMES=()
+# Jedno wywołanie hyprctl — LIVE_DESC_OF[nazwa] = opis, do sprawdzeń per monitor.
+declare -A LIVE_NAMES=() LIVE_DESC_OF=()
 LIVE_DESCS=()
 if command -v hyprctl >/dev/null 2>&1; then
     name=""
     while IFS= read -r line; do
         case "$line" in
             'Monitor '*) name="${line#Monitor }"; name="${name%% *}"; [[ -n "$name" ]] && LIVE_NAMES[$name]=1 ;;
-            *'description: '*) LIVE_DESCS+=("${line#*description: }") ;;
+            *'description: '*) LIVE_DESCS+=("${line#*description: }"); [[ -n "$name" ]] && LIVE_DESC_OF[$name]="${line#*description: }" ;;
         esac
     done < <(hyprctl monitors 2>/dev/null)
 fi
@@ -112,8 +113,7 @@ if ((${#LIVE_NAMES[@]})); then
             while IFS= read -r sel; do
                 [[ -z "$sel" ]] && continue
                 if [[ "$sel" == desc:* ]]; then
-                    d=$(hyprctl monitors 2>/dev/null | awk -v m="$n" '/^Monitor /{cur=$2} cur==m && /description: /{sub(/^[ \t]*description: /,""); print; exit}')
-                    [[ "desc:$d" == "$sel"* ]] && covered=1
+                    [[ "desc:${LIVE_DESC_OF[$n]:-}" == "$sel"* ]] && covered=1
                 else
                     [[ "$sel" == "$n" ]] && covered=1
                 fi

@@ -14,14 +14,16 @@
 ARCHENEMY_DIR="$HOME/archenemy"
 BINDS_CONF="$ARCHENEMY_DIR/config/hypr/appbinds.lua"
 CONFIG_DIR="$HOME/.config"
+# shellcheck source=lib/binds.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
 
 # Pliki, w których klawisz może już być zajęty (bindy Super+klawisz archenemy).
 # workspaces-monitors.lua: od 2026-07-17 bindy Super+1..0 są GENEROWANE tam
 # (zależą od trybu shared/decades) — bez tego wpisu TUI pozwoliłoby przykryć
-# nawigację workspace'ów własnym bindem.
+# nawigację workspace'ów własnym bindem. Tracked workspaces.lua trzyma już
+# tylko autostart guarda (zero hl.bind) — nie ma go tu celowo.
 CONFLICT_FILES=(
     "$CONFIG_DIR/hypr/hyprland.lua"
-    "$ARCHENEMY_DIR/config/hypr/workspaces.lua"
     "$ARCHENEMY_DIR/config/hypr/workspaces-monitors.lua"
     "$BINDS_CONF"
 )
@@ -62,6 +64,7 @@ write_dat() {
     mkdir -p "$(dirname "$file")"
     tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
     printf '%s\n' "$value" > "$tmp"
+    chmod 644 "$tmp"   # mktemp daje 600 — zachowaj zwykłe prawa (jak inne data/*.dat)
     mv "$tmp" "$file"
 }
 
@@ -90,22 +93,8 @@ key_taken() {
         "${CONFLICT_FILES[@]}" 2>/dev/null
 }
 
-# Wypisz obecne bindy użytkownika, ponumerowane
-list_binds() {
-    local i=0 key cmd
-    while IFS= read -r line; do
-        # hl.bind(mainMod .. " + KEY", hl.dsp.exec_cmd("CMD"))
-        [[ "$line" =~ ^hl\.bind\(mainMod[[:space:]]*\.\.[[:space:]]*\"\ \+\ ([A-Za-z0-9_]+)\",[[:space:]]*hl\.dsp\.exec_cmd\(\"(.*)\"\)\) ]] || continue
-        i=$((i + 1))
-        key="${BASH_REMATCH[1]}"
-        cmd="${BASH_REMATCH[2]}"
-        printf "    ${CYAN}%2d)${NC} Super + ${BLUE}%-12s${NC} → %s\n" "$i" "$key" "$cmd"
-    done < "$BINDS_CONF"
-    if [[ $i -eq 0 ]]; then
-        echo -e "    ${YELLOW}(no custom binds yet — add your first!)${NC}"
-    fi
-    return 0
-}
+# list_binds / remove_bind_by_index — lib/binds.sh (jedno źródło wyboru linii
+# dla listy i usuwania).
 
 # Przeładuj Hyprlanda, żeby bind działał od razu
 reload_hyprland() {
@@ -269,9 +258,9 @@ add_bind() {
 }
 
 remove_bind() {
-    # Zbierz numery linii z bindami, w kolejności wyświetlania
-    mapfile -t BIND_LINES < <(grep -n '^hl\.bind(' "$BINDS_CONF" | cut -d: -f1)
-    if [[ ${#BIND_LINES[@]} -eq 0 ]]; then
+    local total
+    total="$(bind_count "$BINDS_CONF")"
+    if [[ "$total" -eq 0 ]]; then
         echo -e "  ${YELLOW}⚠ Nothing to remove.${NC}"
         return
     fi
@@ -279,12 +268,17 @@ remove_bind() {
     echo ""
     read -rp "  Bind number to remove (Enter = cancel): " num
     [[ -z "$num" ]] && return
-    if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > ${#BIND_LINES[@]} )); then
+    if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
         echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
         return
     fi
 
-    sed -i "${BIND_LINES[$((num - 1))]}d" "$BINDS_CONF"
+    # Ten sam wybór linii co lista wyżej — numer N kasuje dokładnie linię
+    # pokazaną jako N, niezależnie od innych `hl.bind(` w pliku.
+    remove_bind_by_index "$BINDS_CONF" "$num" || {
+        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
+        return
+    }
     echo -e "  ${GREEN}✓ Removed.${NC}"
     reload_hyprland
 }
@@ -309,7 +303,10 @@ workspace_mode_menu() {
     local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
     [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
 
-    if [[ ! -x "$switch" ]]; then
+    # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
+    # (brak bitu w indeksie gita blokował tak install.sh w update-archenemy.sh
+    # — audyt 2026-09-23; tu ta sama zasada).
+    if [[ ! -f "$switch" ]]; then
         echo -e "  ${RED}✗ Missing ${switch} — run ./install/install.sh once.${NC}"
         return
     fi
