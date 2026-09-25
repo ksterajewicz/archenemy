@@ -660,6 +660,22 @@ echo ""
 # ─── 7. BACKUP ────────────────────────────────────────────────────────────────
 
 echo -e "${CYAN}[7] Backup...${NC}"
+
+# Rice, który krok [9] REALNIE podlinkuje — liczony tutaj, bo kopia zapasowa
+# musi obejmować foldery TEGO rice'a (audyt 2026-09-25: [7] iterował
+# DEFAULT_RICE, a [9] linkował TARGET_RICE — folder obecny tylko w aktywnym
+# ricie, np. mako, szedł do .bak bez kopii w backups/).
+# Ponowny bieg instalatora respektuje aktywny rice: jeśli .current_rice
+# wskazuje istniejący rice, symlinkujemy TEN rice — dotąd każdy bieg cicho
+# przywracał DEFAULT_RICE (white-blue) i nadpisywał wybór użytkownika.
+TARGET_RICE="$DEFAULT_RICE"
+if [[ -f "$CURRENT_RICE" ]]; then
+    _cur_rice="$(<"$CURRENT_RICE")"
+    if [[ -n "$_cur_rice" && -d "$RICES_DIR/$_cur_rice" ]]; then
+        TARGET_RICE="$_cur_rice"
+    fi
+fi
+
 echo -e "Everything is about to be set up. Would you like to create a backup of your current ~/.config?"
 read -rp "[y/N]: " ans
 
@@ -668,7 +684,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     BACKUP_DIR="$ARCHENEMY_DIR/backups/$BACKUP_NAME"
     mkdir -p "$BACKUP_DIR"
 
-    for src in "$RICES_DIR/$DEFAULT_RICE"/*/; do
+    for src in "$RICES_DIR/$TARGET_RICE"/*/; do
         [[ -d "$src" ]] || continue
         name=$(basename "$src")
         dest="$CONFIG_DIR/$name"
@@ -1021,17 +1037,6 @@ SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
 
 # ─── 9. SYMLINKS ──────────────────────────────────────────────────────────────
-
-# Ponowny bieg instalatora respektuje aktywny rice: jeśli .current_rice
-# wskazuje istniejący rice, symlinkujemy TEN rice — dotąd każdy bieg cicho
-# przywracał DEFAULT_RICE (white-blue) i nadpisywał wybór użytkownika.
-TARGET_RICE="$DEFAULT_RICE"
-if [[ -f "$CURRENT_RICE" ]]; then
-    _cur_rice="$(<"$CURRENT_RICE")"
-    if [[ -n "$_cur_rice" && -d "$RICES_DIR/$_cur_rice" ]]; then
-        TARGET_RICE="$_cur_rice"
-    fi
-fi
 
 echo -e "${CYAN}[9] Creating symlinks for rice '$TARGET_RICE'...${NC}"
 
