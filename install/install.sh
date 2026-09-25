@@ -1040,21 +1040,54 @@ echo ""
 
 echo -e "${CYAN}[9] Creating symlinks for rice '$TARGET_RICE'...${NC}"
 
-LINK_TS=$(date +%Y%m%d_%H%M%S)
+# Linkowanie robi wspólna biblioteka przełącznika (lib/switch-rice.sh — ta
+# sama, którą woła Super+T): flock, sprzątanie linków do INNYCH rice'ów,
+# cudzy symlink (np. GNU stow) lub prawdziwy katalog → .bak-<ts> (nigdy rm),
+# ln -sfn, zapis .current_rice. Dotąd [9] miał własną kopię pętli, która
+# kasowała KAŻDY symlink na miejscu folderu rice'a — także spoza rices/
+# (audyt 2026-09-25). SWITCH_RICE_LINK_ONLY=1 = bez tapety, hyprctl reload
+# i restartu waybara w środku instalacji. Osobny proces (bash …), bo
+# biblioteka kończy się `exit` przy błędzie, a instalator ma iść dalej.
+SWITCH_RICE_LIB="$ARCHENEMY_DIR/scripts/changing-theme-scripts/lib/switch-rice.sh"
+RICES_REAL="$(readlink -f "$RICES_DIR")"
+LINK_PRE_BAK=()   # cudze rzeczy, które biblioteka zaraz odłoży do .bak (do komunikatu)
 for src in "$RICES_DIR/$TARGET_RICE"/*/; do
     [[ -d "$src" ]] || continue
     name=$(basename "$src")
     dest="$CONFIG_DIR/$name"
-
-    [[ -L "$dest" ]] && rm "$dest"
-    [[ -e "$dest" ]] && mv "$dest" "$dest.bak-$LINK_TS"
-
-    ln -s "$src" "$dest"
-    echo -e "  ${GREEN}✓ ~/.config/$name → $src${NC}"
+    if [[ -L "$dest" ]]; then
+        [[ "$(readlink -f "$dest")" == "$RICES_REAL/"* ]] || LINK_PRE_BAK+=("$name")
+    elif [[ -e "$dest" ]]; then
+        LINK_PRE_BAK+=("$name")
+    fi
 done
 
-echo "$TARGET_RICE" > "$CURRENT_RICE"
-SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
+LINK_FAIL=0
+if RICE_NAME="$TARGET_RICE" SWITCH_RICE_LINK_ONLY=1 bash "$SWITCH_RICE_LIB"; then
+    # Sukces = zaobserwowany link, nie kod wyjścia biblioteki.
+    for src in "$RICES_DIR/$TARGET_RICE"/*/; do
+        [[ -d "$src" ]] || continue
+        name=$(basename "$src")
+        if [[ "$(readlink "$CONFIG_DIR/$name" 2>/dev/null)" == "${src%/}" ]]; then
+            echo -e "  ${GREEN}✓ ~/.config/$name → ${src%/}${NC}"
+        else
+            echo -e "  ${RED}✗ ~/.config/$name nie wskazuje na ${src%/}${NC}"
+            LINK_FAIL=1
+        fi
+    done
+    for name in "${LINK_PRE_BAK[@]}"; do
+        bak="$(ls -d "$CONFIG_DIR/$name".bak-* 2>/dev/null | tail -n1)"
+        echo -e "  ${YELLOW}⚠ Twój dotychczasowy ~/.config/$name zachowany jako ${bak##*/}${NC}"
+    done
+else
+    echo -e "  ${RED}✗ lib/switch-rice.sh zakończył się błędem (blokada innego przełączenia? brak rice'a?).${NC}"
+    LINK_FAIL=1
+fi
+if [[ $LINK_FAIL -eq 0 ]]; then
+    SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
+else
+    SUMMARY_SKIPPED+=("Rice '$TARGET_RICE' NIE podlinkowany w całości — uruchom scripts/changing-theme-scripts/$TARGET_RICE.sh (Super+T)")
+fi
 echo ""
 
 # ─── 9.5 SCRIPTS + INITIAL WALLPAPER ─────────────────────────────────────────
