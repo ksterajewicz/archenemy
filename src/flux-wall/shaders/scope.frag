@@ -29,6 +29,7 @@ uniform float     time;
 uniform vec3      palette_bg;
 uniform vec3      palette_ink;
 uniform vec3      palette_accent;
+uniform float     dither;   /* 1 = raster Bayera, 0 = gładki gradient palety (engine.h) */
 uniform float     detail;
 uniform float     audio_level;
 uniform float     audio_bass;
@@ -62,6 +63,15 @@ float bayer8(vec2 c) {
     return (float(r) + 0.5) / 64.0;
 }
 
+/* Tryb gładki (dither = 0): kolor, który raster daje z daleka, ale bez
+ * rastra — ton `f` (ułamek zapalonych pikseli w rastrze) jako krycie koloru
+ * „zapalonego” na tle, a `acc` (0..1) przesuwa ten kolor z atramentu
+ * w akcent. Gradient palety tło → atrament → akcent, ciągły. */
+vec3 palette_ramp(float f, float acc) {
+    vec3 lit = mix(palette_ink, palette_accent, clamp(acc, 0.0, 1.0));
+    return mix(palette_bg, lit, clamp(f, 0.0, 1.0));
+}
+
 /* próbka mono i (L+R)/2 → y śladu w pikselach */
 float trace_y(int i, float g) {
     vec2 s = texelFetch(audio_wave, ivec2(clamp(i, 0, WAVE_N - 1), 0), 0).rg;
@@ -80,6 +90,7 @@ void main() {
     vec2 px = gl_FragCoord.xy;
     float f = 0.0;
     bool accent = false;
+    float acc = 0.0;                                       /* tryb gładki: udział akcentu */
 
     /* 1. podziałka: siatka co cell px (kwadratowa), oś pozioma i pionowa mocniejsze */
     float cell = resolution.y / CELLS;
@@ -105,10 +116,12 @@ void main() {
     if (d < core) {
         f = LEVEL * (0.85 + 0.15 * audio_beat);
         accent = true;
+        acc = 1.0;
     } else if (d < core + glow) {
         float t = (d - core) / glow;                       /* 0 przy rdzeniu, 1 na brzegu */
         float gl = (1.0 - t) * (1.0 - t) * (0.30 + 0.45 * audio_level + 0.25 * audio_beat);
         f = max(f, LEVEL * gl);
+        acc = 1.0 - smoothstep(0.0, 0.25, t);              /* akcent rdzenia przechodzi w poświatę */
     }
 
     /* 3. uderzenie: cała podziałka jaśnieje na moment */
@@ -117,7 +130,11 @@ void main() {
     /* iskrzenie z wysokich — jak w pozostałych animacjach */
     vec2 bshift = floor(vec2(3.0, 5.0) * audio_high);
     vec3 col = palette_bg;
-    if (f > bayer8(px + bshift))
-        col = accent ? palette_accent : palette_ink;
+    if (dither > 0.5) {
+        if (f > bayer8(px + bshift))
+            col = accent ? palette_accent : palette_ink;
+    } else {
+        col = palette_ramp(f, acc);
+    }
     fragColor = vec4(col, 1.0);
 }

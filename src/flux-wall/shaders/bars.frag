@@ -36,6 +36,7 @@ uniform float     time;
 uniform vec3      palette_bg;
 uniform vec3      palette_ink;
 uniform vec3      palette_accent;
+uniform float     dither;   /* 1 = raster Bayera, 0 = gładki gradient palety (engine.h) */
 uniform sampler2D accum;
 uniform float     gain;
 uniform float     audio_mid;
@@ -48,6 +49,7 @@ out vec4 fragColor;
 const float LEVEL     = 0.62;
 const float GAMMA     = 1.6;
 const float ACC_FROM  = 0.80;
+const float ACC_SOFT  = 0.10;   /* tryb gładki: szerokość przejścia atrament → akcent nad progiem (część LEVEL) */
 const int   BARS      = 64;      /* 32 biny × 2 (lustro) */
 const float BAR_FILL  = 0.70;    /* część szczeliny zajęta przez słupek */
 const float BASE_FRAC = 0.12;    /* linia bazowa: ułamek wysokości ekranu od dołu */
@@ -75,6 +77,15 @@ float bayer8(vec2 c) {
     for (int i = 0; i < 6; i++)
         r = (r << 1) | ((v >> i) & 1);
     return (float(r) + 0.5) / 64.0;
+}
+
+/* Tryb gładki (dither = 0): kolor, który raster daje z daleka, ale bez
+ * rastra — ton `f` (ułamek zapalonych pikseli w rastrze) jako krycie koloru
+ * „zapalonego” na tle, a `acc` (0..1) przesuwa ten kolor z atramentu
+ * w akcent. Gradient palety tło → atrament → akcent, ciągły. */
+vec3 palette_ramp(float f, float acc) {
+    vec3 lit = mix(palette_ink, palette_accent, clamp(acc, 0.0, 1.0));
+    return mix(palette_bg, lit, clamp(f, 0.0, 1.0));
 }
 
 /* hash jak h2 z prelude kroku cząstek (do migotania tła) */
@@ -182,7 +193,11 @@ void main() {
     float acc_cut = ACC_FROM - 0.15 * audio_high;
 
     vec3 col = palette_bg;
-    if (f > bayer8(gl_FragCoord.xy + bshift))
-        col = (accent || f >= acc_cut * LEVEL) ? palette_accent : palette_ink;
+    if (dither > 0.5) {
+        if (f > bayer8(gl_FragCoord.xy + bshift))
+            col = (accent || f >= acc_cut * LEVEL) ? palette_accent : palette_ink;
+    } else {
+        col = palette_ramp(f, accent ? 1.0 : smoothstep(acc_cut * LEVEL, (acc_cut + ACC_SOFT) * LEVEL, f));
+    }
     fragColor = vec4(col, 1.0);
 }

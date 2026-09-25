@@ -25,6 +25,7 @@ uniform float     time;
 uniform vec3      palette_bg;
 uniform vec3      palette_ink;
 uniform vec3      palette_accent;
+uniform float     dither;   /* 1 = raster Bayera, 0 = gładki gradient palety (engine.h) */
 uniform sampler2D accum;
 uniform float     gain;
 uniform float     audio_bass;
@@ -35,6 +36,7 @@ out vec4 fragColor;
 const float LEVEL    = 0.66;
 const float GAMMA    = 1.20;     /* łagodniej niż orb: front pierścienia ma być czytelny, smuga gasnąć */
 const float ACC_FROM = 0.70;     /* od tej części LEVEL piksel idzie w akcent (front pierścienia) */
+const float ACC_SOFT = 0.10;   /* tryb gładki: szerokość przejścia atrament → akcent nad progiem (część LEVEL) */
 const float SRC_R    = 0.07;     /* = SRC_R w .update.glsl */
 const float SRC_EDGE = 0.012;    /* grubość obrysu źródła */
 const float HALO     = 0.16;     /* jasność poświaty tuż przy źródle (część LEVEL) */
@@ -57,6 +59,15 @@ float bayer8(vec2 c) {
     for (int i = 0; i < 6; i++)
         r = (r << 1) | ((v >> i) & 1);
     return (float(r) + 0.5) / 64.0;
+}
+
+/* Tryb gładki (dither = 0): kolor, który raster daje z daleka, ale bez
+ * rastra — ton `f` (ułamek zapalonych pikseli w rastrze) jako krycie koloru
+ * „zapalonego” na tle, a `acc` (0..1) przesuwa ten kolor z atramentu
+ * w akcent. Gradient palety tło → atrament → akcent, ciągły. */
+vec3 palette_ramp(float f, float acc) {
+    vec3 lit = mix(palette_ink, palette_accent, clamp(acc, 0.0, 1.0));
+    return mix(palette_bg, lit, clamp(f, 0.0, 1.0));
 }
 
 /* hash pikselowy do iskrzenia (zmienia się ~20 razy na sekundę) */
@@ -96,8 +107,16 @@ void main() {
     bool  spark   = r > SRC_R && f > halo + 0.02
                  && hash_px(gl_FragCoord.xy, floor(time * 20.0)) < SPARK * audio_high;
 
+    /* gładko: zamiast pojedynczych iskier — cały pierścień lekko w stronę akcentu */
+    float acc = accent ? 1.0 : smoothstep(acc_cut * LEVEL, (acc_cut + ACC_SOFT) * LEVEL, f);
+    if (r > SRC_R && f > halo + 0.02) acc = max(acc, SPARK * audio_high);
+
     vec3 col = palette_bg;
-    if (f > bayer8(gl_FragCoord.xy + bshift))
-        col = (accent || spark || f >= acc_cut * LEVEL) ? palette_accent : palette_ink;
+    if (dither > 0.5) {
+        if (f > bayer8(gl_FragCoord.xy + bshift))
+            col = (accent || spark || f >= acc_cut * LEVEL) ? palette_accent : palette_ink;
+    } else {
+        col = palette_ramp(f, acc);
+    }
     fragColor = vec4(col, 1.0);
 }

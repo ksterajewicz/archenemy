@@ -17,6 +17,8 @@
 #   `make -C src/flux-wall tools` test kończy się kodem 0 z komunikatem SKIP
 #   (narzędzia dev nie są budowane przez install.sh).
 #   Surowe stemple akumulatora: tools/bars-accum-debug.frag + pngstat.py accum.
+#   Render z --dither: pngstat.py marks rozpoznaje kreskę po pikselach akcentu
+#   w rastrze Bayera (domyślny tryb gładki nie ma czystych kolorów palety).
 # =============================================
 
 set -uo pipefail
@@ -33,7 +35,7 @@ trap 'rm -rf "$T"' EXIT
 FAIL=0
 for size in 1920x1080 2560x1600; do
     mkdir -p "$T/out-$size"
-    if ! "$OFF" "$FW/shaders/bars.frag" -o "$T/out-$size" -s "$size" -f 144 -t 4 --audio synth >"$T/log-$size" 2>&1; then
+    if ! "$OFF" "$FW/shaders/bars.frag" -o "$T/out-$size" -s "$size" -f 144 -t 4 --audio synth --dither >"$T/log-$size" 2>&1; then
         echo "  ✗ $size: offscreen padł:"; tail -n 3 "$T/log-$size"; FAIL=1; continue
     fi
     printf '  %s: ' "$size"
