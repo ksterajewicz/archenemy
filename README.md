@@ -39,7 +39,7 @@ cd ~/archenemy/install/
 
 The installer will: detect and configure monitors (including left→right numbering and workspace mode — see the "Workspaces" section), install packages from `packages/`, set up the power profile switcher (ASUS ROG / universal — hardware type detected from DMI as a hint; on ASUS machines it installs `asusctl-devel-git` from the AUR, which also provides `rog-control-center`, so the latter is NOT installed separately; without a working asusctl it automatically falls back to power-profiles-daemon, with a final self-check via `profile-get.sh`), optionally run the CPU microcode / GPU driver / kernel installers, generate machine files, symlink the default rice into `~/.config`, set the first wallpaper (if one exists in `wallpapers/`), and take care of services: NetworkManager, audio (pipewire-pulse), asusd on ASUS machines, and optionally UFW and bluetooth. If you picked the optional music stack (mpd/mpc/ncmpcpp — "additional packages"), step **[8l]** wires it up without touching an existing configuration (see "Music stack").
 
-**Updating an existing machine after `git pull`?** Run `install.sh` again — it will generate any missing machine files.
+**Updating an existing machine after `git pull`?** Run `install.sh` again — it will generate any missing machine files. The monitor survey ([3]–[3.7]) writes the new `data/monitors/*.dat` into a temporary `data/monitors.new.*` folder and swaps them in only after the last question, so Ctrl-C mid-survey leaves the previous set intact. Every step reports what actually happened: package installs, `ufw`, `systemctl enable`, the bootloader regeneration in the CPU/kernel installers and the final `hyprctl reload` print ✓ only after checking the result, otherwise the step lands in the summary with the command to finish by hand.
 
 ## How this is organized — four layers
 
@@ -133,6 +133,8 @@ archenemy/
 │                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── appbinds/                     # Terminal shortcut manager for apps (Super+A); update-archenemy.sh — [p];
+│   │                                 #   lib/binds.sh — the one place that lists/removes user binds (list and
+│   │                                 #   [d] pick the same lines);
 │   │                                 #   [w] switches shared/decades workspace mode live;
 │   │                                 #   [v] switches the waybar volume bar style;
 │   │                                 #   [o] mpd audio output: pipewire (recommended) / alsa;
@@ -213,6 +215,10 @@ archenemy/
 │                                     #   switching to a branch older than what you run.
 │                                     #   switch-rice.sh — rice switching on a fake ~/.config: foreign
 │                                     #   symlinks backed up, two quick Super+T don't race.
+│                                     #   install-link.sh — installer step [9] (link-only mode of the same
+│                                     #   lib): stow symlinks and real dirs go to .bak, never rm.
+│                                     #   appbinds.sh — Super+A list vs [d]: a hand-written bind between
+│                                     #   TUI binds doesn't shift the numbering.
 │                                     #   rice-autostart.sh — runs every rice's hyprland.lua on a fake
 │                                     #   `hl` API (lua5.4) and checks what starts with the session.
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
@@ -295,7 +301,7 @@ Directly: `flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery] [-f fp
 
 Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config`. Switching: `Super + T` — the menu shows scripts from `scripts/changing-theme-scripts/` (the `.sh` file name is the menu label: `white-blue`, `tron`, `asia-n-rice`, `dither-flux`, `crt`, `white-blue_beta`). On switching, the old rice's symlinks are cleaned up, so themes don't mix.
 
-**New rice:** create `rices/<folder>/`, copy `scripts/changing-theme-scripts/white-blue.sh` as `<label>.sh`, and set `RICE_NAME` inside it to your folder's name. The script is a two-line stub — all the switching logic lives in the shared `lib/switch-rice.sh`, so a new rice doesn't require copying any logic.
+**New rice:** create `rices/<folder>/`, copy `scripts/changing-theme-scripts/white-blue.sh` as `<label>.sh`, and set `RICE_NAME` inside it to your folder's name. The script is a two-line stub — all the switching logic lives in the shared `lib/switch-rice.sh`, so a new rice doesn't require copying any logic. The installer's step [9] calls the same library with `SWITCH_RICE_LINK_ONLY=1` (links + `.current_rice` only, no wallpaper/reload/waybar restart), so a foreign symlink or a real directory in `~/.config` always ends up as `<name>.bak-<timestamp>`, never deleted.
 
 ## Custom app shortcuts (Super + A)
 
