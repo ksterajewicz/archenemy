@@ -235,7 +235,9 @@ char *flux_strip_directives(const char *src, bool keep_version) {
         char *nl = strchr(line, '\n');
         char *s = line;
         while (*s == ' ' || *s == '\t') s++;
-        bool pragma = strncmp(s, "#pragma flux", 12) == 0;
+        /* jak w flux_params_parse: po „#pragma flux" musi być biały znak —
+         * „#pragma fluxx" to cudza pragma, zostaje w źródle */
+        bool pragma = strncmp(s, "#pragma flux", 12) == 0 && isspace((unsigned char)s[12]);
         bool version = !keep_version && strncmp(s, "#version", 8) == 0;
         if (pragma || version) {
             size_t len = nl ? (size_t)(nl - line) : strlen(line);
