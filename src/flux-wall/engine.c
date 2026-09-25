@@ -133,7 +133,7 @@ struct flux_engine {
     GLuint prog_present, prog_update, prog_splat, prog_fade;
     GLuint vao;
     /* present */
-    GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail, u_accum, u_gain;
+    GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail, u_dither, u_accum, u_gain;
     /* update */
     GLint uu_pos, uu_time, uu_dt, uu_detail, uu_resolution, uu_aspect, uu_seed, uu_life, uu_accum;
     /* splat */
@@ -323,6 +323,7 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->u_ink        = glGetUniformLocation(e->prog_present, "palette_ink");
     e->u_accent     = glGetUniformLocation(e->prog_present, "palette_accent");
     e->u_detail     = glGetUniformLocation(e->prog_present, "detail");
+    e->u_dither     = glGetUniformLocation(e->prog_present, "dither");   /* -1, gdy shader go nie deklaruje */
     e->u_accum      = glGetUniformLocation(e->prog_present, "accum");
     e->u_gain       = glGetUniformLocation(e->prog_present, "gain");
     static const char *AUDIO_NAMES[AUDIO_UNIFORMS] = { "audio_level", "audio_bass", "audio_lowmid", "audio_mid",
@@ -664,7 +665,7 @@ static void simulate(struct flux_engine *e, struct flux_target *t, double anim_t
 }
 
 void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint dest_fbo,
-                        double time, const struct palette *pal, float detail,
+                        double time, const struct palette *pal, float detail, float dither,
                         const struct audio_features *audio, float audio_strength, bool warmup_once) {
     glBindVertexArray(e->vao);
     const struct flux_params *p = &e->params;
@@ -732,5 +733,6 @@ void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint des
     if (e->u_ink        >= 0) glUniform3fv(e->u_ink, 1, pal->ink);
     if (e->u_accent     >= 0) glUniform3fv(e->u_accent, 1, pal->accent);
     if (e->u_detail     >= 0) glUniform1f(e->u_detail, detail);
+    if (e->u_dither     >= 0) glUniform1f(e->u_dither, dither);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }

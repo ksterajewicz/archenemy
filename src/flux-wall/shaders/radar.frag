@@ -25,6 +25,7 @@ uniform float     time;
 uniform vec3      palette_bg;
 uniform vec3      palette_ink;
 uniform vec3      palette_accent;
+uniform float     dither;   /* 1 = raster Bayera, 0 = gładki gradient palety (engine.h) */
 uniform float     detail;
 uniform sampler2D accum;
 uniform float     gain;
@@ -37,6 +38,7 @@ out vec4 fragColor;
 const float LEVEL     = 0.80;
 const float GAMMA     = 1.25;
 const float ACC_FROM  = 0.72;      /* echo w akcencie od tej części LEVEL */
+const float ACC_SOFT  = 0.10;   /* tryb gładki: szerokość przejścia atrament → akcent nad progiem (część LEVEL) */
 const float ARM_W     = 1.5707963; /* rad/s (= ARM_W w .update.glsl) */
 const float R_OUT     = 0.86;      /* obwód tarczy (= R_OUT w .update.glsl) */
 const float GRAT_F    = 0.09;      /* jasność podziałki (część LEVEL) */
@@ -63,6 +65,15 @@ float bayer8(vec2 c) {
     for (int i = 0; i < 6; i++)
         r = (r << 1) | ((v >> i) & 1);
     return (float(r) + 0.5) / 64.0;
+}
+
+/* Tryb gładki (dither = 0): kolor, który raster daje z daleka, ale bez
+ * rastra — ton `f` (ułamek zapalonych pikseli w rastrze) jako krycie koloru
+ * „zapalonego” na tle, a `acc` (0..1) przesuwa ten kolor z atramentu
+ * w akcent. Gradient palety tło → atrament → akcent, ciągły. */
+vec3 palette_ramp(float f, float acc) {
+    vec3 lit = mix(palette_ink, palette_accent, clamp(acc, 0.0, 1.0));
+    return mix(palette_bg, lit, clamp(f, 0.0, 1.0));
 }
 
 void main() {
@@ -96,6 +107,7 @@ void main() {
     float wedge = (r < R_OUT) ? TRAIL_F * LEVEL * exp(-d / TRAIL) * (1.0 + audio_beat) : 0.0;
     f = max(f, min(1.0, e + wedge));
     accent = e >= ACC_FROM * LEVEL;
+    float acc = smoothstep(ACC_FROM * LEVEL, (ACC_FROM + ACC_SOFT) * LEVEL, e);   /* tryb gładki */
 
     float along = dot(c, u);
     float side  = abs(c.x * u.y - c.y * u.x);
@@ -103,16 +115,21 @@ void main() {
     if (along > 0.0 && along < R_OUT && side < arm_w) {
         f = LEVEL * (0.80 + 0.20 * audio_beat);
         accent = true;
+        acc = 1.0;
     }
 
     /* 4. piasta pulsująca z basem */
-    if (r < HUB_R + HUB_BASS * audio_bass) { f = LEVEL; accent = true; }
+    if (r < HUB_R + HUB_BASS * audio_bass) { f = LEVEL; accent = true; acc = 1.0; }
 
     /* iskrzenie z wysokich jak w pozostałych animacjach */
     vec2  bshift  = floor(vec2(3.0, 5.0) * audio_high);
 
     vec3 col = palette_bg;
-    if (f > bayer8(gl_FragCoord.xy + bshift))
-        col = accent ? palette_accent : palette_ink;
+    if (dither > 0.5) {
+        if (f > bayer8(gl_FragCoord.xy + bshift))
+            col = accent ? palette_accent : palette_ink;
+    } else {
+        col = palette_ramp(f, acc);
+    }
     fragColor = vec4(col, 1.0);
 }
