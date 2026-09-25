@@ -41,6 +41,13 @@
 #   do scripts/wallpapers/flux-wall.sh select|off (zapis w data/flux-wall.dat);
 #   nie dotyka stanu tapety hyprpapera — animacja rysuje NAD nią.
 #
+#   Podmenu mają podglądy PNG (scripts/rofi/lib/rofi-preview.sh, siatka z
+#   dużymi ikonami): Wallpapers/ — miniatury z data/thumbs/ generowane
+#   leniwie (brak narzędzia → oryginalny obraz); Animations/ — gotowe kadry
+#   src/flux-wall/shaders/previews/<aktywny rice>/<animacja>.png (w repo,
+#   renderuje je src/flux-wall/tools/render-previews.sh); brak kadru = wpis
+#   bez ikony.
+#
 #   Stan: data/wallpaper.dat w formacie "monitor=ścieżka" (po linii na monitor).
 #   Stary format (sama nazwa zestawu) jest migrowany automatycznie.
 #   Stan hyprlocka: data/hyprlock-wallpaper.dat — "off" albo bezwzględna
@@ -79,6 +86,8 @@ FOLDER_ANIM="Animations/"
 BACK="← Back"
 AUDIO_SUFFIX="   ♪ music visualisation"
 ANIM_OFF="${ANIM_PREFIX}off"
+ANIM_PREVIEWS_DIR="$ARCHENEMY_DIR/src/flux-wall/shaders/previews"
+CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 
 # ─── RESOLVE MONITORS FROM data/monitors/*.dat ───────────────────────────────
 
@@ -88,6 +97,9 @@ ANIM_OFF="${ANIM_PREFIX}off"
 # Hyprland. TYM SAMYM selektorem idzie polecenie IPC (patrz apply_ipc).
 # shellcheck source=scripts/hypr/lib/monitor-id.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+# Podglądy w menu rofi (miniatury tapet, kadry animacji, siatka ikon).
+# shellcheck source=scripts/rofi/lib/rofi-preview.sh
+source "$ARCHENEMY_DIR/scripts/rofi/lib/rofi-preview.sh"
 
 MONITOR1=""   # primary  -> dostaje v1
 MONITOR2=""   # secondary -> dostaje v2
@@ -488,15 +500,32 @@ else
         exit 1
     fi
 
-    REL=()
-    for f in "${FILES[@]}"; do
-        REL+=("${f#"$WALLPAPERS_DIR"/}")
-    done
+    # Podmenu Wallpapers/: „← Back" bez ikony, pliki z miniaturami. Budowane
+    # dopiero przy PIERWSZYM wejściu do podmenu (kto wybiera animację, nie
+    # czeka na miniatury), z limitem czasu — patrz lib/rofi-preview.sh;
+    # zawsze jest CO pokazać (najwyżej oryginał).
+    WALL_LABELS=(); WALL_ICONS=()
+    build_wall_menu() {
+        local f
+        (( ${#WALL_LABELS[@]} )) && return 0
+        WALL_LABELS=("$BACK"); WALL_ICONS=("")
+        thumb_init
+        for f in "${FILES[@]}"; do
+            thumb_get "$f"
+            WALL_LABELS+=("${f#"$WALLPAPERS_DIR"/}"); WALL_ICONS+=("$REPLY")
+        done
+    }
 
     # Animacje (flux-wall) — tylko gdy binarka istnieje; bez niej pozycje
     # obiecywałyby coś, czego install.sh nie zbudował. Wizualizacje muzyki
     # dostają dopisek — audio włącza się dla nich samo (flux-wall czyta pragmę).
+    # Kadry podglądu są per rice (paleta z rices/<rice>/flux-wall.conf) —
+    # bierzemy katalog AKTYWNEGO rice'a; brak pliku = wpis bez ikony.
     ANIM=()
+    ANIM_LABELS=("$BACK"); ANIM_ICONS=("")
+    rice=""
+    [[ -f "$CURRENT_RICE_FILE" ]] && rice="$(<"$CURRENT_RICE_FILE")"
+    rice="${rice//[[:space:]]/}"
     if [[ -x "$FLUX_WALL_BIN" && -f "$FLUX_WALL" ]]; then
         mapfile -t AUDIO_NAMES < <(bash "$FLUX_WALL" list-audio 2>/dev/null)
         while IFS= read -r name; do
@@ -504,6 +533,11 @@ else
             label="$name"
             for an in "${AUDIO_NAMES[@]}"; do [[ "$an" == "$name" ]] && label="${name}${AUDIO_SUFFIX}"; done
             ANIM+=("$label")
+            icon=""
+            # Nazwa może mieć apostrof (orb-spinnin') — tylko w cudzysłowach,
+            # nigdy przez eval/glob; `/` w nazwie rice'a nie przejdzie.
+            [[ -n "$rice" && "$rice" != */* ]] && icon="$ANIM_PREVIEWS_DIR/$rice/$name.png"
+            ANIM_LABELS+=("$label"); ANIM_ICONS+=("$icon")
         done < <(bash "$FLUX_WALL" list 2>/dev/null)
     fi
 
@@ -532,12 +566,13 @@ else
             "$LOCK_TOGGLE_OFF") MODE_LOCK=1; continue ;;
             "$ANIM_OFF")       KIND="anim-off"; break ;;
             "$FOLDER_WALL")
-                SUB=$(printf '%s\n' "$BACK" "${REL[@]}" | rofi -dmenu -i -p "Wallpapers:")
+                build_wall_menu
+                SUB=$(rofi_preview_menu "Wallpapers:" WALL_LABELS WALL_ICONS)
                 [[ -z "$SUB" ]] && exit 0
                 [[ "$SUB" == "$BACK" ]] && continue
                 CHOICE="$SUB"; KIND="file"; break ;;
             "$FOLDER_ANIM")
-                SUB=$(printf '%s\n' "$BACK" "${ANIM[@]}" | rofi -dmenu -i -p "Animations:")
+                SUB=$(rofi_preview_menu "Animations:" ANIM_LABELS ANIM_ICONS)
                 [[ -z "$SUB" ]] && exit 0
                 [[ "$SUB" == "$BACK" ]] && continue
                 CHOICE="${SUB%"$AUDIO_SUFFIX"}"; KIND="anim"; break ;;
