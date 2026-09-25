@@ -121,6 +121,35 @@ check "A: [3] składa opis z make/model/serial" '[[ "$out" == "$DESC_EDP|$DESC_H
 out=$(MOCK_MONS=twins ARCHENEMY_DIR="$REPO" DATA_DIR="$T/inst2" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash -c "source '$T/step3.sh'; echo \"[\${CUR_DESC[DP-1]}|\${CUR_DESC[DP-2]}]\"" 2>/dev/null | tail -n1)
 check "C: dwa identyczne monitory → bez desc:" '[[ "$out" == "[|]" ]]'
 
+echo "== install.sh [3]–[3.7] (wycinek: przerwanie NIE kasuje starych .dat; komplet podmieniany po [3.7])"
+# Audyt 2026-09-25: `rm -f data/monitors/*.dat` szło w [3], PRZED pytaniami
+# [3.5]–[3.7] — Ctrl-C w trakcie zostawiał data/monitors/ pusty. Nowe .dat
+# powstają w data/monitors.new.XXXXXX i wchodzą na miejsce po ostatnim pytaniu.
+S=$(grep -n '^# ─── 3. CHECK MONITORS' "$REPO/install/install.sh" | cut -d: -f1)
+E=$(grep -n '^# ─── 4. CHECK YAY' "$REPO/install/install.sh" | cut -d: -f1)
+sed -n "${S},$((E-1))p" "$REPO/install/install.sh" > "$T/step3-37.sh"
+I="$T/inst3"; mkdir -p "$I/monitors"
+printf 'MONITOR=DP-OLD\nRESOLUTION=1x1\nROLE=primary\nORDER=1\n' > "$I/monitors/DP-OLD.dat"
+# Odpowiedzi: [3.5] 5×Enter na monitor (2 monitory), [3.6] Enter — potem stdin
+# WISI na pytaniu [3.7] i po 2 s przychodzi SIGINT (= Ctrl-C użytkownika).
+exec 3< <(printf '\n\n\n\n\n\n\n\n\n\n\n'; sleep 30)
+feeder=$!
+MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I" GREEN= NC= YELLOW= BLUE= CYAN= RED= \
+    timeout -s INT 2 bash "$T/step3-37.sh" <&3 >/dev/null 2>&1
+exec 3<&-; kill "$feeder" 2>/dev/null
+check "przerwany bieg: stary .dat zostaje"     '[[ -f "$I/monitors/DP-OLD.dat" ]]'
+check "przerwany bieg: nowe .dat NIE na miejscu" '[[ ! -e "$I/monitors/eDP-1.dat" && ! -e "$I/monitors/HDMI-A-3.dat" ]]'
+check "przerwany bieg: katalog tymczasowy sprzątnięty (trap)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
+# Pełny bieg: te same odpowiedzi + „1" (shared) w [3.7].
+mkdir -p "$I/monitors.new.STALE"   # resztka po biegu zabitym bez trapa (SIGKILL)
+out=$(printf '\n\n\n\n\n\n\n\n\n\n\n1\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" 2>&1)
+check "pełny bieg: nowe .dat na miejscu"       '[[ -f "$I/monitors/eDP-1.dat" && -f "$I/monitors/HDMI-A-3.dat" ]]'
+check "pełny bieg: stary .dat (odpięty monitor) usunięty" '[[ ! -e "$I/monitors/DP-OLD.dat" ]]'
+check "pełny bieg: .dat kompletny (opis, rola, ORDER)" 'grep -q "^DESCRIPTION=$DESC_HDMI$" "$I/monitors/HDMI-A-3.dat" && grep -q "^ROLE=" "$I/monitors/HDMI-A-3.dat" && grep -q "^ORDER=[12]$" "$I/monitors/eDP-1.dat" && grep -q "^ORDER=[12]$" "$I/monitors/HDMI-A-3.dat"'
+check "pełny bieg: bez katalogów tymczasowych (także resztki)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
+check "pełny bieg: workspace-mode.dat = shared" '[[ "$(<"$I/workspace-mode.dat")" == shared ]]'
+check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat zapisane (2 monitors)"* ]]'
+
 echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
 # Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie
 # mówiło. Alarm tylko przy zmianach w katalogach przetwarzanych przez

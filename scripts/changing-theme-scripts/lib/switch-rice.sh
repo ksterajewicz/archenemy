@@ -86,6 +86,13 @@ done
 
 echo "$RICE_NAME" > "$CURRENT_RICE"
 
+# Tryb „tylko linki" (install.sh [9]): symlinki + .current_rice i koniec —
+# bez tapety, flux-wall, hyprctl reload, restartu waybara/swayosd i
+# powiadomień. Instalator sam ogłasza wynik, a restart paska w środku
+# instalacji (albo bez działającego Hyprlanda) nie ma sensu. Jedna
+# implementacja linkowania zamiast kopii pętli w install.sh (audyt 2026-09-25).
+[[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] && exit 0
+
 # ─── PRZYWRÓĆ OSTATNIĄ TAPETĘ (jeśli była) ───────────────────────────────────
 
 WALLPAPER_SWITCHER="$ARCHENEMY_DIR/scripts/rofi/rofi_wallpaper_switcher.sh"

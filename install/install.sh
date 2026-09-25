@@ -157,9 +157,26 @@ done
 echo ""
 
 mkdir -p "$DATA_DIR/monitors"
-# Sprzątamy .dat po monitorach, których już nie ma — inaczej wallpaper switcher
-# mógłby wybrać odłączony monitor jako primary/secondary.
-rm -f "$DATA_DIR/monitors"/*.dat
+# Nowe .dat powstają w katalogu tymczasowym OBOK data/monitors/ i trafiają na
+# miejsce dopiero po ostatnim pytaniu [3.7] (commit_monitor_dats) — dotąd
+# `rm -f *.dat` szło tutaj, PRZED pytaniami [3.5]–[3.7], i Ctrl-C w trakcie
+# zostawiał data/monitors/ pusty (audyt 2026-09-25). Konsumenci
+# (gen-workspaces.sh, wallpaper switcher, [8a], [9.7]) czytają
+# data/monitors/*.dat — do commitu widzą stary komplet, po nim tylko nowy.
+# Katalog po biegu zabitym bez trapa (SIGKILL) sprzątamy tu; własny — trapem.
+rm -rf "$DATA_DIR"/monitors.new.*
+MON_TMP="$(mktemp -d "$DATA_DIR/monitors.new.XXXXXX")"
+trap 'rm -rf "$MON_TMP"' EXIT
+# Podmiana: stare .dat (także po monitorach, których już nie ma — inaczej
+# wallpaper switcher mógłby wybrać odłączony monitor jako primary/secondary)
+# znikają w tej samej chwili, w której wchodzą nowe (mv w obrębie data/ =
+# rename, bez okna z pustym katalogiem dłuższym niż kilka syscalli).
+commit_monitor_dats() {
+    rm -f "$DATA_DIR/monitors"/*.dat
+    mv "$MON_TMP"/*.dat "$DATA_DIR/monitors/"
+    rmdir "$MON_TMP"
+    trap - EXIT
+}
 
 declare -A MON_RES
 declare -A MON_RATE
@@ -246,9 +263,9 @@ for mon in "${MONITOR_NAMES[@]}"; do
         echo "SCALE=$scale"
         echo "ROLE=$role"
         echo "DESCRIPTION=${CUR_DESC[$mon]:-}"
-    } > "$DATA_DIR/monitors/$mon.dat"
+    } > "$MON_TMP/$mon.dat"
 
-    echo -e "  ${GREEN}✓ Saved data/monitors/$mon.dat${NC}"
+    echo -e "  ${GREEN}✓ $mon.dat gotowy (do data/monitors/ trafi po [3.7])${NC}"
     echo ""
     mon_idx=$((mon_idx + 1))
 done
@@ -287,7 +304,7 @@ fi
 if [[ ${#MONITOR_NAMES[@]} -eq 1 ]]; then
     mon="${MONITOR_NAMES[0]}"
     MON_ORDER[$mon]=1
-    echo "ORDER=1" >> "$DATA_DIR/monitors/$mon.dat"
+    echo "ORDER=1" >> "$MON_TMP/$mon.dat"
     echo -e "  ${GREEN}✓ Jeden monitor ($mon) — numer 1.${NC}"
 else
     while :; do
@@ -328,7 +345,7 @@ else
     for i in "${ORDER_PROPOSED[@]}"; do
         mon="${MONITOR_NAMES[$i]}"
         MON_ORDER[$mon]=$ordk
-        echo "ORDER=$ordk" >> "$DATA_DIR/monitors/$mon.dat"
+        echo "ORDER=$ordk" >> "$MON_TMP/$mon.dat"
         echo -e "  ${GREEN}✓ $ordk → $mon${NC}"
         ordk=$((ordk + 1))
     done
@@ -354,6 +371,10 @@ while :; do
         *) echo -e "  ${YELLOW}⚠ Wpisz 1 albo 2.${NC}" ;;
     esac
 done
+# Ostatnie pytanie o monitory za nami — dopiero teraz podmieniamy
+# data/monitors/*.dat (patrz [3]).
+commit_monitor_dats
+echo -e "  ${GREEN}✓ data/monitors/*.dat zapisane (${#MONITOR_NAMES[@]} monitors)${NC}"
 echo "$WS_MODE" > "$DATA_DIR/workspace-mode.dat"
 echo -e "  ${GREEN}✓ Tryb workspace'ów: $WS_MODE${NC}"
 echo ""
@@ -660,6 +681,22 @@ echo ""
 # ─── 7. BACKUP ────────────────────────────────────────────────────────────────
 
 echo -e "${CYAN}[7] Backup...${NC}"
+
+# Rice, który krok [9] REALNIE podlinkuje — liczony tutaj, bo kopia zapasowa
+# musi obejmować foldery TEGO rice'a (audyt 2026-09-25: [7] iterował
+# DEFAULT_RICE, a [9] linkował TARGET_RICE — folder obecny tylko w aktywnym
+# ricie, np. mako, szedł do .bak bez kopii w backups/).
+# Ponowny bieg instalatora respektuje aktywny rice: jeśli .current_rice
+# wskazuje istniejący rice, symlinkujemy TEN rice — dotąd każdy bieg cicho
+# przywracał DEFAULT_RICE (white-blue) i nadpisywał wybór użytkownika.
+TARGET_RICE="$DEFAULT_RICE"
+if [[ -f "$CURRENT_RICE" ]]; then
+    _cur_rice="$(<"$CURRENT_RICE")"
+    if [[ -n "$_cur_rice" && -d "$RICES_DIR/$_cur_rice" ]]; then
+        TARGET_RICE="$_cur_rice"
+    fi
+fi
+
 echo -e "Everything is about to be set up. Would you like to create a backup of your current ~/.config?"
 read -rp "[y/N]: " ans
 
@@ -668,7 +705,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     BACKUP_DIR="$ARCHENEMY_DIR/backups/$BACKUP_NAME"
     mkdir -p "$BACKUP_DIR"
 
-    for src in "$RICES_DIR/$DEFAULT_RICE"/*/; do
+    for src in "$RICES_DIR/$TARGET_RICE"/*/; do
         [[ -d "$src" ]] || continue
         name=$(basename "$src")
         dest="$CONFIG_DIR/$name"
@@ -1022,34 +1059,56 @@ echo ""
 
 # ─── 9. SYMLINKS ──────────────────────────────────────────────────────────────
 
-# Ponowny bieg instalatora respektuje aktywny rice: jeśli .current_rice
-# wskazuje istniejący rice, symlinkujemy TEN rice — dotąd każdy bieg cicho
-# przywracał DEFAULT_RICE (white-blue) i nadpisywał wybór użytkownika.
-TARGET_RICE="$DEFAULT_RICE"
-if [[ -f "$CURRENT_RICE" ]]; then
-    _cur_rice="$(<"$CURRENT_RICE")"
-    if [[ -n "$_cur_rice" && -d "$RICES_DIR/$_cur_rice" ]]; then
-        TARGET_RICE="$_cur_rice"
-    fi
-fi
-
 echo -e "${CYAN}[9] Creating symlinks for rice '$TARGET_RICE'...${NC}"
 
-LINK_TS=$(date +%Y%m%d_%H%M%S)
+# Linkowanie robi wspólna biblioteka przełącznika (lib/switch-rice.sh — ta
+# sama, którą woła Super+T): flock, sprzątanie linków do INNYCH rice'ów,
+# cudzy symlink (np. GNU stow) lub prawdziwy katalog → .bak-<ts> (nigdy rm),
+# ln -sfn, zapis .current_rice. Dotąd [9] miał własną kopię pętli, która
+# kasowała KAŻDY symlink na miejscu folderu rice'a — także spoza rices/
+# (audyt 2026-09-25). SWITCH_RICE_LINK_ONLY=1 = bez tapety, hyprctl reload
+# i restartu waybara w środku instalacji. Osobny proces (bash …), bo
+# biblioteka kończy się `exit` przy błędzie, a instalator ma iść dalej.
+SWITCH_RICE_LIB="$ARCHENEMY_DIR/scripts/changing-theme-scripts/lib/switch-rice.sh"
+RICES_REAL="$(readlink -f "$RICES_DIR")"
+LINK_PRE_BAK=()   # cudze rzeczy, które biblioteka zaraz odłoży do .bak (do komunikatu)
 for src in "$RICES_DIR/$TARGET_RICE"/*/; do
     [[ -d "$src" ]] || continue
     name=$(basename "$src")
     dest="$CONFIG_DIR/$name"
-
-    [[ -L "$dest" ]] && rm "$dest"
-    [[ -e "$dest" ]] && mv "$dest" "$dest.bak-$LINK_TS"
-
-    ln -s "$src" "$dest"
-    echo -e "  ${GREEN}✓ ~/.config/$name → $src${NC}"
+    if [[ -L "$dest" ]]; then
+        [[ "$(readlink -f "$dest")" == "$RICES_REAL/"* ]] || LINK_PRE_BAK+=("$name")
+    elif [[ -e "$dest" ]]; then
+        LINK_PRE_BAK+=("$name")
+    fi
 done
 
-echo "$TARGET_RICE" > "$CURRENT_RICE"
-SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
+LINK_FAIL=0
+if RICE_NAME="$TARGET_RICE" SWITCH_RICE_LINK_ONLY=1 bash "$SWITCH_RICE_LIB"; then
+    # Sukces = zaobserwowany link, nie kod wyjścia biblioteki.
+    for src in "$RICES_DIR/$TARGET_RICE"/*/; do
+        [[ -d "$src" ]] || continue
+        name=$(basename "$src")
+        if [[ "$(readlink "$CONFIG_DIR/$name" 2>/dev/null)" == "${src%/}" ]]; then
+            echo -e "  ${GREEN}✓ ~/.config/$name → ${src%/}${NC}"
+        else
+            echo -e "  ${RED}✗ ~/.config/$name nie wskazuje na ${src%/}${NC}"
+            LINK_FAIL=1
+        fi
+    done
+    for name in "${LINK_PRE_BAK[@]}"; do
+        bak="$(ls -d "$CONFIG_DIR/$name".bak-* 2>/dev/null | tail -n1)"
+        echo -e "  ${YELLOW}⚠ Twój dotychczasowy ~/.config/$name zachowany jako ${bak##*/}${NC}"
+    done
+else
+    echo -e "  ${RED}✗ lib/switch-rice.sh zakończył się błędem (blokada innego przełączenia? brak rice'a?).${NC}"
+    LINK_FAIL=1
+fi
+if [[ $LINK_FAIL -eq 0 ]]; then
+    SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
+else
+    SUMMARY_SKIPPED+=("Rice '$TARGET_RICE' NIE podlinkowany w całości — uruchom scripts/changing-theme-scripts/$TARGET_RICE.sh (Super+T)")
+fi
 echo ""
 
 # ─── 9.5 SCRIPTS + INITIAL WALLPAPER ─────────────────────────────────────────
@@ -1231,13 +1290,26 @@ echo -e "${CYAN}[10] Optional configuration...${NC}"
 
 read -rp "Auto-configure UFW firewall? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    sudo pacman -S --needed ufw
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    sudo ufw enable
-    sudo systemctl enable ufw
-    echo -e "  ${GREEN}✓ UFW configured.${NC}"
-    SUMMARY_DONE+=("UFW configured")
+    # Każdy krok sprawdzany osobno — dotąd „✓ UFW configured" leciało nawet
+    # gdy pacman/ufw/systemctl zawiodły (audyt 2026-09-25). Sukces = ufw
+    # zgłasza „Status: active" I usługa jest włączona, nie kod wyjścia.
+    UFW_FAIL=""
+    if ! sudo pacman -S --needed ufw; then
+        UFW_FAIL="pacman (pakiet ufw)"
+    elif ! sudo ufw default deny incoming || ! sudo ufw default allow outgoing; then
+        UFW_FAIL="ufw default deny/allow"
+    elif ! sudo ufw enable || ! sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+        UFW_FAIL="ufw enable (status nie jest 'active')"
+    elif ! sudo systemctl enable ufw || ! systemctl is-enabled --quiet ufw; then
+        UFW_FAIL="systemctl enable ufw"
+    fi
+    if [[ -z "$UFW_FAIL" ]]; then
+        echo -e "  ${GREEN}✓ UFW configured.${NC}"
+        SUMMARY_DONE+=("UFW configured")
+    else
+        echo -e "  ${RED}✗ UFW NIE skonfigurowany — nie powiodło się: $UFW_FAIL${NC}"
+        SUMMARY_SKIPPED+=("UFW — nie powiodło się: $UFW_FAIL (dokończ ręcznie: sudo ufw enable && sudo systemctl enable ufw)")
+    fi
 fi
 
 # NetworkManager to twarde wymaganie (moduł sieci waybara, Super+N) — pomijamy
@@ -1248,8 +1320,14 @@ else
     echo -e "  ${YELLOW}Uwaga: jeśli używasz iwd/systemd-networkd, NetworkManager przejmie sieć.${NC}"
     read -rp "Enable NetworkManager (wymagany przez moduł sieci)? [Y/n]: " ans
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
-        sudo systemctl enable --now NetworkManager
-        SUMMARY_DONE+=("NetworkManager enabled")
+        # Sukces = usługa realnie włączona (is-enabled), nie kod systemctl.
+        if sudo systemctl enable --now NetworkManager && systemctl is-enabled --quiet NetworkManager; then
+            echo -e "  ${GREEN}✓ NetworkManager enabled.${NC}"
+            SUMMARY_DONE+=("NetworkManager enabled")
+        else
+            echo -e "  ${RED}✗ NetworkManager NIE włączony — sprawdź: systemctl status NetworkManager${NC}"
+            SUMMARY_SKIPPED+=("NetworkManager — enable nie powiódł się (moduł sieci i Super+N nie zadziałają): sudo systemctl enable --now NetworkManager")
+        fi
     else
         SUMMARY_SKIPPED+=("NetworkManager (moduł sieci i Super+N nie zadziałają)")
     fi
@@ -1259,10 +1337,18 @@ fi
 # błędu o nieistniejącym bluetooth.service.
 read -rp "Set up bluetooth (installs bluez)? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    sudo pacman -S --needed bluez bluez-utils
-    sudo systemctl enable --now bluetooth
-    echo -e "  ${GREEN}✓ Bluetooth enabled.${NC}"
-    SUMMARY_DONE+=("Bluetooth enabled")
+    # pacman i systemctl sprawdzane osobno; sukces = bluetooth.service
+    # realnie włączony, nie kod wyjścia (audyt 2026-09-25).
+    if ! sudo pacman -S --needed bluez bluez-utils; then
+        echo -e "  ${RED}✗ bluez NIE zainstalowany — pomijam bluetooth.service.${NC}"
+        SUMMARY_SKIPPED+=("Bluetooth — pacman nie zainstalował bluez/bluez-utils")
+    elif sudo systemctl enable --now bluetooth && systemctl is-enabled --quiet bluetooth; then
+        echo -e "  ${GREEN}✓ Bluetooth enabled.${NC}"
+        SUMMARY_DONE+=("Bluetooth enabled")
+    else
+        echo -e "  ${RED}✗ bluetooth.service NIE włączony — sprawdź: systemctl status bluetooth${NC}"
+        SUMMARY_SKIPPED+=("Bluetooth — bluez jest, ale enable bluetooth.service nie powiódł się")
+    fi
 fi
 
 # Audio: pavucontrol i moduł głośności waybara mówią po PulseAudio — serwer
@@ -1321,6 +1407,12 @@ echo -e "${NC}"
 
 read -rp "Reload Hyprland now? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    hyprctl reload
-    echo -e "${GREEN}✓ Hyprland reloaded.${NC}"
+    # hyprctl reload wypisuje „ok" przy sukcesie; błąd configu lub brak
+    # socketu = inny tekst / niezerowy kod — dotąd ✓ leciało bezwarunkowo.
+    if RELOAD_OUT="$(hyprctl reload 2>&1)" && [[ "$RELOAD_OUT" == ok* ]]; then
+        echo -e "${GREEN}✓ Hyprland reloaded.${NC}"
+    else
+        echo -e "${RED}✗ Hyprland reload nie powiódł się:${NC} ${RELOAD_OUT:-brak odpowiedzi}"
+        echo -e "  Sprawdź config (hyprctl reload) lub wyloguj się i zaloguj ponownie."
+    fi
 fi
