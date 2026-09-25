@@ -33,6 +33,7 @@
  * =============================================
  */
 #define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
 #include <math.h>
@@ -44,6 +45,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -157,12 +159,12 @@ bool parse_hex_color(const char *hex, float out[3]) {
     if (!hex) return false;
     if (*hex == '#') hex++;
     if (strlen(hex) != 6) return false;
+    /* dokładnie 6 cyfr hex — strtol łykało spacje i znak („ F", „-1") */
+    for (int i = 0; i < 6; i++)
+        if (!isxdigit((unsigned char)hex[i])) return false;
     for (int i = 0; i < 3; i++) {
         char buf[3] = { hex[2 * i], hex[2 * i + 1], 0 };
-        char *end;
-        long v = strtol(buf, &end, 16);
-        if (*end != 0) return false;
-        out[i] = (float)v / 255.0f;
+        out[i] = (float)strtol(buf, NULL, 16) / 255.0f;
     }
     return true;
 }
@@ -209,7 +211,13 @@ float battery_detail(const char *power_supply_dir) {
 
 /* ── GLES ─────────────────────────────────────────────────────────────────── */
 
+/* Cały plik jako string; NULL + errno przy błędzie. Katalog (fopen go
+ * otwiera, fread daje pusty shader → mylący kod 3 „błąd shadera") i inne
+ * nie-pliki odrzucamy tu: EISDIR/EINVAL → kod 1 jak każdy błąd pliku. */
 static char *read_file(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return NULL;
+    if (!S_ISREG(st.st_mode)) { errno = S_ISDIR(st.st_mode) ? EISDIR : EINVAL; return NULL; }
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
@@ -764,9 +772,22 @@ int main(int argc, char **argv) {
         switch (c) {
         case 's': s.cfg.shader_path = optarg; break;
         case 'p': if (!parse_palette(optarg, &s.cfg.palette)) die(1, "zła paleta: %s (oczekiwane bg,ink,acc jako hex)", optarg); break;
-        case 'd': s.cfg.detail = strtof(optarg, NULL); if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1"); break;
+        case 'd': {
+            char *end;
+            s.cfg.detail = strtof(optarg, &end);
+            if (end == optarg || *end) die(1, "detail: '%s' nie jest liczbą", optarg);
+            if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1");
+            break;
+        }
         case 'B': s.cfg.battery = true; break;
-        case 'f': s.cfg.fps = atoi(optarg); if (s.cfg.fps < 0) die(1, "fps < 0"); break;
+        case 'f': {
+            char *end;
+            long v = strtol(optarg, &end, 10);
+            if (end == optarg || *end) die(1, "fps: '%s' nie jest liczbą", optarg);
+            if (v < 0 || v > 1000) die(1, "fps poza 0..1000");
+            s.cfg.fps = (int)v;
+            break;
+        }
         case 'o': s.cfg.output_name = optarg; break;
         case 'l':
             if (strcmp(optarg, "bottom") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
@@ -788,6 +809,17 @@ int main(int argc, char **argv) {
     s.detail_current = s.detail_target;
     s.last_battery_poll = now_seconds();
 
+    /* Źródła wczytujemy od razu, PRZED Waylandem (błąd pliku = kod 1 zanim
+     * cokolwiek wstanie), kompilujemy dopiero przy pierwszej powierzchni —
+     * patrz output_apply_size. Plik `<nazwa>.update.glsl` obok `.frag`
+     * włącza tryb cząstkowy. */
+    s.frag_src = read_file(s.cfg.shader_path);
+    if (!s.frag_src) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
+    if (flux_update_path(s.cfg.shader_path, s.update_path, sizeof s.update_path))
+        s.update_src = read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
+    else
+        snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
+
     s.display = wl_display_connect(NULL);
     if (!s.display) die(2, "brak połączenia z Waylandem (WAYLAND_DISPLAY?)");
     s.registry = wl_display_get_registry(s.display);
@@ -798,15 +830,6 @@ int main(int argc, char **argv) {
     logv(&s, "skala ułamkowa: %s", (s.fractional_manager && s.viewporter) ? "dostępna" : "brak (skala całkowita)");
 
     egl_init(&s);
-    /* Źródła wczytujemy od razu (błąd pliku = kod 1 zanim cokolwiek wstanie),
-     * kompilujemy dopiero przy pierwszej powierzchni — patrz output_apply_size.
-     * Plik `<nazwa>.update.glsl` obok `.frag` włącza tryb cząstkowy. */
-    s.frag_src = read_file(s.cfg.shader_path);
-    if (!s.frag_src) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
-    if (flux_update_path(s.cfg.shader_path, s.update_path, sizeof s.update_path))
-        s.update_src = read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
-    else
-        snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
 
     /* Audio: TYLKO gdy shader deklaruje `#pragma flux audio 1` (wizualizacja
      * muzyki) albo podano --audio-file; nigdy przy --once i --no-audio; nigdy

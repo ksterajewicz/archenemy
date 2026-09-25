@@ -43,6 +43,9 @@ int main(void) {
     CHECK(!parse_hex_color("D8E6EEFF", c), "z alfą (8 znaków) → odrzucony");
     CHECK(!parse_hex_color("GGGGGG", c), "nie-hex → odrzucony");
     CHECK(!parse_hex_color(NULL, c),     "NULL → odrzucony");
+    CHECK(!parse_hex_color(" F1A24", c), "spacja w środku (strtol by ją łyknął) → odrzucony");
+    CHECK(!parse_hex_color("-1-1-1", c), "znaki minus (strtol by je łyknął) → odrzucony");
+    CHECK(!parse_hex_color("#-F-F-F", c), "z # i minusami → odrzucony");
 
     struct palette p;
     printf("parse_palette\n");
