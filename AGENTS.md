@@ -110,6 +110,19 @@ Rules that follow directly from the table:
   `xc-1`). Read a band (`xc-1..xc+1`) and keep other stamps out of
   `xc±2`; `bash tests/flux-wall-bars.sh` (after `make -C src/flux-wall
   tools`) renders both monitor sizes and checks both halves.
+- **flux-wall: the Bayer raster only when the `dither` uniform is 1 —
+  dither is a property of the rice, not of the animation.** Owner's report
+  2026-09-25: music visualizations came out rastered in rices that have
+  nothing to do with dither. The raster is declared per rice
+  (`FLUX_WALL_DITHER=1` only in `rices/dither-flux/flux-wall.conf`; missing
+  key = 0), `flux-wall.sh` turns it into `--dither`/`--no-dither` for
+  whatever animation is picked, and the binary defaults to smooth. Every
+  shader that quantizes must branch on `dither > 0.5`: the rastered branch
+  stays pixel-identical, the smooth one maps the same tone onto the palette
+  gradient (`palette_ramp`) — never hard-code `bayer8` unconditionally in a
+  new shader, and don't encode the look in the name (`dither-*` names stay
+  only because renaming would break saved `Super+W` choices).
+  `bash tests/flux-wall-dither.sh` checks both the wrapper and every shader.
 - **Machine generators are a single source of truth**:
   `scripts/hypr/lib/gen-workspaces.sh` and `gen-autostart.sh` are called
   from both `install.sh` and the live switchers (`workspace-mode-switch.sh`).
