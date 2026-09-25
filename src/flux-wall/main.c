@@ -16,7 +16,8 @@
  *   `sampler2D accum` + `gain` — kontrakt w engine.h.
  *
  *   Kody wyjścia (install.sh i przełącznik używają ich do fallbacku na hyprpaper):
- *     0 ok   1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
+ *     0 ok (także: SIGTERM/SIGINT albo kompozytor zamknął połączenie)
+ *     1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
  *     3 błąd EGL/GLES (shader, kontekst)
  *
  *   Skalowanie: przy wp_fractional_scale_v1 + wp_viewporter bufor ma rozmiar
@@ -36,6 +37,7 @@
 #include <getopt.h>
 #include <math.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -542,6 +544,16 @@ static const struct wl_registry_listener registry_listener = {
 
 /* ── pętla ────────────────────────────────────────────────────────────────── */
 
+/* SIGTERM/SIGINT (kill przy zmianie rice'a, wylogowanie): handler tylko
+ * zapisuje numer sygnału, poll() wraca z EINTR i pętla kończy się czysto
+ * kodem 0 — bez SA_RESTART, żeby poll faktycznie wrócił. */
+static volatile sig_atomic_t stop_requested;
+static void on_stop_signal(int sig) { stop_requested = sig; }
+
+/* Normalne zamknięcie połączenia przez kompozytor (wylogowanie, restart
+ * kompozytora) — to nie jest błąd, kończymy kodem 0. */
+static bool connection_closed(int err) { return err == EPIPE || err == ECONNRESET; }
+
 static void update_detail(struct state *s) {
     double t = now_seconds();
     if (s->cfg.battery && t - s->last_battery_poll > 30.0) {
@@ -577,12 +589,29 @@ static void main_loop(struct state *s) {
         }
         int r = poll(&pfd, 1, timeout);
         if (r < 0 && errno != EINTR) { wl_display_cancel_read(s->display); die(2, "poll: %s", strerror(errno)); }
+        if (stop_requested) {                       /* SIGTERM/SIGINT: poll wraca z EINTR */
+            wl_display_cancel_read(s->display);
+            logv(s, "sygnał %d — kończę", (int)stop_requested);
+            s->running = false;
+            break;
+        }
         if (r > 0 && (pfd.revents & POLLIN)) {
-            if (wl_display_read_events(s->display) < 0) die(2, "połączenie z kompozytorem zerwane");
+            if (wl_display_read_events(s->display) < 0) {
+                if (connection_closed(errno)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
+                die(2, "połączenie z kompozytorem zerwane: %s", strerror(errno));
+            }
         } else {
             wl_display_cancel_read(s->display);
+            if (r > 0 && (pfd.revents & (POLLHUP | POLLERR))) {
+                logv(s, "kompozytor zamknął połączenie — kończę");
+                s->running = false;
+                break;
+            }
         }
-        if (wl_display_dispatch_pending(s->display) < 0) die(2, "dispatch: %s", strerror(errno));
+        if (wl_display_dispatch_pending(s->display) < 0) {
+            if (connection_closed(errno)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
+            die(2, "dispatch: %s", strerror(errno));
+        }
 
         update_detail(s);
         if (s->cfg.fps > 0) {
@@ -593,8 +622,48 @@ static void main_loop(struct state *s) {
                     render_output(o);
                 }
         }
-        if (wl_display_get_error(s->display)) die(2, "błąd protokołu Waylanda");
+        int err = wl_display_get_error(s->display);
+        if (err) {
+            if (connection_closed(err)) { logv(s, "kompozytor zamknął połączenie — kończę"); s->running = false; break; }
+            die(2, "błąd protokołu Waylanda: %s", strerror(err));
+        }
     }
+}
+
+/* Sprzątanie przy czystym wyjściu (sygnał, kompozytor zamknął połączenie):
+ * audio, programy GL (przy bieżącym kontekście którejś powierzchni — bez
+ * niej nie da się ich zwolnić, ale proces i tak kończy się za chwilę),
+ * powierzchnie z celami, EGL, obiekty globalne i połączenie. Po zerwanym
+ * połączeniu żądania Waylanda idą w pustkę — to nieszkodliwe. */
+static void state_cleanup(struct state *s) {
+    audio_stop(s->audio);
+    s->audio = NULL;
+    if (s->engine) {
+        for (struct output *o = s->outputs; o; o = o->next)
+            if (o->egl_surface && eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+                flux_engine_destroy(s->engine);
+                break;
+            }
+        s->engine = NULL;
+    }
+    while (s->outputs) {
+        struct output *o = s->outputs;
+        s->outputs = o->next;
+        output_destroy(o);
+    }
+    if (s->egl_display != EGL_NO_DISPLAY) {
+        eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (s->egl_context != EGL_NO_CONTEXT) eglDestroyContext(s->egl_display, s->egl_context);
+        eglTerminate(s->egl_display);
+    }
+    if (s->fractional_manager) wp_fractional_scale_manager_v1_destroy(s->fractional_manager);
+    if (s->viewporter) wp_viewporter_destroy(s->viewporter);
+    if (s->layer_shell) zwlr_layer_shell_v1_destroy(s->layer_shell);
+    if (s->compositor) wl_compositor_destroy(s->compositor);
+    if (s->registry) wl_registry_destroy(s->registry);
+    wl_display_disconnect(s->display);
+    free(s->frag_src);
+    free(s->update_src);
 }
 
 /* ── main ─────────────────────────────────────────────────────────────────── */
@@ -701,12 +770,18 @@ int main(int argc, char **argv) {
 
     clock_gettime(CLOCK_MONOTONIC, &s.start);
     s.running = true;
+    {
+        struct sigaction sa = { .sa_handler = on_stop_signal };
+        sigemptyset(&sa.sa_mask);          /* bez SA_RESTART — poll ma wrócić z EINTR */
+        sigaction(SIGTERM, &sa, NULL);
+        sigaction(SIGINT, &sa, NULL);
+    }
     /* Monitory znane po pierwszym roundtripie dostały listenery; drugi roundtrip
      * dowozi ich zdarzenia (scale/name/done) — i w `done` powstają powierzchnie. */
     wl_display_roundtrip(s.display);
     for (struct output *o = s.outputs; o; o = o->next) output_create_surface(o);
 
     main_loop(&s);
-    audio_stop(s.audio);
+    state_cleanup(&s);
     return 0;
 }
