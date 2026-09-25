@@ -59,9 +59,12 @@ if [[ ! -x "$OFF" ]]; then
     make -C "$FW" tools >/dev/null || { echo "render-previews.sh: make tools padło" >&2; exit 1; }
 fi
 
-# Flagi ditheru tylko, gdy offscreen je zna (usage idzie na stderr, kod 2).
+# Flagi ditheru tylko, gdy offscreen je zna. Usage idzie na stderr z kodem 2 —
+# do zmiennej, nie `| grep -q`: przy pipefail kod 2 offscreena przykryłby
+# trafienie grepa i flagi nigdy by nie poszły.
 DITHER_FLAGS=0
-"$OFF" --help 2>&1 | grep -q -- '--dither' && DITHER_FLAGS=1
+usage_text="$("$OFF" --help 2>&1)"
+[[ "$usage_text" == *--dither* ]] && DITHER_FLAGS=1
 
 if (( ${#RICES[@]} == 0 )); then
     for conf in "$REPO"/rices/*/flux-wall.conf; do

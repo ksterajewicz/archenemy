@@ -229,6 +229,9 @@ archenemy/
 │                                     #   `bash tests/wallpaper-switcher.sh`.
 │                                     #   rofi-theme-switcher.sh — Super+T previews on a fake rofi; every rice
 │                                     #   stub has a valid rices/<RICE_NAME>/preview.png.
+│                                     #   render-previews.sh — tools/render-previews.sh on a fake offscreen:
+│                                     #   --dither/--no-dither per rice (none for an older offscreen), synth audio,
+│                                     #   frame time from `#pragma flux life`.
 │                                     #   update-archenemy.sh — the Super+A → [p] updater on real git
 │                                     #   (bare origin in a temp dir): no false "✓" on failure, no
 │                                     #   switching to a branch older than what you run.
