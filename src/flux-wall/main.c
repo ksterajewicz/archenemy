@@ -45,7 +45,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -60,6 +59,7 @@
 #include "viewporter-client-protocol.h"
 #include "engine.h"
 #include "audio.h"
+#include "util.h"       /* flux_now_seconds, flux_read_file — wspólne z audio.c i tools/offscreen.c */
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
 
@@ -147,11 +147,6 @@ static void die(int code, const char *fmt, ...) {
     exit(code);
 }
 
-static double now_seconds(void) {
-    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec + ts.tv_nsec / 1e9;
-}
-
 /* ── paleta i bateria (bez Waylanda — testowalne osobno) ──────────────────── */
 
 /* "0F1A24" albo "#0F1A24" → rgb 0..1; false przy śmieciach. */
@@ -210,27 +205,6 @@ float battery_detail(const char *power_supply_dir) {
 }
 
 /* ── GLES ─────────────────────────────────────────────────────────────────── */
-
-/* Cały plik jako string; NULL + errno przy błędzie. Katalog (fopen go
- * otwiera, fread daje pusty shader → mylący kod 3 „błąd shadera") i inne
- * nie-pliki odrzucamy tu: EISDIR/EINVAL → kod 1 jak każdy błąd pliku. */
-static char *read_file(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) return NULL;
-    if (!S_ISREG(st.st_mode)) { errno = S_ISDIR(st.st_mode) ? EISDIR : EINVAL; return NULL; }
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (n < 0) { fclose(f); return NULL; }
-    char *buf = malloc((size_t)n + 1);
-    if (!buf) { fclose(f); return NULL; }
-    size_t got = fread(buf, 1, (size_t)n, f);
-    fclose(f);
-    buf[got] = 0;
-    return buf;
-}
 
 /* Programy GL budujemy przy PIERWSZEJ powierzchni (kompilacja wymaga bieżącego
  * kontekstu). Źródła są już wczytane — błąd pliku wyszedł na starcie kodem 1. */
@@ -298,13 +272,13 @@ static void render_output(struct output *o) {
         o->needs_frame = true;
         return;
     }
-    double t = now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
+    double t = flux_now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
     /* Snapshot audio raz na klatkę; stęchły (sink śpi → read blokuje) gaśnie tu. */
     struct audio_features feat;
     const struct audio_features *audio = NULL;
     if (s->audio) {
         audio_snapshot(s->audio, &feat);
-        audio_features_age(&feat, now_seconds(), 0.25f);
+        audio_features_age(&feat, flux_now_seconds(), 0.25f);
         audio = &feat;
     }
     flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current,
@@ -315,7 +289,7 @@ static void render_output(struct output *o) {
         logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
         o->needs_frame = true;               /* bez commitu callback nie przyjdzie — pętla ponowi */
     }
-    o->last_render = now_seconds();
+    o->last_render = flux_now_seconds();
 }
 
 /* Ile sekund brakuje TEMU monitorowi do następnej klatki z `needs_frame`
@@ -333,7 +307,7 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
     wl_callback_destroy(cb);
     o->frame_cb = NULL;
 
-    if (o->state->cfg.fps > 0 && frame_wait(o, now_seconds()) > 0) { o->needs_frame = true; return; }
+    if (o->state->cfg.fps > 0 && frame_wait(o, flux_now_seconds()) > 0) { o->needs_frame = true; return; }
     render_output(o);
 }
 
@@ -619,7 +593,7 @@ static void on_stop_signal(int sig) { stop_requested = sig; }
 static bool connection_closed(int err) { return err == EPIPE || err == ECONNRESET; }
 
 static void update_detail(struct state *s) {
-    double t = now_seconds();
+    double t = flux_now_seconds();
     if (s->cfg.battery && t - s->last_battery_poll > 30.0) {
         s->detail_target = battery_detail("/sys/class/power_supply");
         s->last_battery_poll = t;
@@ -643,7 +617,7 @@ static void main_loop(struct state *s) {
          * Pełny okres 1000/fps dawał przy -f 30 na 60 Hz ~20 fps. */
         int timeout = -1;
         {
-            double now = now_seconds();
+            double now = flux_now_seconds();
             for (struct output *o = s->outputs; o; o = o->next) {
                 if (!o->needs_frame) continue;
                 int ms = (int)ceil(frame_wait(o, now) * 1000.0);
@@ -684,7 +658,7 @@ static void main_loop(struct state *s) {
 
         update_detail(s);
         {
-            double now = now_seconds();
+            double now = flux_now_seconds();
             for (struct output *o = s->outputs; o; o = o->next)
                 if (o->needs_frame && frame_wait(o, now) <= 0) {
                     o->needs_frame = false;
@@ -807,16 +781,16 @@ int main(int argc, char **argv) {
 
     s.detail_target = s.cfg.battery ? battery_detail("/sys/class/power_supply") : s.cfg.detail;
     s.detail_current = s.detail_target;
-    s.last_battery_poll = now_seconds();
+    s.last_battery_poll = flux_now_seconds();
 
     /* Źródła wczytujemy od razu, PRZED Waylandem (błąd pliku = kod 1 zanim
      * cokolwiek wstanie), kompilujemy dopiero przy pierwszej powierzchni —
      * patrz output_apply_size. Plik `<nazwa>.update.glsl` obok `.frag`
      * włącza tryb cząstkowy. */
-    s.frag_src = read_file(s.cfg.shader_path);
+    s.frag_src = flux_read_file(s.cfg.shader_path);
     if (!s.frag_src) die(1, "nie mogę odczytać shadera: %s (%s)", s.cfg.shader_path, strerror(errno));
     if (flux_update_path(s.cfg.shader_path, s.update_path, sizeof s.update_path))
-        s.update_src = read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
+        s.update_src = flux_read_file(s.update_path);      /* NULL = brak pliku = tryb jednoprzebiegowy */
     else
         snprintf(s.update_path, sizeof s.update_path, "(shader bez rozszerzenia .frag)");
 

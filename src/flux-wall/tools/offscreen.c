@@ -38,23 +38,13 @@
 #include <GLES3/gl3.h>
 #include "../engine.h"
 #include "../audio.h"
+#include "../util.h"    /* flux_now_seconds, flux_read_file — wspólne z main.c i audio.c */
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 static void die(const char *msg) { fprintf(stderr, "offscreen: %s\n", msg); exit(1); }
-
-static char *read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-    if (n < 0) { fclose(f); return NULL; }
-    char *buf = malloc((size_t)n + 1);
-    if (!buf) { fclose(f); return NULL; }
-    size_t got = fread(buf, 1, (size_t)n, f); fclose(f); buf[got] = 0;
-    return buf;
-}
 
 static bool parse_hex(const char *s, float out[3]) {
     if (strlen(s) != 6) return false;
@@ -190,8 +180,6 @@ static void egl_init(bool verbose) {
     if (verbose) fprintf(stderr, "offscreen: GL %s / %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
 }
 
-static double now_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
-
 static void usage(void) {
     fprintf(stderr,
         "offscreen <shader.frag> -o <katalog> [-s WxH] [-p bg,ink,accent] [-f fps]\n"
@@ -227,10 +215,10 @@ int main(int argc, char **argv) {
     if (ntimes == 0) { times[0] = 0.5; times[1] = 3.0; times[2] = 6.0; ntimes = 3; }
     if (fps <= 0) fps = 60.0;
 
-    char *frag = read_file(frag_path);
+    char *frag = flux_read_file(frag_path);
     if (!frag) die("nie mogę wczytać shadera");
     char upath[1024]; char *update = NULL;
-    if (flux_update_path(frag_path, upath, sizeof upath)) update = read_file(upath);
+    if (flux_update_path(frag_path, upath, sizeof upath)) update = flux_read_file(upath);
 
     egl_init(verbose);
     char err[2560];
@@ -276,10 +264,10 @@ int main(int argc, char **argv) {
         double tt = fi / fps;
         const struct audio_features *feat = NULL;
         if (wants_audio) { feeder_advance(&fd, tt); feat = &fd.st.out; }
-        double c0 = now_s();
+        double c0 = flux_now_seconds();
         flux_engine_render(e, t, fbo, tt, &pal, detail, feat, 1.0f, false);
         glFinish();
-        clock_total += now_s() - c0; rendered++;
+        clock_total += flux_now_seconds() - c0; rendered++;
         for (int i = 0; i < ntimes; i++) {
             if (fabs(times[i] - tt) < 0.5 / fps) {
                 glBindFramebuffer(GL_FRAMEBUFFER, fbo);
