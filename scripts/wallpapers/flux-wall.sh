@@ -16,7 +16,12 @@
 #        FLUX_WALL_ARGS      argumenty (np. --battery),
 #        FLUX_WALL_AUTOSTART 1 = animacja domyślnie włączona w tym ricu
 #                            (bez wyboru użytkownika), 0 = domyślnie wyłączona.
-#        Rice bez pliku: paleta domyślna binarki, autostart 0.
+#        FLUX_WALL_DITHER    1 = raster Bayera (--dither), 0 = gładki gradient
+#                            palety (--no-dither). Cecha RICE'A, nie animacji:
+#                            obowiązuje każdą animację z Super+W (wybór jest
+#                            globalny), a Super+T (autostart) przełącza ją
+#                            na żywo. Brak klucza = 0.
+#        Rice bez pliku: paleta domyślna binarki, autostart 0, dither 0.
 #
 #   WIZUALIZACJA MUZYKI — bez przełącznika (decyzja właściciela 2026-09-08):
 #   audio włącza sam flux-wall, gdy shader deklaruje `#pragma flux audio 1`.
@@ -55,7 +60,7 @@ LOG="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
 
 # ─── odczyt konfiguracji ──────────────────────────────────────────────────────
 
-FLUX_WALL_PALETTE=""; FLUX_WALL_SHADER=""; FLUX_WALL_ARGS=""; FLUX_WALL_AUTOSTART=0
+FLUX_WALL_PALETTE=""; FLUX_WALL_SHADER=""; FLUX_WALL_ARGS=""; FLUX_WALL_AUTOSTART=0; FLUX_WALL_DITHER=0
 
 load_rice_conf() {
     local rice conf
@@ -121,6 +126,16 @@ audio_args() {      # ustawia AUDIO_ARGS
     [[ -n "$sink" ]] && AUDIO_ARGS=("--audio-device=${sink}.monitor")
 }
 
+# Raster z deklaracji AKTYWNEGO rice'a (po load_rice_conf), niezależnie od
+# animacji. Binarka sprzed flagi (git pull bez make) jej nie zna i rysuje
+# raster jak dawniej — wtedy nic nie podajemy, żeby w ogóle wystartowała.
+dither_args() {     # ustawia DITHER_ARGS
+    DITHER_ARGS=()
+    "$BIN" --help 2>&1 | grep -q -- '--no-dither' || return 0
+    if [[ "$FLUX_WALL_DITHER" == "1" ]]; then DITHER_ARGS=(--dither)
+    else DITHER_ARGS=(--no-dither); fi
+}
+
 # Ustala, czy i z czym startować. Ustawia SHADER i PALETTE_ARGS.
 resolve() {
     local choice
@@ -174,8 +189,9 @@ do_start() {
     fi
     do_stop
     audio_args
+    dither_args
     # shellcheck disable=SC2086  # FLUX_WALL_ARGS to celowo lista argumentów
-    setsid "$BIN" -s "$SHADER" "${PALETTE_ARGS[@]}" "${AUDIO_ARGS[@]}" $FLUX_WALL_ARGS "$@" >"$LOG" 2>&1 &
+    setsid "$BIN" -s "$SHADER" "${PALETTE_ARGS[@]}" "${AUDIO_ARGS[@]}" "${DITHER_ARGS[@]}" $FLUX_WALL_ARGS "$@" >"$LOG" 2>&1 &
     sleep 0.5
     if pgrep -x flux-wall >/dev/null; then
         [[ "$quiet" == quiet ]] || echo "flux-wall działa: $(basename "$SHADER" .frag) (log: $LOG)"
@@ -235,7 +251,7 @@ doctor() {
     else
         echo "flux-wall.dat: $choice  ⚠ takiego shadera nie ma — wrapper cofnie się do domyślnego rice'a"
     fi
-    load_rice_conf && echo "flux-wall.conf: PALETTE=${FLUX_WALL_PALETTE:-<brak>} SHADER=${FLUX_WALL_SHADER:-<brak>} AUTOSTART=$FLUX_WALL_AUTOSTART ARGS=${FLUX_WALL_ARGS:-<brak>}"
+    load_rice_conf && echo "flux-wall.conf: PALETTE=${FLUX_WALL_PALETTE:-<brak>} SHADER=${FLUX_WALL_SHADER:-<brak>} AUTOSTART=$FLUX_WALL_AUTOSTART DITHER=$FLUX_WALL_DITHER ARGS=${FLUX_WALL_ARGS:-<brak>}"
     echo "== proces"
     if pgrep -x flux-wall >/dev/null 2>&1; then
         echo "flux-wall działa (pid $(pgrep -x flux-wall | tr '\n' ' '))"
