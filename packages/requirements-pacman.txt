@@ -33,10 +33,12 @@ power-profiles-daemon
 libnotify
 # socat: nasłuch zdarzeń Hyprlanda (socket2) w workspace-orphan-guard.sh —
 # scalanie workspace'ów po odpięciu monitora; bez socat guard
-# przechodzi w awaryjny tryb sondy co 5 s
+# przechodzi w awaryjny tryb sondy co 5 s; także window-history.sh
+# (Super+Tab — migawka okna przy openwindow, bez socat sonda co 2 s)
 socat
-# util-linux: flock — blokady w workspace-orphan-guard.sh i przełączniku
-# rice'ów (lib/switch-rice.sh: dwa szybkie Super+T czekają na siebie)
+# util-linux: flock — blokady w workspace-orphan-guard.sh, window-history.sh
+# i przełączniku rice'ów (lib/switch-rice.sh: dwa szybkie Super+T czekają na
+# siebie); setsid — window-history.sh uruchamia przywróconą aplikację
 util-linux
 # xdg-desktop-portal-hyprland: portal Hyprlanda — udostępnianie ekranu
 # (Discord, przeglądarki, RustDesk) i zrzuty przez portal; hyprland ma go

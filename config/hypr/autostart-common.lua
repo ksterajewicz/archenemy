@@ -14,4 +14,8 @@
 -- animacja wybrana w Super+W nie wracała (audyt 2026-09-23).
 hl.on("hyprland.start", function()
     hl.exec_cmd("~/archenemy/scripts/wallpapers/flux-wall.sh autostart")
+    -- Historia zamkniętych aplikacji dla Super+Tab (bind w rice'ach): demon
+    -- zapamiętuje komendę każdego okna, póki proces żyje — po zamknięciu jest
+    -- już za późno. Jedna instancja na sesję (flock), stan w XDG_RUNTIME_DIR.
+    hl.exec_cmd("~/archenemy/scripts/hypr/window-history.sh daemon")
 end)

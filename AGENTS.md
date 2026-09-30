@@ -142,7 +142,16 @@ Rules that follow directly from the table:
   by every rice — today the flux-wall animation (the `Super+W` choice is
   global). Don't add `flux-wall.sh autostart` to a rice's `hyprland.lua`
   (it would start twice); `bash tests/rice-autostart.sh` checks "exactly
-  once" per rice.
+  once" per rice. The same file starts the `Super+Tab` history daemon
+  (`scripts/hypr/window-history.sh`), whose bind lives in every parity rice.
+- **`window-history.sh` must capture a window's command while it is open.**
+  After `closewindow` the window is gone from `hyprctl clients` and the
+  process is often dead, so the daemon snapshots argv/cwd from `/proc` on
+  every `openwindow`. `restore` releases the state lock (subshell) before
+  launching the app — an app inheriting the lock fd would stall the daemon
+  for its whole life. Empty TSV fields are written as `-`: tab is IFS
+  whitespace, so `read` would merge adjacent tabs and shift columns.
+  `bash tests/window-history.sh`.
 - **Every tracked `*.sh` is mode `100755` in git.** The installer runs
   `chmod +x` on `scripts/**/*.sh`; a file without the bit in the index shows
   up as modified after every install and makes `git pull` refuse

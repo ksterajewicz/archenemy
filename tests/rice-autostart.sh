@@ -35,10 +35,17 @@ local function proxy()
         __call  = function() return proxy() end,
     })
 end
-local handlers, execs = {}, {}
+local handlers, execs, binds = {}, {}, {}
 hl = proxy()
 rawset(hl, "on", function(ev, fn) if ev == "hyprland.start" then handlers[#handlers + 1] = fn end end)
 rawset(hl, "exec_cmd", function(cmd) execs[#execs + 1] = cmd end)
+-- Bindy z komendą: hl.bind(klawisz, hl.dsp.exec_cmd(cmd)) → "BIND klawisz => cmd"
+local dsp = proxy()
+rawset(dsp, "exec_cmd", function(cmd) return { exec = cmd } end)
+rawset(hl, "dsp", dsp)
+rawset(hl, "bind", function(key, action)
+    if type(action) == "table" and rawget(action, "exec") then binds[#binds + 1] = key .. " => " .. action.exec end
+end)
 local home = os.getenv("HOME")
 require = function(path)
     local p = path:gsub("^" .. home:gsub("%p", "%%%0") .. "/archenemy", repo)
@@ -50,6 +57,7 @@ end
 dofile(rice_file)
 for _, fn in ipairs(handlers) do fn() end
 for _, c in ipairs(execs) do print(c) end
+for _, b in ipairs(binds) do print("BIND " .. b) end
 EOF
 
 for cfg in "$REPO"/rices/*/hypr/hyprland.lua; do
@@ -63,6 +71,15 @@ for cfg in "$REPO"/rices/*/hypr/hyprland.lua; do
     else fail "$rice: flux-wall autostart $n razy (ma być 1)"; fi
     if grep -q 'workspace-orphan-guard.sh' <<< "$out"; then ok "$rice: wspólny workspaces.lua podpięty (guard)"
     else fail "$rice: brak guarda workspace'ów na starcie"; fi
+    # Super+Tab (przywracanie zamkniętych aplikacji): demon ze wspólnego
+    # autostartu dokładnie raz, bind w każdym ricu parytetu (beta zamrożona).
+    n="$(grep -c '^[^B].*window-history.sh daemon' <<< "$out")"
+    if [[ "$n" -eq 1 ]]; then ok "$rice: demon window-history dokładnie raz"
+    else fail "$rice: demon window-history $n razy (ma być 1)"; fi
+    [[ "$rice" == white-blue_beta ]] && continue
+    n="$(grep -cx 'BIND SUPER + TAB => ~/archenemy/scripts/hypr/window-history.sh restore' <<< "$out")"
+    if [[ "$n" -eq 1 ]]; then ok "$rice: Super+Tab → window-history.sh restore"
+    else fail "$rice: bind Super+Tab $n razy (ma być 1)"; fi
 done
 
 echo ""

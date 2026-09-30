@@ -214,6 +214,9 @@ hl.config({
 
 -- Window control
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
+-- Przywróć ostatnio zamkniętą aplikację (stos sesji; demon startuje we wspólnym
+-- autostart-common.lua). Kolejne naciśnięcia sięgają dalej wstecz.
+hl.bind(mainMod .. " + TAB", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/window-history.sh restore"))
 hl.bind(mainMod .. " + V", hl.dsp.window.float())
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ mode = "fullscreen" }))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())

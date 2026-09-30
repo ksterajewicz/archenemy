@@ -95,7 +95,8 @@ archenemy/
 │   └── hypr/
 │   │   ├── workspaces.lua            # Workspace guard autostart (shared across all machines).
 │   │   ├── autostart-common.lua      # Shared autostart required by every rice (flux-wall wallpaper
-│   │                                 #   animation — your Super+W choice comes back after login in any rice).
+│   │                                 #   animation — your Super+W choice comes back after login in any rice;
+│   │                                 #   the closed-apps history daemon behind Super+Tab).
 │   │   ├── keyboard.lua              # Media keys (shared).
 │   │   ├── gpu_wayland_scaling.lua   # Universal Wayland variables (shared).
 │   │   ├── custom_window_rules.lua   # Window rules (shared).
@@ -165,6 +166,8 @@ archenemy/
 │   │                                 #   connected monitors (instead of Hyprland's silent fallback),
 │   │                                 #   and when the code changed since the last install.sh
 │   │                                 #   (data/installed-head.dat vs HEAD — re-run the installer).
+│   │                                 #   window-history.sh — Super+Tab: reopens recently closed apps
+│   │                                 #   (daemon started from autostart-common.lua + `restore`).
 │   ├── rofi/                         # Rofi menus: rices, wallpapers, network (with rescan), power.
 │   │                                 #   lib/rofi-preview.sh — PNG previews in Super+W / Super+T (3-column
 │   │                                 #   grid with big icons; lazy wallpaper thumbnails in data/thumbs/).
@@ -246,6 +249,9 @@ archenemy/
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   repo-hygiene.sh — every tracked *.sh is executable in git.
+│                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
+│                                     #   real processes: same argv and directory, apps still running
+│                                     #   (tray, dialogs) skipped, the state lock is not inherited.
 │                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
@@ -401,10 +407,18 @@ frozen — bugfixes only).
 | Shortcut | Action |
 |---|---|
 | `Super + Q` | Close window |
+| `Super + Tab` | Reopen the most recently closed app — press again to go further back (see below) |
 | `Super + V` | Toggle floating |
 | `Super + F` | Fullscreen |
 | `Super + Shift + F` | Maximize (bar stays visible) |
 | `Super + P` | Pseudo-tiling |
+
+**Reopening closed apps (`Super + Tab`).** Hyprland forgets a window the moment it closes, so a small daemon (`scripts/hypr/window-history.sh daemon`, started from the shared `autostart-common.lua` in every rice) remembers, for every open window, the command line and working directory of its process while it is still alive. When an app's last window closes, it goes onto a per-session stack (20 entries, newest on top); `Super + Tab` relaunches the newest one on the current workspace, in the same directory, with the same arguments — like `Ctrl + Shift + T` in a browser, each press goes one step further back. What it deliberately does not do:
+
+- **An app that is still running is skipped** (a window closed to the tray — Steam, Discord — or a dialog of a portal / polkit agent): relaunching it would start a second copy of a background process. Closing one of several windows of the same app (e.g. one of two browser windows) is not recorded either — the app is still open; use the app's own "reopen closed window".
+- It restarts the program, it does not restore its contents (unsaved text, open tabs — unless the app restores its own session). The window lands where Hyprland puts new windows, not at its old position. The process environment is not replayed.
+- Steam games (`steam_app_<id>`) come back through `steam steam://rungameid/<id>`, Flatpak apps through `flatpak run <id>`; archenemy's own tool windows (`archenemy-*`, e.g. the Super+A manager) are not recorded.
+- The history lives in `$XDG_RUNTIME_DIR` (memory, private to your user) and disappears on logout — command lines can contain file paths, so nothing is written to disk. `window-history.sh list` shows the stack.
 
 ### Workspaces — two modes to choose from
 
