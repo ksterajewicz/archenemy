@@ -1351,6 +1351,20 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     fi
 fi
 
+# VirtualBox jest opcjonalny i NIE leży w additional-packages: sam pakiet bez
+# nagłówków jądra i modułu vboxdrv nie uruchomi żadnej maszyny. Pakiety,
+# nagłówki, moduł i grupę vboxusers załatwia osobny skrypt; kod wyjścia to
+# kontrakt (0 gotowe, 2 potrzebny restart, inaczej porażka) — opis w skrypcie.
+read -rp "Install Oracle VirtualBox (virtual machines)? [y/N]: " ans
+if [[ "$ans" =~ ^[Yy]$ ]]; then
+    bash "$ARCHENEMY_DIR/install/virtualbox-installation.sh"
+    case $? in
+        0) SUMMARY_DONE+=("VirtualBox installed (vboxdrv loaded)") ;;
+        2) SUMMARY_SKIPPED+=("VirtualBox — zainstalowany, ale vboxdrv nie działa w bieżącym jądrze: zrestartuj system") ;;
+        *) SUMMARY_SKIPPED+=("VirtualBox — instalacja nie powiodła się (szczegóły wyżej; ponownie: bash ~/archenemy/install/virtualbox-installation.sh)") ;;
+    esac
+fi
+
 # Audio: pavucontrol i moduł głośności waybara mówią po PulseAudio — serwer
 # dostarcza pipewire-pulse (socket użytkownika, na Archu włączany presetem).
 if systemctl --user is-active --quiet pipewire-pulse.socket \

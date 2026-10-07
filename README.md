@@ -37,7 +37,7 @@ cd ~/archenemy/install/
 ./install.sh
 ```
 
-The installer will: detect and configure monitors (including left→right numbering and workspace mode — see the "Workspaces" section), install packages from `packages/`, set up the power profile switcher (ASUS ROG / universal — hardware type detected from DMI as a hint; on ASUS machines it installs `asusctl-devel-git` from the AUR, which also provides `rog-control-center`, so the latter is NOT installed separately; without a working asusctl it automatically falls back to power-profiles-daemon, with a final self-check via `profile-get.sh`), optionally run the CPU microcode / GPU driver / kernel installers, generate machine files, symlink the default rice into `~/.config`, set the first wallpaper (if one exists in `wallpapers/`), and take care of services: NetworkManager, audio (pipewire-pulse), asusd on ASUS machines, and optionally UFW and bluetooth. If you picked the optional music stack (mpd/mpc/ncmpcpp — "additional packages"), step **[8l]** wires it up without touching an existing configuration (see "Music stack").
+The installer will: detect and configure monitors (including left→right numbering and workspace mode — see the "Workspaces" section), install packages from `packages/`, set up the power profile switcher (ASUS ROG / universal — hardware type detected from DMI as a hint; on ASUS machines it installs `asusctl-devel-git` from the AUR, which also provides `rog-control-center`, so the latter is NOT installed separately; without a working asusctl it automatically falls back to power-profiles-daemon, with a final self-check via `profile-get.sh`), optionally run the CPU microcode / GPU driver / kernel installers, generate machine files, symlink the default rice into `~/.config`, set the first wallpaper (if one exists in `wallpapers/`), and take care of services: NetworkManager, audio (pipewire-pulse), asusd on ASUS machines, and optionally UFW, bluetooth and Oracle VirtualBox (`install/virtualbox-installation.sh`: `virtualbox` + `virtualbox-host-dkms` + headers for every installed kernel, loads `vboxdrv`, and asks before adding you to `vboxusers` for USB passthrough — a bare `pacman -S virtualbox` leaves you with "Kernel driver not installed"). If you picked the optional music stack (mpd/mpc/ncmpcpp — "additional packages"), step **[8l]** wires it up without touching an existing configuration (see "Music stack").
 
 **Updating an existing machine after `git pull`?** Run `install.sh` again — it will generate any missing machine files. The monitor survey ([3]–[3.7]) writes the new `data/monitors/*.dat` into a temporary `data/monitors.new.*` folder and swaps them in only after the last question, so Ctrl-C mid-survey leaves the previous set intact. Every step reports what actually happened: package installs, `ufw`, `systemctl enable`, the bootloader regeneration in the CPU/kernel installers and the final `hyprctl reload` print ✓ only after checking the result, otherwise the step lands in the summary with the command to finish by hand.
 
@@ -76,7 +76,9 @@ archenemy/
 │   ├── gpudrivers-installation.sh    # GPU drivers — detects the card; NVIDIA: open/proprietary, modeset,
 │   │                                 #   initramfs; if a driver is already installed: update (-Syu) / switch variant.
 │   │                                 #   For gaming: enables the [multilib] repo and installs lib32 (Steam/Proton/Wine).
-│   └── kernel-install.sh             # Installs an alternative kernel (zen/lts) + regenerates the bootloader.
+│   ├── kernel-install.sh             # Installs an alternative kernel (zen/lts) + regenerates the bootloader.
+│   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
+│                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
 │   ├── requirements-pacman.txt       # Required packages (official repos).
 │   ├── requirements-aur.txt          # Required packages (AUR).
@@ -249,6 +251,8 @@ archenemy/
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   repo-hygiene.sh — every tracked *.sh is executable in git.
+│                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
+│                                     #   fake /sys/module: success only with vboxdrv loaded, reboot code 2.
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
