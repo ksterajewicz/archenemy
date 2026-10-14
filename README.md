@@ -155,6 +155,10 @@ archenemy/
 │   │                                 #   workspace-diag.sh — read-only dump of workspace state (mode,
 │   │                                 #   rules vs hyprctl, monitors, workspaces, binds, guard, log) for
 │   │                                 #   bug reports; run before and after Super+T and diff.
+│   │                                 #   gaming-diag.sh — read-only GPU/gaming dump (no sudo): which GPUs
+│   │                                 #   are on the bus, ASUS dgpu_disable / MUX, NVIDIA module vs kernel,
+│   │                                 #   dGPU runtime power, Hyprland's GPU env, package history, load,
+│   │                                 #   and — with a game open — which GPU the game actually renders on.
 │   │                                 #   workspace-mode-switch.sh — switches shared/decades live
 │   │                                 #   (regen + reload + guard); lib/gen-workspaces.sh — shared
 │   │                                 #   generator for workspace rules/binds (shared with install.sh);
