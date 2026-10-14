@@ -1054,6 +1054,66 @@ if command -v ncmpcpp >/dev/null 2>&1; then
     fi
 fi
 
+# 8m. TUI Super+A także z rofi i z terminala (właściciel 2026-10-14).
+#   - ~/.local/share/applications/archenemy.desktop — wpis „archenemy” w rofi:
+#     to samo pływające okno co Super+A (klasa archenemy-appbinds = te same
+#     reguły okna). Plik GENEROWANY, nie kopiowany z repo: pole Exec w .desktop
+#     nie rozwija `~` ani $HOME, więc potrzebna bezwzględna ścieżka tej maszyny
+#     (warstwa osobista, poza gitem). Istniejącego pliku nie ruszamy.
+#   - alias `archenemy` w ~/.bashrc — TUI w bieżącym terminalu. Repo jest
+#     publiczne: pytamy przed dopisaniem, dopisujemy raz (znacznik), tylko dla
+#     basha; cudzy alias o tej nazwie wygrywa. `~` w aliasie, nie rozwinięta
+#     ścieżka — repo zawsze leży w ~/archenemy (pilnuje tego start instalatora).
+APPBINDS_SH="$ARCHENEMY_DIR/scripts/appbinds/appbinds.sh"
+ARCHENEMY_DESKTOP="$HOME/.local/share/applications/archenemy.desktop"
+if [[ -e "$ARCHENEMY_DESKTOP" ]]; then
+    echo -e "  ${YELLOW}⚠ archenemy.desktop istnieje — nie ruszam.${NC}"
+elif [[ "$APPBINDS_SH" == *[\"\`\$\\]* ]]; then
+    # Te znaki wymagałyby ucieczek w cudzysłowie pola Exec — nie ryzykujemy.
+    echo -e "  ${YELLOW}⚠ Ścieżka $APPBINDS_SH zawiera \" \` \$ albo \\ — pomijam wpis w rofi.${NC}"
+    SUMMARY_SKIPPED+=("archenemy.desktop (rofi entry) — unusual characters in \$HOME")
+else
+    mkdir -p "$(dirname "$ARCHENEMY_DESKTOP")"
+    cat > "$ARCHENEMY_DESKTOP" <<EOF
+[Desktop Entry]
+Type=Application
+Name=archenemy
+GenericName=archenemy settings
+Comment=App shortcuts, autostart, workspace mode and updates (same as Super+A)
+Exec=alacritty --class archenemy-appbinds -e "$APPBINDS_SH"
+Icon=preferences-desktop-keyboard-shortcuts
+Terminal=false
+Categories=Settings;
+Keywords=archenemy;appbinds;shortcuts;autostart;update;
+EOF
+    echo -e "  ${GREEN}✓ archenemy.desktop → rofi (Super+R) otwiera TUI Super+A${NC}"
+fi
+
+BASHRC="$HOME/.bashrc"
+ALIAS_MARK="# archenemy: TUI (Super+A) jako komenda"
+if grep -qF "$ALIAS_MARK" "$BASHRC" 2>/dev/null; then
+    echo -e "  ${GREEN}✓ komenda 'archenemy' już jest w ~/.bashrc${NC}"
+elif grep -qE '^[[:space:]]*alias[[:space:]]+archenemy=' "$BASHRC" 2>/dev/null; then
+    echo -e "  ${YELLOW}⚠ ~/.bashrc ma już własny alias 'archenemy' — nie ruszam.${NC}"
+elif [[ "$(basename "${SHELL:-}")" != "bash" ]]; then
+    echo -e "  ${YELLOW}⚠ Twoja powłoka to ${SHELL:-?}, nie bash — pomijam alias w ~/.bashrc.${NC}"
+    SUMMARY_SKIPPED+=("'archenemy' command — not bash; add: alias archenemy='~/archenemy/scripts/appbinds/appbinds.sh'")
+else
+    read -rp "  Add the 'archenemy' command to ~/.bashrc (opens the Super+A menu in the terminal)? [Y/n]: " ans_alias
+    if [[ "$ans_alias" =~ ^[Nn]$ ]]; then
+        SUMMARY_SKIPPED+=("'archenemy' command (your choice) — re-run install.sh to add it")
+    else
+        printf '\n%s\nalias archenemy='\''~/archenemy/scripts/appbinds/appbinds.sh'\''\n' "$ALIAS_MARK" >> "$BASHRC"
+        if grep -qF "$ALIAS_MARK" "$BASHRC"; then
+            echo -e "  ${GREEN}✓ komenda 'archenemy' dopisana do ~/.bashrc (nowy terminal albo: source ~/.bashrc)${NC}"
+            SUMMARY_DONE+=("'archenemy' command added to ~/.bashrc")
+        else
+            echo -e "  ${RED}✗ Nie udało się dopisać aliasu do ~/.bashrc.${NC}"
+            SUMMARY_SKIPPED+=("'archenemy' command — writing ~/.bashrc failed")
+        fi
+    fi
+fi
+
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")
 echo ""
 
