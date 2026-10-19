@@ -199,6 +199,11 @@ hl.bind(mainMod .. " + SHIFT + Shift_R", hl.dsp.exec_cmd(power_menu), { release 
 -- Keyboard language
 -- Allows the user to switch between any two chosen keyboard layouts.
 hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("hyprctl switchxkblayout all next"))
+-- Bezpośrednio układ nr 1–4 z listy (kolejność: Super+A → [k]).
+hl.bind(mainMod .. " + CTRL + 1", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 1"))
+hl.bind(mainMod .. " + CTRL + 2", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 2"))
+hl.bind(mainMod .. " + CTRL + 3", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 3"))
+hl.bind(mainMod .. " + CTRL + 4", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 4"))
 
 hl.config({
     input = {
@@ -225,6 +230,9 @@ hl.config({
 -- Czułość myszy użytkownika (Super+A → [m], warstwa osobista, poza gitem) —
 -- PO bloku input, więc nadpisuje `sensitivity = 0`; brak pliku = 0 z rice'a.
 require_optional(HOME .. "/archenemy/config/hypr/mouse.lua")
+-- Układy klawiatury użytkownika (Super+A → [k], warstwa osobista) — nadpisują
+-- `kb_layout = "pl,us"` wyżej; brak pliku = pl,us z rice'a.
+require_optional(HOME .. "/archenemy/config/hypr/keyboard-layouts.lua")
 
 -- Window control
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())

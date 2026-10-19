@@ -608,6 +608,107 @@ timer_menu() {
     pkill -RTMIN+11 waybar 2>/dev/null
 }
 
+# ─── KEYBOARD LAYOUTS ────────────────────────────────────────────────────────
+
+# Lista 1–4 układów klawiatury i ich kolejność. Zapis, reload i sprawdzenie
+# robi scripts/hypr/keyboard-layouts.sh (jedna droga — te same skrypty wołają
+# bindy Super+Ctrl+1…4); to menu tylko zbiera wybór. Super+K = następny układ.
+# white-blue_beta (legacy) nie czyta tej listy ani nie ma Super+Ctrl+1…4.
+keyboard_layouts_menu() {
+    local script="$ARCHENEMY_DIR/scripts/hypr/keyboard-layouts.sh"
+    if [[ ! -f "$script" ]]; then
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([p]).${NC}"
+        return
+    fi
+    local cur rice="" i
+    cur="$(bash "$script" show)"
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    local -a L; IFS=',' read -ra L <<< "$cur"
+
+    echo ""
+    echo -e "  Keyboard layouts (${CYAN}Super+K${NC} = next; #1 is active after login):"
+    for i in "${!L[@]}"; do
+        printf "    ${BLUE}%d${NC}) %-4s %-24s Super+Ctrl+%d\n" "$((i+1))" "${L[$i]}" "$(bash "$script" name "${L[$i]}")" "$((i+1))"
+    done
+    if [[ "$rice" == "white-blue_beta" ]]; then
+        echo -e "  ${YELLOW}⚠ white-blue_beta keeps pl,us and has no Super+Ctrl+1…4 — switch rice (Super+T) to use this.${NC}"
+    fi
+    echo ""
+    echo -e "    ${BLUE}1${NC}) choose layouts (how many and which)"
+    echo -e "    ${BLUE}2${NC}) change order (optional)"
+    echo -e "    ${BLUE}3${NC}) reset to pl,us"
+    echo ""
+    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local new=""
+    case "$ans" in
+        1)
+            local count; count="$(read_key "  How many layouts? [1-4]: ")"
+            [[ "$count" =~ ^[1-4]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+            local -a P=() codes=()
+            local line
+            while IFS= read -r line; do [[ -n "$line" ]] && P+=("$line"); done < <(bash "$script" presets)
+            echo ""
+            for i in "${!P[@]}"; do
+                printf "  ${BLUE}%2d${NC}) %-3s %-22s" "$((i+1))" "${P[$i]%%$'\t'*}" "${P[$i]#*$'\t'}"
+                (( (i+1) % 3 == 0 )) && echo ""
+            done
+            echo ""; echo ""
+            echo -e "  Type a number from the list or any XKB code (e.g. ${CYAN}de${NC}, ${CYAN}ie${NC}); Enter = cancel."
+            local pick code
+            for (( i = 1; i <= count; i++ )); do
+                read -rp "  Layout #$i: " pick
+                pick=$(trim "$pick")
+                [[ -n "$pick" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+                if [[ "$pick" =~ ^[0-9]+$ ]]; then
+                    (( pick >= 1 && pick <= ${#P[@]} )) || { echo -e "  ${RED}✗ No preset #$pick.${NC}"; (( i-- )); continue; }
+                    code="${P[$((pick-1))]%%$'\t'*}"
+                else
+                    code="${pick,,}"
+                fi
+                if [[ " ${codes[*]} " == *" $code "* ]]; then
+                    echo -e "  ${RED}✗ '$code' is already on the list.${NC}"; (( i-- )); continue
+                fi
+                codes+=("$code")
+            done
+            new="$(IFS=','; printf '%s' "${codes[*]}")"
+            ;;
+        2)
+            if (( ${#L[@]} < 2 )); then
+                echo -e "  ${YELLOW}Only one layout — nothing to reorder.${NC}"; return
+            fi
+            local order n
+            read -rp "  New order as numbers, e.g. $(seq -s ' ' ${#L[@]} -1 1) (Enter = cancel): " order
+            order=$(trim "${order//,/ }")
+            [[ -n "$order" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+            local -a O; read -ra O <<< "$order"
+            local -a out=(); local seen=" "
+            for n in "${O[@]}"; do
+                if [[ ! "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#L[@]} )) || [[ "$seen" == *" $n "* ]]; then
+                    echo -e "  ${RED}✗ Use each number 1–${#L[@]} exactly once.${NC}"; return
+                fi
+                seen+="$n "; out+=("${L[$((n-1))]}")
+            done
+            (( ${#out[@]} == ${#L[@]} )) || { echo -e "  ${RED}✗ Use each number 1–${#L[@]} exactly once.${NC}"; return; }
+            new="$(IFS=','; printf '%s' "${out[*]}")"
+            ;;
+        3) new="reset" ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        *) echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
+    esac
+
+    local out rc
+    if [[ "$new" == "reset" ]]; then
+        out="$(bash "$script" reset 2>&1)"; rc=$?
+    else
+        out="$(bash "$script" set "$new" 2>&1)"; rc=$?
+    fi
+    case $rc in
+        0) echo -e "  ${GREEN}${out}${NC}" ;;
+        2) echo -e "  ${YELLOW}${out}${NC}" ;;
+        *) echo -e "  ${RED}${out}${NC}" ;;
+    esac
+}
+
 # ─── MOUSE SENSITIVITY ───────────────────────────────────────────────────────
 
 # Czułość myszy (input:sensitivity, -1.0 … 1.0). Zapis, reload i sprawdzenie
@@ -662,7 +763,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} mpd audio output   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} mpd audio output   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")"
 
@@ -673,6 +774,7 @@ while :; do
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
         t|T) timer_menu ;;
+        k|K) keyboard_layouts_menu ;;
         m|M) mouse_sensitivity_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         o|O) audio_output_menu ;;
