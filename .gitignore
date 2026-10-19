@@ -9,6 +9,7 @@
 /config/hypr/autostartpersonalisation.lua
 /config/hypr/autostart-apps.lua
 /config/hypr/appbinds.lua
+/config/hypr/mouse.lua
 /config/hypr/hyprpaper.conf
 /config/hypr/hyprlock-background-white-blue.conf
 /config/hypr/hyprlock-background-tron.conf

@@ -608,6 +608,45 @@ timer_menu() {
     pkill -RTMIN+11 waybar 2>/dev/null
 }
 
+# ─── MOUSE SENSITIVITY ───────────────────────────────────────────────────────
+
+# Czułość myszy (input:sensitivity, -1.0 … 1.0). Zapis, reload i sprawdzenie
+# robi scripts/hypr/mouse-sensitivity.sh — jedna droga do funkcji; to menu
+# tylko pyta o wartość. white-blue_beta (legacy, bez nowych funkcji) nie
+# wczytuje config/hypr/mouse.lua — tam zostaje 0 z rice'a.
+mouse_sensitivity_menu() {
+    local script="$ARCHENEMY_DIR/scripts/hypr/mouse-sensitivity.sh"
+    if [[ ! -f "$script" ]]; then
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([p]).${NC}"
+        return
+    fi
+    local cur rice=""
+    cur="$(bash "$script" show)"
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+
+    echo ""
+    echo -e "  Mouse sensitivity: ${CYAN}${cur}${NC}   (range -1.0 … 1.0, 0 = default; acceleration stays flat)"
+    echo -e "    e.g. ${BLUE}-0.5${NC} slower · ${BLUE}0${NC} default · ${BLUE}0.3${NC} faster · ${BLUE}1${NC} fastest"
+    if [[ "$rice" == "white-blue_beta" ]]; then
+        echo -e "  ${YELLOW}⚠ white-blue_beta does not read this setting — switch rice (Super+T) to use it.${NC}"
+    fi
+    echo ""
+    local val
+    read -rp "  New value (Enter = cancel, r = reset to 0): " val
+    val=$(trim "$val")
+    case "$val" in
+        "") echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        r|R) val="reset" ;;
+    esac
+    local out rc
+    out="$(bash "$script" "$val" 2>&1)"; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}${out}${NC}" ;;
+        2) echo -e "  ${YELLOW}${out}${NC}" ;;
+        *) echo -e "  ${RED}${out}${NC}" ;;
+    esac
+}
+
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
 
 ensure_conf
@@ -623,7 +662,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} mpd audio output   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} mpd audio output   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")"
 
@@ -634,6 +673,7 @@ while :; do
         w|W) workspace_mode_menu ;;
         v|V) volume_style_menu ;;
         t|T) timer_menu ;;
+        m|M) mouse_sensitivity_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         o|O) audio_output_menu ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;

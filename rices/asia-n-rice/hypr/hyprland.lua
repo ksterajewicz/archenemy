@@ -173,6 +173,10 @@ hl.config({
     },
 })
 
+-- Czułość myszy użytkownika (Super+A → [m], warstwa osobista, poza gitem) —
+-- PO bloku input, więc nadpisuje `sensitivity = 0`; brak pliku = 0 z rice'a.
+require_optional(HOME .. "/archenemy/config/hypr/mouse.lua")
+
 -- Window control
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 -- Przywróć ostatnio zamkniętą aplikację (stos sesji; demon startuje we wspólnym
