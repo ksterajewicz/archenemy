@@ -163,6 +163,8 @@ M
   clients)
     if [[ "${MOCK_WS:-}" == stale ]]; then
       printf 'Window aaaa -> brave:\n\tworkspace: 21 (21)\nWindow cccc -> alacritty:\n\tworkspace: 21 (21)\nWindow bbbb -> y:\n\tworkspace: 22 (22)\n'
+      # MOCK_TITLE=1: tytuł z nową linią udaje wiersz listy; adres z tytułu wyszedłby z napisu Lua.
+      [[ -n "${MOCK_TITLE:-}" ]] && printf 'Window dddd -> x\nWindow z"})os.execute("id")-- -> y:\n\tworkspace: 21 (21)\n'
     else
       printf 'Window aaaa -> x:\n\tworkspace: 11 (1)\nWindow bbbb -> y:\n\tworkspace: 2 (2)\n'
     fi ;;

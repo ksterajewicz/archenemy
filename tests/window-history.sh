@@ -203,8 +203,8 @@ open_win hhh1 "$X" fakeapp
 bash "$WH" refresh
 close_win hhh1; kill "$X"; wait_dead "$X"
 bash "$WH" refresh
-# Ostatnie pole = komenda (printf %q) — podmień ją na nieistniejącą binarkę.
-sed -i "s|\t[^\t]*$|\t$T/bin/nie-ma-mnie\\ arg|" "$STATE/closed.tsv"
+# Ostatnie pole = komenda (base64, argumenty rozdzielone NUL) — podmień na nieistniejącą binarkę.
+sed -i "s|\t[^\t]*$|\t$(printf '%s\0' "$T/bin/nie-ma-mnie" arg | base64 -w0)|" "$STATE/closed.tsv"
 : > "$NOTIFY_LOG"
 bash "$WH" restore
 check "brak binarki → powiadomienie, nie cisza" 'grep -q "not found" "$NOTIFY_LOG"'
@@ -231,7 +231,26 @@ for i in $(seq 1 23); do
     bash "$WH" refresh
 done
 check "stos przycięty do 20 wpisów" '[[ $(closed_count) -eq 20 ]]'
-check "najstarsze wypadły, najnowszy na końcu" '! grep -q "n3 *$" "$STATE/closed.tsv" && tail -1 "$STATE/closed.tsv" | grep -q "n23 *$"'
+check "najstarsze wypadły, najnowszy na końcu" '! bash "$WH" list | grep -q "n3 *$" && bash "$WH" list | tail -1 | grep -q "n23 *$"'
+
+echo "== tytuł okna nie wykonuje kodu =="
+: > "$STATE/closed.tsv"; : > "$STATE/open.tsv"
+spawn "$T" tytul
+Y=$SPAWNED
+open_win ttt1 "$Y" fakeapp
+# Tytuł z nową linią udaje wiersz listy: adres z tabulatorami i kolumną komendy.
+ZLA="$(printf '%s\0' sh -c "touch $T/PWNED" | base64 -w0)"
+printf 'Window aa\t1\t2\tx\t-\t%s -> y:\nWindow ab -> $(touch %s/PWNED2):\n\tclass: fakeapp\n\tpid: 7\t1\t2\tx\t%s\n' "$ZLA" "$T" "$ZLA" >> "$MOCK_CLIENTS"
+bash "$WH" refresh
+check "wiersz z tytułu nie trafia do migawki" '! grep -q "$ZLA" "$STATE/open.tsv"'
+close_win ttt1; kill "$Y"; wait_dead "$Y"
+bash "$WH" refresh; bash "$WH" refresh
+bash "$WH" restore; bash "$WH" restore; bash "$WH" restore
+sleep 0.3
+check "nic nie wykonane" '[[ ! -e "$T/PWNED" && ! -e "$T/PWNED2" ]]'
+check "uszkodzony wpis = powiadomienie, nie wykonanie" 'printf "1\t1\t1\tx\t-\t!!!\n" > "$STATE/closed.tsv"; : > "$NOTIFY_LOG"; bash "$WH" restore; [[ ! -e "$T/PWNED" ]] && grep -qE "damaged|Nothing" "$NOTIFY_LOG"'
+pkill -f "$T/bin/fakeapp" 2>/dev/null
+: > "$STATE/closed.tsv"; : > "$STATE/open.tsv"; : > "$MOCK_CLIENTS"; WINDOWS=()
 
 echo "== demon: zdarzenia socket2, jedna instancja, nowa sesja =="
 # Stan z POPRZEDNIEGO Hyprlanda (XDG_RUNTIME_DIR przeżył relogin): stos
@@ -264,7 +283,7 @@ check "openwindow → migawka okna" 'grep -q "^jjj1	" "$STATE/open.tsv"'
 close_win jjj1; kill "$E"; wait_dead "$E"
 echo "closewindow>>jjj1" >&7
 sleep 0.5
-check "closewindow → wpis na stosie bez udziału restore" 'grep -q "fakeapp evented" "$STATE/closed.tsv"'
+check "closewindow → wpis na stosie bez udziału restore" 'bash "$WH" list | grep -q "evented"'
 exec 7>&-                     # EOF socketa = koniec sesji Hyprlanda
 for _ in $(seq 1 30); do kill -0 "$D" 2>/dev/null || break; sleep 0.1; done
 check "demon kończy się po zamknięciu socketa" '! kill -0 "$D" 2>/dev/null'

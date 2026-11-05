@@ -179,6 +179,8 @@ merge_orphans() {
                 'Window '*' -> '*)
                     addr="${line#Window }"
                     addr="${addr%% *}"
+                    # Trafia do wyrażenia Lua, a tytuł okna z nową linią udaje ten wiersz.
+                    [[ "$addr" =~ ^[[:alnum:]]+$ ]] || addr=""
                     ;;
                 $'\t'"workspace: "*)
                     ws="${line#*workspace: }"

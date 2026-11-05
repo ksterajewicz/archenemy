@@ -85,12 +85,23 @@ proc_alive() {   # pid start → 0, gdy TEN SAM proces nadal działa
     [[ -n "$now" && "$now" == "$2" ]]
 }
 
-# Komenda do ponownego uruchomienia, jako jeden napis w formacie `printf %q`
-# (bezpieczny do `eval` — każdy argument osobno zacytowany).
+# Komenda i katalog leżą w TSV jako base64 z argumentami rozdzielonymi NUL. Stan nie
+# może przechodzić przez `eval`: tytuł okna to dane obcego programu, a nowa linia
+# w tytule udaje wiersze `hyprctl clients` i przesuwała kolumny do pola komendy.
+encode_args() { printf '%s\0' "$@" | base64 -w0; }
+decode_args() {
+    DECODED=()
+    # base64 -d wypisuje początek także wtedy, gdy dalej trafi na śmieci.
+    [[ "$1" =~ ^[A-Za-z0-9+/=]+$ ]] || return 0
+    mapfile -d '' -t DECODED < <(base64 -d <<<"$1" 2>/dev/null)
+}
+declare -a DECODED=()
+
+# Komenda do ponownego uruchomienia, zakodowana jak wyżej.
 capture_cmd() {
     local pid="$1" class="$2" name="" line
     if [[ "$class" =~ ^steam_app_([1-9][0-9]*)$ ]]; then
-        printf '%q %q' steam "steam://rungameid/${BASH_REMATCH[1]}"
+        encode_args steam "steam://rungameid/${BASH_REMATCH[1]}"
         return
     fi
     if [[ -r "/proc/$pid/root/.flatpak-info" ]]; then
@@ -98,14 +109,14 @@ capture_cmd() {
             [[ "$line" == name=* ]] && { name="${line#name=}"; break; }
         done < "/proc/$pid/root/.flatpak-info"
         if [[ -n "$name" ]]; then
-            printf '%q %q %q' flatpak run "$name"
+            encode_args flatpak run "$name"
             return
         fi
     fi
     local -a argv=()
     mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 0
     ((${#argv[@]})) || return 0
-    printf '%q ' "${argv[@]}"
+    encode_args "${argv[@]}"
 }
 
 # Jedno przejście: migawka okien → wykrycie zamkniętych → nowa migawka.
@@ -127,12 +138,14 @@ refresh_locked() {
             'Window '*' -> '*)
                 addr="${line#Window }"
                 addr="${addr%% *}"
+                # Prawdziwy adres to liczba szesnastkowa. Reszta to tekst z tytułu okna.
+                [[ "$addr" =~ ^[[:alnum:]]+$ ]] || addr=""
                 ;;
             $'\tclass: '*)
                 [[ -n "$addr" ]] && cur_class["$addr"]="${line#$'\tclass: '}"
                 ;;
             $'\tpid: '*)
-                [[ -n "$addr" ]] || continue
+                [[ -n "$addr" && "${line#$'\tpid: '}" =~ ^[0-9-]+$ ]] || continue
                 cur_pid["$addr"]="${line#$'\tpid: '}"
                 pid_has_window["${cur_pid[$addr]}"]=1
                 ;;
@@ -180,7 +193,7 @@ refresh_locked() {
                 cmd=$(capture_cmd "$pid" "$class")
                 [[ -n "$cmd" ]] || cmd="-"
                 cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || cwd=""
-                cwd=$(printf '%q' "$cwd")
+                cwd=$(encode_args "$cwd")
             else
                 start="-"
             fi
@@ -253,13 +266,18 @@ restore() {
     IFS=$'\t' read -r class cwd cmd <<< "$entry"
     [[ "$class" != - ]] || class="window"
 
-    local -a argv=()
-    eval "argv=($cmd)"
+    decode_args "$cmd"
+    local -a argv=("${DECODED[@]}")
+    if ((${#argv[@]} == 0)); then
+        notify "Can't restore ${class}: damaged entry"
+        return 1
+    fi
     if ! command -v "${argv[0]}" >/dev/null 2>&1; then
         notify "Can't restore ${class}: ${argv[0]} not found"
         return 1
     fi
-    eval "dir=$cwd"
+    decode_args "$cwd"
+    dir="${DECODED[0]:-}"
     [[ -n "$dir" && -d "$dir" ]] || dir="$HOME"
     # Blokada stanu jest już zwolniona (pop_entry to podpowłoka), więc
     # uruchamiana aplikacja nie dziedziczy deskryptora 9 — gdyby dziedziczyła,
@@ -273,7 +291,8 @@ list() {
         [[ -n "$pid" ]] || continue
         state="closed"
         proc_alive "$pid" "$start" && state="running"
-        printf '%s\t%s\t%s\n' "$state" "$class" "$cmd"
+        decode_args "$cmd"
+        printf '%s\t%s\t%s\n' "$state" "$class" "${DECODED[*]:-}"
     done < "$CLOSED_TSV"
 }
 
