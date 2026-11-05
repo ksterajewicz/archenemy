@@ -192,7 +192,7 @@ check "wąskie okno: bez podglądu, ile wejdzie" '[[ "$out" != *"│"* && "$out"
 out="$(ARCHENEMY_TUI_SIZE="14 90" tui 'q')"
 check "niskie okno mieści się"                 '[[ "$(wc -l <<<"$out")" -le 14 ]]'
 out="$(ARCHENEMY_TUI_SIZE="14 90" tui '\e[A\e[Fq')"
-check "zaznaczenie jedzie z oknem"             '[[ "$(tail -14 <<<"$out")" == *"update"* ]]'
+check "zaznaczenie jedzie z oknem"             '[[ "$(tail -14 <<<"$out")" == *"update archenemy"* ]]'
 
 echo "== akcent wg rice'a"
 echo white-blue > "$A/.current_rice"

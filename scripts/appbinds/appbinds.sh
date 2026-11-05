@@ -840,7 +840,7 @@ declare -A MENU_LABEL=(
     [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
     [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
     [v]="volume bar" [t]="timer" [u]="autostart" [o]="audio"
-    [i]="diagnostics" [p]="update"
+    [i]="diagnostics" [p]="update archenemy"
 )
 declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [u]="Apps" [i]="System")
 declare -A MENU_STATE=() MENU_PREVIEW=()
