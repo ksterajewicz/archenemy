@@ -22,10 +22,6 @@ DATA_DAT="$ARCHENEMY_DIR/data/autostart-apps.dat"
 OUT_LUA="$ARCHENEMY_DIR/config/hypr/autostart-apps.lua"
 GEN_LIB="$ARCHENEMY_DIR/scripts/hypr/lib/gen-autostart.sh"
 
-DESKTOP_DIRS=(
-    "/usr/share/applications"
-    "$HOME/.local/share/applications"
-)
 
 # ─── ODKRYWANIE APLIKACJI ─────────────────────────────────────────────────────
 
@@ -59,19 +55,33 @@ scan_desktop_file() {
     return 0
 }
 
-# Zbierz wszystkie wpisy .desktop. Deduplikacja po nazwie pliku: katalog
-# lokalny idzie PO systemowym, więc nadpisuje wpis systemowy.
+# Te same katalogi co rofi: XDG_DATA_DIRS (też Flatpak) i katalog użytkownika.
+# Kolejność od najniższego priorytetu, bo późniejszy wpis nadpisuje wcześniejszy.
+declare -a DESKTOP_DIRS=()
+build_desktop_dirs() {
+    local i
+    local -a sys=()
+    IFS=: read -ra sys <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    DESKTOP_DIRS=()
+    for (( i = ${#sys[@]} - 1; i >= 0; i-- )); do
+        DESKTOP_DIRS+=("${sys[$i]}/applications")
+    done
+    DESKTOP_DIRS+=("${XDG_DATA_HOME:-$HOME/.local/share}/applications")
+}
+
+# Zbierz wszystkie wpisy .desktop, także z podkatalogów. ID wg specyfikacji
+# Desktop Entry: ścieżka względna z „-” zamiast „/”, taką nazwę zna gtk-launch.
 discover_apps() {
-    local dir file base id
+    local dir file rel id
     declare -A seen=()
 
     for dir in "${DESKTOP_DIRS[@]}"; do
         [[ -d "$dir" ]] || continue
-        for file in "$dir"/*.desktop; do
-            [[ -f "$file" ]] || continue
-            base="$(basename "$file")"
-            id="${base%.desktop}"
-            # Lokalny wpis nadpisuje systemowy — usuń poprzedni ślad,
+        while IFS= read -r file; do
+            rel="${file#"$dir"/}"
+            id="${rel%.desktop}"
+            id="${id//\//-}"
+            # Późniejszy katalog nadpisuje wpis — usuń poprzedni ślad,
             # bo ten plik może być teraz ukryty (NoDisplay=true).
             unset "APP_NAME[$id]"
             if scan_desktop_file "$file" "$id"; then
@@ -79,7 +89,7 @@ discover_apps() {
             else
                 unset "seen[$id]"
             fi
-        done
+        done < <(find -L "$dir" -type f -name '*.desktop' 2>/dev/null)
     done
 
     # Sortowanie po nazwie wyświetlanej (case-insensitive), ID po tabulatorze.
@@ -100,6 +110,21 @@ load_selection() {
         [[ -z "$id" || "$id" == \#* ]] && continue
         SELECTED["$id"]=1
     done < "$DATA_DAT"
+}
+
+# Zaznaczone, a już niezainstalowane: pokazujemy na górze listy, żeby dało się
+# je odznaczyć. Inaczej zostawałyby w pliku i każde logowanie odpalałoby
+# gtk-launch na nieistniejący wpis.
+add_missing_selected() {
+    local id
+    local -a missing=()
+    for id in "${!SELECTED[@]}"; do
+        [[ -n "${APP_NAME[$id]:-}" ]] && continue
+        APP_NAME["$id"]="(not installed) $id"
+        missing+=("$id")
+    done
+    ((${#missing[@]})) && ALL_IDS=("${missing[@]}" "${ALL_IDS[@]}")
+    return 0
 }
 
 # Zapis atomowy (mktemp w tym samym katalogu + mv — wzorzec z
@@ -126,6 +151,19 @@ save_selection() {
 # ─── PĘTLA UI ─────────────────────────────────────────────────────────────────
 
 FILTER=""
+PAGE=0
+DIRTY=0
+
+# Tyle pozycji mieści się w oknie pod nagłówkiem i nad stopką. Lista bez stron
+# uciekała poza ekran już przy kilkudziesięciu aplikacjach.
+page_size() {
+    local rows
+    rows="$( { stty size </dev/tty; } 2>/dev/null | cut -d' ' -f1)"
+    [[ "$rows" =~ ^[0-9]+$ ]] || rows=30
+    rows=$(( rows - 15 ))
+    (( rows < 5 )) && rows=5
+    echo "$rows"
+}
 
 # Lista ID pasujących do filtru (podciąg nazwy, case-insensitive)
 declare -a VIEW=()
@@ -144,7 +182,7 @@ build_view() {
 }
 
 picker_loop() {
-    local input token i id box count bad
+    local input token i id box count bad size pages
     while :; do
         build_view
         clear
@@ -165,12 +203,16 @@ picker_loop() {
         fi
         echo ""
 
+        size="$(page_size)"
+        pages=$(( (${#VIEW[@]} + size - 1) / size ))
+        (( pages < 1 )) && pages=1
+        (( PAGE >= pages )) && PAGE=$(( pages - 1 ))
         if [[ ${#VIEW[@]} -eq 0 ]]; then
             echo -e "    ${YELLOW}(nothing matches the filter)${NC}"
         else
-            i=0
-            for id in "${VIEW[@]}"; do
-                i=$((i + 1))
+            # Numery liczone na całej liście, więc nie zmieniają się między stronami.
+            for (( i = PAGE * size + 1; i <= (PAGE + 1) * size && i <= ${#VIEW[@]}; i++ )); do
+                id="${VIEW[$((i - 1))]}"
                 if [[ -n "${SELECTED[$id]:-}" ]]; then
                     box="${GREEN}[x]${NC}"
                 else
@@ -186,27 +228,33 @@ picker_loop() {
             [[ -n "${SELECTED[$id]:-}" ]] && count=$((count + 1))
         done
         echo ""
-        echo -e "  ${GREEN}${count} selected${NC}"
+        echo -e "  ${GREEN}${count} selected${NC}   page $(( PAGE + 1 ))/${pages}"
         echo ""
-        echo -e "  numbers = toggle   ${CYAN}/text${NC} = filter   ${CYAN}/${NC} = clear filter   ${GREEN}[s]${NC} save   ${RED}[q]${NC} cancel"
+        echo -e "  numbers = toggle   ${CYAN}[n]${NC}/${CYAN}[p]${NC} page   ${CYAN}/text${NC} = filter   ${CYAN}/${NC} = clear filter   ${GREEN}[s]${NC} save   ${RED}[q]${NC} cancel"
         echo ""
         read -rp "  Choice: " input || return 0
         input="$(trim "$input")"
 
         case "$input" in
             "")  continue ;;
-            "/") FILTER=""; continue ;;
-            /*)  FILTER="${input#/}"; continue ;;
+            "/") FILTER=""; PAGE=0; continue ;;
+            /*)  FILTER="${input#/}"; PAGE=0; continue ;;
+            n|N) (( PAGE + 1 < pages )) && PAGE=$(( PAGE + 1 )); continue ;;
+            p|P) (( PAGE > 0 )) && PAGE=$(( PAGE - 1 )); continue ;;
             s|S)
                 if save_selection; then
-                    echo -e "  ${GREEN}✓ Saved ${count} apps for autostart.${NC}"
+                    echo -e "  ${GREEN}✓ Saved ${count} apps. They start at your next login.${NC}"
                 else
                     echo -e "  ${RED}✗ Save failed (missing generator or temp file).${NC}"
                 fi
                 read -rp "  Press Enter to continue..." _
                 return 0
                 ;;
-            q|Q) return 0 ;;
+            q|Q)
+                (( DIRTY == 0 )) && return 0
+                confirm "Discard your changes?" N && return 0
+                continue
+                ;;
         esac
 
         # Liczby oddzielone spacją — indeksy w AKTUALNIE wyświetlanej liście
@@ -217,6 +265,7 @@ picker_loop() {
                 continue
             fi
             id="${VIEW[$((token - 1))]}"
+            DIRTY=1
             if [[ -n "${SELECTED[$id]:-}" ]]; then
                 unset "SELECTED[$id]"
             else
@@ -232,7 +281,10 @@ picker_loop() {
 
 # ─── START ────────────────────────────────────────────────────────────────────
 
+build_desktop_dirs
 discover_apps
+load_selection
+add_missing_selected
 
 if [[ ${#ALL_IDS[@]} -eq 0 ]]; then
     echo ""
@@ -245,5 +297,4 @@ if [[ ${#ALL_IDS[@]} -eq 0 ]]; then
     exit 0
 fi
 
-load_selection
 picker_loop
