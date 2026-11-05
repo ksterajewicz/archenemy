@@ -153,7 +153,7 @@ archenemy/
 │   │                                 #   [t] waybar timer: on/off, default duration, color;
 │   │                                 #   [m] mouse sensitivity (-1.0 … 1.0, via hypr/mouse-sensitivity.sh);
 │   │                                 #   [k] keyboard layouts: 1–4, order (via hypr/keyboard-layouts.sh);
-│   │                                 #   [n] monitors (via hypr/monitor-settings.sh);
+│   │                                 #   [n] monitors: mode, new monitor, numbers (via hypr/monitor-settings.sh);
 │   │                                 #   [i] diagnostics: config check and saved dumps;
 │   │                                 #   autostart-picker.sh — [u] pick apps to autostart
 │   │                                 #   (checkboxes + filter, plain bash).
@@ -175,8 +175,10 @@ archenemy/
 │   │                                 #   mouse-sensitivity.sh — Super+A → [m]: saves data/mouse-sensitivity.dat,
 │   │                                 #   generates config/hypr/mouse.lua, hyprctl reload, confirms via getoption;
 │   │                                 #   monitor-settings.sh — Super+A → [n]: mode, position and scale on a
-│   │                                 #   trial, data/monitors/*.dat → monitorshyprl.lua via lib/gen-monitors.sh
-│   │                                 #   (shared with install.sh), reload, read-back from hyprctl;
+│   │                                 #   trial, set up a new monitor, renumber left to right, forget an
+│   │                                 #   unplugged one; data/monitors/*.dat → monitorshyprl.lua and
+│   │                                 #   workspaces-monitors.lua via the generators shared with install.sh,
+│   │                                 #   reload, read-back from hyprctl; `notify` = new-monitor notification;
 │   │                                 #   workspace-mode-switch.sh — switches shared/decades live
 │   │                                 #   (regen + reload + guard); lib/gen-workspaces.sh — shared
 │   │                                 #   generator for workspace rules/binds (shared with install.sh);
@@ -195,7 +197,9 @@ archenemy/
 │   ├── rofi/                         # Rofi menus: app launcher (rofi_drun.sh), rices, wallpapers, network (with rescan), power.
 │   │                                 #   lib/rofi-preview.sh — PNG previews in Super+W / Super+T (3-column
 │   │                                 #   grid with big icons; lazy wallpaper thumbnails in data/thumbs/).
-│   ├── wallpapers/                   # Mathematical wallpaper generators (pure Python, zero dependencies):
+│   ├── wallpapers/                   # lib/dither-flux-sizes.sh — which dither-flux wallpapers the current
+│   │                                 #   monitors still need (shared by install.sh and Super+A → [n]).
+│   │                                 #   Mathematical wallpaper generators (pure Python, zero dependencies):
 │   │                                 #   Arch logo (gen_arch_wallpaper.py), Tron grid
 │   │                                 #   (gen_tron_wallpaper.py), and generative dither wallpapers
 │   │                                 #   for the dither-flux rice (gen_dither_flux_wallpaper.py),
@@ -305,14 +309,14 @@ The `Super+W` menu is two-level: under two checkboxes are the **`Wallpapers/`** 
 
 At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked by default):
 
-- **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and the secondary gets `v2`; without a pair, the same image goes everywhere.
+- **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and every other monitor gets `v2`; without a pair, the same image goes everywhere.
 - **Unchecked** (click the entry to toggle) — the wallpaper goes only to the monitor you have focus on; the others stay unchanged.
 
 The per-monitor choice is remembered in `data/wallpaper.dat` and restored when you switch rice — and when you re-run `install.sh` (only a fresh install, or a choice pointing at deleted files, falls back to the first wallpaper). Which monitor is "primary" is decided at install time (primary/secondary role) — the installer proposes it itself: first one = primary, second = secondary.
 
 **One monitor = one entry, and the switcher checks the screen.** `data/wallpaper.dat` and the generated `hyprpaper.conf` are keyed by the same monitor selector the rest of the machine layer uses (`desc:<EDID description>`, connector name for older `.dat` files) — and the live IPC call uses that very same key. hyprpaper keeps its settings as a list and gives a monitor the **first matching** entry, while IPC appends its entry at the end and only replaces one with an identical key: a leftover entry for the same screen under its old connector name (or an IPC call keyed by connector name against a `desc:` config) would therefore win the match and the newly picked wallpaper would never show up — with `hyprctl` still reporting success. Old connector-name entries are migrated to today's selector on read, and after applying, the switcher asks `hyprctl hyprpaper listactive` what is actually on screen; if it doesn't match, it restarts hyprpaper (which re-reads the freshly written config) and checks again before claiming success.
 
-The role only applies to **wallpapers** (primary→v1, secondary→v2). Workspace assignment is governed by something else: **left→right monitor numbering** and **workspace mode** — both set at install time (see the "Workspaces" section).
+The role only applies to **wallpapers** (primary→v1, every other monitor→v2). Workspace assignment is governed by something else: **left→right monitor numbering** and **workspace mode** (see the "Workspaces" section).
 
 ## Shader-computed animated wallpaper (flux-wall)
 
@@ -375,7 +379,11 @@ The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/
 
 The same TUI has extra entries: `[w]` — shared/decades workspace mode switcher (see "Workspaces"), `[o] audio` — default output and input for all apps, plus `[o] → 3` mpd music output: pipewire (recommended) or an exclusive ALSA `hw:` device for mpd (see "Music stack"), `[u] autostart apps` — pick which apps launch at Hyprland startup from the list of all `.desktop` entries (checkboxes `[x]`/`[ ]`, filter by name via `/text`; the selection lands in `data/autostart-apps.dat`, from which a personal `config/hypr/autostart-apps.lua` is generated — alongside the manual `autostartpersonalisation.lua`, which this layer doesn't touch), `[v] volume bar` — the waybar volume bar style (`line` ━━━━━━────, `ticks` ▮▮▮▮▮▮▯▯▯▯, `solid` ▬▬▬▬▬▬▬▬▬▬▬▬────────), saved in `data/volume-bar-style.dat` and applied immediately (signal 10 to waybar), `[t] timer` — a countdown timer next to the clock (see "Timer"), `[k] keyboard layouts` — pick how many layouts you use (1–4, the XKB maximum) and which ones: a list of European layouts (Polish, English US/UK, German incl. Austria/Switzerland, French, Belgian, Dutch, Spanish, Portuguese, Italian, Slovenian, Croatian, Serbian, Bosnian, Czech, Slovak, Hungarian, Romanian, Bulgarian, Greek, Russian, Ukrainian, Belarusian, Lithuanian, Latvian, Estonian, Finnish, Swedish, Norwegian, Danish, Icelandic, Turkish) or any XKB layout code; an optional second step changes the order. Layout #1 is active after login; `Super + K` cycles through the list and `Super + Ctrl + 1…4` jumps straight to layout #1–4. The list is saved in `data/keyboard-layouts.dat`, written to the personal `config/hypr/keyboard-layouts.lua` (every rice except `white-blue_beta` loads it after its `input` block; without it you keep `pl,us`) and applied with `hyprctl reload`, then read back; `[m] mouse sensitivity` — a number from `-1.0` (slower) to `1.0` (faster), `0` = default; acceleration stays `flat`. It is saved in `data/mouse-sensitivity.dat`, written to the personal `config/hypr/mouse.lua` (every rice except `white-blue_beta` loads it right after its `input` block) and applied at once with `hyprctl reload`, then read back with `hyprctl getoption` — the TUI says so if Hyprland reports a different value; and `[p] update archenemy` — the repo updater: pick a branch (`dev` — latest changes / `main` — stable releases only), the script runs `git fetch`/`checkout`/`pull --ff-only`, stashing any local changes to git-tracked files with `git stash` for the duration of the pull and restoring them afterward. It reports what really happened: "✓ updated" only when your checkout equals `origin/<branch>`; a failed fetch/pull or a stash that can't be restored is shown as an error (the stash stays in `git stash list`, nothing is lost); local commits on top of origin get a warning. Switching to a branch that doesn't contain what you currently run (e.g. `main` while it's behind `dev`) rolls your configs back, so the updater warns and asks first (`y` to go ahead, default no). The machine and personal layers (monitors, appbinds, autostart, rice, volume bar style...) are outside git, so the update doesn't touch them — your settings stay unchanged by default. At the end it offers to re-run `install.sh` to generate any new machine files.
 
-`[n] monitors` changes resolution, refresh rate, position and scale without running the installer. The change starts as a trial: press `y` within 15 seconds to keep it, anything else (or closing the window) restores the previous setting, because a wrong mode can leave you with a black screen. Monitor numbers stay as they are: if a new position breaks the left-to-right order, the menu says so and `./install/install.sh` step `[3.6]` renumbers them. A new resolution also leaves the dither-flux wallpapers at the old size until the installer runs.
+`[n] monitors` changes resolution, refresh rate, position and scale without running the installer. The change starts as a trial: press `y` within 15 seconds to keep it, anything else (or closing the window) restores the previous setting, because a wrong mode can leave you with a black screen. A new resolution generates matching dither-flux wallpapers in the background.
+
+**Connecting a new monitor needs no installer run.** Hyprland shows it right away with safe defaults, and a notification points to `[n]`, where it is listed as `new`. Pick it, confirm the mode, position, scale, wallpaper role and numbering, then press `y`. It gets its own monitor and workspace rules and a wallpaper. A monitor moved to another port is not new: it keeps its settings, because it is recognised by its EDID description.
+
+In the same menu, `r` renumbers monitors left to right, and picking an unplugged monitor offers to forget it, which frees its number and workspaces. In `decades` mode, windows on a monitor whose workspace numbers changed move along with it. In `shared` mode open windows stay on their workspaces.
 
 `[i] diagnostics` runs a read-only check of the generated config against the connected monitors, and saves workspace and GPU dumps as `~/archenemy-diag-*.txt`. Those files list your hardware, including monitor serial numbers, so keep them private.
 
@@ -461,7 +469,7 @@ frozen — bugfixes only).
 
 ### Workspaces — two modes to choose from
 
-At install time monitors get **numbers 1, 2, 3… counted left to right** (the installer proposes an order based on screen positions; you can correct it) and you pick one of two modes:
+Monitors get **numbers 1, 2, 3… counted left to right** (the installer and `Super+A` → `[n]` propose an order based on screen positions; you can correct it), and at install time you pick one of two modes:
 
 **Monitor identity.** Connector names (`eDP-2`, `HDMI-A-1`) are **not stable** — after a reboot or a replug Hyprland may hand the very same screens `eDP-1` and `HDMI-A-3`. Since 2026-09-21 the machine layer therefore targets monitors by their EDID description (`desc:<make model serial>`, saved as `DESCRIPTION=` in `data/monitors/<name>.dat` by step [3]): `monitorshyprl.lua`, `workspaces-monitors.lua`, `hyprpaper.conf` and the orphan guard all use that selector, which Hyprland, hyprpaper and hyprlock match by prefix. The connector name is still stored (it decides which monitor is the built-in panel, and it names the generated `dither-flux` files). `.dat` files from before that date have no description — re-run `install.sh` once after pulling, otherwise the rules keep targeting the old connector names and, after a rename, both monitors fall back to `preferred`/`auto` and all workspaces end up orphaned (the bar shows `21`, `22`…).
 

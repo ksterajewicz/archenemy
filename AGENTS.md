@@ -145,11 +145,19 @@ Rules that follow directly from the table:
   and wins); every background process it starts gets `9>&-`, or it would
   hold the lock for the whole session. `bash tests/switch-rice.sh`.
 - **Monitors: `scripts/hypr/monitor-settings.sh` (`Super+A → [n]`) is the only
-  live way to change them.** `lib/gen-monitors.sh` is the one generator of
-  `monitorshyprl.lua`, shared with `install.sh`. A change is a trial: without `y`
-  in 15 s, on a config error or on SIGHUP the `.dat` and the `.lua` go back,
-  because a wrong mode can give a black screen. `ORDER` and `ROLE` stay untouched.
-  `tests/monitor-settings.sh`.
+  live way to change them**, including a new monitor, renumbering and forgetting an
+  unplugged one. `lib/gen-monitors.sh` and `lib/gen-workspaces.sh` are the only
+  generators, shared with `install.sh`. A change is a trial: without `y` in 15 s, on
+  a config error or on SIGHUP all of `data/monitors/` and both Lua files go back,
+  because a wrong mode can give a black screen. A `.dat` file name is not a connector
+  name: it can carry a suffix (`HDMI-A-1-2.dat`) when an unplugged monitor holds that
+  name, so read `MONITOR=`. Use the file name as the key in generators, because it is
+  unique. `tests/monitor-settings.sh`.
+- **New monitor notification:** `hl.on("monitor.added")` in `autostart-common.lua`
+  calls `monitor-settings.sh notify`, which stays quiet for known monitors and in a
+  young session, where `machine-layer-check.sh` reports it instead.
+- **Wallpapers cover every monitor:** primary gets v1, all others get v2. A monitor
+  with no saved wallpaper takes secondary's on `--restore`.
 - **TUI look: `scripts/appbinds/lib/tui.sh` is the only palette.** One accent per
   rice (`tui_accent_code`) plus bright state colours; plain ANSI blue is 2.6:1 on
   `white-blue`. New screens start with `tui_header`, and `tui_fit` sizes columns,
