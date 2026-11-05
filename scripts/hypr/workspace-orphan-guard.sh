@@ -124,7 +124,10 @@ merge_orphans() {
     while IFS=$'\t' read -r id mon; do
         existing["$id"]=1
         ws_monitor["$id"]="$mon"
-    done < <(hyprctl workspaces 2>/dev/null | sed -n 's/^workspace ID \(-\?[0-9]\+\) ([^)]*) on monitor \([^:]*\):.*$/\1\t\2/p')
+    # Nagłówek: "workspace 11 (1) on monitor X:" od Hyprlanda 0.57, wcześniej
+    # "workspace ID 11 (1) on monitor X:" — obsługujemy oba. Bez tego sed nie
+    # dopasuje niczego i guard po cichu przestaje cokolwiek scalać.
+    done < <(hyprctl workspaces 2>/dev/null | sed -n 's/^workspace \(ID \)\?\(-\?[0-9]\+\) ([^)]*) on monitor \([^:]*\):.*$/\2\t\3/p')
 
     # Workspace'y BEZ reguły (poza wszystkimi dekadami, np. 21/22) na monitorze,
     # który MA dekadę → scal do tej dekady. Docelowy id niesiemy jako parę
@@ -147,7 +150,7 @@ merge_orphans() {
 
     local clients active
     clients=$(hyprctl clients 2>/dev/null)
-    active=$(hyprctl activeworkspace 2>/dev/null | sed -n 's/^workspace ID \(-\?[0-9]\+\).*$/\1/p')
+    active=$(hyprctl activeworkspace 2>/dev/null | sed -n 's/^workspace \(ID \)\?\(-\?[0-9]\+\).*$/\2/p')
 
     # Okna sieroty → odpowiednik w żywej dekadzie (11→1, 13→3; odwrotnie 2→12);
     # workspace bez reguły → dekada swojego monitora (21 na HDMI 11-20 → 11).
@@ -167,14 +170,16 @@ merge_orphans() {
                     ws="${line#*workspace: }"
                     ws="${ws%% *}"
                     if [[ "$ws" == "$from" && -n "$addr" ]]; then
-                        hyprctl dispatch movetoworkspacesilent "$target,address:0x$addr" >/dev/null 2>&1
+                        # Config w Lua: `hyprctl dispatch X` = hl.dispatch(X), więc X
+                        # to wyrażenie Lua, nie stara nazwa dispatchera.
+                        hyprctl dispatch "hl.dsp.window.move({ workspace = \"$target\", follow = false, window = \"address:0x$addr\" })" >/dev/null 2>&1
                     fi
                     ;;
             esac
         done <<<"$clients"
         # Fokus stał na sierocie → przeskocz na cel (opróżniony sierota ginie).
         if [[ "$active" == "$from" ]]; then
-            hyprctl dispatch workspace "$target" >/dev/null 2>&1
+            hyprctl dispatch "hl.dsp.focus({ workspace = \"$target\" })" >/dev/null 2>&1
             active=$target
         fi
     done
@@ -205,7 +210,7 @@ merge_orphans
 SOCK="${XDG_RUNTIME_DIR:-}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
 
 # Po scaleniu zdrenuj linie zakolejkowane w trakcie pracy: własne echa
-# dispatchy guarda (movetoworkspacesilent → movewindowv2) i duplikaty v1
+# dispatchy guarda (hl.dsp.window.move → movewindowv2) i duplikaty v1
 # re-triggerowały scalanie po każdym scaleniu. Jeśli w drenażu przyszedł
 # świeży event monitora, zrób JEDNO powtórne scalenie — mógł zajść realny
 # unplug, gdy pracowaliśmy.

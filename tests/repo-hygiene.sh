@@ -33,6 +33,14 @@ echo "== atrapy w tests/mock są wykonywalne"
 bad=$(git -C "$REPO" ls-files -s -- 'tests/mock/*' | awk '$1 != "100755" {print $4}')
 if [[ -z "$bad" ]]; then ok "tests/mock/* = 100755"; else fail "bez bitu: $bad"; fi
 
+echo "== hyprctl dispatch w składni Lua"
+# Config w Lua: `hyprctl dispatch X` = hl.dispatch(X). Stara forma
+# (`dispatch workspace 2`) to błąd składni Lua, a skrypty zwykle tłumią wyjście,
+# więc akcja po prostu się nie dzieje — tak guard i scroll waybara milczały
+# od migracji na Lua do audytu pod Hyprlanda 0.57.
+bad=$(git -C "$REPO" grep -nE 'hyprctl dispatch +[a-z]+ ' -- 'scripts/*' 'install/*' 'rices/*' 'config/*' ':!*.bak' || true)
+if [[ -z "$bad" ]]; then ok "brak hyprctl dispatch w starej składni"; else fail "stara składnia: $bad"; fi
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ $FAIL -eq 0 ]]

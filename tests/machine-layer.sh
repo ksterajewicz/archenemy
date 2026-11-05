@@ -76,19 +76,32 @@ cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
 : > "$MOCK_LOG"; MOCK_MONS=both bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
 check "oba podłączone (nowe nazwy) → nic nie przenosi" '[[ ! -s "$MOCK_LOG" ]]'
 : > "$MOCK_LOG"; MOCK_MONS=edp bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
-check "HDMI odpięty → okno z 11 na 1"         'grep -q "movetoworkspacesilent 1,address:0xaaaa" "$MOCK_LOG"'
+check "HDMI odpięty → okno z 11 na 1"         'grep -q "dispatch hl.dsp.window.move({ workspace = \"1\", follow = false, window = \"address:0xaaaa\" })" "$MOCK_LOG"'
 # zrzut 2026-09-21 po naprawie reguł: 21 (HDMI, dekada 11-20) i 22 (eDP, 1-10) bez reguły
 # (reguły tylko dla dwóch realnych monitorów — z DP-9 z fixture wyżej 21 byłby zwykłą sierotą)
 generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP" "HDMI-A-1"$'\t'"desc:$DESC_HDMI"
 : > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
-check "21 bez reguły na HDMI → okna na 11"     'grep -q "movetoworkspacesilent 11,address:0xaaaa" "$MOCK_LOG" && grep -q "movetoworkspacesilent 11,address:0xcccc" "$MOCK_LOG"'
-check "22 bez reguły na eDP → okno na 2, fokus za nim" 'grep -q "movetoworkspacesilent 2,address:0xbbbb" "$MOCK_LOG" && grep -q "dispatch workspace 2$" "$MOCK_LOG"'
-check "nic nie leci do dekady cudzego monitora" '! grep -q "movetoworkspacesilent 1,address:0xaaaa" "$MOCK_LOG"'
+check "21 bez reguły na HDMI → okna na 11"     'grep -q "dispatch hl.dsp.window.move({ workspace = \"11\", follow = false, window = \"address:0xaaaa\" })" "$MOCK_LOG" && grep -q "dispatch hl.dsp.window.move({ workspace = \"11\", follow = false, window = \"address:0xcccc\" })" "$MOCK_LOG"'
+check "22 bez reguły na eDP → okno na 2, fokus za nim" 'grep -q "dispatch hl.dsp.window.move({ workspace = \"2\", follow = false, window = \"address:0xbbbb\" })" "$MOCK_LOG" && grep -q "dispatch hl.dsp.focus({ workspace = \"2\" })" "$MOCK_LOG"'
+check "nic nie leci do dekady cudzego monitora" '! grep -q "dispatch hl.dsp.window.move({ workspace = \"1\", follow = false, window = \"address:0xaaaa\" })" "$MOCK_LOG"'
 # monitor bez własnej dekady (reguły tylko dla panelu) → jego 21 zostaje w spokoju
 generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP"
 : > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
-check "monitor bez dekady → jego workspace nietknięty" '! grep -q "address:0xaaaa" "$MOCK_LOG" && grep -q "movetoworkspacesilent 2,address:0xbbbb" "$MOCK_LOG"'
+check "monitor bez dekady → jego workspace nietknięty" '! grep -q "address:0xaaaa" "$MOCK_LOG" && grep -q "dispatch hl.dsp.window.move({ workspace = \"2\", follow = false, window = \"address:0xbbbb\" })" "$MOCK_LOG"'
 cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
+
+# Hyprland < 0.57 miał nagłówek `workspace ID N` — guard ma działać na obu.
+: > "$MOCK_LOG"; MOCK_MONS=edp MOCK_HYPRLAND=0.56 bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "stary format 0.56 → okno z 11 na 1" 'grep -qF "workspace = \"1\", follow = false, window = \"address:0xaaaa\"" "$MOCK_LOG"'
+
+echo "== ws-scroll.sh"
+printf 'decades\n' > "$A/data/workspace-mode.dat"
+: > "$MOCK_LOG"; bash "$REPO/scripts/hypr/ws-scroll.sh" up </dev/null
+check "decades: scroll = hl.dsp.focus z r+1" 'grep -qF "dispatch hl.dsp.focus({ workspace = \"r+1\" })" "$MOCK_LOG"'
+printf 'shared\n' > "$A/data/workspace-mode.dat"
+: > "$MOCK_LOG"; bash "$REPO/scripts/hypr/ws-scroll.sh" down </dev/null
+check "shared: scroll = hl.dsp.focus z e-1" 'grep -qF "dispatch hl.dsp.focus({ workspace = \"e-1\" })" "$MOCK_LOG"'
+echo decades > "$A/data/workspace-mode.dat"
 
 echo "== workspace-mode-switch.sh"
 MOCK_MONS=both bash "$A/scripts/hypr/workspace-mode-switch.sh" shared >/dev/null 2>&1 </dev/null

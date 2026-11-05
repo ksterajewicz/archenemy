@@ -73,7 +73,7 @@ else
 fi
 
 section "hyprctl workspaces (id / nazwa / monitor / okna)"
-hyprctl workspaces 2>/dev/null | grep -E '^workspace ID|^\s*windows:' | paste - - | sed 's/\t/  /g'
+hyprctl workspaces 2>/dev/null | grep -E '^workspace |^\s*windows:' | paste - - | sed 's/\t/  /g'
 echo "activeworkspace: $(hyprctl activeworkspace 2>/dev/null | head -n 1)"
 
 section "hyprctl workspacerules (co Hyprland naprawdę trzyma)"

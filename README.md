@@ -53,7 +53,7 @@ The installer will: detect and configure monitors (including left→right number
 This way the same repo works on every machine and nothing private leaks onto GitHub.
 
 **Hyprland config is in Lua** (as of Hyprland 0.55 the old hyprlang `.conf`
-format is deprecated): every rice has `hypr/hyprland.lua`, and the
+format is deprecated, and 0.57 removed it): every rice has `hypr/hyprland.lua`, and the
 shared/machine/personal layers are also `.lua` files pulled in via
 `require()`. Repo convention: one bind = one `hl.bind(...)` line — the
 Super+A shortcut manager and the workspace guard rely on this. Exceptions to

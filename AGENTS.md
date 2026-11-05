@@ -21,10 +21,16 @@ different format, start from this file and point it here.
 ## Stack
 
 - Bash (scripts) + Hyprland configuration in **Lua** (as of Hyprland 0.55 the
-  old hyprlang `.conf` format is deprecated; old files stay alongside as
-  `*.conf.bak` until the migration is fully verified on a live machine —
-  `hyprlock.conf` and `hyprpaper.conf` deliberately STAY in hyprlang, they're
-  separate programs, not Hyprland).
+  old hyprlang `.conf` format is deprecated, and 0.57 removed it; old files
+  stay alongside as `*.conf.bak` until the migration is fully verified on a
+  live machine — `hyprlock.conf` and `hyprpaper.conf` deliberately STAY in
+  hyprlang, they're separate programs, not Hyprland).
+- **`hyprctl dispatch` takes a Lua expression** (`hyprctl dispatch X` runs
+  `hl.dispatch(X)`): `hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })'`.
+  The old form (`hyprctl dispatch workspace 2`) is a Lua syntax error and
+  scripts usually hide the output, so the action silently doesn't happen;
+  `tests/repo-hygiene.sh` guards this. Parsers of `hyprctl` text output must
+  accept both `workspace N` (0.57+) and `workspace ID N` (older).
 - One component in C: `src/flux-wall/` — the animated wallpaper (Wayland
   `wlr-layer-shell` + EGL + GLES 3.0). Optional: built by `install.sh` step
   [9.6] with a fallback; a missing compiler/dependency doesn't block the
