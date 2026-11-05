@@ -25,7 +25,9 @@ mkdir -p "$A/config/hypr" "$A/data/monitors" "$H/.config/hypr" "$T/bin" "$A/scri
 cp "$REPO"/scripts/waybar/lib/timer-state.sh "$A/scripts/waybar/lib/"
 cp "$REPO"/scripts/waybar/timer-ctl.sh "$A/scripts/waybar/"
 cp "$REPO"/scripts/hypr/workspace-mode-switch.sh "$A/scripts/hypr/"
-cp "$REPO"/scripts/hypr/lib/{gen-workspaces,monitor-id,hypr-apply}.sh "$A/scripts/hypr/lib/"
+cp "$REPO"/scripts/hypr/lib/{gen-workspaces,gen-monitors,monitor-id,hypr-apply}.sh "$A/scripts/hypr/lib/"
+cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
+mkdir -p "$A/scripts/appbinds/lib"; cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 printf 'MONITOR=DP-1\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=\nORDER=1\n' > "$A/data/monitors/DP-1.dat"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/notify-send"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/setsid"
 printf 'hl.bind(mainMod .. " + Q", hl.dsp.window.close())\nhl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }))\n' > "$H/.config/hypr/hyprland.lua"
@@ -136,6 +138,49 @@ check "tryb zmieniony i plik wygenerowany"     '[[ "$(<"$A/data/workspace-mode.d
 check "sukces po odczycie configerrors (F3)"   '[[ "$out" == *"no config errors"* ]] && grep -q "hyprctl configerrors" "$T/log"'
 touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
 check "martwy Hyprland bez sukcesu (F3)"       '[[ "$out" == *"did not respond"* && "$out" != *"no config errors"* ]]'
+
+echo "== menu główne"
+cp "$REPO"/scripts/hypr/{keyboard-layouts,mouse-sensitivity}.sh "$A/scripts/hypr/"
+mkdir -p "$A/scripts/appbinds"
+printf '#!/bin/bash\nread -r x < "%s/sink" && echo "$x"\n' "$T" > "$A/scripts/appbinds/audio-devices.sh"
+echo "Family 17h HD Audio Controller Speaker + Headphones" > "$T/sink"
+printf 'de,us\n' > "$A/data/keyboard-layouts.dat"; echo 0.3 > "$A/data/mouse-sensitivity.dat"
+printf 'firefox\n# x\n\nsteam\n' > "$A/data/autostart-apps.dat"
+echo ticks > "$A/data/volume-bar-style.dat"; echo 1 > "$A/data/timer-enabled.dat"; echo decades > "$A/data/workspace-mode.dat"
+out="$(tui 'q')"
+check "tytuł mówi, czym to jest (R2)"          '[[ "$out" == *"archenemy · settings"* ]]'
+check "grupy"                                  '[[ "$out" == *"Binds"*"Desktop"*"Bar"*"Apps"*"System"* ]]'
+check "stan: workspace i monitor"              '[[ "$out" == *"workspaces: decades"*"monitors: 1920x1080@60"* ]]'
+check "stan: klawiatura i mysz"                '[[ "$out" == *"keyboard: de,us"*"mouse: 0.3"* ]]'
+check "stan: pasek i timer"                    '[[ "$out" == *"volume bar: ticks"*"timer: on"* ]]'
+check "stan: autostart bez komentarzy"         '[[ "$out" == *"autostart: 2 apps"* ]]'
+check "długi opis audio ucięty"                '[[ "$out" == *"audio: Family 17h"*"…"* ]]'
+check "wszystkie linie menu do 80 kolumn"      '[[ "$(awk "/Binds  /,/quit/" <<<"$out" | wc -L)" -le 80 ]]'
+rm -f "$A/scripts/appbinds/audio-devices.sh" "$A/scripts/hypr/keyboard-layouts.sh"
+out="$(tui 'q')"
+check "brak skryptu = sama etykieta"           '[[ "$out" == *"[o] audio "* && "$out" == *"[k] keyboard "* ]]'
+
+echo "== [n] monitory"
+out="$(tui 'n\n\nq')"
+check "[n] otwiera monitory"                   '[[ "$out" == *"archenemy · monitors"* ]]' 
+
+echo "== [i] diagnostyka"
+printf '#!/bin/bash\necho report-ok\nexit 0\n' > "$A/scripts/hypr/machine-layer-check.sh"
+printf '#!/bin/bash\necho ws-dump\n' > "$A/scripts/hypr/workspace-diag.sh"
+out="$(tui 'i1\nq')"
+check "kontrola: raport i wynik"               '[[ "$out" == *"report-ok"*"Config matches"* ]]'
+printf '#!/bin/bash\necho bad\nexit 1\n' > "$A/scripts/hypr/machine-layer-check.sh"
+out="$(tui 'i1\nq')"
+check "kontrola: problemy bez sukcesu"         '[[ "$out" == *"Problems found"* && "$out" != *"Config matches"* ]]'
+out="$(tui 'i2\nq')"
+check "zrzut w pliku i na ekranie"             '[[ "$out" == *"ws-dump"*"Saved to"* ]] && grep -qx ws-dump "$H"/archenemy-diag-workspaces-*.txt'
+out="$(tui 'i3\nq')"
+check "brak skryptu zgłoszony"                 '[[ "$out" == *"Missing"*"gaming-diag.sh"* ]]'
+printf '#!/bin/bash\nexit 0\n' > "$A/scripts/hypr/gaming-diag.sh"
+out="$(tui 'i3\nq')"
+check "pusty zrzut to nie sukces"              '[[ "$out" == *"produced no output"* && "$out" != *"Saved to"* ]] && ! ls "$H"/archenemy-diag-gaming-* >/dev/null 2>&1'
+out="$(tui 'i\nq')"
+check "Enter anuluje"                          '[[ "$out" == *"Cancelled"* ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

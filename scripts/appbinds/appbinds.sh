@@ -2,7 +2,9 @@
 
 # =============================================
 #   archenemy - appbinds.sh
-#   Terminalowy menedżer skrótów do aplikacji (Super + klawisz).
+#   Terminalowe ustawienia pulpitu: skróty aplikacji (Super + klawisz), audio,
+#   monitory, układy klawiatury, autostart, diagnostyka. Każda pozycja woła
+#   skrypt z logiką, menu tylko pyta i pokazuje stan.
 #   Otwierany przez Super+A (pływające okno alacritty).
 #   UI po angielsku (decyzja właściciela 2026-07-12).
 #
@@ -366,18 +368,23 @@ warn_if_beta() {
 
 # ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
 
+# Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
+# (w tym nazwy stylów wycofanych 2026-09-03) jest efektywnie "line" — menu
+# nie może pokazywać stylu, którego skrypt już nie zna.
+volume_style_current() {
+    local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat" cur="line"
+    [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
+    cur="${cur//[[:space:]]/}"
+    [[ "$cur" == "ticks" || "$cur" == "solid" ]] || cur="line"
+    printf '%s' "$cur"
+}
+
 # Wybór stylu paska custom/volumebar (line/ticks/solid). Zapis do
 # data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
 # sygnał 10 do waybara = pasek przerysowuje się od razu.
 volume_style_menu() {
     local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
-    local cur="line"
-    [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
-    cur="${cur//[[:space:]]/}"
-    # Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
-    # (w tym nazwy stylów wycofanych 2026-09-03) jest efektywnie "line" — menu
-    # nie może pokazywać stylu, którego skrypt już nie zna.
-    [[ "$cur" == "ticks" || "$cur" == "solid" ]] || cur="line"
+    local cur; cur="$(volume_style_current)"
 
     echo ""
     echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
@@ -768,6 +775,115 @@ mouse_sensitivity_menu() {
     esac
 }
 
+# ─── DIAGNOSTYKA ─────────────────────────────────────────────────────────────
+
+# Zrzut do pliku w katalogu domowym i podgląd. Skrypty tylko czytają system; plik
+# zostaje, bo diagnozę porównuje się przed i po zmianie.
+run_diag_dump() {
+    local script="$ARCHENEMY_DIR/scripts/hypr/$1" name="$2" out
+    if [[ ! -f "$script" ]]; then
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([p]).${NC}"
+        return
+    fi
+    out="$HOME/archenemy-diag-${name}-$(date +%Y%m%d-%H%M%S).txt"
+    bash "$script" > "$out" 2>&1
+    if [[ ! -s "$out" ]]; then
+        rm -f "$out"
+        echo -e "  ${RED}✗ ${1} produced no output.${NC}"
+        return
+    fi
+    if command -v less &>/dev/null; then less -R "$out"; else cat "$out"; fi
+    echo -e "  ${GREEN}✓ Saved to ${out}${NC}"
+    echo -e "  ${YELLOW}  It lists your hardware, including monitor serial numbers; keep it private.${NC}"
+}
+
+diagnostics_menu() {
+    local check="$ARCHENEMY_DIR/scripts/hypr/machine-layer-check.sh"
+    echo ""
+    echo -e "  Diagnostics (read-only, nothing is changed):"
+    echo -e "    ${BLUE}1${NC}) config check: generated files against the connected monitors"
+    echo -e "    ${BLUE}2${NC}) workspaces: rules, monitors and windows, saved to a file"
+    echo -e "    ${BLUE}3${NC}) GPU and games: drivers and render GPU, saved to a file"
+    echo ""
+    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    case "$ans" in
+        1)
+            if [[ ! -f "$check" ]]; then
+                echo -e "  ${RED}✗ Missing ${check} — update archenemy ([p]).${NC}"
+                return
+            fi
+            echo ""
+            if bash "$check"; then
+                echo -e "  ${GREEN}✓ Config matches this machine.${NC}"
+            else
+                echo -e "  ${YELLOW}⚠ Problems found, see above.${NC}"
+            fi
+            ;;
+        2) run_diag_dump workspace-diag.sh workspaces ;;
+        3) run_diag_dump gaming-diag.sh gaming ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
+        *) echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}" ;;
+    esac
+}
+
+# ─── MENU GŁÓWNE ─────────────────────────────────────────────────────────────
+
+# Wartość ze skryptu `show`/`summary`. Pusto, gdy skryptu nie ma albo nie odpowiada;
+# menu pokazuje wtedy samą etykietę.
+state_from() {
+    local script="$ARCHENEMY_DIR/scripts/$1"
+    [[ -f "$script" ]] || return 0
+    timeout 2 bash "$script" "${@:2}" 2>/dev/null
+}
+
+state_workspaces() {
+    local mode="decades" dat="$ARCHENEMY_DIR/data/workspace-mode.dat"
+    [[ -f "$dat" ]] && mode="$(<"$dat")"
+    printf '%s' "$mode"
+}
+
+state_timer() {
+    local lib="$ARCHENEMY_DIR/scripts/waybar/lib/timer-state.sh"
+    [[ -f "$lib" ]] || return 0
+    # shellcheck source=/dev/null
+    if ( source "$lib"; timer_enabled ); then printf 'on'; else printf 'off'; fi
+}
+
+state_autostart() {
+    local dat="$ARCHENEMY_DIR/data/autostart-apps.dat" n=0
+    [[ -f "$dat" ]] && n="$(grep -cvE '^[[:space:]]*(#|$)' "$dat")"
+    if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi
+}
+
+# Komórka menu o stałej szerokości, żeby kolumny się nie rozjeżdżały w oknie 860 px.
+menu_cell() {
+    local color="$1" key="$2" text="$3${4:+: $4}"
+    (( ${#text} > 28 )) && text="${text:0:27}…"
+    printf "${color}[%s]${NC} %-29s" "$key" "$text"
+}
+
+menu_row() {
+    printf '  %-10s' "$1"
+    menu_cell "${@:2:4}"
+    (( $# > 5 )) && menu_cell "${@:6:4}"
+    echo ""
+}
+
+show_main_menu() {
+    menu_row "Binds"   "$GREEN" a "add bind" "" "$GREEN" e "edit bind" ""
+    menu_row ""        "$RED" d "remove bind" "" "$BLUE" s "all shortcuts" ""
+    menu_row "Desktop" "$YELLOW" w "workspaces" "$(state_workspaces)" \
+                       "$GREEN" n "monitors" "$(state_from hypr/monitor-settings.sh summary)"
+    menu_row ""        "$GREEN" k "keyboard" "$(state_from hypr/keyboard-layouts.sh show)" \
+                       "$GREEN" m "mouse" "$(state_from hypr/mouse-sensitivity.sh show)"
+    menu_row "Bar"     "$GREEN" v "volume bar" "$(volume_style_current)" \
+                       "$GREEN" t "timer" "$(state_timer)"
+    menu_row "Apps"    "$GREEN" u "autostart" "$(state_autostart)" \
+                       "$GREEN" o "audio" "$(state_from appbinds/audio-devices.sh describe sink)"
+    menu_row "System"  "$GREEN" i "diagnostics" "" "$GREEN" p "update archenemy" ""
+    menu_row ""        "$CYAN" q "quit (Esc also quits)" ""
+}
+
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
 
 ensure_conf
@@ -776,7 +892,7 @@ while :; do
     clear
     echo -e "${BLUE}"
     echo "  ┌─────────────────────────────────────┐"
-    echo "  │      archenemy · app shortcuts      │"
+    echo "  │        archenemy · settings         │"
     echo "  └─────────────────────────────────────┘"
     echo -e "${NC}"
     echo -e "  Your binds (Super + key):"
@@ -785,7 +901,7 @@ while :; do
     hand_binds="$(other_bind_count "$BINDS_CONF")"
     (( hand_binds > 0 )) && echo -e "    ${YELLOW}+ ${hand_binds} written by hand in appbinds.lua (shown in [s], edit them in the file)${NC}"
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${GREEN}[e]${NC} edit bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} audio   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    show_main_menu
     echo ""
     choice="$(read_key "  Choice: ")" || exit 0
 
@@ -802,6 +918,7 @@ while :; do
         n|N) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; continue ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         o|O) audio_menu ;;
+        i|I) diagnostics_menu ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
         q|Q|$'\e') exit 0 ;;
         *)   continue ;;
