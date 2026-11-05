@@ -1050,7 +1050,7 @@ if command -v ncmpcpp >/dev/null 2>&1; then
     else
         mkdir -p "$(dirname "$NCMPCPP_DESKTOP")"
         cp "$ARCHENEMY_DIR/config/applications/ncmpcpp.desktop" "$NCMPCPP_DESKTOP"
-        echo -e "  ${GREEN}✓ ncmpcpp.desktop → rofi (Super+D) i [u] autostart${NC}"
+        echo -e "  ${GREEN}✓ ncmpcpp.desktop → rofi (Super+R) i [u] autostart${NC}"
     fi
 fi
 

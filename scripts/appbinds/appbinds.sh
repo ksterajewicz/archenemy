@@ -355,6 +355,15 @@ workspace_mode_menu() {
     bash "$switch" "$other"
 }
 
+# white-blue_beta (legacy) nie ma modułów custom/volumebar i custom/timer, więc
+# zapis jest tam bez efektu. Menu ma to powiedzieć, nie udawać, że działa.
+warn_if_beta() {
+    local rice=""
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    [[ "$rice" == "white-blue_beta" ]] || return 0
+    echo -e "  ${YELLOW}⚠ white-blue_beta has no ${1} — switch rice (Super+T) to use this.${NC}"
+}
+
 # ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
 
 # Wybór stylu paska custom/volumebar (line/ticks/solid). Zapis do
@@ -372,6 +381,7 @@ volume_style_menu() {
 
     echo ""
     echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
+    warn_if_beta "volume bar module"
     echo -e "    ${BLUE}1${NC}) line    ━━━━━━────"
     echo -e "    ${BLUE}2${NC}) ticks   ▮▮▮▮▮▮▯▯▯▯"
     echo -e "    ${BLUE}3${NC}) solid   ▬▬▬▬▬▬▬▬▬▬▬▬────────"
@@ -559,6 +569,7 @@ timer_menu() {
 
     echo ""
     echo -e "  Timer (waybar): ${CYAN}${enabled_label}${NC} · ${CYAN}$(timer_duration_minutes) min${NC} · ${CYAN}$(timer_color)${NC} · now: ${CYAN}${TIMER_STATUS}${NC}"
+    warn_if_beta "timer module"
     if [[ "$enabled_label" == "on" ]]; then
         echo -e "    ${BLUE}1${NC}) turn off"
     else

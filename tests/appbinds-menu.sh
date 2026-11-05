@@ -21,7 +21,13 @@ fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 H="$T/home"; A="$H/archenemy"; BINDS="$A/config/hypr/appbinds.lua"
-mkdir -p "$A/config/hypr" "$A/data" "$H/.config/hypr" "$T/bin"
+mkdir -p "$A/config/hypr" "$A/data/monitors" "$H/.config/hypr" "$T/bin" "$A/scripts/waybar/lib" "$A/scripts/hypr/lib"
+cp "$REPO"/scripts/waybar/lib/timer-state.sh "$A/scripts/waybar/lib/"
+cp "$REPO"/scripts/waybar/timer-ctl.sh "$A/scripts/waybar/"
+cp "$REPO"/scripts/hypr/workspace-mode-switch.sh "$A/scripts/hypr/"
+cp "$REPO"/scripts/hypr/lib/{gen-workspaces,monitor-id,hypr-apply}.sh "$A/scripts/hypr/lib/"
+printf 'MONITOR=DP-1\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=\nORDER=1\n' > "$A/data/monitors/DP-1.dat"
+printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/notify-send"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/setsid"
 printf 'hl.bind(mainMod .. " + Q", hl.dsp.window.close())\nhl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }))\n' > "$H/.config/hypr/hyprland.lua"
 printf '#define XKB_KEY_F5 0xffc2\n#define XKB_KEY_semicolon 0x3b\n#define XKB_KEY_Return 0xff0d\n' > "$T/keysyms.h"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
@@ -91,6 +97,45 @@ echo "== bindy pisane ręcznie"
 reset; printf 'hl.bind("SUPER + x", hl.dsp.exec("xterm"))\n' >> "$BINDS"
 out="$(tui 'q')"
 check "menu mówi o bindzie spoza listy"   '[[ "$out" == *"1 written by hand"* ]]'
+
+echo "== [v] pasek głośności"
+reset; out="$(tui 'v2\n\nq')"
+check "wybór zapisany"                         '[[ "$(<"$A/data/volume-bar-style.dat")" == ticks && "$out" == *"Volume bar style: ticks"* ]]'
+out="$(tui 'vx\n\nq')"
+check "zły klawisz bez zmiany"                 '[[ "$(<"$A/data/volume-bar-style.dat")" == ticks && "$out" == *"Pick 1, 2 or 3"* ]]'
+out="$(tui 'v\n\nq')"
+check "Enter anuluje"                          '[[ "$out" == *"Cancelled"* ]]'
+check "bez bety bez ostrzeżenia"               '[[ "$out" != *"white-blue_beta"* ]]'
+
+echo "== [t] timer"
+out="$(tui 't1\n\nq')"
+check "włączenie zapisane"                     '[[ "$(<"$A/data/timer-enabled.dat")" == 1 && "$out" == *"Timer shown"* ]]'
+out="$(tui 't240\n\nq')"
+check "czas zapisany"                          '[[ "$(<"$A/data/timer-duration.dat")" == 40 ]]'
+out="$(tui 't20\n\nq')"
+check "czas spoza zakresu odrzucony"           '[[ "$(<"$A/data/timer-duration.dat")" == 40 && "$out" == *"not a number between"* ]]'
+out="$(tui 't300ff00\n\nq')"
+check "kolor dostaje #"                        '[[ "$(<"$A/data/timer-color.dat")" == "#00ff00" ]]'
+out="$(tui 't3zielony\n\nq')"
+check "zły kolor odrzucony"                    '[[ "$(<"$A/data/timer-color.dat")" == "#00ff00" && "$out" == *"not a #rrggbb"* ]]'
+
+echo "== ostrzeżenie dla bety"
+echo white-blue_beta > "$A/.current_rice"
+out="$(tui 'v\n\nq')"
+check "[v] ostrzega na becie (R4)"             '[[ "$out" == *"white-blue_beta has no volume bar"* ]]'
+out="$(tui 't\n\nq')"
+check "[t] ostrzega na becie (R4)"             '[[ "$out" == *"white-blue_beta has no timer"* ]]'
+rm "$A/.current_rice"
+
+echo "== [w] tryb workspace'ów"
+echo decades > "$A/data/workspace-mode.dat"; reset
+out="$(tui 'w\n\nq')"
+check "Enter nie zmienia trybu"                '[[ "$(<"$A/data/workspace-mode.dat")" == decades && "$out" == *"Cancelled"* ]]'
+out="$(tui 'wy\n\nq')"
+check "tryb zmieniony i plik wygenerowany"     '[[ "$(<"$A/data/workspace-mode.dat")" == shared && -s "$A/config/hypr/workspaces-monitors.lua" ]]'
+check "sukces po odczycie configerrors (F3)"   '[[ "$out" == *"no config errors"* ]] && grep -q "hyprctl configerrors" "$T/log"'
+touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
+check "martwy Hyprland bez sukcesu (F3)"       '[[ "$out" == *"did not respond"* && "$out" != *"no config errors"* ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
