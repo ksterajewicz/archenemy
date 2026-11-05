@@ -142,7 +142,8 @@ archenemy/
 │                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── appbinds/                     # Terminal shortcut manager for apps (Super+A); update-archenemy.sh — [p];
-│   │                                 #   lib/tui.sh — shared keys: arrows ignored, Esc always cancels, [y/N] prompts;
+│   │                                 #   lib/tui.sh — shared look and keys: rice accent, header, [y/N] prompts,
+│   │                                 #   arrows ignored in prompts, Esc always cancels;
 │   │                                 #   lib/mpd-output.sh — mpd output switch and its playback test ([o]);
 │   │                                 #   lib/binds.sh — the one place that lists/edits/removes user binds (list and
 │   │                                 #   [d] pick the same lines);
@@ -368,7 +369,7 @@ The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/
 
 ## Custom app shortcuts (Super + A)
 
-`Super + A` opens the archenemy settings menu: entries grouped by area, each with its current value next to it. Its first job is app shortcuts: you pick a key (e.g. `g`, `F5`, `semicolon`, `SHIFT+g`) and a command (e.g. `spotify`), and the shortcut works right away. `[e]` changes the command of an existing bind. The manager rejects key names Hyprland does not know, guards against collisions with existing archenemy shortcuts, reloads Hyprland, reads `hyprctl configerrors` and undoes the change if the config breaks, and the `[s]` option shows a full cheat sheet of every current shortcut — what's under each key and which app/action it launches. Your binds go into `config/hypr/appbinds.lua` — a personal file outside git, so they survive `git pull` and switching rice.
+`Super + A` opens the archenemy settings menu: a list grouped by area with each entry's current value, and a preview of the selected entry on the right (hidden in narrow terminals). Arrow keys and Enter move around; pressing an entry's letter opens it directly. Colours follow the active rice, with one accent per rice and at least 4.5:1 contrast (`tests/tui-contrast.sh`). Its first job is app shortcuts: you pick a key (e.g. `g`, `F5`, `semicolon`, `SHIFT+g`) and a command (e.g. `spotify`), and the shortcut works right away. `[e]` changes the command of an existing bind. The manager rejects key names Hyprland does not know, guards against collisions with existing archenemy shortcuts, reloads Hyprland, reads `hyprctl configerrors` and undoes the change if the config breaks, and the `[s]` option shows a full cheat sheet of every current shortcut — what's under each key and which app/action it launches. Your binds go into `config/hypr/appbinds.lua` — a personal file outside git, so they survive `git pull` and switching rice.
 
 **Two more ways in (installer step [8m]).** The same menu shows up in rofi (`Super + R`) as **archenemy** — `install.sh` writes `~/.local/share/applications/archenemy.desktop` (with this machine's absolute path, because `.desktop` files don't expand `~`; an existing file of that name is never overwritten). And in a terminal you can type `archenemy` to run it right there: the installer asks before adding one marked `alias archenemy=…` line to `~/.bashrc`, never adds it twice, leaves your own `archenemy` alias alone, and skips it when your shell isn't bash (the summary prints the line to add yourself). Open a new terminal (or `source ~/.bashrc`) after installing. The `white-blue_beta` rice has no `Super + A` bind by design — these two entries work there too.
 

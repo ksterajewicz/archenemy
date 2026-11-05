@@ -26,11 +26,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
 
 pause() { read -rp "  Press Enter to go back..." _; }
 
-echo -e "${BLUE}"
-echo "  ┌─────────────────────────────────────┐"
-echo "  │      archenemy · update             │"
-echo "  └─────────────────────────────────────┘"
-echo -e "${NC}"
+clear
+tui_header "update"
 
 if [[ ! -d "$ARCHENEMY_DIR/.git" ]]; then
     echo -e "  ${RED}✗ ${ARCHENEMY_DIR} is not a git repository — cannot update.${NC}"

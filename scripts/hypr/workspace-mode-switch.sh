@@ -28,7 +28,7 @@ WS_CONF="$ARCHENEMY_DIR/config/hypr/workspaces-monitors.lua"
 GUARD="$ARCHENEMY_DIR/scripts/hypr/workspace-orphan-guard.sh"
 LIB="$ARCHENEMY_DIR/scripts/hypr/lib/gen-workspaces.sh"
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+GREEN='\033[0;92m'; YELLOW='\033[0;93m'; RED='\033[0;91m'; CYAN='\033[0;96m'; NC='\033[0m'
 
 notify() { command -v notify-send &>/dev/null && notify-send "archenemy" "$1"; }
 

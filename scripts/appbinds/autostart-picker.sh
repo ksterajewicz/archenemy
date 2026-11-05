@@ -186,11 +186,7 @@ picker_loop() {
     while :; do
         build_view
         clear
-        echo -e "${BLUE}"
-        echo "  ┌─────────────────────────────────────┐"
-        echo "  │      archenemy · autostart apps     │"
-        echo "  └─────────────────────────────────────┘"
-        echo -e "${NC}"
+        tui_header "autostart"
         if ! command -v gtk-launch &>/dev/null; then
             echo -e "  ${YELLOW}⚠ gtk-launch not found in PATH — the selection will be saved,${NC}"
             echo -e "  ${YELLOW}  but autostart will not work until you install it (gtk3).${NC}"

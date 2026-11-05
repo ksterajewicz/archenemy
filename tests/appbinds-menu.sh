@@ -148,21 +148,69 @@ printf 'de,us\n' > "$A/data/keyboard-layouts.dat"; echo 0.3 > "$A/data/mouse-sen
 printf 'firefox\n# x\n\nsteam\n' > "$A/data/autostart-apps.dat"
 echo ticks > "$A/data/volume-bar-style.dat"; echo 1 > "$A/data/timer-enabled.dat"; echo decades > "$A/data/workspace-mode.dat"
 out="$(tui 'q')"
-check "tytuł mówi, czym to jest (R2)"          '[[ "$out" == *"archenemy · settings"* ]]'
+check "nagłówek mówi, czym to jest (R2)"       '[[ "$out" == *"archenemy  settings"* ]]'
 check "grupy"                                  '[[ "$out" == *"Binds"*"Desktop"*"Bar"*"Apps"*"System"* ]]'
-check "stan: workspace i monitor"              '[[ "$out" == *"workspaces: decades"*"monitors: 1920x1080@60"* ]]'
-check "stan: klawiatura i mysz"                '[[ "$out" == *"keyboard: de,us"*"mouse: 0.3"* ]]'
-check "stan: pasek i timer"                    '[[ "$out" == *"volume bar: ticks"*"timer: on"* ]]'
-check "stan: autostart bez komentarzy"         '[[ "$out" == *"autostart: 2 apps"* ]]'
-check "długi opis audio ucięty"                '[[ "$out" == *"audio: Family 17h"*"…"* ]]'
-check "wszystkie linie menu do 80 kolumn"      '[[ "$(awk "/Binds  /,/quit/" <<<"$out" | wc -L)" -le 80 ]]'
+check "stan: workspace i monitor"              '[[ "$out" =~ w\ +workspaces\ +decades && "$out" =~ n\ +monitors\ +1920x1080@60 ]]'
+check "stan: klawiatura i mysz"                '[[ "$out" =~ k\ +keyboard\ +de,us && "$out" =~ m\ +mouse\ +0.3 ]]'
+check "stan: pasek i timer"                    '[[ "$out" =~ v\ +volume\ bar\ +ticks && "$out" =~ t\ +timer\ +on ]]'
+check "stan: autostart bez komentarzy"         '[[ "$out" =~ u\ +autostart\ +2\ apps ]]'
+check "długi opis audio ucięty"                '[[ "$out" == *"Family 17h HD Audio"*"…"* ]]'
+check "podpowiedź klawiszy"                    '[[ "$out" == *"↑↓ move"*"Enter or letter open"*"q quit"* ]]'
+check "ekran mieści się w oknie 27×90"         '[[ "$(wc -l <<<"$out")" -le 27 && "$(wc -L <<<"$out")" -le 90 ]]'
+
+echo "== strzałki i Enter"
+out="$(tui '\e[B\n\n\nq')"
+check "w dół + Enter otwiera drugą pozycję"    '[[ "$out" == *"archenemy  edit bind"* ]]'
+out="$(tui '\e[A\nq')"
+check "w górę z pierwszej = ostatnia"          '[[ "$out" == *"Commit"* ]]'
+out="$(tui '\e[F\e[B\e[H\nq')"
+check "End, zawinięcie, Home"                  '[[ "$(grep -c "Update" <<<"$out")" -ge 1 ]]'
+out="$(tui 'xzq')"
+check "nieznana litera nic nie otwiera"        '[[ "$out" != *"Press Enter"* ]]'
+tui 'v\e\n\e[Bq' >/dev/null; rc=$?
+check "po akcji pętla działa dalej"            '[[ $rc -eq 0 ]]'
+
+echo "== podgląd"
+reset; tui 'ag\nls c\\d\n\nq' >/dev/null
+out="$(tui 'q')"
+check "skrót w podglądzie"                     '[[ "$out" == *"1  Super g"*"ls c"* ]]'
+check "backslash nie jest sekwencją"           '[[ "$out" == *"c\d"* ]]'
+reset; out="$(tui 'q')"
+check "pusta lista skrótów"                    '[[ "$out" == *"No binds yet."* ]]'
+out="$(tui '\e[B\e[B\e[B\e[B\e[B\e[Bq')"
+check "podgląd [k]: układy"                    '[[ "$out" == *"2  us"*"Super+Ctrl+2"* ]]'
+out="$(tui '\e[A\e[A\e[A\e[A\e[Aq')"
+check "podgląd [u]: aplikacje"                 '[[ "$out" == *"firefox"* || "$out" == *"steam"* ]]'
+out="$(tui '\e[A\e[A\e[Aq')"
+check "podgląd [o]: wyjście i wejście"         '[[ "$out" == *"Output"*"Input"* ]]'
+out="$(tui '\e[A\e[Aq')"
+check "podgląd [i]: opis"                      '[[ "$out" == *"config check"* ]]'
+
+echo "== rozmiar okna"
+out="$(ARCHENEMY_TUI_SIZE="27 60" tui 'q')"
+check "wąskie okno: bez podglądu, ile wejdzie" '[[ "$out" != *"│"* && "$out" == *"workspaces"* && "$(wc -L <<<"$out")" -le 60 ]]'
+out="$(ARCHENEMY_TUI_SIZE="14 90" tui 'q')"
+check "niskie okno mieści się"                 '[[ "$(wc -l <<<"$out")" -le 14 ]]'
+out="$(ARCHENEMY_TUI_SIZE="14 90" tui '\e[A\e[Fq')"
+check "zaznaczenie jedzie z oknem"             '[[ "$(tail -14 <<<"$out")" == *"update"* ]]'
+
+echo "== akcent wg rice'a"
+echo white-blue > "$A/.current_rice"
+raw="$(printf q | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1)"
+check "white-blue: bright blue"                '[[ "$raw" == *$'"'"'\e[0;94m'"'"'* ]]'
+check "bez zwykłego ANSI blue"                 '[[ "$raw" != *$'"'"'\e[0;34m'"'"'* ]]'
+echo tron > "$A/.current_rice"
+raw="$(printf q | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1)"
+check "tron: bright cyan"                      '[[ "$raw" == *$'"'"'\e[0;96m'"'"'* ]]'
+rm "$A/.current_rice"
+
 rm -f "$A/scripts/appbinds/audio-devices.sh" "$A/scripts/hypr/keyboard-layouts.sh"
 out="$(tui 'q')"
-check "brak skryptu = sama etykieta"           '[[ "$out" == *"[o] audio "* && "$out" == *"[k] keyboard "* ]]'
+check "brak skryptu = sama etykieta"           '[[ "$out" =~ o\ +audio && "$out" =~ k\ +keyboard ]]'
 
 echo "== [n] monitory"
 out="$(tui 'n\n\nq')"
-check "[n] otwiera monitory"                   '[[ "$out" == *"archenemy · monitors"* ]]' 
+check "[n] otwiera monitory"                   '[[ "$out" == *"archenemy  monitors"* ]]'
 
 echo "== [i] diagnostyka"
 printf '#!/bin/bash\necho report-ok\nexit 0\n' > "$A/scripts/hypr/machine-layer-check.sh"

@@ -150,6 +150,11 @@ Rules that follow directly from the table:
   in 15 s, on a config error or on SIGHUP the `.dat` and the `.lua` go back,
   because a wrong mode can give a black screen. `ORDER` and `ROLE` stay untouched.
   `tests/monitor-settings.sh`.
+- **TUI look: `scripts/appbinds/lib/tui.sh` is the only palette.** One accent per
+  rice (`tui_accent_code`) plus bright state colours; plain ANSI blue is 2.6:1 on
+  `white-blue`. New screens start with `tui_header`, and `tui_fit` sizes columns,
+  because bash `printf %-Ns` counts bytes. A new rice must pass
+  `tests/tui-contrast.sh`.
 - **After changing a Hyprland config from a script, use
   `scripts/hypr/lib/hypr-apply.sh`** (`hypr_reload_checked`): success means no
   new `hyprctl configerrors`, not the exit code of `hyprctl reload`.

@@ -16,7 +16,8 @@
 #   ustala install.sh [3.6], od niej zależą workspace'y.
 #
 #   Użycie: monitor-settings.sh           menu
-#           monitor-settings.sh summary   skrót dla menu głównego
+#           monitor-settings.sh summary   skrót dla listy menu głównego
+#           monitor-settings.sh brief     monitory do podglądu w menu głównym
 # =============================================
 
 set -uo pipefail
@@ -269,11 +270,7 @@ menu() {
     local ans
     load_dats
     clear
-    echo -e "${BLUE}"
-    echo "  ┌─────────────────────────────────────┐"
-    echo "  │        archenemy · monitors         │"
-    echo "  └─────────────────────────────────────┘"
-    echo -e "${NC}"
+    tui_header "monitors"
     if ((${#DATS[@]} == 0)); then
         echo -e "  ${RED}✗ No monitor data in ${MON_DIR} — run ./install/install.sh first.${NC}"
     else
@@ -301,6 +298,14 @@ case "${1:-}" in
             printf '%d screens' "${#DATS[@]}"
         fi
         ;;
+    brief)
+        load_dats
+        for dat in "${DATS[@]}"; do
+            live="$(monitor_live_name "$(monitor_selector_from_dat "$dat")")"
+            printf '%s  %s  x%s\n' "${live:-$(monitor_dat_get "$dat" MONITOR)}" "$(dat_mode "$dat")" "$(monitor_dat_get "$dat" SCALE)"
+            [[ -n "$live" ]] || echo "(not connected)"
+        done
+        ;;
     "") menu ;;
-    *) echo "usage: monitor-settings.sh [summary]" >&2; exit 1 ;;
+    *) echo "usage: monitor-settings.sh [summary|brief]" >&2; exit 1 ;;
 esac

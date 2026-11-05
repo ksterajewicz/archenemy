@@ -15,6 +15,9 @@
 
 set -uo pipefail
 
+# Szerokość kolumn liczona w znakach wymaga locale UTF-8.
+[[ "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" == *[Uu][Tt][Ff]* ]] || export LC_ALL=C.UTF-8
+
 ARCHENEMY_DIR="$HOME/archenemy"
 BINDS_CONF="$ARCHENEMY_DIR/config/hypr/appbinds.lua"
 CONFIG_DIR="$HOME/.config"
@@ -828,6 +831,25 @@ diagnostics_menu() {
 
 # ─── MENU GŁÓWNE ─────────────────────────────────────────────────────────────
 
+# Lista po lewej, podgląd zaznaczonej pozycji po prawej. Strzałki przesuwają
+# zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
+# i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
+
+MENU_KEYS=(a e d s w n k m v t u o i p)
+declare -A MENU_LABEL=(
+    [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
+    [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
+    [v]="volume bar" [t]="timer" [u]="autostart" [o]="audio"
+    [i]="diagnostics" [p]="update"
+)
+declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [u]="Apps" [i]="System")
+declare -A MENU_STATE=() MENU_PREVIEW=()
+MENU_SEL=0
+MENU_LEFT=48            # szerokość listy
+MENU_PANE_MIN=24        # węższy podgląd nie ma sensu, lista zostaje sama
+MENU_PANE=0
+MENU_LAST_COLS=0
+
 # Wartość ze skryptu `show`/`summary`. Pusto, gdy skryptu nie ma albo nie odpowiada;
 # menu pokazuje wtedy samą etykietę.
 state_from() {
@@ -849,81 +871,265 @@ state_timer() {
     if ( source "$lib"; timer_enabled ); then printf 'on'; else printf 'off'; fi
 }
 
-state_autostart() {
-    local dat="$ARCHENEMY_DIR/data/autostart-apps.dat" n=0
-    [[ -f "$dat" ]] && n="$(grep -cvE '^[[:space:]]*(#|$)' "$dat")"
-    if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi
+autostart_ids() {
+    local dat="$ARCHENEMY_DIR/data/autostart-apps.dat"
+    [[ -f "$dat" ]] || return 0
+    grep -vE '^[[:space:]]*(#|$)' "$dat"
 }
 
-# Komórka menu o stałej szerokości, żeby kolumny się nie rozjeżdżały w oknie 860 px.
-menu_cell() {
-    local color="$1" key="$2" text="$3${4:+: $4}"
-    (( ${#text} > 28 )) && text="${text:0:27}…"
-    printf "${color}[%s]${NC} %-29s" "$key" "$text"
+item_state() {
+    local n
+    case "$1" in
+        s) n="$(bind_count "$BINDS_CONF")"
+           if (( n == 1 )); then printf '1 bind'; else printf '%d binds' "$n"; fi ;;
+        w) state_workspaces ;;
+        n) state_from hypr/monitor-settings.sh summary ;;
+        k) state_from hypr/keyboard-layouts.sh show ;;
+        m) state_from hypr/mouse-sensitivity.sh show ;;
+        v) volume_style_current ;;
+        t) state_timer ;;
+        u) n="$(autostart_ids | wc -l)"
+           if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi ;;
+        o) state_from appbinds/audio-devices.sh describe sink ;;
+    esac
 }
 
-menu_row() {
-    printf '  %-10s' "$1"
-    menu_cell "${@:2:4}"
-    (( $# > 5 )) && menu_cell "${@:6:4}"
+# Linie podglądu: pierwszy znak to styl (b tytuł, d przygaszony, n zwykły).
+PV=""
+pv()  { PV+="n${1//$'\t'/ }"$'\n'; }
+pvb() { PV+="b$1"$'\n'; }
+pvd() { PV+="d${1//$'\t'/ }"$'\n'; }
+# Opis zawijany na szerokość podglądu.
+pvw() {
+    local line
+    while IFS= read -r line; do pvd "$line"; done < <(fold -s -w "$MENU_PANE" <<<"$1" | sed 's/[[:space:]]*$//')
+}
+
+preview_binds() {
+    local n=0 key cmd hand
+    while IFS=$'\t' read -r _ key cmd; do
+        n=$((n + 1))
+        key="${key//SHIFT/Shift}"; key="${key//CTRL/Ctrl}"; key="${key//ALT/Alt}"; key="${key// + / }"
+        tui_fit "Super $key" 15
+        pv "$n  $FIT $cmd"
+    done < <(user_bind_lines "$BINDS_CONF")
+    (( n > 0 )) || pvd "No binds yet."
+    hand="$(other_bind_count "$BINDS_CONF")"
+    (( hand == 0 )) || pvd "+ $hand written by hand"
+}
+
+preview_lines_from() {
+    local line
+    while IFS= read -r line; do [[ -n "$line" ]] && pv "$line"; done
+}
+
+build_preview() {
+    local key="$1" cur i code total shown id out in
+    PV=""
+    pvb "${MENU_LABEL[$key]^}"
+    case "$key" in
+        a) pvw "Super + a key runs any command. SHIFT, CTRL and ALT work too."; pv ""; preview_binds ;;
+        e) pvw "Changes the command and keeps the key."; pv ""; preview_binds ;;
+        d) pvw "Removes one of your binds by its number."; pv ""; preview_binds ;;
+        s) pvw "Every shortcut in a pager: rice, workspaces, media keys, hardware and yours." ;;
+        w) cur="$(state_workspaces)"
+           pvw "Now: $cur."; pv ""
+           pv "shared"; pvw "10 workspaces for all monitors."; pv ""
+           pv "decades"; pvw "Each monitor gets its own 1-10." ;;
+        n) pvw "Mode, position and scale on a trial: press y within 15 s."; pv ""
+           preview_lines_from < <(state_from hypr/monitor-settings.sh brief) ;;
+        k) cur="$(state_from hypr/keyboard-layouts.sh show)"
+           pvw "Super+K cycles. The first layout is active after login."; pv ""
+           i=0
+           for code in ${cur//,/ }; do
+               i=$((i + 1))
+               tui_fit "$code" 4; pv "$i  $FIT Super+Ctrl+$i"
+           done ;;
+        m) pvw "Now: ${MENU_STATE[m]:-unknown}."; pv ""
+           pvw "Range -1.0 to 1.0, 0 is the default. Acceleration stays flat." ;;
+        v) cur="$(volume_style_current)"; pvw "Now: $cur."; pv ""
+           pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
+        t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
+           pvw "Turn it on or off, set the default minutes and the text colour." ;;
+        u) total="$(autostart_ids | wc -l)"
+           pvw "Apps that start at login."; pv ""
+           shown=0
+           while IFS= read -r id; do
+               shown=$((shown + 1)); pv "$id"
+           done < <(autostart_ids | head -9)
+           (( total > shown )) && pvd "+ $(( total - shown )) more"
+           (( total > 0 )) || pvd "Nothing selected." ;;
+        o) out="$(state_from appbinds/audio-devices.sh describe sink)"
+           in="$(state_from appbinds/audio-devices.sh describe source)"
+           pvd "Output"; pv "${out:-audio server not responding}"; pv ""
+           pvd "Input"; pv "${in:-audio server not responding}"
+           if command -v mpc >/dev/null 2>&1; then
+               pv ""; pvd "Music (mpd)"; pv "$(mpd_current_output)"
+           fi ;;
+        i) pv "1  config check"; pvd "   generated files and monitors"
+           pv "2  workspaces"; pvd "   dump saved to a file"
+           pv "3  GPU and games"; pvd "   dump saved to a file"; pv ""
+           pvw "Read-only, nothing is changed." ;;
+        p) cur="$(git -C "$ARCHENEMY_DIR" log -1 --format='%h %ar' 2>/dev/null)"
+           pvd "Branch"; pv "$(git -C "$ARCHENEMY_DIR" branch --show-current 2>/dev/null)"; pv ""
+           pvd "Commit"; pv "${cur:-unknown}"; pv ""
+           pvw "Pulls dev or main, keeps your monitors, binds and autostart." ;;
+    esac
+    MENU_PREVIEW[$key]="$PV"
+}
+
+# Linie listy: tekst gotowy do wydruku, MENU_SEL_LINE = indeks zaznaczonej.
+declare -a MENU_LINES=()
+MENU_SEL_LINE=0
+build_list() {
+    local i key label_w value_w
+    MENU_LINES=()
+    label_w=18
+    value_w=$(( MENU_LEFT - 4 - 3 - label_w - 1 ))
+    for i in "${!MENU_KEYS[@]}"; do
+        key="${MENU_KEYS[$i]}"
+        if [[ -n "${MENU_GROUP[$key]:-}" ]]; then
+            tui_fit "${MENU_GROUP[$key]}" $(( MENU_LEFT - 2 ))
+            MENU_LINES+=("  ${C_DIM}${FIT}${C_NC}")
+        fi
+        [[ -v "MENU_STATE[$key]" ]] || MENU_STATE[$key]="$(item_state "$key")"
+        tui_fit "${MENU_LABEL[$key]}" "$label_w"; local label="$FIT"
+        tui_fit "${MENU_STATE[$key]}" "$value_w"; local value="$FIT"
+        if (( i == MENU_SEL )); then
+            MENU_SEL_LINE=${#MENU_LINES[@]}
+            MENU_LINES+=("  ${C_ACCENT}${C_REV} ${key}  ${label}${value} ${C_NC} ")
+        else
+            MENU_LINES+=("   ${C_ACCENT}${key}${C_NC}  ${label}${C_DIM}${value}${C_NC}  ")
+        fi
+    done
+}
+
+draw_menu() {
+    local body top i buf="" sel_key line style left right
+    local -a pane=()
+    tui_size
+    if (( TUI_COLS != MENU_LAST_COLS )); then
+        MENU_PREVIEW=(); MENU_LAST_COLS=$TUI_COLS
+        [[ -t 1 ]] && clear
+    fi
+    MENU_LEFT=48
+    MENU_PANE=$(( TUI_COLS - MENU_LEFT - 7 ))
+    if (( MENU_PANE < MENU_PANE_MIN )); then
+        MENU_PANE=0
+        (( TUI_COLS - 2 < MENU_LEFT )) && MENU_LEFT=$(( TUI_COLS - 2 ))
+    fi
+    build_list
+    sel_key="${MENU_KEYS[$MENU_SEL]}"
+    if (( MENU_PANE > 0 )); then
+        [[ -v "MENU_PREVIEW[$sel_key]" ]] || build_preview "$sel_key"
+        mapfile -t pane <<<"${MENU_PREVIEW[$sel_key]%$'\n'}"
+    fi
+
+    # Nagłówek, stopka i po jednym pustym wierszu zajmują 6 wierszy. Reszta to okno
+    # listy, które jedzie za zaznaczeniem, gdy terminal jest niski.
+    body=$(( TUI_ROWS - 6 ))
+    (( body < 3 )) && body=3
+    top=0
+    if (( ${#MENU_LINES[@]} > body )); then
+        top=$(( MENU_SEL_LINE - body / 2 ))
+        (( top > ${#MENU_LINES[@]} - body )) && top=$(( ${#MENU_LINES[@]} - body ))
+        (( top < 0 )) && top=0
+    else
+        body=${#MENU_LINES[@]}
+    fi
+
+    for (( i = 0; i < body; i++ )); do
+        left="${MENU_LINES[$((top + i))]}"
+        right=""
+        if (( MENU_PANE > 0 )); then
+            line="${pane[$i]:-}"; style="${line:0:1}"
+            tui_fit "${line:1}" "$MENU_PANE"; while [[ "$FIT" == *" " ]]; do FIT="${FIT% }"; done
+            case "$style" in
+                b) right="${C_BOLD}${FIT}${C_NC}" ;;
+                d) right="${C_DIM}${FIT}${C_NC}" ;;
+                *) right="$FIT" ;;
+            esac
+            right="${C_DIM}│${C_NC}  ${right}"
+        fi
+        buf+="${left}${right}${C_EOL}"$'\n'
+    done
+
+    [[ -t 1 ]] && printf '\033[?25l\033[H'
+    tui_header "settings" | sed "s/\$/${C_EOL}/"
+    printf '%s' "$buf"
+    printf '%s\n  %s↑↓%s move   %sEnter%s or %sletter%s open   %sq%s quit%s' \
+        "$C_EOL" "$C_ACCENT" "$C_NC" "$C_ACCENT" "$C_NC" "$C_ACCENT" "$C_NC" "$C_ACCENT" "$C_NC" "$C_EOL"
+    [[ -t 1 ]] && printf '\033[J'
+    return 0
+}
+
+run_item() {
+    local key="$1"
+    case "$key" in
+        s) show_all_binds; return ;;
+        n) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; return ;;
+        u) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
+        p) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
+    esac
+    clear
+    tui_header "${MENU_LABEL[$key]}"
+    case "$key" in
+        a|e|d) echo -e "  Your binds (Super + key):"; echo ""; list_binds ;;
+    esac
+    case "$key" in
+        a) add_bind ;;
+        e) edit_bind ;;
+        d) remove_bind ;;
+        w) workspace_mode_menu ;;
+        k) keyboard_layouts_menu ;;
+        m) mouse_sensitivity_menu ;;
+        v) volume_style_menu ;;
+        t) timer_menu ;;
+        o) audio_menu ;;
+        i) diagnostics_menu ;;
+    esac
     echo ""
-}
-
-show_main_menu() {
-    menu_row "Binds"   "$GREEN" a "add bind" "" "$GREEN" e "edit bind" ""
-    menu_row ""        "$RED" d "remove bind" "" "$BLUE" s "all shortcuts" ""
-    menu_row "Desktop" "$YELLOW" w "workspaces" "$(state_workspaces)" \
-                       "$GREEN" n "monitors" "$(state_from hypr/monitor-settings.sh summary)"
-    menu_row ""        "$GREEN" k "keyboard" "$(state_from hypr/keyboard-layouts.sh show)" \
-                       "$GREEN" m "mouse" "$(state_from hypr/mouse-sensitivity.sh show)"
-    menu_row "Bar"     "$GREEN" v "volume bar" "$(volume_style_current)" \
-                       "$GREEN" t "timer" "$(state_timer)"
-    menu_row "Apps"    "$GREEN" u "autostart" "$(state_autostart)" \
-                       "$GREEN" o "audio" "$(state_from appbinds/audio-devices.sh describe sink)"
-    menu_row "System"  "$GREEN" i "diagnostics" "" "$GREEN" p "update archenemy" ""
-    menu_row ""        "$CYAN" q "quit (Esc also quits)" ""
+    read -rp "  Press Enter to continue..." _
 }
 
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
 
+# Znaki sterujące gotowe do wydruku przez %s: tekst użytkownika w menu nie może
+# przejść przez %b, bo backslash w komendzie bindu zostałby zinterpretowany.
+printf -v C_ACCENT '%b' "$ACCENT"
+printf -v C_DIM '%b' "$DIM"
+printf -v C_BOLD '%b' "$BOLD"
+printf -v C_NC '%b' "$NC"
+C_REV=$'\e[7m'
+C_EOL=$'\e[K'
+
 ensure_conf
+[[ -t 1 ]] && trap 'printf "\033[?25h"' EXIT
+clear
 
 while :; do
-    clear
-    echo -e "${BLUE}"
-    echo "  ┌─────────────────────────────────────┐"
-    echo "  │        archenemy · settings         │"
-    echo "  └─────────────────────────────────────┘"
-    echo -e "${NC}"
-    echo -e "  Your binds (Super + key):"
-    echo ""
-    list_binds
-    hand_binds="$(other_bind_count "$BINDS_CONF")"
-    (( hand_binds > 0 )) && echo -e "    ${YELLOW}+ ${hand_binds} written by hand in appbinds.lua (shown in [s], edit them in the file)${NC}"
-    echo ""
-    show_main_menu
-    echo ""
-    choice="$(read_key "  Choice: ")" || exit 0
-
+    draw_menu
+    choice="$(read_key_nav)" || exit 0
+    count=${#MENU_KEYS[@]}
     case "$choice" in
-        a|A) add_bind ;;
-        e|E) edit_bind ;;
-        d|D) remove_bind ;;
-        s|S) show_all_binds; continue ;;
-        w|W) workspace_mode_menu ;;
-        v|V) volume_style_menu ;;
-        t|T) timer_menu ;;
-        k|K) keyboard_layouts_menu ;;
-        m|M) mouse_sensitivity_menu ;;
-        n|N) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; continue ;;
-        u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
-        o|O) audio_menu ;;
-        i|I) diagnostics_menu ;;
-        p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
-        q|Q|$'\e') exit 0 ;;
-        *)   continue ;;
+        up)   MENU_SEL=$(( (MENU_SEL + count - 1) % count )); continue ;;
+        down) MENU_SEL=$(( (MENU_SEL + 1) % count )); continue ;;
+        home) MENU_SEL=0; continue ;;
+        end)  MENU_SEL=$(( count - 1 )); continue ;;
+        esc|q|Q) exit 0 ;;
+        enter) choice="${MENU_KEYS[$MENU_SEL]}" ;;
+        ignored) continue ;;
     esac
-
-    echo ""
-    read -rp "  Press Enter to continue..." _
+    choice="${choice,,}"
+    case "$choice" in
+        a|e|d|s|w|n|k|m|v|t|u|o|i|p) ;;
+        *) continue ;;
+    esac
+    for i in "${!MENU_KEYS[@]}"; do
+        [[ "${MENU_KEYS[$i]}" == "$choice" ]] && MENU_SEL=$i
+    done
+    [[ -t 1 ]] && printf '\033[?25h'
+    run_item "$choice"
+    MENU_STATE=(); MENU_PREVIEW=()
+    clear
 done
