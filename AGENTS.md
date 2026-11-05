@@ -241,6 +241,17 @@ Rules that follow directly from the table:
   `command -v X && X`). Don't add dependencies "while you're at it" — every
   new one needs a stated reason.
 
+- **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
+  newline in a title forges list lines. Validate the address and PID before storing
+  them or building a Lua expression, and never `eval` stored state
+  (`scripts/hypr/window-history.sh` keeps commands as base64 with NUL separators).
+- **`asusctl` 6.3.8+ has subcommands only:** `asusctl profile next`, `asusctl profile get`.
+  `asusd` starts from a udev rule and its unit has no `[Install]`: `systemctl start`, not
+  `enable`. ASUS packages come from pacman (`install/asus-installation.sh`), never the AUR.
+- **Monitor positions are logical pixels** (after scale and rotation), and Hyprland does
+  not register overlapping monitors, so `scripts/hypr/monitor-settings.sh` asks mode,
+  scale, then position and refuses overlaps.
+
 More architectural context (the full file tree, workspaces, keyboard
 shortcuts) is in `README.md` — that's the source of truth for the repo's
 structure, this file only adds behavioral rules.
