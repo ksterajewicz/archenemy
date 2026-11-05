@@ -19,3 +19,10 @@ hl.on("hyprland.start", function()
     -- już za późno. Jedna instancja na sesję (flock), stan w XDG_RUNTIME_DIR.
     hl.exec_cmd("~/archenemy/scripts/hypr/window-history.sh daemon")
 end)
+
+-- Nieznany monitor: powiadomienie z drogą do Super+A → [n] (decyzja 2026-11-05).
+-- Skrypt sam sprawdza, czy monitor ma już plik .dat, i milczy na starcie sesji.
+-- pcall: nieznana nazwa zdarzenia w starszym Hyprlandzie nie może zepsuć configu.
+pcall(hl.on, "monitor.added", function()
+    hl.exec_cmd("~/archenemy/scripts/hypr/monitor-settings.sh notify")
+end)

@@ -42,6 +42,7 @@ QUIET=0
 [[ "${1:-}" == "--quiet" ]] && QUIET=1
 
 PROBLEMS=()
+NEW_MONITORS=0
 problem() { PROBLEMS+=("$1"); }
 
 # 1. pliki generowane (lista = require() w rices/*/hypr/hyprland.lua)
@@ -118,7 +119,10 @@ if ((${#LIVE_NAMES[@]})); then
                     [[ "$sel" == "$n" ]] && covered=1
                 fi
             done < <(sed -n 's/^hl\.monitor({ output = "\([^"]*\)".*$/\1/p' "$MON_CONF")
-            (( covered )) || problem "monitor $n nie ma własnej reguły w monitorshyprl.lua (dostaje fallback preferred/auto)"
+            if (( ! covered )); then
+                problem "monitor $n nie ma własnej reguły w monitorshyprl.lua (dostaje fallback preferred/auto)"
+                NEW_MONITORS=$((NEW_MONITORS + 1))
+            fi
         done
     fi
     # 3. reguły workspace'ów
@@ -139,10 +143,13 @@ if ((${#PROBLEMS[@]} == 0)); then
     exit 0
 fi
 
-(( QUIET )) || printf 'machine layer: %s\n' "${PROBLEMS[@]}"
+# Sam nowy monitor to nie zepsuta warstwa: wystarczy Super+A → [n].
+FIX="Fix: run ~/archenemy/install/install.sh again (steps [3]–[3.7] re-read the monitors), then log out and back in."
+(( NEW_MONITORS == ${#PROBLEMS[@]} )) && FIX="Fix: Super+A → [n] sets up the new monitor."
+(( QUIET )) || printf 'machine layer: %s\n' "${PROBLEMS[@]}" "$FIX"
 if command -v notify-send >/dev/null 2>&1; then
     notify-send -u critical "archenemy: machine layer out of date" \
         "$(printf '%s\n' "${PROBLEMS[@]}")
-Fix: run ~/archenemy/install/install.sh again (steps [3]–[3.7] re-read the monitors), then log out and back in."
+$FIX"
 fi
 exit 1

@@ -125,11 +125,15 @@ for f in hardware-keys.lua gpu-env.lua autostartpersonalisation.lua appbinds.lua
 } > "$A/config/hypr/monitorshyprl.lua"
 check "A: reguły desc: + nowe nazwy → OK"     'MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" >/dev/null 2>&1 </dev/null'
 check "HDMI odpięty → nadal OK (nie alarmuj)" 'MOCK_MONS=edp bash "$A/scripts/hypr/machine-layer-check.sh" >/dev/null 2>&1 </dev/null'
+rep=$(MOCK_MONS=three bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null)
+check "sam nowy monitor → droga przez Super+A" '[[ "$rep" == *"monitor DP-3 nie ma"* && "$rep" == *"Super+A → [n]"* && "$rep" != *"install.sh again"* ]]'
 {
     echo "hl.monitor({ output = \"eDP-2\", mode = \"2560x1600@240\", position = \"0x0\", scale = 1.3333334 })"
     echo "hl.monitor({ output = \"HDMI-A-1\", mode = \"1920x1080@144\", position = \"1925x123\", scale = 1 })"
     echo "hl.monitor({ output = \"\", mode = \"preferred\", position = \"auto\", scale = 1 })"
 } > "$A/config/hypr/monitorshyprl.lua"
+rep=$(MOCK_MONS=three bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null)
+check "nowy monitor i stare nazwy → install.sh" '[[ "$rep" == *"install.sh again"* ]]'
 check "stare nazwy (zrzut 2026-09-21) → ALARM" '! MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" >/dev/null 2>&1 </dev/null'
 rm -f "$A/config/hypr/appbinds.lua"
 check "brak pliku generowanego → ALARM"      '! MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null | grep -q "brak config/hypr/appbinds.lua"'
