@@ -144,6 +144,12 @@ Rules that follow directly from the table:
   with `ln -sfn`. The switcher runs under `flock` (a second `Super+T` waits
   and wins); every background process it starts gets `9>&-`, or it would
   hold the lock for the whole session. `bash tests/switch-rice.sh`.
+- **Monitors: `scripts/hypr/monitor-settings.sh` (`Super+A → [n]`) is the only
+  live way to change them.** `lib/gen-monitors.sh` is the one generator of
+  `monitorshyprl.lua`, shared with `install.sh`. A change is a trial: without `y`
+  in 15 s, on a config error or on SIGHUP the `.dat` and the `.lua` go back,
+  because a wrong mode can give a black screen. `ORDER` and `ROLE` stay untouched.
+  `tests/monitor-settings.sh`.
 - **After changing a Hyprland config from a script, use
   `scripts/hypr/lib/hypr-apply.sh`** (`hypr_reload_checked`): success means no
   new `hyprctl configerrors`, not the exit code of `hyprctl reload`.
