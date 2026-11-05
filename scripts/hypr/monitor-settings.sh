@@ -16,6 +16,11 @@
 #   też cofa. Kopia obejmuje cały data/monitors i oba pliki Lua, bo dodanie
 #   monitora rusza numery i opisy także w istniejących plikach .dat.
 #
+#   Układ w przestrzeni: pozycja to lewy górny róg w pikselach LOGICZNYCH, czyli
+#   po skali i obrocie (wiki Hyprlanda, „Positioning”). Monitory nie mogą na siebie
+#   nachodzić, bo Hyprland takiego nie zarejestruje, więc odmawiamy już przy pytaniu.
+#   Stąd kolejność pytań: tryb, skala, dopiero pozycja.
+#
 #   Plik .dat nosi nazwę złącza z dnia zapisu, a ta bywa zajęta przez odpięty
 #   monitor, więc nowy dostaje wtedy sufiks (HDMI-A-1-2.dat). Prawdziwa nazwa
 #   jest w MONITOR=.
@@ -75,6 +80,118 @@ live_modes() {
         on && /availableModes:/ {
             for (i = 2; i <= NF; i++) { sub(/Hz$/, "", $i); if (!seen[$i]++) print $i }
             exit
+        }'
+}
+
+# Rozdzielczości monitora, bez powtórzeń, w kolejności Hyprlanda (malejąco).
+live_resolutions() { live_modes "$1" | cut -d@ -f1 | awk '!seen[$0]++'; }
+
+# Odświeżania dla rozdzielczości, od najwyższego.
+live_rates() { live_modes "$1" | awk -F@ -v r="$2" '$1 == r { print $2 }' | sort -rn; }
+
+live_transform() {
+    hyprctl monitors 2>/dev/null | awk -v m="Monitor $1 (ID " '
+        index($0, m) == 1 { on = 1; next }
+        /^Monitor /       { on = 0 }
+        on && /^[ \t]*transform: / { print $2; exit }'
+}
+
+# Rozmiar logiczny "szer wys": piksele przez skalę, obrót o 90° zamienia boki.
+logical_size() {
+    awk -v m="$1" -v s="$2" -v t="${3:-0}" 'BEGIN {
+        split(m, a, "x"); w = a[1] / s; h = a[2] / s
+        if (t % 2) { x = w; w = h; h = x }
+        printf "%d %d\n", w + 0.5, h + 0.5 }'
+}
+
+# Skale, które dzielą rozdzielczość bez reszty; inne Hyprland poprawia po swojemu.
+clean_scales() {
+    awk -v m="$1" 'BEGIN {
+        split(m, a, "x")
+        n = split("1/1 5/4 4/3 3/2 8/5 5/3 7/4 2/1 9/4 5/2 3/1", f, " ")
+        for (i = 1; i <= n; i++) {
+            split(f[i], p, "/")
+            if ((a[1] * p[2]) % p[1] || (a[2] * p[2]) % p[1]) continue
+            v = sprintf("%.5f", p[1] / p[2]); sub(/0+$/, "", v); sub(/\.$/, "", v)
+            o = o (o == "" ? "" : ", ") v
+        }
+        print o }'
+}
+
+# Podłączone monitory z numerami z listy menu, w pikselach logicznych.
+declare -a ROW_NUM=() ROW_NAME=() ROW_DAT=() ROW_X=() ROW_Y=() ROW_W=() ROW_H=() ROW_RES=()
+add_row() {
+    local num="$1" name="$2" dat="$3" mode hz pos scale w h
+    read -r mode hz pos scale <<<"$(live_state "$name")"
+    [[ -n "$mode" && "$pos" =~ ^(-?[0-9]+)x(-?[0-9]+)$ ]] || return 0
+    local x="${BASH_REMATCH[1]}" y="${BASH_REMATCH[2]}"
+    read -r w h <<<"$(logical_size "$mode" "$scale" "$(live_transform "$name")")"
+    ROW_NUM+=("$num"); ROW_NAME+=("$name"); ROW_DAT+=("$dat"); ROW_RES+=("$mode")
+    ROW_X+=("$x"); ROW_Y+=("$y"); ROW_W+=("$w"); ROW_H+=("$h")
+}
+load_layout() {
+    local i name
+    ROW_NUM=(); ROW_NAME=(); ROW_DAT=(); ROW_X=(); ROW_Y=(); ROW_W=(); ROW_H=(); ROW_RES=()
+    for i in "${!DATS[@]}"; do
+        name="$(monitor_live_name "$(monitor_selector_from_dat "${DATS[$i]}")")"
+        [[ -z "$name" ]] || add_row "$((i + 1))" "$name" "${DATS[$i]}"
+    done
+    for i in "${!NEW_MONS[@]}"; do
+        add_row "$((i + 1 + ${#DATS[@]}))" "${NEW_MONS[$i]}" ""
+    done
+}
+
+row_of() {
+    local i
+    for i in "${!ROW_NUM[@]}"; do
+        [[ "${ROW_NUM[$i]}" == "$1" ]] && { printf '%s' "$i"; return 0; }
+    done
+    return 1
+}
+
+# Mapa monitorów w terminalu: proporcje układu, nie dokładna skala.
+print_map() {
+    ((${#ROW_NUM[@]})) || return 0
+    local i cols
+    cols="$(tput cols 2>/dev/null)"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    (( cols > 62 )) && cols=62
+    for i in "${!ROW_NUM[@]}"; do
+        printf '%s %s %s %s %s %s %s\n' "${ROW_NUM[$i]}" "${ROW_NAME[$i]}" \
+            "${ROW_X[$i]}" "${ROW_Y[$i]}" "${ROW_W[$i]}" "${ROW_H[$i]}" "${ROW_RES[$i]}"
+    done | awk -v cols="$((cols - 6))" '
+        function put(r, c, s) { cell[r, c] = s; if (r > mr) mr = r; if (c > mc) mc = c }
+        function text(r, c, s, width,    k) {
+            for (k = 1; k <= length(s) && k <= width; k++) put(r, c + k - 1, substr(s, k, 1))
+        }
+        { n++; num[n] = $1; name[n] = $2; x[n] = $3; y[n] = $4; w[n] = $5; h[n] = $6; res[n] = $7
+          if (n == 1 || $3 < lx) lx = $3
+          if (n == 1 || $4 < ty) ty = $4
+          if ($3 + $5 > rx) rx = $3 + $5
+          if ($4 + $6 > by) by = $4 + $6
+          if (n == 1 || $5 < minw) minw = $5
+          if (n == 1 || $6 < minh) minh = $6 }
+        END {
+            # Skala liczona od najmniejszego ekranu, żeby każdy zmieścił podpis. Zaokrąglenie
+            # wspólne dla krawędzi, więc stykające się monitory stykają się na mapie.
+            sx = minw / 26; if ((rx - lx) / sx > cols) sx = (rx - lx) / cols
+            if (minw / sx < 14) sx = minw / 14
+            sy = minh / 5
+            for (i = 1; i <= n; i++) {
+                c0 = int((x[i] - lx) / sx + 0.5); c1 = int((x[i] + w[i] - lx) / sx + 0.5) - 1
+                r0 = int((y[i] - ty) / sy + 0.5); r1 = int((y[i] + h[i] - ty) / sy + 0.5) - 1
+                for (c = c0; c <= c1; c++) { put(r0, c, "─"); put(r1, c, "─") }
+                for (r = r0; r <= r1; r++) { put(r, c0, "│"); put(r, c1, "│") }
+                put(r0, c0, "┌"); put(r0, c1, "┐"); put(r1, c0, "└"); put(r1, c1, "┘")
+                for (r = r0 + 1; r < r1; r++) for (c = c0 + 1; c < c1; c++) put(r, c, " ")
+                text(r0 + 1, c0 + 2, num[i] " " name[i], c1 - c0 - 3)
+                text(r0 + 2, c0 + 2, res[i], c1 - c0 - 3)
+            }
+            for (r = 0; r <= mr; r++) {
+                line = "    "
+                for (c = 0; c <= mc; c++) line = line (((r, c) in cell) ? cell[r, c] : " ")
+                sub(/ +$/, "", line); print line
+            }
         }'
 }
 
@@ -315,6 +432,12 @@ apply_change() {
         echo -e "  ${RED}✗ Could not write the monitor config.${NC}"
         return 1
     fi
+    local move target
+    for move in "${MOVES[@]}"; do
+        target="${move#*|}"
+        monitor_dat_set "${move%%|*}" POSITION "${target%|*}"
+        echo -e "  ${CYAN}${target#*|} moves to ${target%|*} to stay attached.${NC}"
+    done
     commit_change "$name" "$dat" 0 || return 1
     warn_if_order_changed
     [[ "$res" == "$old_res" ]] || refresh_dither_flux
@@ -437,16 +560,106 @@ settle_description() {
 ASK_POS=""
 ASK_SCALE=""
 ask_position() {
+    local cur="$1" self="$2" w="$3" h="$4" old_w="${5:-$3}" old_h="${6:-$4}" i dir x y hit
+    MOVES=()
+    echo -e "  Position: ${BLUE}XxY${NC} in logical pixels, ${BLUE}auto${NC}, or next to a monitor from the list:"
+    echo -e "  ${BLUE}l 2${NC} left of 2, ${BLUE}r 2${NC} right of 2, ${BLUE}a 2${NC} above 2, ${BLUE}b 2${NC} below 2."
     while :; do
-        read -rp "  Position XxY or auto [$1]: " ASK_POS || return 1
-        ASK_POS="$(trim "${ASK_POS:-$1}")"
-        [[ "$ASK_POS" =~ ^-?[0-9]+x-?[0-9]+$ || "$ASK_POS" == "auto" ]] && return 0
-        echo -e "  ${RED}✗ Use XxY, e.g. 1920x0, or auto.${NC}"
+        read -rp "  Position [$cur]: " ASK_POS || return 1
+        ASK_POS="$(trim "${ASK_POS:-$cur}")"
+        if [[ "$ASK_POS" =~ ^([lrab])[[:space:]]*([0-9]+)$ ]]; then
+            dir="${BASH_REMATCH[1]}"
+            if [[ "${BASH_REMATCH[2]}" == "$self" ]] || ! i="$(row_of "${BASH_REMATCH[2]}")"; then
+                echo -e "  ${RED}✗ Pick another connected monitor from the list.${NC}"
+                continue
+            fi
+            case "$dir" in
+                l) ASK_POS="$(( ROW_X[i] - w ))x${ROW_Y[i]}" ;;
+                r) ASK_POS="$(( ROW_X[i] + ROW_W[i] ))x${ROW_Y[i]}" ;;
+                a) ASK_POS="${ROW_X[i]}x$(( ROW_Y[i] - h ))" ;;
+                b) ASK_POS="${ROW_X[i]}x$(( ROW_Y[i] + ROW_H[i] ))" ;;
+            esac
+            echo -e "  ${CYAN}→ ${ASK_POS}${NC}"
+        fi
+        [[ "$ASK_POS" == "auto" ]] && return 0
+        if [[ ! "$ASK_POS" =~ ^(-?[0-9]+)x(-?[0-9]+)$ ]]; then
+            echo -e "  ${RED}✗ Use XxY, e.g. 1920x0, auto, or l/r/a/b with a number.${NC}"
+            continue
+        fi
+        x="${BASH_REMATCH[1]}"; y="${BASH_REMATCH[2]}"
+        # Pozycja bez zmian przy innym rozmiarze: sąsiedzi idą za krawędzią.
+        [[ "$ASK_POS" == "$cur" ]] && neighbours_follow "$self" "$x" "$y" "$old_w" "$old_h" "$w" "$h"
+        hit=""
+        for i in "${!ROW_NUM[@]}"; do
+            [[ "${ROW_NUM[$i]}" == "$self" ]] && continue
+            if (( x < ROW_X[i] + ROW_W[i] && x + w > ROW_X[i] && y < ROW_Y[i] + ROW_H[i] && y + h > ROW_Y[i] )); then
+                hit="${ROW_NAME[$i]}"
+                break
+            fi
+        done
+        [[ -n "$hit" ]] || return 0
+        echo -e "  ${RED}✗ That overlaps ${hit}, and Hyprland would not register it.${NC}"
+        MOVES=()
+        load_layout
     done
 }
+
+# Sąsiedzi przyklejeni do prawej i dolnej krawędzi zmienianego monitora przesuwają
+# się razem z nią, także łańcuchem. Inaczej zmiana rozdzielczości zostawia nakładkę
+# albo przerwę. Pozycja `auto` należy do Hyprlanda, tej nie ruszamy.
+# Wynik: wiersze przesunięte w ROW_X/ROW_Y, MOVES = "<plik .dat>|<XxY>|<nazwa>".
+declare -a MOVES=()
+neighbours_follow() {
+    local self="$1" x="$2" y="$3" old_w="$4" old_h="$5" w="$6" h="$7" i edge pass=1
+    local dx=$(( w - old_w )) dy=$(( h - old_h ))
+    local -a edges=()
+    local -A moved=()
+    (( dx || dy )) || return 0
+    if (( dx )); then
+        edges=("$(( x + old_w ))")
+        while (( pass )); do
+            pass=0
+            for i in "${!ROW_NUM[@]}"; do
+                [[ "${ROW_NUM[$i]}" == "$self" || -n "${moved[$i]:-}" ]] && continue
+                for edge in "${edges[@]}"; do
+                    (( ROW_X[i] == edge )) || continue
+                    edges+=("$(( ROW_X[i] + ROW_W[i] ))")
+                    ROW_X[i]=$(( ROW_X[i] + dx ))
+                    moved[$i]=1; pass=1
+                    break
+                done
+            done
+        done
+    fi
+    if (( dy )); then
+        edges=("$(( y + old_h ))"); pass=1
+        local -A moved_y=()
+        while (( pass )); do
+            pass=0
+            for i in "${!ROW_NUM[@]}"; do
+                [[ "${ROW_NUM[$i]}" == "$self" || -n "${moved_y[$i]:-}" ]] && continue
+                for edge in "${edges[@]}"; do
+                    (( ROW_Y[i] == edge )) || continue
+                    edges+=("$(( ROW_Y[i] + ROW_H[i] ))")
+                    ROW_Y[i]=$(( ROW_Y[i] + dy ))
+                    moved[$i]=1; moved_y[$i]=1; pass=1
+                    break
+                done
+            done
+        done
+    fi
+    for i in "${!moved[@]}"; do
+        [[ -n "${ROW_DAT[$i]}" && "$(monitor_dat_get "${ROW_DAT[$i]}" POSITION)" != "auto" ]] || continue
+        MOVES+=("${ROW_DAT[$i]}|${ROW_X[$i]}x${ROW_Y[$i]}|${ROW_NAME[$i]}")
+    done
+}
+
 ask_scale() {
+    local clean=""
+    [[ -z "${2:-}" ]] || clean="$(clean_scales "$2")"
+    [[ -z "$clean" ]] || echo -e "  Clean scales for $2: ${CYAN}${clean}${NC}"
     while :; do
-        read -rp "  Scale, e.g. 1, 1.25, 1.5, 2 [$1]: " ASK_SCALE || return 1
+        read -rp "  Scale [$1]: " ASK_SCALE || return 1
         ASK_SCALE="$(trim "${ASK_SCALE:-$1}")"
         # `auto` z instalatora zostaje, gdy Enter; liczba musi być dodatnia.
         [[ "$ASK_SCALE" == "$1" ]] && return 0
@@ -455,8 +668,21 @@ ask_scale() {
     done
 }
 
+# Rozmiar logiczny po zmianie. Tryby preferred/highres/highrr i skala auto: nie znamy
+# wyniku z góry, więc liczymy z tego, co Hyprland pokazuje teraz.
+# Wynik: NEW_W, NEW_H.
+NEW_W=0
+NEW_H=0
+new_logical_size() {
+    local name="$1" res="$2" scale="$3" mode hz pos live_scale
+    read -r mode hz pos live_scale <<<"$(live_state "$name")"
+    [[ "$res" =~ ^[0-9]+x[0-9]+$ ]] || res="$mode"
+    [[ "$scale" =~ ^[0-9.]+$ ]] || scale="$live_scale"
+    read -r NEW_W NEW_H <<<"$(logical_size "$res" "$scale" "$(live_transform "$name")")"
+}
+
 add_monitor() {
-    local name="$1" mode hz pos scale res rate role def_role desc dat f
+    local name="$1" num="$2" mode hz pos scale res rate role def_role desc dat f
     if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
         echo -e "  ${RED}✗ No Hyprland session, so ${name} cannot be checked.${NC}"
         return 1
@@ -471,14 +697,14 @@ add_monitor() {
 
     res="$mode"
     rate="$(LC_ALL=C printf '%.0f' "$hz")"
-    pick_mode "$name"
-    if [[ -n "$PICKED_MODE" ]]; then
-        res="${PICKED_MODE%%@*}"; rate="${PICKED_MODE#*@}"
-    fi
-    ask_position "$pos" || return 1
-    pos="$ASK_POS"
-    ask_scale "$scale" || return 1
+    pick_mode "$name" "$res"
+    split_picked_mode
+    ask_scale "$scale" "$res" || return 1
     scale="$ASK_SCALE"
+    new_logical_size "$name" "$res" "$scale"
+    ask_position "$pos" "$num" "$NEW_W" "$NEW_H" || return 1
+    pos="$ASK_POS"
+    MOVES=()
     def_role="$(default_role)"
     while :; do
         read -rp "  Wallpaper role primary/secondary/other [${def_role}]: " role || return 1
@@ -564,38 +790,88 @@ print_monitors() {
     done
 }
 
-# Wynik: zmienna PICKED_MODE (WxH@Hz) albo pusto, gdy zostaje obecny.
-PICKED_MODE=""
-pick_mode() {
-    local name="$1" i ans
-    local -a modes=()
-    PICKED_MODE=""
-    mapfile -t modes < <(live_modes "$name")
-    if ((${#modes[@]} == 0)); then
-        echo -e "  ${YELLOW}⚠ Hyprland lists no modes for ${name}, keeping the current one.${NC}"
-        return
-    fi
-    echo ""
-    for i in "${!modes[@]}"; do
-        printf "  ${BLUE}%3d${NC}) %-22s" "$((i + 1))" "${modes[$i]}"
-        (( (i + 1) % 3 == 0 )) && echo ""
-    done
-    (( ${#modes[@]} % 3 == 0 )) || echo ""
-    echo ""
+# Numer z listy albo Enter. Wynik: zmienna PICK (pusto = Enter). Kod 1 = koniec wejścia.
+PICK=""
+pick_number() {
+    local prompt="$1" max="$2" extra="${3:-}" ans
+    PICK=""
     while :; do
-        read -rp "  Mode number (Enter = keep): " ans || return
+        read -rp "$prompt" ans || return 1
         ans="$(trim "$ans")"
-        [[ -z "$ans" ]] && return
-        if [[ "$ans" =~ ^[0-9]+$ ]] && (( ans >= 1 && ans <= ${#modes[@]} )); then
-            PICKED_MODE="${modes[$((ans - 1))]}"
-            return
+        [[ -z "$ans" ]] && return 0
+        if [[ -n "$extra" && "$ans" =~ ^[$extra]$ ]] || { [[ "$ans" =~ ^[0-9]+$ ]] && (( ans >= 1 && ans <= max )); }; then
+            PICK="$ans"
+            return 0
         fi
         echo -e "  ${RED}✗ Pick a number from the list.${NC}"
     done
 }
 
+print_grid() {
+    local i
+    for i in "${!GRID[@]}"; do
+        printf "  ${BLUE}%3d${NC}) %-14s" "$((i + 1))" "${GRID[$i]}"
+        (( (i + 1) % 3 == 0 )) && echo ""
+    done
+    (( ${#GRID[@]} % 3 == 0 )) || echo ""
+}
+
+# Najpierw rozdzielczość, potem odświeżanie dla niej. Argumenty: nazwa, obecna
+# rozdzielczość. Wynik: PICKED_MODE (WxH@Hz albo słowo Hyprlanda), pusto = bez zmian.
+PICKED_MODE=""
+declare -a GRID=()
+pick_mode() {
+    local name="$1" cur="$2" res
+    PICKED_MODE=""
+    mapfile -t GRID < <(live_resolutions "$name")
+    if ((${#GRID[@]} == 0)); then
+        echo -e "  ${YELLOW}⚠ Hyprland lists no modes for ${name}, keeping the current one.${NC}"
+        return
+    fi
+    local -a ress=("${GRID[@]}")
+    echo ""
+    echo -e "  Resolution, now ${CYAN}${cur}${NC}:"
+    print_grid
+    echo -e "    ${BLUE}p${NC}) monitor's preferred   ${BLUE}h${NC}) highest resolution   ${BLUE}f${NC}) highest refresh rate"
+    pick_number "  Resolution number (Enter = keep): " "${#ress[@]}" phf || return
+    case "$PICK" in
+        p) PICKED_MODE="preferred"; return ;;
+        h) PICKED_MODE="highres"; return ;;
+        f) PICKED_MODE="highrr"; return ;;
+        "") res="$cur" ;;
+        *) res="${ress[$((PICK - 1))]}" ;;
+    esac
+
+    mapfile -t GRID < <(live_rates "$name" "$res")
+    ((${#GRID[@]})) || return
+    if ((${#GRID[@]} == 1)); then
+        [[ "$res" == "$cur" ]] || PICKED_MODE="$res@${GRID[0]}"
+        return
+    fi
+    local -a rates=("${GRID[@]}")
+    echo ""
+    echo -e "  Refresh rate for ${CYAN}${res}${NC}, Hz:"
+    print_grid
+    if [[ "$res" == "$cur" ]]; then
+        pick_number "  Rate number (Enter = keep): " "${#rates[@]}" || return
+        [[ -n "$PICK" ]] && PICKED_MODE="$res@${rates[$((PICK - 1))]}"
+    else
+        pick_number "  Rate number (Enter = ${rates[0]}): " "${#rates[@]}" || { PICKED_MODE="$res@${rates[0]}"; return; }
+        PICKED_MODE="$res@${rates[$((${PICK:-1} - 1))]}"
+    fi
+    return 0
+}
+
+# PICKED_MODE do zmiennych res i rate wołającego. Słowa typu preferred nie mają @.
+split_picked_mode() {
+    [[ -n "$PICKED_MODE" ]] || return 0
+    res="${PICKED_MODE%%@*}"
+    rate=""
+    [[ "$PICKED_MODE" != *@* ]] || rate="${PICKED_MODE#*@}"
+}
+
 edit_monitor() {
-    local dat="$1" name sel live res rate pos scale new_pos new_scale
+    local dat="$1" num="$2" name sel live res rate pos scale new_pos new_scale
     sel="$(monitor_selector_from_dat "$dat")"
     live="$(monitor_live_name "$sel")"
     name="$(monitor_dat_get "$dat" MONITOR)"
@@ -607,15 +883,17 @@ edit_monitor() {
     res="$(monitor_dat_get "$dat" RESOLUTION)"; rate="$(monitor_dat_get "$dat" RATE)"
     pos="$(monitor_dat_get "$dat" POSITION)"; scale="$(monitor_dat_get "$dat" SCALE)"
 
-    pick_mode "$live"
-    if [[ -n "$PICKED_MODE" ]]; then
-        res="${PICKED_MODE%%@*}"; rate="${PICKED_MODE#*@}"
-    fi
+    pick_mode "$live" "$res"
+    split_picked_mode
 
-    ask_position "$pos" || return 1
-    new_pos="$ASK_POS"
-    ask_scale "$scale" || return 1
+    ask_scale "$scale" "$res" || return 1
     new_scale="$ASK_SCALE"
+
+    new_logical_size "$live" "$res" "$new_scale"
+    local row old_w="" old_h=""
+    if row="$(row_of "$num")"; then old_w="${ROW_W[$row]}"; old_h="${ROW_H[$row]}"; fi
+    ask_position "$pos" "$num" "$NEW_W" "$NEW_H" "$old_w" "$old_h" || return 1
+    new_pos="$ASK_POS"
 
     if [[ "$res" == "$(monitor_dat_get "$dat" RESOLUTION)" && "$rate" == "$(monitor_dat_get "$dat" RATE)" \
         && "$new_pos" == "$pos" && "$new_scale" == "$scale" ]]; then
@@ -635,6 +913,9 @@ menu() {
         echo -e "  ${RED}✗ No monitor data in ${MON_DIR} — run ./install/install.sh first.${NC}"
     else
         print_monitors
+        load_layout
+        echo ""
+        print_map
         echo ""
         total=$(( ${#DATS[@]} + ${#NEW_MONS[@]} ))
         ((${#DATS[@]} < 2)) || hint+=", r = renumber left to right"
@@ -644,9 +925,9 @@ menu() {
         if [[ "$ans" == "r" ]]; then
             renumber_monitors
         elif [[ "$ans" =~ ^[0-9]+$ ]] && (( ans >= 1 && ans <= ${#DATS[@]} )); then
-            edit_monitor "${DATS[$((ans - 1))]}"
+            edit_monitor "${DATS[$((ans - 1))]}" "$ans"
         elif [[ "$ans" =~ ^[0-9]+$ ]] && (( ans > ${#DATS[@]} && ans <= total )); then
-            add_monitor "${NEW_MONS[$((ans - 1 - ${#DATS[@]}))]}"
+            add_monitor "${NEW_MONS[$((ans - 1 - ${#DATS[@]}))]}" "$ans"
         else
             echo -e "  ${RED}✗ There is no monitor number '${ans}'.${NC}"
         fi
