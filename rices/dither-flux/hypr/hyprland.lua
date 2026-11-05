@@ -26,7 +26,7 @@ end
 local mainMod      = "SUPER"
 local terminal     = "alacritty"
 local filemanager  = "thunar"
-local menu         = "rofi -show drun"
+local menu         = "~/archenemy/scripts/rofi/rofi_drun.sh"
 local browser      = "brave"
 local lock         = "hyprlock"
 local gamelauncher = "steam"

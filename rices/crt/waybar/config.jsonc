@@ -13,7 +13,7 @@
     // Glif Archa jako launcher: LPM otwiera rofi, PPM menu zasilania.
     "custom/launcher": {
         "format": "󰣇",
-        "on-click": "rofi -show drun",
+        "on-click": "~/archenemy/scripts/rofi/rofi_drun.sh",
         "on-click-right": "~/archenemy/scripts/rofi/rofi_power_menu.sh",
         "tooltip": false
     },
