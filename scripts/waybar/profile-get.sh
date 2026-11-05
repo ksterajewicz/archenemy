@@ -16,11 +16,13 @@ HARDWARE_DAT="$HOME/archenemy/data/hardware.dat"
 HW_PROFILE="universal"
 [[ -f "$HARDWARE_DAT" ]] && HW_PROFILE="$(<"$HARDWARE_DAT")"
 
-# awk 'END {print $NF}' — ostatnie słowo OSTATNIEJ linii, odporne na
-# wielolinijkowe / zmienne wyjście asusctl ("Active profile is Balanced")
-get_asus()  { command -v asusctl >/dev/null 2>&1 && asusctl profile -p 2>/dev/null | awk 'END {print $NF}'; }
+# asusctl od 6.3.8 ma podkomendy (`profile get`, `profile next`); flag `-p`/`-n`
+# nie ma, stąd dawne „pusto mimo działającego asusd”. Wynik `profile get` to kilka
+# linii: pierwsza „Active profile: Balanced”, dalej profile AC i baterii
+# (asusctl/src/main.rs 6.5.0), więc bierzemy tylko tę pierwszą.
+get_asus()  { command -v asusctl >/dev/null 2>&1 && asusctl profile get 2>/dev/null | awk '/^Active profile:/ { print $NF; exit }'; }
 get_ppd()   { command -v powerprofilesctl >/dev/null 2>&1 && powerprofilesctl get 2>/dev/null; }
-get_sysfs() { cat /sys/firmware/acpi/platform_profile 2>/dev/null; }
+get_sysfs() { cat "${ARCHENEMY_PP_SYSFS:-/sys/firmware/acpi/platform_profile}" 2>/dev/null; }
 
 case "$HW_PROFILE" in
     asus) PROFILE="$(get_asus)"; [[ -n "$PROFILE" ]] || PROFILE="$(get_ppd)" ;;

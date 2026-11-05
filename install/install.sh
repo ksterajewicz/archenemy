@@ -569,18 +569,13 @@ echo ""
 read -rp "  Select your device [default: $HW_DEFAULT]: " hw_choice
 hw_choice="${hw_choice:-$HW_DEFAULT}"
 
-# Installs + enables power-profiles-daemon (used by the universal profile switcher)
+# Installs + enables power-profiles-daemon. Używa go uniwersalny przełącznik profili,
+# a na ASUS-ach pracuje razem z asusctl (poradnik asus-linux: „designed to work
+# primarily with power-profiles-daemon”) i jest też drogą zapasową, gdy asusd nie żyje.
 setup_universal_ppd() {
-    echo -e "  Using universal power profiles (power-profiles-daemon)."
+    echo -e "  Setting up power-profiles-daemon."
     sudo pacman -S --needed power-profiles-daemon
     sudo systemctl enable --now power-profiles-daemon 2>/dev/null
-}
-
-# Czy narzędzie ASUS jest gotowe = asusctl zainstalowany I demon asusd żyje.
-# Nie testujemy przez `asusctl profile -p` — na nowszych asusctl ta flaga
-# zwraca pusto mimo działającego asusd (patrz scripts/waybar/profile-switch.sh).
-asusctl_responds() {
-    command -v asusctl &>/dev/null && systemctl is-active --quiet asusd 2>/dev/null
 }
 
 case "$hw_choice" in
@@ -588,44 +583,15 @@ case "$hw_choice" in
         HW_PROFILE="asus"
         echo -e "  ${GREEN}✓ ASUS ROG selected.${NC}"
         echo ""
-        # asusctl z AUR jako `asusctl-devel-git` — decyzja właściciela 2026-09-08:
-        # to jest wersja, która działa na jego ROG-u. Nazwę podajemy WPROST, więc
-        # yay nie pokazuje menu dostawców wirtualnego `asusctl` (zgłoszenie
-        # właściciela 2026-09-07: „menu 4 asusctl"); dostawców jest czterech
-        # (asusctl-git, -devel-git, -nosystemd, -x11) i tylko jawna nazwa je omija.
-        #
-        # rog-control-center NIE jest instalowany osobno, bo asusctl-devel-git ma go
-        # w `provides` (i w `conflicts`) — dostarcza tę binarkę sam. Instalacja
-        # extra/rog-control-center obok jest wręcz niemożliwa: ten pakiet zależy od
-        # `asusctl=6.4.0`, a zależności WERSJONOWANEJ nie spełnia bezwersyjne
-        # `provides` pakietu z AUR. Sprawdzone 2026-09-08 w AUR RPC i w API
-        # archlinux.org, nie zgadnięte.
-        echo -e "  Installing asusctl-devel-git (AUR; dostarcza także rog-control-center)..."
-        if ! command -v yay &>/dev/null; then
-            echo -e "  ${RED}✗ Brak yay — nie zainstaluję asusctl-devel-git z AUR.${NC}"
-            SUMMARY_SKIPPED+=("asusctl-devel-git (brak yay) — profile przez fallback ppd")
-        elif yay -S --needed asusctl-devel-git; then
-            # asusd musi działać, inaczej przełącznik profili (asusctl profile) nie zadziała
-            if systemctl list-unit-files asusd.service &>/dev/null; then
-                sudo systemctl enable --now asusd.service
-                echo -e "  ${GREEN}✓ asusd enabled.${NC}"
-            else
-                echo -e "  ${YELLOW}⚠ Brak asusd.service — włącz daemon asusd ręcznie.${NC}"
-            fi
-        else
-            echo -e "  ${RED}✗ asusctl-devel-git NIE zainstalowany.${NC}"
-            echo -e "    Jeśli yay zgłosił konflikt z extra/asusctl lub extra/rog-control-center:"
-            echo -e "    to normalne — pakiet z AUR zastępuje oba, potwierdź ich usunięcie."
-            SUMMARY_SKIPPED+=("asusctl-devel-git — instalacja nie powiodła się; profile przez fallback ppd")
-        fi
-        # Domknięcie ścieżki ASUS: gdy asusctl mimo wszystko nie odpowiada
-        # (brak yay, nieudana instalacja, asusd nie wstał), profile mają działać
-        # od pierwszego startu — stawiamy ppd jako fallback. Skrypty waybara
-        # i tak wrócą do asusctl, gdy tylko zacznie odpowiadać.
-        if ! asusctl_responds; then
-            echo -e "  ${YELLOW}⚠ asusctl nie odpowiada — stawiam power-profiles-daemon jako fallback.${NC}"
-            setup_universal_ppd
-        fi
+        # Kod wyjścia to kontrakt (0 gotowe, 2 potrzebny restart, inaczej porażka),
+        # opis w skrypcie. Decyzja właściciela 2026-10-14: pakiety z repo, nie z AUR.
+        bash "$ARCHENEMY_DIR/install/asus-installation.sh"
+        case $? in
+            0) SUMMARY_DONE+=("ASUS: asusctl + rog-control-center z repo Archa, asusd działa") ;;
+            2) SUMMARY_SKIPPED+=("ASUS: pakiety są, asusd jeszcze nie działa: zrestartuj komputer") ;;
+            *) SUMMARY_SKIPPED+=("ASUS: instalacja nie powiodła się, profile przez power-profiles-daemon (ponownie: bash ~/archenemy/install/asus-installation.sh)") ;;
+        esac
+        setup_universal_ppd
         ;;
     2)
         HW_PROFILE="universal"
@@ -652,7 +618,7 @@ echo "$HW_PROFILE" > "$DATA_DIR/hardware.dat"
 PROFILE_CHECK="$(bash "$ARCHENEMY_DIR/scripts/waybar/profile-get.sh" 2>/dev/null)"
 if [[ -z "$PROFILE_CHECK" || "$PROFILE_CHECK" == "brak" ]]; then
     echo -e "  ${RED}✗ Przełącznik profili nie działa (profile-get.sh → \"brak\").${NC}"
-    echo -e "    ASUS: zainstaluj asusctl i włącz asusd. Inne: systemctl enable --now power-profiles-daemon."
+    echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Inne: systemctl enable --now power-profiles-daemon."
     SUMMARY_SKIPPED+=("Hardware profile: $HW_PROFILE — narzędzie profili NIE odpowiada, pasek pokaże \"brak\"")
 else
     SUMMARY_DONE+=("Hardware profile: $HW_PROFILE (aktywny profil: $PROFILE_CHECK)")
@@ -764,8 +730,8 @@ echo -e "  ${GREEN}✓ workspaces-monitors.lua (tryb: $WS_MODE, ${#ORDERED_LR[@]
         # Klawisz profilu idzie DOKŁADNIE tą samą drogą co klik w module waybara:
         # profile-switch.sh weryfikuje efekt w sysfs, przy martwym asusd spada na
         # power-profiles-daemon, a przy totalnej awarii wysyła krytyczne
-        # powiadomienie z prawdziwym błędem. Surowe `asusctl profile -n` (tak było
-        # do 2026-09-07) potrafi wyjść zerem NIC nie zmieniając — pęknięcie
+        # powiadomienie z prawdziwym błędem. Surowe `asusctl` (tak było do
+        # 2026-09-07) potrafi wyjść zerem NIC nie zmieniając — pęknięcie
         # asusctl↔asusd, decyzja 2026-07-15 — a `pkill` w tej samej linii odświeżał
         # pasek również po nieudanej zmianie, więc klawisz wyglądał na martwy i nie
         # dawał żadnej informacji. Odświeżenie paska (RTMIN+8) robią teraz skrypty

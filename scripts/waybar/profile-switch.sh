@@ -16,9 +16,7 @@ HW_PROFILE="universal"
 [[ -f "$HARDWARE_DAT" ]] && HW_PROFILE="$(<"$HARDWARE_DAT")"
 
 # "Działa" = binarka jest I jej DEMON żyje. Dla ASUS testujemy asusd przez
-# systemd, NIE przez `asusctl profile -p`: na nowszych asusctl ta flaga
-# zmieniła znaczenie i zwraca pusto, przez co klik twierdził, że nic nie
-# działa, choć asusd i `asusctl profile -n` (samo przełączanie) działają.
+# systemd: decyzja 2026-07-12, klient bez demona odpowiada niewiarygodnie.
 # PPD ma stabilne CLI, więc jego żywotność nadal sprawdzamy przez `get`.
 asus_ok() { command -v asusctl >/dev/null 2>&1 && systemctl is-active --quiet asusd 2>/dev/null; }
 ppd_ok()  { command -v powerprofilesctl >/dev/null 2>&1 && [[ -n "$(powerprofilesctl get 2>/dev/null)" ]]; }
@@ -44,5 +42,5 @@ ERR_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-profile-err"
 DIAG=""
 [[ -f "$ERR_FILE" ]] && DIAG="$(head -1 "$ERR_FILE")"
 command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" \
-    "Przełączenie profilu nie zadziałało.${DIAG:+ Błąd: $DIAG.} ASUS: po aktualizacji asusctl zrestartuj demona (sudo systemctl restart asusd); świeża instalacja: systemctl enable --now asusd. Inne: power-profiles-daemon (systemctl enable --now power-profiles-daemon)."
+    "Przełączenie profilu nie zadziałało.${DIAG:+ Błąd: $DIAG.} ASUS: uruchom demona (sudo systemctl restart asusd), a przy braku asusctl: bash ~/archenemy/install/asus-installation.sh. Inne: power-profiles-daemon (systemctl enable --now power-profiles-daemon)."
 exit 1

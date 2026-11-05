@@ -4,10 +4,10 @@
 #   archenemy - asusprofile.sh
 #   Przełącza profil przez asusd i WERYFIKUJE efekt w sysfs.
 #
-#   `asusctl profile -n` potrafi wyjść kodem 0 i ciszą, choć nic
-#   nie zmienił (np. klient asusctl nowszy niż działający asusd
-#   po aktualizacji bez restartu demona — wtedy też `profile -p`
-#   zwraca pustkę). Sukces = ZMIANA wartości
+#   `asusctl profile next` (od 6.3.8; dawne `-n` już nie istnieje)
+#   potrafi wyjść kodem 0 i ciszą, choć nic nie zmienił (np. klient
+#   asusctl nowszy niż działający asusd po aktualizacji bez restartu
+#   demona). Sukces = ZMIANA wartości
 #   /sys/firmware/acpi/platform_profile, nie kod wyjścia.
 #
 #   Kod 0 tylko przy potwierdzonej zmianie (albo przy braku
@@ -22,7 +22,7 @@ PP_SYSFS="${ARCHENEMY_PP_SYSFS:-/sys/firmware/acpi/platform_profile}"
 ERR_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-profile-err"
 
 before="$(cat "$PP_SYSFS" 2>/dev/null)"
-out="$(asusctl profile -n 2>&1)"
+out="$(asusctl profile next 2>&1)"
 rc=$?
 sleep 0.4   # asusd potrzebuje chwili, żeby platform_profile się przestawił
 after="$(cat "$PP_SYSFS" 2>/dev/null)"
@@ -42,6 +42,6 @@ if [[ $ok -eq 1 ]]; then
     exit 0
 fi
 
-printf '%s\n' "${out:-asusctl profile -n: kod $rc, profil w sysfs bez zmian}" \
+printf '%s\n' "${out:-asusctl profile next: kod $rc, profil w sysfs bez zmian}" \
     | head -2 > "$ERR_FILE"
 exit 1
