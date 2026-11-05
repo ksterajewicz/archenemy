@@ -90,6 +90,15 @@ generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "e
 check "monitor bez dekady → jego workspace nietknięty" '! grep -q "address:0xaaaa" "$MOCK_LOG" && grep -q "dispatch hl.dsp.window.move({ workspace = \"2\", follow = false, window = \"address:0xbbbb\" })" "$MOCK_LOG"'
 cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
 
+# --rehome: po zmianie numeracji workspace 11 leży na eDP, a reguła oddaje go HDMI
+: > "$MOCK_LOG"; MOCK_MONS=both bash "$A/scripts/hypr/workspace-orphan-guard.sh" --rehome </dev/null
+check "--rehome: okno wraca do dekady swojego monitora" 'grep -qF "workspace = \"1\", follow = false, window = \"address:0xaaaa\"" "$MOCK_LOG"'
+check "--rehome: workspace we własnej dekadzie zostaje" '! grep -q "address:0xbbbb" "$MOCK_LOG"'
+printf 'shared\n' > "$A/data/workspace-mode.dat"
+: > "$MOCK_LOG"; MOCK_MONS=both bash "$A/scripts/hypr/workspace-orphan-guard.sh" --rehome </dev/null
+check "--rehome w shared nic nie robi"        '[[ ! -s "$MOCK_LOG" ]]'
+echo decades > "$A/data/workspace-mode.dat"
+
 # Hyprland < 0.57 miał nagłówek `workspace ID N` — guard ma działać na obu.
 : > "$MOCK_LOG"; MOCK_MONS=edp MOCK_HYPRLAND=0.56 bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
 check "stary format 0.56 → okno z 11 na 1" 'grep -qF "workspace = \"1\", follow = false, window = \"address:0xaaaa\"" "$MOCK_LOG"'

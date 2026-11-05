@@ -65,6 +65,8 @@ ws_mode_is_shared() {
     [[ -f "$WS_MODE_DAT" && "$(<"$WS_MODE_DAT")" == "shared" ]]
 }
 
+REHOME=0
+
 merge_orphans() {
     ws_mode_is_shared && return 0
     [[ -f "$WS_MON_CONF" ]] || return 0
@@ -146,6 +148,18 @@ merge_orphans() {
         [[ -n "${existing[$id]:-}" ]] || continue
         merges+=("$id:$((base + (id - 1) % 10 + 1))")
     done
+    # --rehome: numeracja monitorów się zmieniła, a reload nie przenosi istniejących
+    # workspace'ów. Tylko na żądanie z Super+A → [n]: demon nie może cofać
+    # workspace'a, którego użytkownik przeniósł na inny ekran.
+    if (( REHOME )); then
+        for id in "${!existing[@]}"; do
+            [[ "$id" =~ ^[0-9]+$ && "$id" -gt 0 && -n "${ruled[$id]:-}" ]] || continue
+            selector_is_connected "${ruled[$id]}" || continue
+            mon="${ws_monitor[$id]:-}"
+            [[ -n "$mon" && -n "${decade_base[$mon]:-}" ]] || continue
+            merges+=("$id:$((${decade_base[$mon]} + (id - 1) % 10 + 1))")
+        done
+    fi
     ((${#merges[@]})) || return 0
 
     local clients active
@@ -187,6 +201,11 @@ merge_orphans() {
 
 # Tryb jednorazowy (testy / ręczne sprzątanie) — bez demona i bez locka.
 if [[ "${1:-}" == "--sweep" ]]; then
+    merge_orphans
+    exit 0
+fi
+if [[ "${1:-}" == "--rehome" ]]; then
+    REHOME=1
     merge_orphans
     exit 0
 fi
