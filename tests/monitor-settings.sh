@@ -6,7 +6,8 @@
 #   tylko w mktemp.
 #
 #   Powód powstania (audyt TUI 2026-11-05): monitory dało się zmienić tylko
-#   przez install.sh, a zły tryb na żywo może zostawić czarny ekran.
+#   przez install.sh, a zły tryb na żywo może zostawić czarny ekran. Dodawanie
+#   nowego monitora, numeracja i usuwanie odpiętego: plan 2026-11-05.
 #   Uruchom: bash tests/monitor-settings.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -22,15 +23,25 @@ fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 H="$T/home"; A="$H/archenemy"; D="$A/data/monitors"; LUA="$A/config/hypr/monitorshyprl.lua"
-mkdir -p "$D" "$A/config/hypr" "$A/scripts/hypr/lib" "$A/scripts/appbinds/lib" "$T/bin"
-cp "$REPO"/scripts/hypr/lib/{monitor-id,gen-monitors,hypr-apply}.sh "$A/scripts/hypr/lib/"
+WS="$A/config/hypr/workspaces-monitors.lua"; MODE="$A/data/workspace-mode.dat"
+mkdir -p "$D" "$A/config/hypr" "$A/scripts/hypr/lib" "$A/scripts/appbinds/lib" "$A/scripts/rofi" "$A/scripts/wallpapers/lib" "$T/bin"
+cp "$REPO"/scripts/hypr/lib/{monitor-id,gen-monitors,gen-workspaces,hypr-apply}.sh "$A/scripts/hypr/lib/"
 cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
+cp "$REPO/scripts/wallpapers/lib/dither-flux-sizes.sh" "$A/scripts/wallpapers/lib/"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+# Atrapy kroków po zmianie układu: log wywołań zamiast tapet i workspace'ów.
+printf '#!/bin/bash\necho "wallpaper $*" >> "%s/after"\n' "$T" > "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
+printf '#!/bin/bash\necho "guard $*" >> "%s/after"\n' "$T" > "$A/scripts/hypr/workspace-orphan-guard.sh"
+printf '#!/usr/bin/env python3\nimport sys\nopen("%s/gen", "w").write(" ".join(sys.argv[1:]))\n' "$T" > "$T/gen.py"
+printf '#!/bin/bash\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"
+printf '#!/bin/bash\ncat "%s/age" 2>/dev/null\n' "$T" > "$T/bin/ps"
 
 # Atrapa hyprctl: `monitors` w formacie src/ipc/s1/Commands.cpp, reload stosuje
 # reguły z pliku Lua. `dead` = brak odpowiedzi, `badscale` = błąd configu,
-# `stubborn` = Hyprland ignoruje skalę, `offline` = HDMI-A-1 odpięty.
+# `stubborn` = Hyprland ignoruje skalę, `offline` = HDMI-A-1 odpięty, `third` =
+# podpięty nowy DP-2, `vanish` = DP-2 znika przy reloadzie, `twin` = HDMI-A-1 ma ten
+# sam opis EDID co DP-2.
 cat > "$T/bin/hyprctl" <<EOS
 #!/bin/bash
 echo "hyprctl \$*" >> "$T/log"
@@ -43,11 +54,19 @@ show() {
   printf 'Monitor %s (ID %s):\n\t%s at %s\n\tdescription: %s\n\tscale: %s\n\tavailableModes: 2560x1440@165.00Hz 2560x1440@60.00Hz 1920x1080@60.00Hz 1920x1080@60.00Hz\n\n' "\$1" "\$2" "\$mode" "\$pos" "\$4" "\$scale"
 }
 case "\$1" in
-  reload) if grep -q 'scale = 9' "$LUA"; then echo 'hl.monitor: bad scale' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
+  reload) [[ -f "$T/vanish" ]] && rm -f "$T/third"
+    if grep -q 'scale = 9' "$LUA"; then echo 'hl.monitor: bad scale' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
   configerrors) cat "$T/errors" 2>/dev/null; echo ;;
   monitors)
     show eDP-1 0 "\$(rule 'desc:Maker Panel 123')" 'Maker Panel 123 (eDP-1)'
-    [[ -f "$T/offline" ]] || show HDMI-A-1 1 "\$(rule 'HDMI-A-1')" 'x"y'
+    d='x"y'; [[ -f "$T/twin" ]] && d='Acme Wide 99 (HDMI-A-1)'
+    r="\$(rule 'HDMI-A-1')"; [[ -n "\$r" ]] || r="\$(rule 'desc:Acme Wide 99')"
+    [[ -f "$T/offline" ]] || show HDMI-A-1 1 "\$r" "\$d"
+    if [[ -f "$T/third" ]]; then
+      r="\$(rule 'desc:Acme Wide 99')"; [[ -n "\$r" ]] || r="\$(rule 'DP-2')"
+      show DP-2 2 "\${r:-2560x1440@60.00000 3840x0 1.00}" 'Acme Wide 99 (DP-2)'
+      printf '\tmake: Acme\n\tmodel: Wide\n\tserial: 99\n\n'
+    fi
     ;;
 esac
 EOS
@@ -57,13 +76,23 @@ export HOME="$H" PATH="$T/bin:$PATH" HYPRLAND_INSTANCE_SIGNATURE=test
 reset() {
     printf 'MONITOR=eDP-2\nRESOLUTION=1920x1080\nRATE=60.00\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=Maker Panel 123\nORDER=1\n' > "$D/eDP-2.dat"
     printf 'MONITOR=HDMI-A-1\nRESOLUTION=1920x1080\nRATE=60.00\nPOSITION=1920x0\nSCALE=1\nROLE=secondary\nDESCRIPTION=x"y\nORDER=2\n' > "$D/HDMI-A-1.dat"
-    ( source "$A/scripts/hypr/lib/monitor-id.sh"; source "$A/scripts/hypr/lib/gen-monitors.sh"; generate_monitors_conf "$LUA" "$D" )
-    cp "$D/eDP-2.dat" "$T/dat.orig"; cp "$LUA" "$T/lua.orig"
-    : > "$T/log"; : > "$T/errors"; rm -f "$T/dead" "$T/stubborn" "$T/offline"
+    rm -f "${D:?}/DP-2.dat" "${D:?}/DP-2-2.dat" "${MODE:?}"
+    gen_all
+    cp "$D/eDP-2.dat" "$T/dat.orig"; cp "$LUA" "$T/lua.orig"; cp "$WS" "$T/ws.orig"
+    : > "$T/log"; : > "$T/errors"; : > "$T/after"; : > "$T/notified"
+    rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen"
+    rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"
+}
+gen_all() {
+    ( source "$A/scripts/hypr/lib/monitor-id.sh"; source "$A/scripts/hypr/lib/gen-monitors.sh"; source "$A/scripts/hypr/lib/gen-workspaces.sh"
+      generate_monitors_conf "$LUA" "$D"
+      mapfile -t e < <(monitor_entries_ordered "$D")
+      generate_workspaces_monitors "$WS" "$(cat "$MODE" 2>/dev/null || echo decades)" "${e[@]}" )
 }
 run() { printf "$1" | timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 get() { grep -m1 "^$2=" "$D/$1.dat" | cut -d= -f2-; }
-unchanged() { cmp -s "$D/eDP-2.dat" "$T/dat.orig" && cmp -s "$LUA" "$T/lua.orig"; }
+unchanged() { cmp -s "$D/eDP-2.dat" "$T/dat.orig" && cmp -s "$LUA" "$T/lua.orig" && cmp -s "$WS" "$T/ws.orig" && [[ "$(ls "$D" | wc -l)" == 2 ]]; }
+summary() { bash "$A/scripts/hypr/monitor-settings.sh" summary; }
 
 echo "== generator"
 reset
@@ -132,16 +161,116 @@ check "inna skala w Hyprlandzie = ostrzeżenie" '[[ "$out" == *"Hyprland shows s
 
 echo "== numeracja"
 reset; out="$(run '1\n\n4000x0\n\ny\n')"
-check "pozycja rozjeżdża numery → uwaga"       '[[ "$out" == *"no longer run left to right"* ]]'
+check "pozycja rozjeżdża numery → uwaga"       '[[ "$out" == *"no longer run left to right"*"press r"* ]]'
 check "numer zostaje"                          '[[ "$(get eDP-2 ORDER)" == 1 ]]'
 reset; out="$(run '1\n\n100x0\n\ny\n')"
 check "ta sama kolejność bez uwagi"            '[[ "$out" != *"left to right"* ]]'
 
+echo "== nowy monitor: lista"
+reset; touch "$T/third"; out="$(run '\n')"
+check "nowy monitor na liście"                 '[[ "$out" == *"3) DP-2"*"new, pick to set up"* ]]'
+check "skrót liczy nowy"                       '[[ "$(summary)" == "2 screens, 1 new" ]]'
+check "podgląd pokazuje nowy"                  '[[ "$(bash "$A/scripts/hypr/monitor-settings.sh" brief)" == *"DP-2  new, needs setup"* ]]'
+reset
+check "bez nowego skrót jak dawniej"           '[[ "$(summary)" == "2 screens" ]]'
+
+echo "== nowy monitor: dodanie"
+reset; touch "$T/third"; out="$(run '3\n\n\n\n\n\ny\n')"
+check "plik .dat z odczytu Hyprlanda"          '[[ "$(get DP-2 MONITOR)" == DP-2 && "$(get DP-2 RESOLUTION)" == 2560x1440 && "$(get DP-2 RATE)" == 60 && "$(get DP-2 POSITION)" == 3840x0 ]]'
+check "rola i numer"                           '[[ "$(get DP-2 ROLE)" == other && "$(get DP-2 ORDER)" == 3 ]]'
+check "opis EDID jak w install.sh"             '[[ "$(get DP-2 DESCRIPTION)" == "Acme Wide 99" ]]'
+check "reguła monitora po opisie"              'grep -q "output = \"desc:Acme Wide 99\", mode = \"2560x1440@60\", position = \"3840x0\"" "$LUA"'
+check "dekada workspace-ów"                    'grep -q "workspace = \"21\", monitor = \"desc:Acme Wide 99\", default = true, default_name = \"1\"" "$WS"'
+check "istniejące monitory bez zmian numeru"   '[[ "$(get eDP-2 ORDER)" == 1 && "$(get HDMI-A-1 ORDER)" == 2 ]]'
+check "potem już nie jest nowy"                '[[ "$(summary)" == "3 screens" ]]'
+check "tapety i workspace-y nadążają"          'grep -qx "wallpaper --restore" "$T/after" && grep -qx "guard --rehome" "$T/after"'
+check "bez plików tymczasowych"                '[[ "$(find "$D" "$A/config/hypr" -name "*.??????" | wc -l)" == 0 ]]'
+reset; printf 'shared\n' > "$MODE"; gen_all; touch "$T/third"; run '3\n\n\n\n\n\ny\n' >/dev/null
+check "shared: domowy workspace 3"             'grep -q "workspace = \"3\", monitor = \"desc:Acme Wide 99\", default = true" "$WS"'
+reset; touch "$T/third"; out="$(run '3\n1\n\n1.5\n\n\ny\n')"
+check "tryb i skala z kreatora"                '[[ "$(get DP-2 RESOLUTION)" == 2560x1440 && "$(get DP-2 RATE)" == 165.00 && "$(get DP-2 SCALE)" == 1.5 ]]'
+
+echo "== nowy monitor: numeracja"
+reset; touch "$T/third"; out="$(run '3\n\n-2560x0\n\n\n\ny\n')"
+check "po lewej = numer 1"                     '[[ "$(get DP-2 ORDER)" == 1 && "$(get eDP-2 ORDER)" == 2 && "$(get HDMI-A-1 ORDER)" == 3 ]]'
+check "panel wbudowany trzyma dekadę 1-10"     'grep -q "workspace = \"1\", monitor = \"desc:Maker Panel 123\"" "$WS"'
+reset; touch "$T/third"; out="$(run '3\n\n\n\n\n1 1\n3 2 1\ny\n')"
+check "zła kolejność pyta ponownie"            '[[ "$out" == *"Use each number"* ]]'
+check "własna kolejność"                       '[[ "$(get DP-2 ORDER)" == 1 && "$(get eDP-2 ORDER)" == 3 ]]'
+
+echo "== nowy monitor: cofnięcie"
+reset; touch "$T/third"; out="$(run '3\n\n\n\n\n\nn\n')"
+check "inny klawisz usuwa dodane"              'unchanged && [[ ! -e "$D/DP-2.dat" ]]'
+check "cofnięcie bez tapet i strażnika"        '[[ ! -s "$T/after" ]]'
+reset; touch "$T/third"; out="$(run '3\n\n\n9\n\n\n\n')"
+check "błąd configu cofa dodanie"              'unchanged && [[ "$out" == *"config error"* ]]'
+reset; touch "$T/third" "$T/vanish"; out="$(run '3\n\n\n\n\n\n\n')"
+check "odpięcie w trakcie cofa"                'unchanged && [[ "$out" == *"DP-2 is gone"* ]]'
+reset; touch "$T/third"; out="$(run '3\n\n')"
+check "przerwany kreator nic nie zapisuje"     'unchanged'
+reset; touch "$T/third"; ( printf '3\n\n\n\n\n\n'; /usr/bin/sleep 2 ) | bash "$A/scripts/hypr/monitor-settings.sh" >/dev/null 2>&1 &
+pid=$!
+for _ in $(seq 1 200); do grep -q "hyprctl reload" "$T/log" && break; /usr/bin/sleep 0.02; done
+/usr/bin/sleep 0.2; kill -HUP "$pid"; wait "$pid"
+check "zamknięcie okna cofa dodanie"           'unchanged'
+reset; touch "$T/third"; out="$(printf '3\n\n' | HYPRLAND_INSTANCE_SIGNATURE= bash "$A/scripts/hypr/monitor-settings.sh" 2>&1)"
+check "bez sesji odmawia"                      '[[ "$out" == *"No Hyprland session"* ]] && unchanged'
+
+echo "== nowy monitor: przypadki brzegowe"
+reset; touch "$T/third" "$T/offline"
+printf 'MONITOR=DP-2\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=5000x0\nSCALE=1\nROLE=other\nDESCRIPTION=Old Screen 1\nORDER=3\n' > "$D/DP-2.dat"
+out="$(run '4\n\n\n\n\n\ny\n')"
+check "zajęta nazwa pliku = sufiks"            '[[ -e "$D/DP-2-2.dat" && "$(get DP-2-2 MONITOR)" == DP-2 && "$(get DP-2 DESCRIPTION)" == "Old Screen 1" ]]'
+check "oba monitory mają reguły workspace-ów"  'grep -q "desc:Old Screen 1" "$WS" && grep -q "desc:Acme Wide 99" "$WS"'
+reset; touch "$T/third" "$T/twin"; sed -i 's/^DESCRIPTION=.*/DESCRIPTION=Acme Wide 99/' "$D/HDMI-A-1.dat"; gen_all
+out="$(run '3\n\n\n\n\n\ny\n')"
+check "bliźniak: ostrzeżenie"                  '[[ "$out" == *"Same EDID description"* ]]'
+check "bliźniak: drugi egzemplarz jest nowy"   '[[ -e "$D/DP-2.dat" ]]'
+check "bliźniak: oba po nazwie złącza"         '[[ -z "$(get DP-2 DESCRIPTION)" && -z "$(get HDMI-A-1 DESCRIPTION)" ]] && grep -q "output = \"DP-2\"" "$LUA" && grep -q "output = \"HDMI-A-1\"" "$LUA"'
+reset; touch "$T/third"; sed -i 's/^ROLE=.*/ROLE=other/' "$D/HDMI-A-1.dat"; out="$(run '3\n\n\n\n\n\ny\n')"
+check "brakująca rola jest domyślna"           '[[ "$(get DP-2 ROLE)" == secondary ]]'
+reset; touch "$T/third"; out="$(run '3\n\n\n\nprimary\n\ny\n')"
+check "nowy primary zastępuje starego"         '[[ "$(get DP-2 ROLE)" == primary && "$(get eDP-2 ROLE)" == other ]]'
+reset; touch "$T/third"; cp "$T/gen.py" "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"; out="$(run '3\n\n\n\n\n\ny\n')"
+for _ in $(seq 1 100); do [[ -s "$T/gen" ]] && break; /usr/bin/sleep 0.02; done
+check "tapety dither pod nowy rozmiar w tle"   'grep -q "m-DP-2:2560x1440" "$T/gen" && [[ "$out" == *"generated in the background"* ]]'
+reset; cp "$T/gen.py" "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"; out="$(run '1\n1\n\n\ny\n')"
+for _ in $(seq 1 100); do [[ -s "$T/gen" ]] && break; /usr/bin/sleep 0.02; done
+check "zmiana rozdzielczości też je generuje"  'grep -q "v1:2560x1440" "$T/gen"'
+
+echo "== numeracja z menu"
+reset; sed -i 's/^POSITION=.*/POSITION=4000x0/' "$D/eDP-2.dat"; out="$(run 'r\n\n\n')"
+check "r numeruje od lewej"                    '[[ "$(get HDMI-A-1 ORDER)" == 1 && "$(get eDP-2 ORDER)" == 2 ]]'
+check "r przepisuje workspace-y"               'grep -q "hl.workspace_rule" "$WS" && grep -qx "guard --rehome" "$T/after" && grep -q "hyprctl reload" "$T/log"'
+reset; out="$(run 'r\n\n\n')"
+check "bez zmian bez reloadu"                  '[[ "$out" == *"Nothing changed"* ]] && ! grep -q "hyprctl reload" "$T/log" && unchanged'
+
+echo "== usuwanie odpiętego"
+reset; touch "$T/offline"; out="$(run '2\ny\n\n')"
+check "wpis usunięty"                          '[[ ! -e "$D/HDMI-A-1.dat" && "$out" == *"forgotten"* ]]'
+check "reguła workspace-ów znika"              '! grep -q "HDMI-A-1\", default" "$WS" && grep -qx "guard --rehome" "$T/after"'
+reset; touch "$T/offline"; out="$(run '2\nn\n\n')"
+check "odmowa zostawia wpis"                   'unchanged'
+reset; touch "$T/offline"; sed -i 's/^ROLE=.*/ROLE=primary/' "$D/HDMI-A-1.dat"; sed -i 's/^ROLE=.*/ROLE=secondary/' "$D/eDP-2.dat"; out="$(run '2\ny\n\n')"
+check "primary przechodzi na podłączony"       '[[ "$(get eDP-2 ROLE)" == primary && "$(get eDP-2 ORDER)" == 1 ]]'
+reset; printf 'MONITOR=DP-9\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=Gone 9\nORDER=1\n' > "$D/DP-9.dat"; rm "$D/eDP-2.dat" "$D/HDMI-A-1.dat"; out="$(run '1\ny\n\n')"
+check "ostatni wpis zostaje"                   '[[ -e "$D/DP-9.dat" && "$out" == *"only saved monitor"* ]]'
+rm -f "$D/DP-9.dat"
+
+echo "== powiadomienie"
+notify() { bash "$A/scripts/hypr/monitor-settings.sh" notify; }
+reset; touch "$T/third"; echo 100 > "$T/age"; notify
+check "nowy monitor: powiadomienie"            'grep -q "DP-2: Super+A → \[n\]" "$T/notified"'
+reset; echo 100 > "$T/age"; notify
+check "znany monitor: cisza"                   '[[ ! -s "$T/notified" ]]'
+reset; touch "$T/third"; echo 5 > "$T/age"; notify
+check "start sesji: cisza"                     '[[ ! -s "$T/notified" ]]'
+
 echo "== skrót"
 reset
-check "dwa ekrany"                             '[[ "$(bash "$A/scripts/hypr/monitor-settings.sh" summary)" == "2 screens" ]]'
-rm "$D/HDMI-A-1.dat"
-check "jeden ekran = tryb"                     '[[ "$(bash "$A/scripts/hypr/monitor-settings.sh" summary)" == 1920x1080@60.00 ]]'
+check "dwa ekrany"                             '[[ "$(summary)" == "2 screens" ]]'
+touch "$T/offline"; rm "$D/HDMI-A-1.dat"
+check "jeden ekran = tryb"                     '[[ "$(summary)" == 1920x1080@60.00 ]]'
 rm "$D"/*.dat; out="$(run '\n')"
 check "brak danych o monitorach"               '[[ "$out" == *"No monitor data"* ]]'
 
