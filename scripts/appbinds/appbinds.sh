@@ -364,7 +364,7 @@ report_mpd_result() {
     esac
 }
 
-audio_output_menu() {
+mpd_output_menu() {
     if ! command -v mpd >/dev/null 2>&1 || ! command -v mpc >/dev/null 2>&1; then
         echo -e "  ${YELLOW}mpd/mpc not installed — the music stack is optional (install.sh → additional packages).${NC}"
         return
@@ -420,7 +420,7 @@ audio_output_menu() {
             fi
             msg="$(apply_mpd_output alsa "$hw")"; rc=$?
             report_mpd_result "$rc" "alsa $hw" "$msg"
-            (( rc == 1 )) || { echo -e "  ${YELLOW}  Back to pipewire any time: Super+A → [o] → 1.${NC}"; return; }
+            (( rc == 1 )) || { echo -e "  ${YELLOW}  Back to pipewire any time: Super+A → [o] → 3 → 1.${NC}"; return; }
 
             echo -e "  ${YELLOW}↩ Rolling back to pipewire…${NC}"
             msg="$(apply_mpd_output pipewire)"; rc=$?
@@ -434,6 +434,67 @@ audio_output_menu() {
             ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
         *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}" ;;
+    esac
+}
+
+# ─── AUDIO SYSTEMU ───────────────────────────────────────────────────────────
+
+# Wybór domyślnego urządzenia. Lista, zapis i sprawdzenie: audio-devices.sh.
+pick_audio_device() {
+    local kind="$1" label="$2" script="$ARCHENEMY_DIR/scripts/appbinds/audio-devices.sh"
+    local -a devices=()
+    local line i cur mark ans out rc
+    while IFS= read -r line; do [[ -n "$line" ]] && devices+=("$line"); done < <(bash "$script" list "$kind" 2>/dev/null)
+    if [[ ${#devices[@]} -eq 0 ]]; then
+        echo -e "  ${RED}✗ No ${label} devices found.${NC}"
+        return
+    fi
+    cur="$(bash "$script" current "$kind" 2>/dev/null)"
+    echo ""
+    for i in "${!devices[@]}"; do
+        mark=" "; [[ "${devices[$i]%%$'\t'*}" == "$cur" ]] && mark="*"
+        printf "    ${BLUE}%d${NC}) %s %s\n" "$((i+1))" "$mark" "${devices[$i]#*$'\t'}"
+    done
+    echo ""
+    read -rp "  Device number (Enter = cancel): " ans
+    [[ "$ans" =~ ^[0-9]+$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    (( ans >= 1 && ans <= ${#devices[@]} )) || { echo -e "  ${RED}✗ Out of range.${NC}"; return; }
+    out="$(bash "$script" set "$kind" "${devices[$((ans-1))]%%$'\t'*}" 2>&1)"; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}${out}${NC}" ;;
+        2) echo -e "  ${YELLOW}${out}${NC}" ;;
+        *) echo -e "  ${RED}${out}${NC}" ;;
+    esac
+}
+
+audio_menu() {
+    local script="$ARCHENEMY_DIR/scripts/appbinds/audio-devices.sh" out in
+    out="$(bash "$script" describe sink 2>/dev/null)"
+    in="$(bash "$script" describe source 2>/dev/null)"
+    echo ""
+    echo -e "  Output: ${CYAN}${out:-audio server not responding}${NC}"
+    echo -e "  Input:  ${CYAN}${in:-audio server not responding}${NC}"
+    echo ""
+    echo -e "    ${BLUE}1${NC}) output device for all apps (speakers, headset, HDMI)"
+    echo -e "    ${BLUE}2${NC}) input device (microphone)"
+    echo -e "    ${BLUE}3${NC}) mpd music output (pipewire / alsa)"
+    echo -e "    ${BLUE}4${NC}) open pavucontrol (per-app streams, ports, profiles)"
+    echo ""
+    local ans; ans="$(read_key "  Choose [1-4, Esc = cancel]: ")"
+    case "$ans" in
+        1) pick_audio_device sink "output" ;;
+        2) pick_audio_device source "input" ;;
+        3) mpd_output_menu ;;
+        4)
+            if command -v pavucontrol >/dev/null 2>&1; then
+                setsid pavucontrol >/dev/null 2>&1 &
+                echo -e "  ${GREEN}✓ pavucontrol opened.${NC}"
+            else
+                echo -e "  ${RED}✗ pavucontrol not found.${NC}"
+            fi
+            ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
+        *) echo -e "  ${RED}✗ Pick 1, 2, 3 or 4.${NC}" ;;
     esac
 }
 
@@ -671,7 +732,7 @@ while :; do
     echo ""
     list_binds
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} mpd audio output   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} audio   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")"
 
@@ -685,7 +746,7 @@ while :; do
         k|K) keyboard_layouts_menu ;;
         m|M) mouse_sensitivity_menu ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
-        o|O) audio_output_menu ;;
+        o|O) audio_menu ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
         q|Q|$'\e') exit 0 ;;
         *)   continue ;;

@@ -1,0 +1,16 @@
+#!/bin/bash
+# Atrapa pactl do tests/audio-devices.sh. Stan w $MOCK_PA: default-sink,
+# default-source, log. MOCK_PA_STUCK=1 = serwer ignoruje zmianę domyślnego.
+D="$MOCK_PA"; echo "pactl $*" >> "$D/log"
+[[ -f "$D/down" ]] && exit 1
+case "$1 ${2:-}" in
+  "info "*) echo "Server Name: PulseAudio (on PipeWire 1.6.10)" ;;
+  "list sinks") printf 'Sink #61\n\tState: RUNNING\n\tName: alsa_output.pci.analog\n\tDescription: Built-in Audio Analog Stereo\n\tDriver: PipeWire\n\nSink #72\n\tState: SUSPENDED\n\tName: bluez_output.headset\n\tDescription: WH-1000XM4\n' ;;
+  "list sources") printf 'Source #62\n\tName: alsa_output.pci.analog.monitor\n\tDescription: Monitor of Built-in Audio Analog Stereo\n\nSource #63\n\tName: alsa_input.pci.analog\n\tDescription: Built-in Audio Mic\n' ;;
+  "list short") printf '101\t61\t55\tPipeWire\tfloat32le 2ch 48000Hz\n102\t61\t56\tPipeWire\tfloat32le 2ch 48000Hz\n' ;;
+  "get-default-sink ") cat "$D/default-sink" ;;
+  "get-default-source ") cat "$D/default-source" ;;
+  "set-default-sink "*) [[ -n "${MOCK_PA_STUCK:-}" ]] || echo "$2" > "$D/default-sink" ;;
+  "set-default-source "*) [[ -n "${MOCK_PA_STUCK:-}" ]] || echo "$2" > "$D/default-source" ;;
+esac
+exit 0
