@@ -37,6 +37,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 DESC_EDP="Thermotrex Corporation TL160ADMP03-0"
 DESC_HDMI="Microstep MSI G241 0x00000603"
+DESC_DP3="Dell U2720Q ABC123"
 
 # ─── atrapy: demon hyprpapera (start/stop) + notify-send ─────────────────────
 mkdir -p "$T/bin"
@@ -118,6 +119,8 @@ setup_dat() {
             printf 'MONITOR=HDMI-A-3\nROLE=primary\nORDER=2\n' > "$A/data/monitors/HDMI-A-3.dat" ;;
         c)  printf 'MONITOR=DP-1\nROLE=primary\nORDER=1\n'   > "$A/data/monitors/DP-1.dat"
             printf 'MONITOR=DP-2\nROLE=secondary\nORDER=2\n' > "$A/data/monitors/DP-2.dat" ;;
+        three) setup_dat a
+            printf 'MONITOR=DP-3\nROLE=other\nDESCRIPTION=%s\nORDER=3\n' "$DESC_DP3" > "$A/data/monitors/DP-3.dat" ;;
     esac
 }
 
@@ -249,6 +252,28 @@ printf 'eDP-1=%s\ndesc:%s=%s\n' "$WP/nowa-v2.png" "$DESC_HDMI" "$WP/nowa-v1.png"
 MOCK_MONS=both bash "$SW" --restore >/dev/null 2>&1
 check "--restore: jeden wpis na monitor"      '[[ $(wc -l < "$A/data/wallpaper.dat") -eq 2 ]] && ! grep -q "^eDP-1=" "$A/data/wallpaper.dat"'
 check "--restore: ekran bez zmian"            '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
+
+echo "== F2: trzeci monitor (Super+A → [n] dodaje .dat)"
+# Dawniej przełącznik znał tylko primary i secondary: trzeci ekran zostawał bez
+# tapety, a przy fokusie na nim wybór lądował na primary.
+setup_dat three
+boot_daemon_with "wallpaper {
+    monitor = desc:$DESC_HDMI
+    path = $WP/stara-v1.png
+}
+wallpaper {
+    monitor = desc:$DESC_EDP
+    path = $WP/stara-v2.png
+}"
+printf 'desc:%s=%s\ndesc:%s=%s\n' "$DESC_HDMI" "$WP/stara-v1.png" "$DESC_EDP" "$WP/stara-v2.png" > "$A/data/wallpaper.dat"
+MOCK_MONS=three bash "$SW" --restore >/dev/null 2>&1
+check "--restore: nowy monitor dostaje tapetę secondary" '[[ "$(MOCK_MONS=three active_of DP-3)" == "$WP/stara-v2.png" ]]'
+check "--restore: zapisane tapety bez zmian"  '[[ "$(MOCK_MONS=three active_of HDMI-A-3)" == "$WP/stara-v1.png" && "$(MOCK_MONS=three active_of eDP-1)" == "$WP/stara-v2.png" ]]'
+check "--restore: wpis nowego monitora w wallpaper.dat" 'grep -qxF "desc:$DESC_DP3=$WP/stara-v2.png" "$A/data/wallpaper.dat"'
+MOCK_MONS=three bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
+check "wszystkie monitory: primary v1, reszta v2" '[[ "$(MOCK_MONS=three active_of HDMI-A-3)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=three active_of eDP-1)" == "$WP/nowa-v2.png" && "$(MOCK_MONS=three active_of DP-3)" == "$WP/nowa-v2.png" ]]'
+MOCK_MONS=three bash "$SW" "zestaw" >/dev/null 2>&1
+check "folder zestawu: trzeci monitor też"    '[[ "$(MOCK_MONS=three active_of DP-3)" == *"-v2.png" ]]'
 
 echo "== G: --init (install.sh [9.5]) nie nadpisuje wyboru użytkownika"
 # Audyt 2026-09-23: każdy ponowny bieg install.sh (zalecany po pullu) wołał

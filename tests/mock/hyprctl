@@ -1,6 +1,6 @@
 #!/bin/bash
 # Atrapa hyprctl do tests/machine-layer.sh i tests/wallpaper-switcher.sh.
-# MOCK_MONS = both (eDP-1 + HDMI-A-3 — realny zrzut 2026-09-21, nazwy złączy
+# MOCK_MONS = three (both + nowy DP-3) | both (eDP-1 + HDMI-A-3 — realny zrzut 2026-09-21, nazwy złączy
 #             zmienione względem eDP-2/HDMI-A-1 z dnia instalacji)
 #           | edp   (tylko panel — HDMI odpięty)
 #           | twins (dwa identyczne monitory bez numeru seryjnego)
@@ -28,12 +28,14 @@ mock_desc() {   # nazwa złącza → opis EDID (jak w zrzutach niżej)
         eDP-1)     echo "Thermotrex Corporation TL160ADMP03-0" ;;
         HDMI-A-3)  echo "Microstep MSI G241 0x00000603" ;;
         DP-1|DP-2) echo "Acme Twin 24" ;;
+        DP-3)      echo "Dell U2720Q ABC123" ;;
     esac
 }
 mock_live_names() {
     case "${MOCK_MONS:-both}" in
         twins) printf 'DP-1\nDP-2\n' ;;
         edp)   printf 'eDP-1\n' ;;
+        three) printf 'HDMI-A-3\neDP-1\nDP-3\n' ;;
         *)     printf 'HDMI-A-3\neDP-1\n' ;;
     esac
 }
@@ -105,7 +107,7 @@ Monitor DP-2 (ID 1):
 M
       exit 0
     fi
-    if [[ "${MOCK_MONS:-both}" == both ]]; then
+    if [[ "${MOCK_MONS:-both}" == both || "${MOCK_MONS:-both}" == three ]]; then
 cat <<'M'
 Monitor HDMI-A-3 (ID 0):
 	1920x1080@144.00000 at 1925x123
@@ -133,6 +135,21 @@ Monitor eDP-1 (ID 1):
 	disabled: false
 
 M
+    if [[ "${MOCK_MONS:-both}" == three ]]; then
+cat <<'M'
+Monitor DP-3 (ID 2):
+	3840x2160@60.00000 at 3845x0
+	description: Dell U2720Q ABC123
+	make: Dell
+	model: U2720Q
+	serial: ABC123
+	active workspace: 21 (1)
+	scale: 1.00
+	focused: no
+	disabled: false
+
+M
+    fi
     ;;
   workspaces)
     WS="workspace"; [[ "${MOCK_HYPRLAND:-}" == 0.56 ]] && WS="workspace ID"

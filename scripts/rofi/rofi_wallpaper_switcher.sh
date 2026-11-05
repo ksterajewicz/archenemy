@@ -15,7 +15,7 @@
 #     rofi_wallpaper_switcher.sh CEL          bez menu: plik (ścieżka względem
 #                                             wallpapers/ albo absolutna) → wszystkie
 #                                             monitory (para v1/v2 jeśli istnieje);
-#                                             folder zestawu → v1=primary, v2=secondary
+#                                             folder zestawu → v1=primary, v2=reszta
 #
 #   Menu ma na górze przełącznik "[x] Upload to all monitors" (domyślnie
 #   zaznaczony). Zaznaczony: tapeta idzie na wszystkie monitory — a gdy obok
@@ -103,6 +103,8 @@ source "$ARCHENEMY_DIR/scripts/rofi/lib/rofi-preview.sh"
 
 MONITOR1=""   # primary  -> dostaje v1
 MONITOR2=""   # secondary -> dostaje v2
+MONITOR2_ROLE=""
+MONITORS_EXTRA=()   # trzeci i kolejne -> jak secondary (v2)
 
 declare -A SELECTOR_KNOWN   # selektor z .dat -> 1 (dzisiejszy format klucza)
 declare -A SEL_OF_LIVE      # żywa nazwa złącza -> selektor tego samego monitora
@@ -117,8 +119,11 @@ if [[ -d "$DATA_DIR/monitors" ]]; then
         [[ -n "$live" ]] && SEL_OF_LIVE[$live]="$mon"
         if [[ "$role" == "primary" && -z "$MONITOR1" ]]; then
             MONITOR1="$mon"
-        elif [[ -z "$MONITOR2" && "$role" != "primary" ]]; then
+        elif [[ "$role" != "primary" ]] && { [[ -z "$MONITOR2" ]] || [[ "$role" == "secondary" && "$MONITOR2_ROLE" != "secondary" ]]; }; then
+            # Rola secondary wygrywa z other: pliki idą alfabetycznie, a DP-3
+            # z rolą other zająłby miejsce HDMI-A-1 z rolą secondary.
             MONITOR2="$mon"
+            MONITOR2_ROLE="$role"
         fi
     done
 fi
@@ -146,6 +151,12 @@ if [[ -z "$MONITOR1" ]]; then
     exit 1
 fi
 
+# Reszta monitorów: wszystko z .dat oprócz wybranych wyżej, a przy fallbacku
+# reszta wykrytych. Dawniej trzeci ekran nie dostawał tapety wcale.
+for mon in "${!SELECTOR_KNOWN[@]}" "${DETECTED[@]:2}"; do
+    [[ -n "$mon" && "$mon" != "$MONITOR1" && "$mon" != "$MONITOR2" ]] && MONITORS_EXTRA+=("$mon")
+done
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 # Monitor z fokusem jako SELEKTOR (klucz STATE); fallback: primary, gdy
@@ -153,7 +164,7 @@ fi
 focused_monitor() {
     local m sel
     m=$(hyprctl monitors 2>/dev/null | awk '/^Monitor/{m=$2} /focused: yes/{print m; exit}')
-    for sel in "$MONITOR1" "$MONITOR2"; do
+    for sel in "$MONITOR1" "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
         [[ -n "$sel" && -n "$m" && "$(monitor_live_name "$sel")" == "$m" ]] && { echo "$sel"; return; }
     done
     echo "$MONITOR1"
@@ -207,6 +218,8 @@ apply_set_folder() {
     fi
     STATE[$MONITOR1]="$v1"
     [[ -n "$MONITOR2" && -n "$v2" ]] && STATE[$MONITOR2]="$v2"
+    local m
+    for m in "${MONITORS_EXTRA[@]}"; do STATE[$m]="${v2:-$v1}"; done
     return 0
 }
 
@@ -227,6 +240,20 @@ apply_file_allmon() {
     shopt -u nocasematch
     STATE[$MONITOR1]="$p"
     [[ -n "$MONITOR2" ]] && STATE[$MONITOR2]="$s"
+    local m
+    for m in "${MONITORS_EXTRA[@]}"; do STATE[$m]="$s"; done
+}
+
+# Monitor bez zapisanej tapety (właśnie dodany w Super+A → [n]) dostaje to, co
+# secondary, a bez niego to, co primary: --restore ma go nie zostawić pustego.
+fill_missing_state() {
+    local fallback="" m
+    [[ -n "$MONITOR2" ]] && fallback="${STATE[$MONITOR2]:-}"
+    [[ -n "$fallback" ]] || fallback="${STATE[$MONITOR1]:-}"
+    [[ -n "$fallback" ]] || return 0
+    for m in "$MONITOR1" "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
+        [[ -z "$m" || -n "${STATE[$m]:-}" ]] || STATE[$m]="$fallback"
+    done
 }
 
 # Zapisz stan i wygeneruj hyprpaper.conf (blok wallpaper{} na monitor).
@@ -471,6 +498,7 @@ if [[ "$1" == "--restore" ]]; then
     # niezależnie od tapety pulpitu — przeżywa Super+T tak samo.
     apply_hyprlock_background "$LOCK_STATE"
     [[ ${#STATE[@]} -eq 0 ]] && exit 0
+    fill_missing_state
     save_and_generate
     apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
     exit 0
