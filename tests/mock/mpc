@@ -1,0 +1,34 @@
+#!/bin/bash
+# Atrapa mpc do tests/mpd-output.sh. Modeluje kontrakt MPD 0.24:
+# MultipleOutputs::Open zgłasza błąd tylko wtedy, gdy nie otworzy się ŻADNE
+# wyjście, a fifo otwiera się zawsze (src/output/MultipleOutputs.cxx,
+# plugins/FifoOutputPlugin.cxx). Format `outputs` wg mpc 0.35 (src/output.c).
+# Stan w $MOCK_MPD: state, fifo (1/0), error, queue; MOCK_MPD_BROKEN=1 = wyjście
+# główne nie otwiera się; MOCK_MPD_NAME = nazwa wyjścia głównego.
+D="$MOCK_MPD"; echo "mpc $*" >> "$D/log"
+get() { cat "$D/$1" 2>/dev/null; }
+case "${1:-}" in
+  status)
+    [[ -f "$D/down" ]] && exit 1
+    case "$(get state)" in playing) echo "song"; echo "[playing] #1/1 0:01/3:00 (0%)";; paused) echo "song"; echo "[paused] #1/1 0:01/3:00 (0%)";; esac
+    echo "volume: 80%"
+    [[ -s "$D/error" ]] && echo "ERROR: $(get error)"
+    exit 0 ;;
+  playlist) [[ -f "$D/queue" ]] && echo "song" ;;
+  outputs)
+    fifo=enabled; [[ "$(get fifo)" == 0 ]] && fifo=disabled
+    echo "Output 1 (Visualizer feed) is $fifo"
+    echo "Output 2 (${MOCK_MPD_NAME:-$(sed -n 's/^ *name *"\(.*\)"$/\1/p' "$MOCK_MPD_CONF")}) is enabled" ;;
+  disable) [[ "$2" == "Visualizer feed" ]] && echo 0 > "$D/fifo" ;;
+  enable)  [[ "$2" == "Visualizer feed" ]] && echo 1 > "$D/fifo" ;;
+  clearerror) : > "$D/error" ;;
+  play)
+    if [[ -n "${MOCK_MPD_BROKEN:-}" && "$(get fifo)" == 0 ]]; then
+      echo 'Failed to open "ALSA hw:0,0"' > "$D/error"; echo paused > "$D/state"
+    else
+      echo playing > "$D/state"
+    fi ;;
+  pause) echo paused > "$D/state" ;;
+  stop)  echo stopped > "$D/state" ;;
+esac
+exit 0

@@ -206,7 +206,10 @@ Rules that follow directly from the table:
 - **mpd's output switch must rewrite `config/mpd/output.conf` and restart
   mpd** — `mpc enable/disable` does not survive a restart, because mpd's
   state file only *disables* outputs on read (`src/output/State.cxx`: the
-  `1` state is a no-op; enabled-ness comes from the config). `Super+A → [o]`
+  `1` state is a no-op; enabled-ness comes from the config). The always-open
+  `fifo` output hides a failed main output (mpd reports an error only when NO
+  output opens), so the test in `scripts/appbinds/lib/mpd-output.sh` disables
+  it while playing; `tests/mpd-output.sh`. `Super+A → [o]`
   never stops PipeWire/WirePlumber and rolls back to pipewire when ALSA
   fails; keep it that way — an exclusive `hw:` device takes the whole
   desktop's audio with it.
