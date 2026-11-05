@@ -144,6 +144,16 @@ Rules that follow directly from the table:
   with `ln -sfn`. The switcher runs under `flock` (a second `Super+T` waits
   and wins); every background process it starts gets `9>&-`, or it would
   hold the lock for the whole session. `bash tests/switch-rice.sh`.
+- **App launcher: `scripts/rofi/rofi_drun.sh` is the only way to open
+  `rofi -show drun`.** On Enter with no match rofi runs the typed text as a
+  command and has no option to disable that in drun mode, so the script sets
+  `-run-command` to a gate that only runs commands found in a `.desktop` `Exec=`.
+  `tests/rofi-drun.sh`.
+- **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
+  the parity rices, not by `white-blue_beta`) swaps the active colours for the
+  inactive ones while the cursor is on another monitor. It changes the look
+  only: keyboard focus stays in the window. Palette is read once per Lua state,
+  because Hyprland truncates colours when returning them. `tests/focus-highlight.sh`.
 - **Shared autostart lives in `config/hypr/autostart-common.lua`**, required
   by every rice — today the flux-wall animation (the `Super+W` choice is
   global). Don't add `flux-wall.sh autostart` to a rice's `hyprland.lua`

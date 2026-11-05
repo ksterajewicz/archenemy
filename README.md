@@ -96,6 +96,7 @@ archenemy/
 │   │                                 #   local.conf (personal overrides, include_optional).
 │   └── hypr/
 │   │   ├── workspaces.lua            # Workspace guard autostart (shared across all machines).
+│   │   ├── focus-highlight.lua       # Dims the active window highlight while the cursor is on another monitor.
 │   │   ├── autostart-common.lua      # Shared autostart required by every rice (flux-wall wallpaper
 │   │                                 #   animation — your Super+W choice comes back after login in any rice;
 │   │                                 #   the closed-apps history daemon behind Super+Tab).
@@ -183,7 +184,7 @@ archenemy/
 │   │                                 #   (data/installed-head.dat vs HEAD — re-run the installer).
 │   │                                 #   window-history.sh — Super+Tab: reopens recently closed apps
 │   │                                 #   (daemon started from autostart-common.lua + `restore`).
-│   ├── rofi/                         # Rofi menus: rices, wallpapers, network (with rescan), power.
+│   ├── rofi/                         # Rofi menus: app launcher (rofi_drun.sh), rices, wallpapers, network (with rescan), power.
 │   │                                 #   lib/rofi-preview.sh — PNG previews in Super+W / Super+T (3-column
 │   │                                 #   grid with big icons; lazy wallpaper thumbnails in data/thumbs/).
 │   ├── wallpapers/                   # Mathematical wallpaper generators (pure Python, zero dependencies):
