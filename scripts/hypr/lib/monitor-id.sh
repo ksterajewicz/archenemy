@@ -3,8 +3,8 @@
 #   archenemy - lib/monitor-id.sh
 #   Tożsamość monitora w warstwie maszynowej — JEDNO źródło prawdy.
 #   Nie uruchamiaj bezpośrednio — to biblioteka funkcji; source'ują ją
-#   install/install.sh, workspace-mode-switch.sh, workspace-orphan-guard.sh
-#   i rofi_wallpaper_switcher.sh.
+#   install/install.sh, monitor-settings.sh, workspace-mode-switch.sh,
+#   workspace-orphan-guard.sh i rofi_wallpaper_switcher.sh.
 #
 #   Problem (złapany na żywo 2026-09-21): nazwa złącza (eDP-2, HDMI-A-1) NIE
 #   jest stała — po restarcie/przepięciu Hyprland potrafi nadać eDP-1 i
@@ -42,6 +42,21 @@ monitor_desc_usable() {
     [[ "$d" == *[\"\\#=]* ]] && return 1
     [[ "$d" == *[[:cntrl:]]* ]] && return 1
     return 0
+}
+
+# Opis monitora z pól make/model/serial: krótki opis Hyprlanda, prefiks pełnego,
+# bez przecinków (Hyprland je usuwa). Opis nieużyteczny = pusty wynik.
+monitor_short_desc() {
+    local d="$1 $2 $3"
+    d="${d//,/}"
+    d="$(echo "$d" | tr -s ' ' | sed 's/^ //; s/ $//')"
+    if monitor_desc_usable "$d"; then printf '%s\n' "$d"; fi
+}
+
+# Czy dwa opisy są nierozróżnialne: jeden jest prefiksem drugiego, więc selektor
+# desc: po prefiksie objąłby oba monitory (identyczne modele bez numeru seryjnego).
+monitor_descs_collide() {
+    [[ "$1" == "$2"* || "$2" == "$1"* ]]
 }
 
 # Selektor monitora z pliku .dat: "desc:<opis>" albo nazwa złącza.

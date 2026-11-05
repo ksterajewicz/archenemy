@@ -132,16 +132,13 @@ fi
 # prefiksem opisu innego (identyczne modele bez numeru seryjnego), dopasowanie
 # po prefiksie objęłoby oba — wtedy oba zostają przy nazwie złącza.
 for mon in "${MONITOR_NAMES[@]}"; do
-    d="${CUR_MAKE[$mon]:-} ${CUR_MODEL[$mon]:-} ${CUR_SERIAL[$mon]:-}"
-    d="${d//,/}"
-    d="$(echo "$d" | tr -s ' ' | sed 's/^ //; s/ $//')"
-    monitor_desc_usable "$d" && CUR_DESC[$mon]="$d" || CUR_DESC[$mon]=""
+    CUR_DESC[$mon]="$(monitor_short_desc "${CUR_MAKE[$mon]:-}" "${CUR_MODEL[$mon]:-}" "${CUR_SERIAL[$mon]:-}")"
 done
 for mon in "${MONITOR_NAMES[@]}"; do
     [[ -n "${CUR_DESC[$mon]}" ]] || continue
     for other in "${MONITOR_NAMES[@]}"; do
         [[ "$other" == "$mon" || -z "${CUR_DESC[$other]:-}" ]] && continue
-        if [[ "${CUR_DESC[$other]}" == "${CUR_DESC[$mon]}"* || "${CUR_DESC[$mon]}" == "${CUR_DESC[$other]}"* ]]; then
+        if monitor_descs_collide "${CUR_DESC[$mon]}" "${CUR_DESC[$other]}"; then
             echo -e "  ${YELLOW}⚠ $mon i $other mają nierozróżnialny opis EDID: ${CUR_DESC[$mon]} — reguły dostaną nazwy złączy.${NC}"
             CUR_DESC[$mon]=""; CUR_DESC[$other]=""
         fi

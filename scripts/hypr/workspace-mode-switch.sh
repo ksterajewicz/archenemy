@@ -60,6 +60,8 @@ fi
 source "$LIB"
 # shellcheck source=/dev/null
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+# shellcheck source=/dev/null
+source "$ARCHENEMY_DIR/scripts/hypr/lib/gen-monitors.sh"
 
 # ─── Kolejność monitorów L->P z data/monitors/*.dat (ORDER=k) ───
 # To ten sam wkład, który install.sh podaje generatorowi: wpis
@@ -68,17 +70,8 @@ source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
 ORDERED_LR=()
 NAMES_LR=()
 if [[ -d "$MON_DIR" ]]; then
-    while IFS=$'\t' read -r mon sel; do
-        [[ -n "$mon" ]] || continue
-        ORDERED_LR+=("$mon"$'\t'"$sel")
-        NAMES_LR+=("$mon")
-    done < <(
-        for f in "$MON_DIR"/*.dat; do
-            [[ -e "$f" ]] || continue
-            ord="$(grep -m1 '^ORDER=' "$f" | cut -d= -f2)"
-            [[ -n "$ord" ]] && printf '%s\t%s\t%s\n' "$ord" "$(basename "$f" .dat)" "$(monitor_selector_from_dat "$f")"
-        done | sort -n -s -k1,1 | cut -f2,3
-    )
+    mapfile -t ORDERED_LR < <(monitor_entries_ordered "$MON_DIR")
+    for entry in "${ORDERED_LR[@]}"; do NAMES_LR+=("${entry%%$'\t'*}"); done
 fi
 
 if [[ ${#ORDERED_LR[@]} -eq 0 ]]; then

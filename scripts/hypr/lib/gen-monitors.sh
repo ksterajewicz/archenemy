@@ -2,8 +2,9 @@
 # =============================================
 #   archenemy - lib/gen-monitors.sh
 #   Generator config/hypr/monitorshyprl.lua z data/monitors/*.dat.
-#   JEDNO ŹRÓDŁO PRAWDY — source'owane przez install/install.sh (krok 8a)
-#   i scripts/hypr/monitor-settings.sh (zmiana na żywo, Super+A → [n]).
+#   JEDNO ŹRÓDŁO PRAWDY — source'owane przez install/install.sh (krok 8a),
+#   scripts/hypr/monitor-settings.sh (zmiana na żywo, Super+A → [n])
+#   i workspace-mode-switch.sh (kolejność monitorów).
 #   Nie uruchamiaj bezpośrednio — to biblioteka funkcji.
 #   Wymaga: monitor_selector_from_dat i lua_string z lib/monitor-id.sh.
 # =============================================
@@ -20,6 +21,17 @@ monitor_dats_sorted() {
         [[ -e "$f" ]] || continue
         printf '%s\t%s\n' "$(monitor_dat_get "$f" ORDER)" "$f"
     done | sort -n -s -k1,1 | cut -f2-
+}
+
+# Wejście generatora workspace'ów: "<nazwa pliku .dat><TAB><selektor>" wg ORDER.
+# Klucz to nazwa PLIKU, bo jest unikalna: dwa .dat mogą mieć to samo MONITOR=
+# (odpięty monitor i nowy na tym samym złączu). Plik bez ORDER pomijamy.
+monitor_entries_ordered() {
+    local f
+    while IFS= read -r f; do
+        [[ -n "$(monitor_dat_get "$f" ORDER)" ]] || continue
+        printf '%s\t%s\n' "$(basename "$f" .dat)" "$(monitor_selector_from_dat "$f")"
+    done < <(monitor_dats_sorted "$1")
 }
 
 # Argumenty: <plik-wyjściowy .lua> <katalog data/monitors>. Zapis atomowy.
