@@ -75,9 +75,12 @@ monitor_selector_from_dat() {
 # Pusty wynik = nic nie pasuje (monitor odpięty / hyprctl nie odpowiada).
 # Dopasowanie desc: po prefiksie — jak w Hyprlandzie.
 monitor_live_name() {
-    local sel="$1" line name="" desc
+    local sel="$1" line name="" desc out
     if [[ "$sel" != desc:* ]]; then
-        hyprctl monitors 2>/dev/null | grep -q "^Monitor $sel (ID " && printf '%s\n' "$sel"
+        # Najpierw do zmiennej: `grep -q` zamyka potok po trafieniu, a przy pipefail
+        # SIGPIPE w hyprctl oznaczałby „nie ma monitora” mimo trafienia.
+        out="$(hyprctl monitors 2>/dev/null)"
+        if grep -q "^Monitor $sel (ID " <<<"$out"; then printf '%s\n' "$sel"; fi
         return 0
     fi
     while IFS= read -r line; do
