@@ -140,7 +140,7 @@ touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
 check "martwy Hyprland bez sukcesu (F3)"       '[[ "$out" == *"did not respond"* && "$out" != *"no config errors"* ]]'
 
 echo "== menu główne"
-cp "$REPO"/scripts/hypr/{keyboard-layouts,mouse-sensitivity}.sh "$A/scripts/hypr/"
+cp "$REPO"/scripts/hypr/{keyboard-layouts,mouse-settings}.sh "$A/scripts/hypr/"
 mkdir -p "$A/scripts/appbinds"
 printf '#!/bin/bash\nread -r x < "%s/sink" && echo "$x"\n' "$T" > "$A/scripts/appbinds/audio-devices.sh"
 echo "Family 17h HD Audio Controller Speaker + Headphones" > "$T/sink"

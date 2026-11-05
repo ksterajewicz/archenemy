@@ -739,45 +739,6 @@ keyboard_layouts_menu() {
     esac
 }
 
-# ─── MOUSE SENSITIVITY ───────────────────────────────────────────────────────
-
-# Czułość myszy (input:sensitivity, -1.0 … 1.0). Zapis, reload i sprawdzenie
-# robi scripts/hypr/mouse-sensitivity.sh — jedna droga do funkcji; to menu
-# tylko pyta o wartość. white-blue_beta (legacy, bez nowych funkcji) nie
-# wczytuje config/hypr/mouse.lua — tam zostaje 0 z rice'a.
-mouse_sensitivity_menu() {
-    local script="$ARCHENEMY_DIR/scripts/hypr/mouse-sensitivity.sh"
-    if [[ ! -f "$script" ]]; then
-        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([p]).${NC}"
-        return
-    fi
-    local cur rice=""
-    cur="$(bash "$script" show)"
-    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
-
-    echo ""
-    echo -e "  Mouse sensitivity: ${CYAN}${cur}${NC}   (range -1.0 … 1.0, 0 = default; acceleration stays flat)"
-    echo -e "    e.g. ${BLUE}-0.5${NC} slower · ${BLUE}0${NC} default · ${BLUE}0.3${NC} faster · ${BLUE}1${NC} fastest"
-    if [[ "$rice" == "white-blue_beta" ]]; then
-        echo -e "  ${YELLOW}⚠ white-blue_beta does not read this setting — switch rice (Super+T) to use it.${NC}"
-    fi
-    echo ""
-    local val
-    read -rp "  New value (Enter = cancel, r = reset to 0): " val
-    val=$(trim "$val")
-    case "$val" in
-        "") echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
-        r|R) val="reset" ;;
-    esac
-    local out rc
-    out="$(bash "$script" "$val" 2>&1)"; rc=$?
-    case $rc in
-        0) echo -e "  ${GREEN}${out}${NC}" ;;
-        2) echo -e "  ${YELLOW}${out}${NC}" ;;
-        *) echo -e "  ${RED}${out}${NC}" ;;
-    esac
-}
-
 # ─── DIAGNOSTYKA ─────────────────────────────────────────────────────────────
 
 # Zrzut do pliku w katalogu domowym i podgląd. Skrypty tylko czytają system; plik
@@ -885,7 +846,7 @@ item_state() {
         w) state_workspaces ;;
         n) state_from hypr/monitor-settings.sh summary ;;
         k) state_from hypr/keyboard-layouts.sh show ;;
-        m) state_from hypr/mouse-sensitivity.sh show ;;
+        m) state_from hypr/mouse-settings.sh summary ;;
         v) volume_style_current ;;
         t) state_timer ;;
         u) n="$(autostart_ids | wc -l)"
@@ -945,8 +906,8 @@ build_preview() {
                i=$((i + 1))
                tui_fit "$code" 4; pv "$i  $FIT Super+Ctrl+$i"
            done ;;
-        m) pvw "Now: ${MENU_STATE[m]:-unknown}."; pv ""
-           pvw "Range -1.0 to 1.0, 0 is the default. Acceleration stays flat." ;;
+        m) preview_lines_from < <(state_from hypr/mouse-settings.sh brief); pv ""
+           pvw "Speed, DPI, polling rate, acceleration, scrolling, left-handed." ;;
         v) cur="$(volume_style_current)"; pvw "Now: $cur."; pv ""
            pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
         t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
@@ -1068,6 +1029,7 @@ run_item() {
     case "$key" in
         s) show_all_binds; return ;;
         n) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; return ;;
+        m) bash "$ARCHENEMY_DIR/scripts/hypr/mouse-settings.sh"; return ;;
         u) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
         p) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
     esac
@@ -1082,7 +1044,6 @@ run_item() {
         d) remove_bind ;;
         w) workspace_mode_menu ;;
         k) keyboard_layouts_menu ;;
-        m) mouse_sensitivity_menu ;;
         v) volume_style_menu ;;
         t) timer_menu ;;
         o) audio_menu ;;

@@ -20,6 +20,9 @@ mpc
 #          rofi kopiuje install.sh [8l] (tylko gdy nie masz własnego)
 ncmpcpp
 pavucontrol
+# libratbag: ratbagctl — prawdziwe DPI i częstotliwość raportowania myszy w Super+A → [m]
+# (zapis w pamięci myszy, tylko wspierane modele); bez niego DPI jest emulowane szybkością
+libratbag
 # hyprpicker: próbnik kolorów pod Wayland — żaden skrypt ani bind go nie woła
 # (przeniesiony z requirements 2026-09-25), narzędzie do ręcznego użycia
 hyprpicker
