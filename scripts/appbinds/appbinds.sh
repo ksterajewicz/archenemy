@@ -799,6 +799,7 @@ while :; do
         t|T) timer_menu ;;
         k|K) keyboard_layouts_menu ;;
         m|M) mouse_sensitivity_menu ;;
+        n|N) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; continue ;;
         u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
         o|O) audio_menu ;;
         p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
