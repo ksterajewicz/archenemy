@@ -18,6 +18,8 @@ BINDS_CONF="$ARCHENEMY_DIR/config/hypr/appbinds.lua"
 CONFIG_DIR="$HOME/.config"
 # shellcheck source=lib/tui.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
+# shellcheck source=../hypr/lib/hypr-apply.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../hypr/lib/hypr-apply.sh"
 # shellcheck source=lib/binds.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
 # shellcheck source=lib/mpd-output.sh
@@ -49,27 +51,65 @@ ensure_conf() {
     } > "$BINDS_CONF"
 }
 
-# Czy klawisz jest już zajęty przez jakikolwiek bind Super+klawisz?
-# (bez dodatkowych modyfikatorów — SUPER SHIFT itd. nie koliduje)
+# Czy kombinacja jest już zajęta? Argument w formacie pliku, np. `g`, `SHIFT + g`.
+# Mod SUPER jest wspólny, więc `SHIFT + g` nie koliduje z samym `g`.
 key_taken() {
-    local key="$1"
+    local key="${1// + / \\+ }"
     # Dwa warianty emisji: `hl.bind(mainMod .. " + KEY", ...` (configi archenemy)
     # oraz `hl.bind("SUPER + KEY", ...` (gdyby ktoś wpisał moda dosłownie).
     grep -hqiE "^hl\\.bind\\((mainMod[[:space:]]*\\.\\.[[:space:]]*\" \\+ ${key}\"|\"SUPER \\+ ${key}\")," \
         "${CONFLICT_FILES[@]}" 2>/dev/null
 }
 
+# Wpisane `shift+g`, `CTRL + ALT + F5` → format pliku `CTRL + ALT + F5`, modyfikatory
+# w stałej kolejności, żeby ten sam skrót nie miał dwóch zapisów. Pusto = błąd.
+normalize_key_combo() {
+    local raw="${1// /}" part key="" shift_m="" ctrl_m="" alt_m="" out=""
+    local -a parts=()
+    IFS='+' read -ra parts <<<"$raw"
+    ((${#parts[@]})) || return 1
+    key="${parts[-1]}"
+    for part in "${parts[@]:0:${#parts[@]}-1}"; do
+        case "${part^^}" in
+            SHIFT) shift_m=1 ;;
+            CTRL|CONTROL) ctrl_m=1 ;;
+            ALT) alt_m=1 ;;
+            *) return 1 ;;
+        esac
+    done
+    [[ "$key" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    [[ -n "$shift_m" ]] && out+="SHIFT + "
+    [[ -n "$ctrl_m" ]] && out+="CTRL + "
+    [[ -n "$alt_m" ]] && out+="ALT + "
+    printf '%s%s' "$out" "$key"
+}
+
+# Czy to prawdziwa nazwa klawisza. Hyprland odrzuca nieznaną nazwę i zgłasza błąd
+# configu przy każdym reloadzie. Nazwy jak w xkb_keysym_from_name bez rozróżniania
+# wielkości liter. Bez nagłówka (brak libxkbcommon) decyduje reload.
+XKB_KEYSYMS_HEADER="${ARCHENEMY_XKB_KEYSYMS:-/usr/include/xkbcommon/xkbcommon-keysyms.h}"
+key_name_valid() {
+    [[ "$1" =~ ^[A-Za-z0-9]$ ]] && return 0
+    [[ -r "$XKB_KEYSYMS_HEADER" ]] || return 0
+    grep -qiE "^#define XKB_KEY_$1[[:space:]]" "$XKB_KEYSYMS_HEADER"
+}
+
 # list_binds / remove_bind_by_index — lib/binds.sh (jedno źródło wyboru linii
 # dla listy i usuwania).
 
-# Przeładuj Hyprlanda, żeby bind działał od razu
+# Przeładuj Hyprlanda i powiedz, co się naprawdę stało. Kod 2 = nowe błędy configu
+# (wołający cofa zmianę), reszta kodów jak w hypr_reload_checked.
 reload_hyprland() {
-    if command -v hyprctl &>/dev/null; then
-        hyprctl reload &>/dev/null
-        echo -e "  ${GREEN}✓ Hyprland reloaded — the bind works immediately.${NC}"
-    else
-        echo -e "  ${YELLOW}⚠ hyprctl unavailable — reload Hyprland manually.${NC}"
-    fi
+    local errors rc
+    errors="$(hypr_reload_checked)"; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}" ;;
+        1) echo -e "  ${YELLOW}⚠ Hyprland did not respond — saved, reload it manually.${NC}" ;;
+        2) echo -e "  ${RED}✗ Hyprland reports a config error:${NC}"
+           printf '    %s\n' "$errors" | head -5 ;;
+        3) echo -e "  ${YELLOW}⚠ No Hyprland session — saved, applies when Hyprland starts.${NC}" ;;
+    esac
+    return "$rc"
 }
 
 # ─── PODGLĄD WSZYSTKICH SKRÓTÓW ──────────────────────────────────────────────
@@ -116,8 +156,8 @@ print_binds_from() {
 
         # exec_cmd("...") → pokaż polecenie; exec_cmd(zmienna) → rozwiń z
         # hyprland.lua; inne dyspozytory → pokaż wywołanie hl.dsp bez opcji bindu
-        if [[ "$rest" =~ ^hl\.dsp\.exec_cmd\(\"([^\"]*)\"\) ]]; then
-            action="${BASH_REMATCH[1]}"
+        if [[ "$rest" =~ ^hl\.dsp\.exec_cmd\(\"((\\.|[^\"\\])*)\"\) ]]; then
+            action="$(lua_unescape "${BASH_REMATCH[1]}")"
         elif [[ "$rest" =~ ^hl\.dsp\.exec_cmd\(([A-Za-z_][A-Za-z0-9_]*)\) ]]; then
             var="${BASH_REMATCH[1]}"
             action="${HYPR_VARS[$var]:-\$$var}"
@@ -174,27 +214,32 @@ show_all_binds() {
 
 add_bind() {
     echo ""
-    read -rp "  Key (e.g. g, F5, semicolon, minus): " key
-    key=$(trim "$key")
+    local raw combo key cmd bin
+    read -rp "  Key (e.g. g, F5, semicolon, SHIFT+g, CTRL+ALT+F5): " raw
+    raw=$(trim "$raw")
 
-    if [[ -z "$key" ]]; then
+    if [[ -z "$raw" ]]; then
         echo -e "  ${YELLOW}⚠ Empty key — cancelled.${NC}"
         return
     fi
-    # Nazwa keysym Hyprlanda: litera/cyfra albo nazwa bez spacji i przecinków
-    if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-        echo -e "  ${RED}✗ '${key}' does not look like a key name (no spaces or commas).${NC}"
+    if ! combo="$(normalize_key_combo "$raw")"; then
+        echo -e "  ${RED}✗ '${raw}' does not look like a key (use SHIFT, CTRL or ALT before the key name).${NC}"
         return
     fi
+    key="${combo##* }"
     # Klawisze-modyfikatory dokładają własny mod do maski w chwili naciśnięcia,
     # więc prosty bind Super+<modyfikator> nigdy nie odpali (wiki: Binding modkeys
     # only) — odrzucamy, zamiast pozwolić na martwy bind.
-    if [[ "$key" =~ ^(Shift|Control|Alt|Super|Meta|Hyper)_(L|R)$ ]]; then
+    if [[ "${key,,}" =~ ^(shift|control|ctrl|alt|super|meta|hyper)_(l|r)$ ]]; then
         echo -e "  ${RED}✗ '${key}' is a modifier key — a plain Super+${key} bind would never fire.${NC}"
         return
     fi
-    if key_taken "$key"; then
-        echo -e "  ${RED}✗ Super+${key} is already taken (by archenemy or one of your binds).${NC}"
+    if ! key_name_valid "$key"; then
+        echo -e "  ${RED}✗ '${key}' is not a key name Hyprland knows (e.g. g, F5, Return, semicolon).${NC}"
+        return
+    fi
+    if key_taken "$combo"; then
+        echo -e "  ${RED}✗ Super + ${combo} is already taken (by archenemy or one of your binds).${NC}"
         return
     fi
 
@@ -204,22 +249,55 @@ add_bind() {
         echo -e "  ${YELLOW}⚠ Empty command — cancelled.${NC}"
         return
     fi
-    # Komenda ląduje w stringu Lua — cudzysłów/backslash rozbiłyby składnię pliku.
-    if [[ "$cmd" == *'"'* || "$cmd" == *'\'* ]]; then
-        echo -e "  ${RED}✗ Command must not contain \" or \\ (it is written into a Lua string).${NC}"
-        return
-    fi
 
     # Ostrzeż, jeśli program nie jest zainstalowany (bind i tak można dodać)
-    local bin="${cmd%% *}"
+    bin="${cmd%% *}"
     if ! command -v "$bin" &>/dev/null; then
         echo -e "  ${YELLOW}⚠ '${bin}' not found in PATH.${NC}"
         confirm "Add anyway?" N || return
     fi
 
-    echo "hl.bind(mainMod .. \" + $key\", hl.dsp.exec_cmd(\"$cmd\"))" >> "$BINDS_CONF"
-    echo -e "  ${GREEN}✓ Added: Super+${key} → ${cmd}${NC}"
+    local backup
+    backup="$(cat "$BINDS_CONF")"
+    { format_bind_line "$combo" "$cmd"; echo; } >> "$BINDS_CONF"
+    echo -e "  ${GREEN}✓ Added: Super + ${combo} → ${cmd}${NC}"
     reload_hyprland
+    if (( $? == 2 )); then
+        printf '%s\n' "$backup" > "$BINDS_CONF"
+        hypr_reload_checked >/dev/null
+        echo -e "  ${YELLOW}↩ Bind removed again.${NC}"
+    fi
+}
+
+edit_bind() {
+    local total num cmd backup
+    total="$(bind_count "$BINDS_CONF")"
+    if [[ "$total" -eq 0 ]]; then
+        echo -e "  ${YELLOW}⚠ Nothing to edit.${NC}"
+        return
+    fi
+    echo ""
+    read -rp "  Bind number to edit (Enter = cancel): " num
+    [[ -z "$num" ]] && return
+    if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
+        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
+        return
+    fi
+    read -rp "  New command (Enter = keep): " cmd
+    cmd=$(trim "$cmd")
+    [[ -n "$cmd" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    backup="$(cat "$BINDS_CONF")"
+    replace_bind_command "$BINDS_CONF" "$num" "$cmd" || {
+        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
+        return
+    }
+    echo -e "  ${GREEN}✓ Changed: bind ${num} → ${cmd}${NC}"
+    reload_hyprland
+    if (( $? == 2 )); then
+        printf '%s\n' "$backup" > "$BINDS_CONF"
+        hypr_reload_checked >/dev/null
+        echo -e "  ${YELLOW}↩ Change undone.${NC}"
+    fi
 }
 
 remove_bind() {
@@ -692,13 +770,16 @@ while :; do
     echo -e "  Your binds (Super + key):"
     echo ""
     list_binds
+    hand_binds="$(other_bind_count "$BINDS_CONF")"
+    (( hand_binds > 0 )) && echo -e "    ${YELLOW}+ ${hand_binds} written by hand in appbinds.lua (shown in [s], edit them in the file)${NC}"
     echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} audio   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
+    echo -e "  ${GREEN}[a]${NC} add bind   ${GREEN}[e]${NC} edit bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} audio   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
     choice="$(read_key "  Choice: ")" || exit 0
 
     case "$choice" in
         a|A) add_bind ;;
+        e|E) edit_bind ;;
         d|D) remove_bind ;;
         s|S) show_all_binds; continue ;;
         w|W) workspace_mode_menu ;;

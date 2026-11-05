@@ -101,11 +101,15 @@ tmp_mode="$(mktemp "${MODE_DAT}.XXXXXX")" && printf '%s\n' "$TARGET" > "$tmp_mod
 echo -e "  ${GREEN}✓ Workspace mode: ${CYAN}${CURRENT}${NC} → ${CYAN}${TARGET}${NC}  (${#ORDERED_LR[@]} monitors, L→R: ${NAMES_LR[*]})"
 
 # ─── Reload Hyprlanda ───
-if command -v hyprctl &>/dev/null; then
-    hyprctl reload &>/dev/null && echo -e "  ${GREEN}✓ Hyprland reloaded.${NC}"
-else
-    echo -e "  ${YELLOW}⚠ hyprctl unavailable — reload Hyprland manually.${NC}"
-fi
+# shellcheck source=/dev/null
+source "$ARCHENEMY_DIR/scripts/hypr/lib/hypr-apply.sh"
+reload_errors="$(hypr_reload_checked)"
+case $? in
+    0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}" ;;
+    1) echo -e "  ${YELLOW}⚠ Hyprland did not respond — reload it manually.${NC}" ;;
+    2) echo -e "  ${RED}✗ Hyprland reports a config error:${NC}"; printf '    %s\n' "$reload_errors" | head -5 ;;
+    3) echo -e "  ${YELLOW}⚠ No Hyprland session — the mode applies when Hyprland starts.${NC}" ;;
+esac
 
 # ─── Guard sierot ───
 # decades wymaga żywego demona; sesja wstała w shared go nie odpaliła

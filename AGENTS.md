@@ -144,6 +144,9 @@ Rules that follow directly from the table:
   with `ln -sfn`. The switcher runs under `flock` (a second `Super+T` waits
   and wins); every background process it starts gets `9>&-`, or it would
   hold the lock for the whole session. `bash tests/switch-rice.sh`.
+- **After changing a Hyprland config from a script, use
+  `scripts/hypr/lib/hypr-apply.sh`** (`hypr_reload_checked`): success means no
+  new `hyprctl configerrors`, not the exit code of `hyprctl reload`.
 - **App launcher: `scripts/rofi/rofi_drun.sh` is the only way to open
   `rofi -show drun`.** On Enter with no match rofi runs the typed text as a
   command and has no option to disable that in drun mode, so the script sets

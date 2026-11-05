@@ -13,8 +13,24 @@
 # =============================================
 
 # Format linii bindu, jaki zapisuje TUI (i jedyny, jaki TUI obsługuje):
-#   hl.bind(mainMod .. " + KEY", hl.dsp.exec_cmd("CMD"))
-BIND_LINE_RE='^hl\.bind\(mainMod[[:space:]]*\.\.[[:space:]]*" \+ ([A-Za-z0-9_]+)",[[:space:]]*hl\.dsp\.exec_cmd\("(.*)"\)\)'
+#   hl.bind(mainMod .. " + [MOD + ]KEY", hl.dsp.exec_cmd("CMD"))
+# MOD = SHIFT, CTRL, ALT; CMD z ucieczką Lua dla " i \.
+BIND_LINE_RE='^hl\.bind\(mainMod[[:space:]]*\.\.[[:space:]]*" \+ (((SHIFT|CTRL|ALT) \+ )*[A-Za-z0-9_]+)",[[:space:]]*hl\.dsp\.exec_cmd\("(.*)"\)\)[[:space:]]*$'
+
+lua_escape() {
+    local s="${1//\\/\\\\}"
+    printf '%s' "${s//\"/\\\"}"
+}
+
+lua_unescape() {
+    local s="${1//\\\"/\"}"
+    printf '%s' "${s//\\\\/\\}"
+}
+
+# format_bind_line <klawisze> <komenda> — linia pliku; jedno miejsce formatu.
+format_bind_line() {
+    printf 'hl.bind(mainMod .. " + %s", hl.dsp.exec_cmd("%s"))' "$1" "$(lua_escape "$2")"
+}
 
 # user_bind_lines <plik> — wypisuje bindy w formacie TUI, po jednym na linię:
 #   <numer linii w pliku><TAB><KEY><TAB><CMD>
@@ -25,7 +41,7 @@ user_bind_lines() {
     while IFS= read -r line; do
         n=$((n + 1))
         [[ "$line" =~ $BIND_LINE_RE ]] || continue
-        printf '%d\t%s\t%s\n' "$n" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+        printf '%d\t%s\t%s\n' "$n" "${BASH_REMATCH[1]}" "$(lua_unescape "${BASH_REMATCH[4]}")"
     done < "$file"
 }
 
@@ -43,6 +59,14 @@ list_binds() {
     return 0
 }
 
+# other_bind_count <plik> — bindy dopisane ręcznie, których TUI nie zarządza.
+other_bind_count() {
+    local all
+    [[ -f "$1" ]] || { echo 0; return 0; }
+    all="$(grep -c '^hl\.bind(' "$1")"
+    echo "$(( ${all:-0} - $(bind_count "$1") ))"
+}
+
 # bind_count <plik> — liczba bindów widocznych na liście.
 bind_count() {
     local n
@@ -58,4 +82,22 @@ remove_bind_by_index() {
     lineno="$(user_bind_lines "$file" | sed -n "${idx}p" | cut -f1)"
     [[ -n "$lineno" ]] || return 1
     sed -i "${lineno}d" "$file"
+}
+
+# replace_bind_command <plik> <N> <komenda> — zmienia komendę N-tego bindu,
+# bez ruszania klawisza i pozostałych linii. Kod 1 = nie ma takiego numeru.
+replace_bind_command() {
+    local file="$1" idx="$2" cmd="$3" entry lineno key tmp n=0 line
+    [[ "$idx" =~ ^[1-9][0-9]*$ ]] || return 1
+    entry="$(user_bind_lines "$file" | sed -n "${idx}p")"
+    [[ -n "$entry" ]] || return 1
+    lineno="$(cut -f1 <<<"$entry")"
+    key="$(cut -f2 <<<"$entry")"
+    tmp="$(mktemp "${file}.XXXXXX")" || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        n=$((n + 1))
+        if ((n == lineno)); then format_bind_line "$key" "$cmd"; echo; else printf '%s\n' "$line"; fi
+    done < "$file" > "$tmp"
+    chmod --reference="$file" "$tmp" 2>/dev/null
+    mv "$tmp" "$file"
 }
