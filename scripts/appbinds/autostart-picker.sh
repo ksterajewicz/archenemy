@@ -13,7 +13,11 @@
 #   autostartpersonalisation.lua, którego ta warstwa NIE dotyka).
 # =============================================
 
+set -uo pipefail
+
 ARCHENEMY_DIR="$HOME/archenemy"
+# shellcheck source=lib/tui.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
 DATA_DAT="$ARCHENEMY_DIR/data/autostart-apps.dat"
 OUT_LUA="$ARCHENEMY_DIR/config/hypr/autostart-apps.lua"
 GEN_LIB="$ARCHENEMY_DIR/scripts/hypr/lib/gen-autostart.sh"
@@ -22,22 +26,6 @@ DESKTOP_DIRS=(
     "/usr/share/applications"
     "$HOME/.local/share/applications"
 )
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# Czysty bashowy trim (jak w appbinds.sh — bez xargs, który gubi apostrofy)
-trim() {
-    local s="$1"
-    s="${s#"${s%%[![:space:]]*}"}"
-    s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
-}
 
 # ─── ODKRYWANIE APLIKACJI ─────────────────────────────────────────────────────
 
@@ -183,7 +171,7 @@ picker_loop() {
             i=0
             for id in "${VIEW[@]}"; do
                 i=$((i + 1))
-                if [[ -n "${SELECTED[$id]}" ]]; then
+                if [[ -n "${SELECTED[$id]:-}" ]]; then
                     box="${GREEN}[x]${NC}"
                 else
                     box="[ ]"
@@ -195,14 +183,14 @@ picker_loop() {
 
         count=0
         for id in "${!SELECTED[@]}"; do
-            [[ -n "${SELECTED[$id]}" ]] && count=$((count + 1))
+            [[ -n "${SELECTED[$id]:-}" ]] && count=$((count + 1))
         done
         echo ""
         echo -e "  ${GREEN}${count} selected${NC}"
         echo ""
         echo -e "  numbers = toggle   ${CYAN}/text${NC} = filter   ${CYAN}/${NC} = clear filter   ${GREEN}[s]${NC} save   ${RED}[q]${NC} cancel"
         echo ""
-        read -rp "  Choice: " input
+        read -rp "  Choice: " input || return 0
         input="$(trim "$input")"
 
         case "$input" in
@@ -229,7 +217,7 @@ picker_loop() {
                 continue
             fi
             id="${VIEW[$((token - 1))]}"
-            if [[ -n "${SELECTED[$id]}" ]]; then
+            if [[ -n "${SELECTED[$id]:-}" ]]; then
                 unset "SELECTED[$id]"
             else
                 SELECTED["$id"]=1

@@ -11,9 +11,13 @@
 #   — hyprland.lua rice'a require'uje ten plik.
 # =============================================
 
+set -uo pipefail
+
 ARCHENEMY_DIR="$HOME/archenemy"
 BINDS_CONF="$ARCHENEMY_DIR/config/hypr/appbinds.lua"
 CONFIG_DIR="$HOME/.config"
+# shellcheck source=lib/tui.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
 # shellcheck source=lib/binds.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
 # shellcheck source=lib/mpd-output.sh
@@ -29,46 +33,6 @@ CONFLICT_FILES=(
     "$ARCHENEMY_DIR/config/hypr/workspaces-monitors.lua"
     "$BINDS_CONF"
 )
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# Czysty bashowy trim — NIE `| xargs`: xargs robi przetwarzanie cudzysłowów,
-# więc `sh -c 'btop; read'` gubił apostrofy, a samotny apostrof wysypywał
-# cały pipe („unmatched single quote" → „Empty command").
-trim() {
-    local s="$1"
-    s="${s#"${s%%[![:space:]]*}"}"
-    s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
-}
-
-# Jeden klawisz bez Enter (menu/potwierdzenia — nie wolne wpisywanie tekstu).
-# Zwraca $'\e' dla samego Escape, żeby wołający mógł potraktować go jak
-# anulowanie/wyjście.
-read_key() {
-    local prompt="$1" key=""
-    IFS= read -rsn1 -p "$prompt" key
-    echo "" >&2
-    printf '%s' "$key"
-}
-
-# Zapis jednowartościowego pliku warstwy maszynowej (data/*.dat) — atomowo
-# (tmp + mv), bo moduły waybara czytają te pliki co sekundę i nie mogą trafić
-# na zapis w połowie. Jedno miejsce dla wszystkich menu TUI.
-write_dat() {
-    local file="$1" value="$2" tmp
-    mkdir -p "$(dirname "$file")"
-    tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
-    printf '%s\n' "$value" > "$tmp"
-    chmod 644 "$tmp"   # mktemp daje 600 — zachowaj zwykłe prawa (jak inne data/*.dat)
-    mv "$tmp" "$file"
-}
 
 # ─── PLIK BINDÓW ──────────────────────────────────────────────────────────────
 
@@ -250,8 +214,7 @@ add_bind() {
     local bin="${cmd%% *}"
     if ! command -v "$bin" &>/dev/null; then
         echo -e "  ${YELLOW}⚠ '${bin}' not found in PATH.${NC}"
-        read -rp "  Add anyway? [y/N]: " ans
-        [[ "$ans" =~ ^[Yy]$ ]] || return
+        confirm "Add anyway?" N || return
     fi
 
     echo "hl.bind(mainMod .. \" + $key\", hl.dsp.exec_cmd(\"$cmd\"))" >> "$BINDS_CONF"
@@ -302,8 +265,7 @@ workspace_mode_menu() {
     echo -e "    ${BLUE}shared${NC}  — 10 global workspaces (1-10) shared by all monitors"
     echo -e "    ${BLUE}decades${NC} — each monitor gets its own 1-10 (isolated decades)"
     echo ""
-    local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
-    [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    confirm "Switch to '${other}'?" N || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
 
     # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
     # (brak bitu w indeksie gita blokował tak install.sh w update-archenemy.sh
@@ -415,8 +377,7 @@ mpd_output_menu() {
             hw="${devices[$((ans-1))]%%$'\t'*}"
             if alsa_device_busy "$hw"; then
                 echo -e "  ${YELLOW}⚠ $hw is open right now — mpd will most likely fail to grab it.${NC}"
-                local go; go="$(read_key "  Try anyway? [y/N]: ")"
-                [[ "$go" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+                confirm "Try anyway?" N || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
             fi
             msg="$(apply_mpd_output alsa "$hw")"; rc=$?
             report_mpd_result "$rc" "alsa $hw" "$msg"
@@ -734,7 +695,7 @@ while :; do
     echo ""
     echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[k]${NC} keyboard layouts   ${GREEN}[m]${NC} mouse sensitivity   ${GREEN}[u]${NC} autostart apps   ${GREEN}[o]${NC} audio   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
     echo ""
-    choice="$(read_key "  Choice: ")"
+    choice="$(read_key "  Choice: ")" || exit 0
 
     case "$choice" in
         a|A) add_bind ;;

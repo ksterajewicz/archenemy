@@ -7,7 +7,7 @@
 #
 #   Powód powstania (audyt 2026-09-23): sprawdzenia `if ! git … | sed …` bez
 #   pipefail brały kod wyjścia seda, więc nieudany fetch/pull/stash pop
-#   kończył się komunikatem „✓ Zaktualizowano”; a opcja „main” przełączała
+#   kończył się komunikatem „✓ Updated”; a opcja „main” przełączała
 #   na gałąź starszą o dziesiątki commitów (sprzed migracji configu na Lua).
 #   Każdy scenariusz niżej PADA na kodzie sprzed poprawki.
 #   Uruchom: bash tests/update-archenemy.sh   (kod 0 = wszystko przeszło)
@@ -64,7 +64,7 @@ fresh_clone dev
 upstream_commit dev f.txt v4
 out=$(run_upd '1n\n')
 check "HEAD = origin/dev po aktualizacji"      '[[ "$(head_of HEAD)" == "$(head_of origin/dev)" ]]'
-check "komunikat sukcesu"                      '[[ "$out" == *"✓ Zaktualizowano"* ]]'
+check "komunikat sukcesu"                      '[[ "$out" == *"✓ Updated"* ]]'
 
 echo "== N1: pull odrzucony (lokalny commit + nowy upstream = brak fast-forward)"
 fresh_clone dev
@@ -72,7 +72,7 @@ echo lokalne > "$A/h.txt"; g "$A" add h.txt; g "$A" commit -m lokalny
 upstream_commit dev f.txt v5
 before=$(head_of HEAD)
 out=$(run_upd '1\n\n')
-check "brak fałszywego „✓ Zaktualizowano”"     '[[ "$out" != *"✓ Zaktualizowano"* ]]'
+check "brak fałszywego „✓ Updated”"     '[[ "$out" != *"✓ Updated"* ]]'
 check "jawny błąd pulla"                       '[[ "$out" == *"✗ Pull"* ]]'
 check "HEAD bez zmian"                         '[[ "$(head_of HEAD)" == "$before" ]]'
 
@@ -81,8 +81,8 @@ fresh_clone dev
 echo lokalna-wersja > "$A/f.txt"
 upstream_commit dev f.txt upstream-wersja
 out=$(run_upd '1yn\n\n')
-check "brak fałszywego „przywrócone”"          '[[ "$out" != *"✓ Lokalne zmiany przywrócone"* ]]'
-check "jawny błąd przywracania"                '[[ "$out" == *"✗ Nie udało się przywrócić"* ]]'
+check "brak fałszywego „przywrócone”"          '[[ "$out" != *"✓ Local changes restored"* ]]'
+check "jawny błąd przywracania"                '[[ "$out" == *"✗ Could not restore"* ]]'
 check "zmiany dalej w schowku (nic nie ginie)" '[[ -n "$(git -C "$A" stash list)" ]]'
 
 echo "== N1: fetch nieudany (origin nieosiągalny)"
@@ -91,16 +91,16 @@ g "$A" remote set-url origin "$T/nie-ma-takiego.git"
 before=$(head_of HEAD)
 out=$(run_upd '1\n\n')
 check "jawny błąd fetcha"                      '[[ "$out" == *"✗ Fetch"* ]]'
-check "brak fałszywego „✓ Zaktualizowano”"     '[[ "$out" != *"✓ Zaktualizowano"* ]]'
+check "brak fałszywego „✓ Updated”"     '[[ "$out" != *"✓ Updated"* ]]'
 check "HEAD bez zmian"                         '[[ "$(head_of HEAD)" == "$before" ]]'
 
 echo "== N3: gałąź starsza niż obecny stan (main za dev) — wybór zostaje, ale z potwierdzeniem"
 fresh_clone dev
 before=$(head_of HEAD)
 out=$(run_upd '2\n\n')
-check "ostrzeżenie o cofnięciu"                '[[ "$out" == *"jest starsza niż to, co masz teraz"* ]]'
+check "ostrzeżenie o cofnięciu"                '[[ "$out" == *"is older than"* ]]'
 check "domyślnie (Enter) zostaje na dev"       '[[ "$(git -C "$A" branch --show-current)" == dev && "$(head_of HEAD)" == "$before" ]]'
-check "brak „✓ Zaktualizowano”"                '[[ "$out" != *"✓ Zaktualizowano"* ]]'
+check "brak „✓ Updated”"                '[[ "$out" != *"✓ Updated"* ]]'
 fresh_clone dev
 out=$(run_upd '2yn\n')
 check "potwierdzone „y” → przełączone na main" '[[ "$(git -C "$A" branch --show-current)" == main && "$(head_of HEAD)" == "$(head_of origin/main)" ]]'
@@ -114,8 +114,8 @@ echo "== lokalne commity ponad origin: ostrzeżenie zamiast „✓”"
 fresh_clone dev
 echo lokalne > "$A/h.txt"; g "$A" add h.txt; g "$A" commit -m lokalny
 out=$(run_upd '1n\n')
-check "ostrzeżenie o lokalnych commitach"      '[[ "$out" == *"lokalnych commitów"* ]]'
-check "brak „✓ Zaktualizowano”"                '[[ "$out" != *"✓ Zaktualizowano"* ]]'
+check "ostrzeżenie o lokalnych commitach"      '[[ "$out" == *"local commits"* ]]'
+check "brak „✓ Updated”"                '[[ "$out" != *"✓ Updated"* ]]'
 
 echo "== plik nieśledzony (własna tapeta w wallpapers/) zostaje na dysku przez aktualizację"
 fresh_clone dev
@@ -132,7 +132,7 @@ mkdir -p "$A/wallpapers"; echo moja > "$A/wallpapers/moja.jpg"
 echo lokalna-wersja > "$A/f.txt"
 upstream_commit dev f.txt upstream-wersja-2
 out=$(run_upd '1yn\n\n')
-check "konflikt pop zgłoszony"                     '[[ "$out" == *"✗ Nie udało się przywrócić"* ]]'
+check "konflikt pop zgłoszony"                     '[[ "$out" == *"✗ Could not restore"* ]]'
 check "tapeta na dysku mimo konfliktu schowka"     '[[ -f "$A/wallpapers/moja.jpg" ]]'
 check "schowek bez plików nieśledzonych"           '[[ -z "$(git -C "$A" show --stat "stash@{0}^3" 2>/dev/null)" ]]'
 

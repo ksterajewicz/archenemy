@@ -142,6 +142,7 @@ archenemy/
 │                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── appbinds/                     # Terminal shortcut manager for apps (Super+A); update-archenemy.sh — [p];
+│   │                                 #   lib/tui.sh — shared keys: arrows ignored, Esc always cancels, [y/N] prompts;
 │   │                                 #   lib/mpd-output.sh — mpd output switch and its playback test ([o]);
 │   │                                 #   lib/binds.sh — the one place that lists/removes user binds (list and
 │   │                                 #   [d] pick the same lines);
