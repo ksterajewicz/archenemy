@@ -37,6 +37,17 @@ printf '[Desktop Entry]\nName=Hidden\nNoDisplay=true\n' > "$SYS/hidden.desktop"
 
 pick() { printf "$1" | timeout 10 bash "$REPO/scripts/appbinds/autostart-picker.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 
+echo "== porażka generatora"
+cat > "$T/bin/mktemp" <<'EOS'
+#!/bin/bash
+case "$*" in *autostart-apps.lua*) exit 1 ;; esac
+exec /usr/bin/mktemp "$@"
+EOS
+chmod +x "$T/bin/mktemp"
+out="$(pick "1\ns\n\n")"
+check "brak pliku Lua → nie ma sukcesu"        '[[ "$out" != *"Saved"* && "$out" == *"Save failed"* ]]'
+rm -f "$T/bin/mktemp" "$DAT" "$LUA"
+
 echo "== katalogi jak w rofi"
 out="$(pick 'q\n')"
 check "podkatalog z ID ścieżkowym"        '[[ "$(pick "/Wine\nq\n")" == *"Wine Game"*"wine-game"* ]]'

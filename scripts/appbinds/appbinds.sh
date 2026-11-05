@@ -457,12 +457,13 @@ mpd_output_menu() {
                 echo -e "  ${YELLOW}⚠ $hw is open right now — mpd will most likely fail to grab it.${NC}"
                 confirm "Try anyway?" N || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
             fi
+            local prev_state; prev_state="$(mpd_play_state)"
             msg="$(apply_mpd_output alsa "$hw")"; rc=$?
             report_mpd_result "$rc" "alsa $hw" "$msg"
             (( rc == 1 )) || { echo -e "  ${YELLOW}  Back to pipewire any time: Super+A → [o] → 3 → 1.${NC}"; return; }
 
             echo -e "  ${YELLOW}↩ Rolling back to pipewire…${NC}"
-            msg="$(apply_mpd_output pipewire)"; rc=$?
+            msg="$(apply_mpd_output pipewire "" "$prev_state")"; rc=$?
             if (( rc != 1 )); then
                 echo -e "  ${GREEN}✓ mpd output: pipewire (restored)${NC}"
                 notify-send "archenemy" "mpd: ALSA $hw failed — output restored to pipewire." 2>/dev/null

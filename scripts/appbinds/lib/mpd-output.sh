@@ -19,8 +19,9 @@
 #   dopiero przy graniu, a MultipleOutputs::Open zgłasza błąd tylko wtedy, gdy
 #   nie otworzy się ŻADNE wyjście (MPD 0.24, src/output/MultipleOutputs.cxx).
 #   Wyjście fifo wizualizera otwiera się zawsze, więc przy włączonym fifo awaria
-#   ALSA/PipeWire daje ciszę bez `ERROR:` w `mpc status`. Na czas testu fifo
-#   jest wyłączone; włączamy je z powrotem zawsze, także po porażce.
+#   ALSA/PipeWire daje ciszę bez `ERROR:` w `mpc status`. To samo robi dodatkowe
+#   wyjście z local.conf. Na czas testu gra samo testowane wyjście; pozostałe
+#   włączamy z powrotem zawsze, także po porażce.
 # =============================================
 
 MPD_OUTPUT_CONF="$ARCHENEMY_DIR/config/mpd/output.conf"
@@ -127,17 +128,28 @@ mpd_play_state() {
     esac
 }
 
-# Sekundowe odtwarzanie na samym wyjściu głównym. Kod 0 = gra, 1 = awaria
+# Włączone wyjścia poza podanym, po jednym w linii. Fifo zawsze na liście: gdy
+# poprzedni test przerwano, wyjście zostało wyłączone w state_file mpd.
+mpd_other_outputs() {
+    {
+        mpc outputs 2>/dev/null | sed -n 's/^Output [0-9]* (\(.*\)) is enabled$/\1/p'
+        printf '%s\n' "$MPD_FIFO_OUTPUT"
+    } | grep -Fvx -- "$1" | sort -u
+}
+
+# Sekundowe odtwarzanie na samym testowanym wyjściu. Kod 0 = gra, 1 = awaria
 # (treść na stdout). Wołający przywraca stan odtwarzania.
 mpd_play_test() {
-    local err="" state
-    mpc disable "$MPD_FIFO_OUTPUT" >/dev/null 2>&1
+    local name="$1" err="" state other
+    local -a others=()
+    mapfile -t others < <(mpd_other_outputs "$name")
+    for other in "${others[@]}"; do mpc disable "$other" >/dev/null 2>&1; done
     mpc clearerror >/dev/null 2>&1
     mpc play >/dev/null 2>&1
     sleep 1
     err="$(mpc status 2>&1 | sed -n 's/^ERROR: //p' | head -1)"
     state="$(mpd_play_state)"
-    mpc enable "$MPD_FIFO_OUTPUT" >/dev/null 2>&1
+    for other in "${others[@]}"; do mpc enable "$other" >/dev/null 2>&1; done
     if [[ -n "$err" ]]; then
         mpc clearerror >/dev/null 2>&1
         echo "$err"
@@ -159,10 +171,12 @@ mpd_restore_state() {
 # Zastosuj tryb: zapis, restart, sprawdzenie wyjścia, test odtwarzania.
 # Kody: 0 = gra, 1 = awaria (wołający robi powrót), 3 = zapisane, ale niesprawdzone
 # (pusta kolejka, nie ma czym zagrać). Powód porażki idzie na stdout.
+# Trzeci argument: stan odtwarzania do przywrócenia. Powrót po awarii podaje stan
+# sprzed przełączenia, bo po awarii mpd stoi już w pauzie.
 apply_mpd_output() {
-    local mode="$1" hw="${2:-}" name state rc=0 msg=""
+    local mode="$1" hw="${2:-}" state="${3:-}" name rc=0 msg=""
     name="$(mpd_output_name "$mode" "$hw")"
-    state="$(mpd_play_state)"
+    [[ -n "$state" ]] || state="$(mpd_play_state)"
     write_mpd_output_conf "$mode" "$hw" || { echo "cannot write $MPD_OUTPUT_CONF"; return 1; }
     restart_mpd_and_wait || { echo "mpd did not come back after restart (journalctl --user -u mpd)"; return 1; }
 
@@ -175,7 +189,7 @@ apply_mpd_output() {
 
     [[ -n "$(mpc playlist 2>/dev/null | head -1)" ]] || return 3
 
-    msg="$(mpd_play_test)" || rc=1
+    msg="$(mpd_play_test "$name")" || rc=1
     mpd_restore_state "$state"
     [[ -n "$msg" ]] && echo "$msg"
     return "$rc"

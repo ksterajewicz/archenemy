@@ -4,7 +4,8 @@
 # wyjście, a fifo otwiera się zawsze (src/output/MultipleOutputs.cxx,
 # plugins/FifoOutputPlugin.cxx). Format `outputs` wg mpc 0.35 (src/output.c).
 # Stan w $MOCK_MPD: state, fifo (1/0), error, queue; MOCK_MPD_BROKEN=1 = wyjście
-# główne nie otwiera się; MOCK_MPD_NAME = nazwa wyjścia głównego.
+# główne nie otwiera się; MOCK_MPD_NAME = nazwa wyjścia głównego; plik extra
+# (1/0) = dodatkowe wyjście z local.conf, które też zawsze się otwiera.
 D="$MOCK_MPD"; echo "mpc $*" >> "$D/log"
 get() { cat "$D/$1" 2>/dev/null; }
 case "${1:-}" in
@@ -18,12 +19,13 @@ case "${1:-}" in
   outputs)
     fifo=enabled; [[ "$(get fifo)" == 0 ]] && fifo=disabled
     echo "Output 1 (Visualizer feed) is $fifo"
+    [[ -f "$D/extra" ]] && { x=enabled; [[ "$(get extra)" == 0 ]] && x=disabled; echo "Output 3 (Extra out) is $x"; }
     echo "Output 2 (${MOCK_MPD_NAME:-$(sed -n 's/^ *name *"\(.*\)"$/\1/p' "$MOCK_MPD_CONF")}) is enabled" ;;
-  disable) [[ "$2" == "Visualizer feed" ]] && echo 0 > "$D/fifo" ;;
-  enable)  [[ "$2" == "Visualizer feed" ]] && echo 1 > "$D/fifo" ;;
+  disable) [[ "$2" == "Visualizer feed" ]] && echo 0 > "$D/fifo"; [[ "$2" == "Extra out" ]] && echo 0 > "$D/extra" ;;
+  enable)  [[ "$2" == "Visualizer feed" ]] && echo 1 > "$D/fifo"; [[ "$2" == "Extra out" ]] && echo 1 > "$D/extra" ;;
   clearerror) : > "$D/error" ;;
   play)
-    if [[ -n "${MOCK_MPD_BROKEN:-}" && "$(get fifo)" == 0 ]]; then
+    if [[ -n "${MOCK_MPD_BROKEN:-}" && "$(get fifo)" == 0 && "$(get extra)" != 1 ]]; then
       echo 'Failed to open "ALSA hw:0,0"' > "$D/error"; echo paused > "$D/state"
     else
       echo playing > "$D/state"

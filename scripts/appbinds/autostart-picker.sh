@@ -142,7 +142,7 @@ save_selection() {
     if [[ -f "$GEN_LIB" ]]; then
         # shellcheck source=/dev/null
         source "$GEN_LIB"
-        generate_autostart_apps "$DATA_DAT" "$OUT_LUA"
+        generate_autostart_apps "$DATA_DAT" "$OUT_LUA" || return 1
         return 0
     fi
     return 2

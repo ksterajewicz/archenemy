@@ -50,6 +50,16 @@ check "powód porażki z mpd"                    'grep -q "Failed to open" "$T/o
 check "fifo wraca także po porażce"            '[[ "$(<"$T/mpd/fifo")" == 1 ]]'
 check "błąd mpd wyczyszczony"                  '[[ ! -s "$T/mpd/error" ]]'
 
+setup; echo 1 > "$T/mpd/extra"; MOCK_MPD_BROKEN=1 apply_mpd_output alsa hw:0,0 >"$T/out"; rc=$?
+check "awaria przy dodatkowym wyjściu → wykryta" '[[ $rc -eq 1 ]]'
+check "dodatkowe wyjście wraca po teście"      '[[ "$(<"$T/mpd/extra")" == 1 ]]'
+
+setup; echo 0 > "$T/mpd/extra"; apply_mpd_output alsa hw:0,0 >/dev/null
+check "wyłączone wyjście zostaje wyłączone"    '[[ "$(<"$T/mpd/extra")" == 0 ]]'
+
+setup; echo 0 > "$T/mpd/fifo"; apply_mpd_output alsa hw:0,0 >/dev/null
+check "fifo po przerwanym teście wraca"        '[[ "$(<"$T/mpd/fifo")" == 1 ]]'
+
 echo "== pusta kolejka"
 setup; rm "$T/mpd/queue"; apply_mpd_output alsa hw:0,0 >"$T/out"; rc=$?
 check "bez utworów kod 3, nie sukces (A2)"     '[[ $rc -eq 3 ]]'
@@ -62,6 +72,11 @@ setup paused; apply_mpd_output pipewire >/dev/null
 check "paused zostaje paused"                  '[[ "$(<"$T/mpd/state")" == paused ]]'
 setup playing; apply_mpd_output pipewire >/dev/null
 check "playing gra dalej"                      '[[ "$(<"$T/mpd/state")" == playing ]]'
+
+setup playing; MOCK_MPD_BROKEN=1 apply_mpd_output alsa hw:0,0 >/dev/null
+check "po awarii ALSA mpd stoi"                '[[ "$(<"$T/mpd/state")" == paused ]]'
+apply_mpd_output pipewire "" playing >/dev/null
+check "powrót przywraca granie sprzed zmiany"  '[[ "$(<"$T/mpd/state")" == playing ]]'
 
 echo "== mpd nie słucha tego configu"
 setup; MOCK_MPD_NAME=Other apply_mpd_output alsa hw:0,0 >"$T/out"; rc=$?
