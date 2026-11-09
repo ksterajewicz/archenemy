@@ -122,8 +122,9 @@ offer_migration() {
         return 0
     fi
     shellrc_ensure >/dev/null
-    if moved="$(rc_migrate_apply "$BASHRC")"; then
-        echo -e "  ${GREEN}✓ ${moved} line(s) moved to $(tilde "$SHELLRC").${NC}"
+    # rc_migrate_apply liczy też komentarze nad liniami — tu ta sama liczba co na liście.
+    if moved="$(rc_migrate_apply "$BASHRC")" && (( moved > 0 )); then
+        echo -e "  ${GREEN}✓ ${n} line(s) moved to $(tilde "$SHELLRC").${NC}"
         echo -e "  ${CYAN}Prompt, history, functions and other bash-only lines stay in ~/.bashrc.${NC}"
     else
         echo -e "  ${RED}✗ Moving failed; ~/.bashrc and the shared file were not changed past the backup.${NC}"
