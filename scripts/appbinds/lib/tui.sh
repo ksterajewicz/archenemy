@@ -136,6 +136,52 @@ read_key_nav() {
     fi
 }
 
+# Lista wyboru: tui_menu <indeks początkowy od 0> <etykieta>…
+# Wynik w TUI_MENU_INDEX, kod 0 = wybór, 1 = Esc/q/EOF. Czyta stdin także bez
+# TTY; tylko terminal cofa kursor do przerysowania listy. Nagłówek rysuje wołający.
+# shellcheck disable=SC2034  # wynik czyta skrypt wywołujący
+TUI_MENU_INDEX=0
+# shellcheck disable=SC2034
+tui_menu() {
+    local selected="$1" key i width
+    shift
+    local -a items=("$@")
+    local count=${#items[@]}
+    (( count > 0 )) || return 1
+    (( selected >= 0 && selected < count )) || selected=0
+    while :; do
+        tui_size
+        width=$(( TUI_COLS - 6 ))
+        (( width > 0 )) || width=1
+        for i in "${!items[@]}"; do
+            tui_fit "$(( i + 1 ))) ${items[$i]}" "$width"
+            if (( i == selected )); then
+                printf '  %b› %s%b\n' "${ACCENT}\033[7m" "$FIT" "$NC"
+            else
+                printf '    %s\n' "$FIT"
+            fi
+        done
+        tui_fit "↑/↓ or j/k: move · Enter: select · 1-${count}: select · Esc: back" "$width"
+        printf '\n    %b%s%b\n' "$DIM" "$FIT" "$NC"
+        key="$(read_key_nav)" || return 1
+        case "$key" in
+            up|k) selected=$(( (selected + count - 1) % count )) ;;
+            down|j) selected=$(( (selected + 1) % count )) ;;
+            home) selected=0 ;;
+            end) selected=$(( count - 1 )) ;;
+            enter|$'\r') TUI_MENU_INDEX=$selected; return 0 ;;
+            esc|q|Q) return 1 ;;
+            [1-9])
+                if (( key <= count )); then
+                    TUI_MENU_INDEX=$(( key - 1 ))
+                    return 0
+                fi
+                ;;
+        esac
+        [[ -t 1 ]] && printf '\033[%dA\r' "$(( count + 2 ))"
+    done
+}
+
 # Pytanie tak/nie jednym klawiszem. Kod 0 = tak. confirm <pytanie> <Y|N>:
 # Y = Enter znaczy tak, N = Enter znaczy nie. Esc i każdy inny klawisz to
 # zawsze NIE, niezależnie od domyślnej (audyt TUI 2026-11-05: Esc na [Y/n]

@@ -76,6 +76,30 @@ if command -v zsh >/dev/null 2>&1; then echo "  – zsh w systemie, scenariusz i
 run() { local input="$1"; shift; printf '%b' "$input" | timeout 10 bash "$S" "$@" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 code() { local input="$1"; shift; printf '%b' "$input" | timeout 10 bash "$S" "$@" >/dev/null 2>&1; }
 
+echo "== wspólne menu strzałkami (stdin bez TTY)"
+nav() {
+    local input="$1" initial="${2:-0}"
+    printf '%b' "$input" | timeout 5 bash -c '
+        source "$1"
+        if tui_menu "$2" first second third >"$3"; then
+            printf "%s" "$TUI_MENU_INDEX"
+        else
+            printf cancelled
+        fi
+    ' _ "$REPO/scripts/appbinds/lib/tui.sh" "$initial" "$T/nav-output"
+}
+check "Enter wybiera pierwszy wiersz" '[[ "$(nav "\n")" == 0 ]]'
+check "strzałka w dół i Enter" '[[ "$(nav "\e[B\n")" == 1 ]]'
+check "strzałka w górę zawija na koniec" '[[ "$(nav "\e[A\n")" == 2 ]]'
+check "j zawija na początek" '[[ "$(nav "j\n" 2)" == 0 ]]'
+check "k przesuwa w górę" '[[ "$(nav "k\n" 2)" == 1 ]]'
+check "cyfra wybiera bez Enter" '[[ "$(nav "3")" == 2 ]]'
+check "Esc anuluje" '[[ "$(nav "\e")" == cancelled ]]'
+check "EOF anuluje zamiast wybierać" '[[ "$(nav "")" == cancelled ]]'
+check "nieznany klawisz i obca sekwencja nie wybierają" '[[ "$(nav "9x\e[C\n")" == 0 ]]'
+check "Enter zachowuje początkowe zaznaczenie" '[[ "$(nav "\n" 1)" == 1 ]]'
+check "menu podświetla wybrany wiersz" 'grep -Fq $'"'"'\e[7m'"'"' "$T/nav-output" && grep -Fq "› 2) second" "$T/nav-output"'
+
 cat > "$H/.bashrc" <<'EOF'
 [[ $- != *i* ]] && return
 alias ls='ls --color=auto'

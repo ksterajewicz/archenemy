@@ -156,7 +156,8 @@ archenemy/
 │   │                                 #   keys.zsh writer (shared by install.sh [8m] and the TUI).
 │   ├── appbinds/                     # Terminal shortcut manager for apps (Super+A); update-archenemy.sh — [p];
 │   │                                 #   lib/tui.sh — shared look and keys: rice accent, header, [y/N] prompts,
-│   │                                 #   arrows ignored in prompts, Esc always cancels;
+│   │                                 #   tui_menu — highlighted choices with arrows/j/k, Enter, digits and Esc;
+│   │                                 #   arrows ignored in yes/no prompts, Esc always cancels;
 │   │                                 #   lib/mpd-output.sh — mpd output switch and its playback test ([o]);
 │   │                                 #   lib/binds.sh — the one place that lists/edits/removes user binds (list and
 │   │                                 #   [d] pick the same lines);
