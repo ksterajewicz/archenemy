@@ -182,6 +182,7 @@ check "zły argument: kod 1"               '! bash "$S" nonsense >/dev/null 2>&1
 
 echo "== vi mode key"
 rm -f "$A/config/shell/keys.zsh"
+check "lista statyczna zawiera pełne wiązania emacs" 'grep -Fq "^@" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "set-mark-command" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "\\e?" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "which-command" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "\\e-" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "neg-argument" "$A/config/shell/emacs-default-bindings.txt"'
 OUT="$(run $'41\e')"
 check "Esc anuluje bez zapisu"             '[[ "$OUT" == *"Cancelled"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41a\n\n')"
