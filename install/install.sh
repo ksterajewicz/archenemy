@@ -1021,10 +1021,10 @@ fi
 APPBINDS_SH="$ARCHENEMY_DIR/scripts/appbinds/appbinds.sh"
 ARCHENEMY_DESKTOP="$HOME/.local/share/applications/archenemy.desktop"
 if [[ -e "$ARCHENEMY_DESKTOP" ]]; then
-    echo -e "  ${YELLOW}⚠ archenemy.desktop istnieje — nie ruszam.${NC}"
+    echo -e "  ${YELLOW}⚠ archenemy.desktop already exists, left as it is.${NC}"
 elif [[ "$APPBINDS_SH" == *[\"\`\$\\]* ]]; then
     # Te znaki wymagałyby ucieczek w cudzysłowie pola Exec — nie ryzykujemy.
-    echo -e "  ${YELLOW}⚠ Ścieżka $APPBINDS_SH zawiera \" \` \$ albo \\ — pomijam wpis w rofi.${NC}"
+    echo -e "  ${YELLOW}⚠ The path $APPBINDS_SH contains \" \` \$ or \\, skipping the rofi entry.${NC}"
     SUMMARY_SKIPPED+=("archenemy.desktop (rofi entry) — unusual characters in \$HOME")
 else
     mkdir -p "$(dirname "$ARCHENEMY_DESKTOP")"
@@ -1040,7 +1040,7 @@ Terminal=false
 Categories=Settings;
 Keywords=archenemy;appbinds;shortcuts;autostart;update;
 EOF
-    echo -e "  ${GREEN}✓ archenemy.desktop → rofi (Super+R) otwiera TUI Super+A${NC}"
+    echo -e "  ${GREEN}✓ archenemy.desktop → rofi (Super+R) opens the Super+A menu${NC}"
 fi
 
 # shellcheck source=../scripts/shell/lib/shell-rc.sh
@@ -1048,7 +1048,7 @@ source "$ARCHENEMY_DIR/scripts/shell/lib/shell-rc.sh"
 BASHRC="$HOME/.bashrc"
 ZSHRC="$HOME/.zshrc"
 if [[ "$(shellrc_ensure)" == created ]]; then
-    echo -e "  ${GREEN}✓ config/shell/shellrc — Twoje aliasy, funkcje i PATH dla basha i zsh (Super+A → [h])${NC}"
+    echo -e "  ${GREEN}✓ config/shell/shellrc: your aliases, functions and PATH for bash and zsh (Super+A → [h])${NC}"
     SUMMARY_DONE+=("Shared shell file: ${SHELLRC/#$HOME/\~} (bash and zsh read it; edit: Super+A → [h])")
 fi
 SHELL_BAK_FILE="$(mktemp)"
@@ -1056,13 +1056,13 @@ SHELL_RES="$(rc_block_ensure "$BASHRC" bash 2>"$SHELL_BAK_FILE")"
 SHELL_BAK="$(cat "$SHELL_BAK_FILE" 2>/dev/null)"
 rm -f "$SHELL_BAK_FILE"
 case "$SHELL_RES" in
-    ok)      echo -e "  ${GREEN}✓ ~/.bashrc już wczytuje plik wspólny${NC}" ;;
-    created) echo -e "  ${GREEN}✓ ~/.bashrc utworzony, wczytuje plik wspólny${NC}" ;;
+    ok)      echo -e "  ${GREEN}✓ ~/.bashrc already loads the shared file${NC}" ;;
+    created) echo -e "  ${GREEN}✓ ~/.bashrc created, it loads the shared file${NC}" ;;
     added|updated)
-        echo -e "  ${GREEN}✓ ~/.bashrc wczytuje plik wspólny (blok archenemy; kopia: ${SHELL_BAK/#$HOME/\~})${NC}"
+        echo -e "  ${GREEN}✓ ~/.bashrc loads the shared file (archenemy block; backup: ${SHELL_BAK/#$HOME/\~})${NC}"
         SUMMARY_DONE+=("Your ~/.bashrc loads the shared shell file (backup: ${SHELL_BAK/#$HOME/\~})") ;;
     *)
-        echo -e "  ${YELLOW}⚠ ~/.bashrc ma początek bloku archenemy bez końca — nie ruszam, popraw ręcznie.${NC}"
+        echo -e "  ${YELLOW}⚠ ~/.bashrc has the start of the archenemy block without its end, left as it is: fix it by hand.${NC}"
         SUMMARY_SKIPPED+=("Your ~/.bashrc has a broken archenemy block (no '$SHELL_BLOCK_END' line) — fix it by hand") ;;
 esac
 # ~/.zshrc tylko odświeżamy, gdy blok już w nim jest; dopisuje go Super+A → [h].
@@ -1075,30 +1075,30 @@ fi
 ALIAS_STATE="$(archenemy_alias_state "$BASHRC" "$ZSHRC")"
 case "$ALIAS_STATE" in
     ours)
-        echo -e "  ${GREEN}✓ komenda 'archenemy' już jest w pliku wspólnym${NC}"
+        echo -e "  ${GREEN}✓ the 'archenemy' command is already in the shared file${NC}"
         # Dawny polski znacznik nad aliasem → angielski; drugi bieg = no-op.
         if ! SHELL_BAK="$(archenemy_alias_mark_refresh)"; then
             echo -e "  ${YELLOW}⚠ Could not update the comment above the 'archenemy' alias in ${SHELLRC/#$HOME/\~}.${NC}"
         elif [[ -n "$SHELL_BAK" ]]; then
             echo -e "  ${GREEN}✓ Comment above the 'archenemy' alias updated (backup: ${SHELL_BAK/#$HOME/\~})${NC}"
         fi ;;
-    own)  echo -e "  ${YELLOW}⚠ masz już własny alias 'archenemy' — nie ruszam.${NC}" ;;
+    own)  echo -e "  ${YELLOW}⚠ you already have your own 'archenemy' alias, left as it is.${NC}" ;;
     legacy*)
         if SHELL_BAK="$(archenemy_alias_move "${ALIAS_STATE#legacy }")"; then
-            echo -e "  ${GREEN}✓ komenda 'archenemy' przeniesiona do pliku wspólnego (działa też w zsh; kopia: ${SHELL_BAK/#$HOME/\~})${NC}"
+            echo -e "  ${GREEN}✓ the 'archenemy' command moved to the shared file (works in zsh too; backup: ${SHELL_BAK/#$HOME/\~})${NC}"
             SUMMARY_DONE+=("'archenemy' command moved to the shared shell file")
         else
-            echo -e "  ${YELLOW}⚠ Nie udało się przenieść komendy 'archenemy' — zostaje, gdzie była.${NC}"
+            echo -e "  ${YELLOW}⚠ Could not move the 'archenemy' command, it stays where it was.${NC}"
         fi ;;
     *)
         read -rp "  Add the 'archenemy' command (opens the Super+A menu in the terminal, bash and zsh)? [Y/n]: " ans_alias
         if [[ "$ans_alias" =~ ^[Nn]$ ]]; then
             SUMMARY_SKIPPED+=("'archenemy' command (your choice) — re-run install.sh to add it")
         elif archenemy_alias_add; then
-            echo -e "  ${GREEN}✓ komenda 'archenemy' dopisana do pliku wspólnego (nowy terminal albo: exec \$SHELL)${NC}"
+            echo -e "  ${GREEN}✓ the 'archenemy' command added to the shared file (open a new terminal or run: exec \$SHELL)${NC}"
             SUMMARY_DONE+=("'archenemy' command added to the shared shell file")
         else
-            echo -e "  ${RED}✗ Nie udało się dopisać aliasu do $SHELLRC.${NC}"
+            echo -e "  ${RED}✗ Could not add the alias to $SHELLRC.${NC}"
             SUMMARY_SKIPPED+=("'archenemy' command — writing the shared shell file failed")
         fi ;;
 esac

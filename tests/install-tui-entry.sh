@@ -88,7 +88,11 @@ check "bashrc bez zmian (brak duplikatu)"        'cmp -s "$H/.bashrc" "$T/bashrc
 check "plik wspólny bez zmian"                   'cmp -s "$R" "$T/shellrc.before"'
 check "bez nowej kopii"                          '[[ $(find "$H" -maxdepth 1 -name ".bashrc.bak-*" | wc -l) -eq $nbak ]]'
 check "drugi bieg nie pyta"                      '[[ "$OUT" != *"[Y/n]"* ]]'
-check "komunikat: alias już jest"                '[[ "$OUT" == *"już jest"* ]]'
+check "komunikat: alias już jest"                '[[ "$OUT" == *"already in the shared file"* ]]'
+PL_CHARS=(-e ą -e ć -e ę -e ł -e ń -e ó -e ś -e ź -e ż -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż -e „)   # -F: dosłownie, niezależnie od locale i odmiany grepa
+OUT_FRESH="$(run_step "$(new_home c2pl)" /bin/bash "")"
+printf "%s\n%s\n" "$OUT" "$OUT_FRESH" > "$T/out8m"
+check "komunikaty [8m] bez polskich znaków"      '! grep -F "${PL_CHARS[@]}" "$T/out8m"'
 
 echo "── scenariusz 3: własny .desktop użytkownika + odpowiedź n"
 H=$(new_home c3)
