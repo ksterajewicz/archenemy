@@ -96,18 +96,6 @@ shellrc_ensure() {
     echo created
 }
 
-# Domyślny skrót wejścia do vi-cmd-mode. Pusty plik oznacza brak nadpisania.
-shell_keys_ensure() {
-    if [[ -e "$SHELL_KEYS" ]]; then
-        echo exists
-        return 0
-    fi
-    mkdir -p "$SHELL_RC_DIR" || return 1
-    : > "$SHELL_KEYS" || return 1
-    chmod 600 "$SHELL_KEYS" || return 1
-    echo created
-}
-
 # Zamienia czytelną sekwencję ZLE na jedną linię bindkey.
 shell_keys_text() {
     local sequence="$1" escaped

@@ -106,8 +106,6 @@ check "linie użytkownika nietknięte"      'grep -qx "alias TESTgs='"'"'git sta
 check "~/.bashrc parsuje się"             'bash -n "$B"'
 
 echo "== osobisty skrót ZLE"
-check "utworzony pusty plik skrótu"        '[[ "$(shell_keys_ensure)" == created && -f "$SHELL_KEYS" && ! -s "$SHELL_KEYS" ]]'
-check "drugi raz: exists"                   '[[ "$(shell_keys_ensure)" == exists ]]'
 check "generator Ctrl+X Ctrl+Y"             '[[ "$(shell_keys_text "^X^Y")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
 check "generator Alt+v"                     '[[ "$(shell_keys_text "\\ev")" == "bindkey -M emacs '\''\\ev'\'' vi-cmd-mode" ]]'
 check "zapis osobistego skrótu"              '[[ "$(shell_keys_write "^X^Y")" == written && "$(<"$SHELL_KEYS")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
