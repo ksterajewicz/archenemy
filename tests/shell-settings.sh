@@ -220,11 +220,12 @@ check "bindkey z shellrc wykryty"          '[[ "$OUT" == *"^X^Y replaces the exi
 sed -i '/^bindkey -M emacs.*user-widget$/d' "$A/config/shell/shellrc"
 cat > "$BIN/zsh" <<'EOF'
 #!/bin/bash
+[[ "$*" == "-f -c bindkey -M emacs -L" ]] || exit 2
 printf '%s\n' 'bindkey -M emacs "^Q^Q" live-widget'
 EOF
 chmod +x "$BIN/zsh"
 OUT="$(run $'41\x11\x11\nN\n')"
-check "żywe bindkey z zsh wykryte"         '[[ "$OUT" == *"^Q^Q replaces the existing live-widget binding"* ]]'
+check "żywe bindkey -L z zsh wykryte"       '[[ "$OUT" == *"^Q^Q replaces the existing live-widget binding"* ]]'
 rm -f "$BIN/zsh"
 OUT="$(run $'42\n')"
 check "przywrócenie usuwa wpis"            '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'

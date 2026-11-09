@@ -159,10 +159,15 @@ vi_key_parse_bindings() {
     local line key widget pattern quote
     quote="['\"]"
     pattern="^[[:space:]]*bindkey([[:space:]]+-M[[:space:]]+emacs)?[[:space:]]+${quote}([^'\"]+)${quote}[[:space:]]+([^[:space:]]+)"
+    local live_pattern="^[[:space:]]*${quote}([^'\"]+)${quote}[[:space:]]+([^[:space:]]+)"
     while IFS= read -r line; do
         if [[ "$line" =~ $pattern ]]; then
             key="$(vi_key_normalize "${BASH_REMATCH[2]}")"
             widget="${BASH_REMATCH[3]}"
+            printf '%s\t%s\n' "$key" "$widget"
+        elif [[ "$line" =~ $live_pattern ]]; then
+            key="$(vi_key_normalize "${BASH_REMATCH[1]}")"
+            widget="${BASH_REMATCH[2]}"
             printf '%s\t%s\n' "$key" "$widget"
         fi
     done
@@ -176,7 +181,7 @@ vi_key_bindings() {
         done < "$ARCHENEMY_DIR/config/shell/emacs-default-bindings.txt"
     fi
     if command -v zsh >/dev/null 2>&1; then
-        zsh -f -c 'bindkey -M emacs' 2>/dev/null | vi_key_parse_bindings
+        zsh -f -c 'bindkey -M emacs -L' 2>/dev/null | vi_key_parse_bindings
     fi
     for file in "$SHELLRC" "$ZSHRC"; do
         [[ -f "$file" ]] || continue
