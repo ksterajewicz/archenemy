@@ -89,6 +89,15 @@ check "pokazane jako niezainstalowane"    '[[ "$out" == *"(not installed) gone-a
 pick '1\ns\n\n' >/dev/null
 check "dają się odznaczyć"                '[[ ! -s "$DAT" ]]'
 
+echo "== strzałki i checkboxy"
+: > "$DAT"; out="$(pick '\e[B\ns\n\n')"
+check "strzałka przełącza drugi checkbox" 'grep -qx app02 "$DAT"'
+saved="$(<"$DAT")"
+pick 'j\n\e\ny' >/dev/null
+check "Esc i potwierdzenie nie zapisują" '[[ "$(<"$DAT")" == "$saved" ]]'
+: > "$DAT"; out="$(pick '\e[Fk\ns\n\n')"
+check "strzałki wybierają zapis" '[[ "$out" == *"Saved 0 apps"* ]]'
+
 echo "== generator"
 printf 'dobra.app\nzła"nazwa\n' > "$DAT"
 source "$REPO/scripts/hypr/lib/gen-autostart.sh"

@@ -571,3 +571,5 @@ The monitor list, resolution and refresh-rate choices in `Super+A → [n]` use t
 Yes/no confirmations use the shared arrow-key menu. Enter keeps the shown default; `y`/`n` answer immediately, and Esc or EOF cancels.
 
 `Super+A → [m]` uses arrow-key menus for mouse settings, device selection and acceleration. Numeric shortcuts remain; speed, DPI, polling and scroll values remain text fields.
+
+`Super+A → [p]` supports arrows/j/k and Space/Enter for checkboxes, pages, filter, save and cancel. `/text`, global numbers (including `1 2` and numbers on other pages), n/p/s/q and discard confirmation remain available.

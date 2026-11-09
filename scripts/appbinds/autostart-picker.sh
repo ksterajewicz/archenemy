@@ -160,7 +160,7 @@ page_size() {
     local rows
     rows="$( { stty size </dev/tty; } 2>/dev/null | cut -d' ' -f1)"
     [[ "$rows" =~ ^[0-9]+$ ]] || rows=30
-    rows=$(( rows - 15 ))
+    rows=$(( rows - 20 ))
     (( rows < 5 )) && rows=5
     echo "$rows"
 }
@@ -182,7 +182,9 @@ build_view() {
 }
 
 picker_loop() {
-    local input token i id box count bad size pages
+    local input token i id box count bad size pages cursor=0 rc
+    local -a labels=() actions=() TUI_MENU_KEYS=()
+    local TUI_MENU_CHECKLIST=1 TUI_MENU_CAPTURE_DIGITS=1
     while :; do
         build_view
         clear
@@ -203,6 +205,7 @@ picker_loop() {
         pages=$(( (${#VIEW[@]} + size - 1) / size ))
         (( pages < 1 )) && pages=1
         (( PAGE >= pages )) && PAGE=$(( pages - 1 ))
+        labels=(); actions=(); TUI_MENU_KEYS=()
         if [[ ${#VIEW[@]} -eq 0 ]]; then
             echo -e "    ${YELLOW}(nothing matches the filter)${NC}"
         else
@@ -214,8 +217,15 @@ picker_loop() {
                 else
                     box="[ ]"
                 fi
-                printf "    ${CYAN}%3d)${NC} ${box} %-32s ${BLUE}%s${NC}\n" \
-                    "$i" "${APP_NAME[$id]}" "$id"
+                labels+=("")
+                # Bez ANSI w etykiecie: tui_menu sam dobiera kolory zaznaczenia.
+                if [[ -n "${SELECTED[$id]:-}" ]]; then labels[-1]="[x] ${APP_NAME[$id]} — $id"
+                else labels[-1]="[ ] ${APP_NAME[$id]} — $id"; fi
+                actions+=("$i"); TUI_MENU_KEYS+=("")
+                if [[ ! -t 0 ]]; then
+                    printf "    ${CYAN}%3d)${NC} ${box} %-32s ${BLUE}%s${NC}\n" \
+                        "$i" "${APP_NAME[$id]}" "$id"
+                fi
             done
         fi
 
@@ -228,13 +238,35 @@ picker_loop() {
         echo ""
         echo -e "  numbers = toggle   ${CYAN}[n]${NC}/${CYAN}[p]${NC} page   ${CYAN}/text${NC} = filter   ${CYAN}/${NC} = clear filter   ${GREEN}[s]${NC} save   ${RED}[q]${NC} cancel"
         echo ""
-        read -rp "  Choice: " input || return 0
+        labels+=("Next page [n]" "Previous page [p]" "Filter [/text]" "Save [s]" "Cancel [q/Esc]")
+        actions+=(n p / s q); TUI_MENU_KEYS+=(n p / s "")
+        if [[ -t 0 ]]; then
+            rc=0; tui_menu "$cursor" "${labels[@]}" || rc=$?
+            if (( rc )); then input=q
+            elif (( TUI_MENU_INDEX < 0 )); then input="$TUI_MENU_INPUT"
+            else
+                cursor=$TUI_MENU_INDEX
+                input="${actions[$cursor]}"
+                if [[ "$input" == / ]]; then
+                    read -rp "  Filter (Enter = clear): " input || return 0
+                    input="/$input"
+                fi
+            fi
+        else
+            read -rp "  Choice: " input || return 0
+            if [[ "$input" == *$'\e'* || "$input" == j* || "$input" == k* ]]; then
+                rc=0; tui_menu "$cursor" "${labels[@]}" <<<"$input" || rc=$?
+                if (( rc )); then input=q
+                elif (( TUI_MENU_INDEX < 0 )); then input="$TUI_MENU_INPUT"
+                else cursor=$TUI_MENU_INDEX; input="${actions[$cursor]}"; fi
+            fi
+        fi
         input="$(trim "$input")"
 
         case "$input" in
             "")  continue ;;
-            "/") FILTER=""; PAGE=0; continue ;;
-            /*)  FILTER="${input#/}"; PAGE=0; continue ;;
+            "/") FILTER=""; PAGE=0; cursor=0; continue ;;
+            /*)  FILTER="${input#/}"; PAGE=0; cursor=0; continue ;;
             n|N) (( PAGE + 1 < pages )) && PAGE=$(( PAGE + 1 )); continue ;;
             p|P) (( PAGE > 0 )) && PAGE=$(( PAGE - 1 )); continue ;;
             s|S)

@@ -188,6 +188,14 @@ tui_menu() {
                 ;;
             esc|q|Q) return 1 ;;
             [1-9])
+                if [[ "${TUI_MENU_CAPTURE_DIGITS:-0}" == 1 ]]; then
+                    # Stary picker przyjmuje także wiele numerów i numery >9.
+                    local rest=""
+                    IFS= read -r rest || return 1
+                    TUI_MENU_INPUT="$key$rest"
+                    TUI_MENU_INDEX=-1
+                    return 0
+                fi
                 if (( key <= count )); then
                     TUI_MENU_INDEX=$(( key - 1 ))
                     return 0
@@ -246,7 +254,7 @@ tui_menu_lines() {
 confirm() {
     local question="$1" default="${2:-N}" hint="[y/N]" initial=1
     local -a TUI_MENU_KEYS=(y n)
-    local TUI_MENU_CANCEL_UNKNOWN=1
+    local TUI_MENU_CANCEL_UNKNOWN=1 TUI_MENU_CHECKLIST=0 TUI_MENU_CAPTURE_DIGITS=0
     if [[ "$default" == "Y" ]]; then hint="[Y/n]"; initial=0; fi
     printf '  %s %s:\n' "$question" "$hint" >&2
     tui_menu "$initial" "Yes [y]" "No [n]" >&2 || return 1
