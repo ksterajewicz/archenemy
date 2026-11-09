@@ -143,6 +143,19 @@ archenemy z' 2>&1)
 check "alias działa po przeniesieniu"            '[[ "$RUN" == "TUI-OK z" ]]'
 cp "$H/.bashrc" "$T/b8"; run_step "$H" /bin/bash "" >/dev/null
 check "drugi bieg bez zmian"                     'cmp -s "$H/.bashrc" "$T/b8"'
+check "w pliku wspólnym znacznik po angielsku"   'grep -qxF "# archenemy: TUI (Super+A) as a command" "$H/archenemy/config/shell/shellrc" && ! grep -q "jako komenda" "$H/archenemy/config/shell/shellrc"'
+
+echo "── scenariusz 9: plik wspólny z dawnym polskim znacznikiem (instalacja sprzed 2026-11-09)"
+R="$H/archenemy/config/shell/shellrc"
+sed -i 's|^# archenemy: TUI (Super+A) as a command$|# archenemy: TUI (Super+A) jako komenda|' "$R"
+cp "$R" "$T/r9"
+OUT=$(run_step "$H" /bin/bash "")
+check "bez pytania o alias"                      '[[ "$OUT" != *"[Y/n]"* ]]'
+check "znacznik podmieniony na angielski"        'grep -qxF "# archenemy: TUI (Super+A) as a command" "$R" && ! grep -q "jako komenda" "$R"'
+check "kopia pliku wspólnego = stara treść"      'cmp -s "$(find "$H/archenemy/config/shell" -maxdepth 1 -name "shellrc.bak-*" | head -n1)" "$T/r9"'
+check "alias nadal raz"                          '[[ $(grep -c "^alias archenemy=" "$R") -eq 1 ]]'
+cp "$R" "$T/r9b"; run_step "$H" /bin/bash "" >/dev/null
+check "drugi bieg: plik wspólny bez zmian"       'cmp -s "$R" "$T/r9b"'
 
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"

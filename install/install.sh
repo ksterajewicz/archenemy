@@ -1074,7 +1074,14 @@ fi
 
 ALIAS_STATE="$(archenemy_alias_state "$BASHRC" "$ZSHRC")"
 case "$ALIAS_STATE" in
-    ours) echo -e "  ${GREEN}✓ komenda 'archenemy' już jest w pliku wspólnym${NC}" ;;
+    ours)
+        echo -e "  ${GREEN}✓ komenda 'archenemy' już jest w pliku wspólnym${NC}"
+        # Dawny polski znacznik nad aliasem → angielski; drugi bieg = no-op.
+        if ! SHELL_BAK="$(archenemy_alias_mark_refresh)"; then
+            echo -e "  ${YELLOW}⚠ Could not update the comment above the 'archenemy' alias in ${SHELLRC/#$HOME/\~}.${NC}"
+        elif [[ -n "$SHELL_BAK" ]]; then
+            echo -e "  ${GREEN}✓ Comment above the 'archenemy' alias updated (backup: ${SHELL_BAK/#$HOME/\~})${NC}"
+        fi ;;
     own)  echo -e "  ${YELLOW}⚠ masz już własny alias 'archenemy' — nie ruszam.${NC}" ;;
     legacy*)
         if SHELL_BAK="$(archenemy_alias_move "${ALIAS_STATE#legacy }")"; then

@@ -87,6 +87,21 @@ check "~/.bashrc bez znacznika i aliasu"  '! grep -q "archenemy" "$B"'
 head -n -3 "$T/bashrc.orig" > "$T/bashrc.pre8m"
 check "~/.bashrc = treść sprzed [8m]"     'cmp -s "$B" "$T/bashrc.pre8m"'
 check "stan: ours"                        '[[ "$(archenemy_alias_state "$B")" == ours ]]'
+check "w shellrc nowy znacznik, bez dawnego" '! grep -qxF "$ARCHENEMY_ALIAS_MARK_OLD" "$SHELLRC"'
+
+echo "== dawny polski znacznik w shellrc (instalacje sprzed 2026-11-09)"
+sed -i "s|^$ARCHENEMY_ALIAS_MARK\$|$ARCHENEMY_ALIAS_MARK_OLD|" "$SHELLRC"
+cp "$SHELLRC" "$T/shellrc.oldmark"
+check "dawny znacznik: stan ours"         '[[ "$(archenemy_alias_state "$B")" == ours ]]'
+nsb() { find "$SHELL_RC_DIR" -maxdepth 1 -name "shellrc.bak-*" | wc -l; }
+n0=$(nsb)
+sbak="$(archenemy_alias_mark_refresh)"
+check "odświeżenie: kopia = stara treść"  '[[ -f "$sbak" ]] && cmp -s "$sbak" "$T/shellrc.oldmark"'
+check "odświeżenie: nowy znacznik raz"    '[[ $(grep -cxF "$ARCHENEMY_ALIAS_MARK" "$SHELLRC") -eq 1 ]] && ! grep -qxF "$ARCHENEMY_ALIAS_MARK_OLD" "$SHELLRC"'
+check "odświeżenie: zmieniona tylko ta linia" '[[ "$(diff "$T/shellrc.oldmark" "$SHELLRC" | grep -c "^[<>]")" -eq 2 ]]'
+check "odświeżenie drugi raz: no-op"      '[[ -z "$(archenemy_alias_mark_refresh)" && $(nsb) -eq $((n0 + 1)) ]]'
+printf '\n%s\nalias archenemy=x\n' "$ARCHENEMY_ALIAS_MARK_OLD" > "$T/rc-old"
+check "dawny znacznik w rc: legacy"       '[[ "$(SHELLRC=/nonexistent archenemy_alias_state "$T/rc-old")" == "legacy $T/rc-old" ]]'
 
 echo "== blok wczytujący w ~/.bashrc"
 n0=$(baks)

@@ -36,9 +36,11 @@ ZSH_DEFAULTS="$SHELL_RC_DIR/zsh-defaults.zsh"
 SHELL_KEYS="$SHELL_RC_DIR/keys.zsh"
 SHELL_BLOCK_BEGIN="# >>> archenemy shell >>>"
 SHELL_BLOCK_END="# <<< archenemy shell <<<"
-# Znacznik aliasu z decyzji 2026-10-14 — ten sam tekst, żeby stare instalacje
-# (alias w ~/.bashrc) dało się rozpoznać i przenieść.
-ARCHENEMY_ALIAS_MARK="# archenemy: TUI (Super+A) jako komenda"
+# Znacznik aliasu: ląduje w pliku użytkownika, więc po angielsku (właściciel
+# 2026-11-09). Dawny polski znacznik z decyzji 2026-10-14 dalej rozpoznajemy
+# (alias w ~/.bashrc albo w shellrc starych instalacji) i podmieniamy na nowy.
+ARCHENEMY_ALIAS_MARK="# archenemy: TUI (Super+A) as a command"
+ARCHENEMY_ALIAS_MARK_OLD="# archenemy: TUI (Super+A) jako komenda"
 SHELLRC_BASH_MARK="# --- bash only ---"
 
 # Szablon pliku użytkownika. Tekst widzi użytkownik, więc po angielsku.
@@ -347,14 +349,19 @@ rc_migrate_apply() {
     echo "${#nums[@]}"
 }
 
+# Czy plik ma znacznik aliasu (nowy albo dawny)? 0 tak, 1 nie.
+archenemy_alias_marked() {
+    grep -qxF -e "$ARCHENEMY_ALIAS_MARK" -e "$ARCHENEMY_ALIAS_MARK_OLD" "$1" 2>/dev/null
+}
+
 # Stan komendy `archenemy`: ours (znacznik w shellrc), legacy (znacznik w rc
 # z czasów przed plikiem wspólnym), own (własny alias użytkownika gdziekolwiek),
 # none. Argumenty: pliki rc do przejrzenia.
 archenemy_alias_state() {
     local f
-    if grep -qxF "$ARCHENEMY_ALIAS_MARK" "$SHELLRC" 2>/dev/null; then echo ours; return; fi
+    if archenemy_alias_marked "$SHELLRC"; then echo ours; return; fi
     for f in "$@"; do
-        if grep -qxF "$ARCHENEMY_ALIAS_MARK" "$f" 2>/dev/null; then echo "legacy $f"; return; fi
+        if archenemy_alias_marked "$f"; then echo "legacy $f"; return; fi
     done
     for f in "$SHELLRC" "$@"; do
         if grep -qE '^[[:space:]]*alias[[:space:]]+archenemy=' "$f" 2>/dev/null; then echo own; return; fi
@@ -369,7 +376,21 @@ archenemy_alias_add() {
     { echo "$ARCHENEMY_ALIAS_MARK"; archenemy_alias_line; } > "$add"
     shellrc_append_common "$add" >/dev/null || { rm -f "$add"; return 1; }
     rm -f "$add"
-    grep -qxF "$ARCHENEMY_ALIAS_MARK" "$SHELLRC"
+    archenemy_alias_marked "$SHELLRC"
+}
+
+# Dawny polski znacznik w shellrc → nowy, angielski. Zmieniamy tylko linię
+# równą znacznikowi (to linia archenemy, nie użytkownika), z kopią przed
+# zmianą. stdout: ścieżka kopii albo nic, gdy nie było czego zmieniać.
+archenemy_alias_mark_refresh() {
+    local tmp bak
+    grep -qxF "$ARCHENEMY_ALIAS_MARK_OLD" "$SHELLRC" 2>/dev/null || return 0
+    bak="$(rc_backup "$SHELLRC")" || return 1
+    tmp="$(mktemp "$SHELLRC.XXXXXX")" || return 1
+    awk -v o="$ARCHENEMY_ALIAS_MARK_OLD" -v n="$ARCHENEMY_ALIAS_MARK" '
+        $0 == o { print n; next } { print }' "$SHELLRC" > "$tmp" \
+        && rc_write "$SHELLRC" "$tmp" || { rm -f "$tmp"; return 1; }
+    echo "$bak"
 }
 
 # Alias dopisany do ~/.bashrc przez dawny krok [8m] (pusta linia, znacznik,
@@ -380,11 +401,11 @@ archenemy_alias_move() {
     archenemy_alias_add || return 1
     bak="$(rc_backup "$rc")" || return 1
     tmp="$(mktemp)" || return 1
-    awk -v m="$ARCHENEMY_ALIAS_MARK" '
+    awk -v m="$ARCHENEMY_ALIAS_MARK" -v o="$ARCHENEMY_ALIAS_MARK_OLD" '
         { line[NR] = $0 }
         END {
             for (i = 1; i <= NR; i++) {
-                if (line[i] == m) {
+                if (line[i] == m || line[i] == o) {
                     drop[i] = 1
                     if (line[i + 1] ~ /^alias archenemy=/) drop[i + 1] = 1
                     if (i > 1 && line[i - 1] == "") drop[i - 1] = 1

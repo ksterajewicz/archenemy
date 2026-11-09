@@ -112,6 +112,7 @@ check "~/.zshrc z blokiem"                'grep -qxF "# >>> archenemy shell >>>"
 check "~/.zshrc wczytuje zsh-defaults"    'grep -q "zsh-defaults.zsh" "$H/.zshrc"'
 check "~/.bashrc z blokiem"               'grep -qxF "# >>> archenemy shell >>>" "$H/.bashrc"'
 check "alias archenemy w shellrc"         'grep -q "^alias archenemy=" "$A/config/shell/shellrc"'
+check "znacznik aliasu po angielsku"      'grep -qxF "# archenemy: TUI (Super+A) as a command" "$A/config/shell/shellrc" && ! grep -q "jako komenda" "$A/config/shell/shellrc"'
 check "pokazał linie do przeniesienia"    '[[ "$OUT" == *"alias TESTgs="* ]]'
 check "TESTgs przeniesiony"               'grep -q "^alias TESTgs=" "$A/config/shell/shellrc" && ! grep -q "^alias TESTgs=" "$H/.bashrc"'
 check "PS1 został w ~/.bashrc"            'grep -q "^PS1=" "$H/.bashrc"'
@@ -173,6 +174,11 @@ printf "alias TESTc=1\n# kom\nalias TESTd=2\n" >> "$H/.bashrc"
 out="$(run "y" migrate)"
 check "komunikat: tyle linii, ile na liście" '[[ "$out" == *"has 2 line(s)"* && "$out" == *"2 line(s) moved"* ]]'
 check "nic do przeniesienia"              '[[ "$(run "" migrate)" == *"Nothing to move"* ]]'
+# shellrc ze starej instalacji: polski znacznik nad aliasem → angielski, z kopią.
+sed -i 's|^# archenemy: TUI (Super+A) as a command$|# archenemy: TUI (Super+A) jako komenda|' "$A/config/shell/shellrc"
+out="$(run "" migrate)"
+check "dawny znacznik podmieniony"        '[[ "$out" == *"Comment above the '"'"'archenemy'"'"' alias in your file updated"* ]] && grep -qxF "# archenemy: TUI (Super+A) as a command" "$A/config/shell/shellrc" && ! grep -q "jako komenda" "$A/config/shell/shellrc"'
+check "drugi bieg: bez komunikatu"        '[[ "$(run "" migrate)" != *"Comment above"* ]]'
 
 echo "== menu"
 OUT="$(run "\e")"

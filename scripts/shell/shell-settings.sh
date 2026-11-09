@@ -97,6 +97,12 @@ ensure_block() {
 # działał też w zsh. To linia archenemy, nie użytkownika, więc bez pytania.
 move_legacy_alias() {
     local st bak
+    # Dawny polski znacznik nad aliasem w shellrc → angielski (ta sama linia).
+    if ! bak="$(archenemy_alias_mark_refresh)"; then
+        echo -e "  ${YELLOW}⚠ Could not update the comment above the 'archenemy' alias in $(tilde "$SHELLRC").${NC}"
+    elif [[ -n "$bak" ]]; then
+        echo -e "  ${GREEN}✓ Comment above the 'archenemy' alias in your file updated (backup: $(tilde "$bak")).${NC}"
+    fi
     st="$(archenemy_alias_state "$BASHRC" "$ZSHRC")"
     [[ "$st" == legacy* ]] || return 0
     if bak="$(archenemy_alias_move "${st#legacy }")"; then
