@@ -165,7 +165,10 @@ Rules that follow directly from the table:
   `archenemy` alias lives in the shared file (marker
   `# archenemy: TUI (Super+A) as a command`); an old one in `~/.bashrc` is moved,
   and the older Polish marker `# archenemy: TUI (Super+A) jako komenda` is still
-  recognised and rewritten in place (with a backup).
+  recognised and rewritten in place (with a backup). Everything archenemy writes
+  to the user's shell files, the shared `config/shell/` layer and the step [8m]
+  messages are English (code comments elsewhere stay Polish); `tests/shell-rc.sh`
+  checks a fresh `HOME` for Polish text.
   `config/shell/zsh-defaults.zsh` is the tracked shared layer for zsh (no
   frameworks); personal `keys.zsh` loads after it and before `shellrc`, so
   the user's own `bindkey` lines win. Leave zsh's default `^X^V` binding in

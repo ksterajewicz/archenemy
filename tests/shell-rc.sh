@@ -13,6 +13,9 @@
 #       a ~/.bashrc wraca do treści sprzed tamtego kroku,
 #     - prawdziwy `bash -i` widzi przeniesione aliasy,
 #     - zsh, jeśli jest w systemie, też (bez zsh: pominięte i wypisane).
+#     - wszystko, co biblioteka zapisuje u użytkownika (i wspólna warstwa
+#       config/shell), jest po angielsku: czysty $HOME bez polskich znaków
+#       i słów; dawny polski znacznik aliasu jest rozpoznawany i podmieniany.
 #   Uruchom: bash tests/shell-rc.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -234,6 +237,39 @@ check "ścieżka z /etc/shells"             '[[ "$(ARCHENEMY_SHELLS_FILE="$T/she
 check "brak w /etc/shells → kod 1"        '! ARCHENEMY_SHELLS_FILE="$T/shells" shell_path_for TESTnone >/dev/null'
 printf '#!/bin/bash\necho "x:x:1:1::/home/x:/usr/bin/zsh"\n' > "$T/bin/getent"; chmod +x "$T/bin/getent"
 check "login_shell z passwd"              '[[ "$(PATH="$T/bin:$PATH" login_shell)" == zsh ]]'
+
+echo "== kompletność: wszystko, co ląduje u użytkownika, po angielsku (właściciel 2026-11-09)"
+# Czysty $HOME: każda ścieżka zapisu biblioteki (szablon, bloki created/added/
+# updated, migracja z komentarzem, alias nowy i przeniesiony, odświeżenie
+# dawnego znacznika, keys.zsh z kopią) plus wspólna warstwa z gita, która
+# leży obok shellrc. Kopie .bak-* to poprzednia treść użytkownika — poza
+# kontrolą. grep -F: dosłownie, niezależnie od locale i odmiany grepa.
+H4="$T/home-en"; A4="$H4/archenemy"
+mkdir -p "$A4/config/shell"
+cp "$REPO/config/shell/zsh-defaults.zsh" "$REPO/config/shell/emacs-default-bindings.txt" "$A4/config/shell/"
+printf '[[ $- != *i* ]] && return\nalias TESTen=1\n\n%s\nalias archenemy=x\n' "$ARCHENEMY_ALIAS_MARK_OLD" > "$H4/.bashrc"
+printf '# own zshrc\n' > "$H4/.zshrc"
+HOME="$H4" ARCHENEMY_DIR="$A4" bash -c '
+    source "$1"
+    shellrc_ensure
+    archenemy_alias_move "$HOME/.bashrc"
+    rc_block_ensure "$HOME/.bashrc" bash
+    rc_migrate_apply "$HOME/.bashrc"
+    rc_block_ensure "$HOME/.zshrc" zsh
+    sed -i "s|^# Added by archenemy.*|# TEST old block|" "$HOME/.zshrc"; rc_block_ensure "$HOME/.zshrc" zsh
+    rc_block_ensure "$HOME/.bashrc-new" bash
+    rc_block_ensure "$HOME/.zshrc-new" zsh
+    shell_keys_write "^X^Y"; shell_keys_write "^]"
+    printf "%s\n" "$ARCHENEMY_ALIAS_MARK_OLD" >> "$SHELLRC"; archenemy_alias_mark_refresh
+' _ "$REPO/scripts/shell/lib/shell-rc.sh" > "$T/en.log" 2>&1
+check "wygenerowano shellrc, bloki i keys.zsh" '[[ -s "$A4/config/shell/shellrc" && -s "$A4/config/shell/keys.zsh" && -s "$H4/.bashrc-new" && -s "$H4/.zshrc-new" ]] && grep -qxF "$SHELL_BLOCK_BEGIN" "$H4/.zshrc" && grep -q "^# moved from" "$A4/config/shell/shellrc"'
+find "$H4" -type f ! -name '*.bak-*' | sort > "$T/en.files"
+PL_CHARS=(-e ą -e ć -e ę -e ł -e ń -e ó -e ś -e ź -e ż -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż -e „ -e ”)
+check "pliki użytkownika bez polskich znaków" '! xargs -d "\n" grep -nF "${PL_CHARS[@]}" < "$T/en.files"'
+check "wspólna warstwa w gicie bez polskich znaków" '! grep -rnF "${PL_CHARS[@]}" "$REPO/config/shell"'
+# Polskie słowa bez znaków diakrytycznych (np. dawny znacznik „jako komenda”).
+check "pliki użytkownika bez polskich słów"  '! xargs -d "\n" grep -nwiE "jako|komenda|plik|pliku|nie|dla|oraz|albo|tylko|przed|kopia|alias dla|warstwa|historia|klawisze" < "$T/en.files"'
+check "szablon shellrc bez polskich znaków"  '! shellrc_template | grep -F "${PL_CHARS[@]}"'
 
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"

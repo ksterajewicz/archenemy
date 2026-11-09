@@ -288,7 +288,8 @@ archenemy/
 │                                     #   absolute path, ~/.bashrc block added silently once, `archenemy`
 │                                     #   alias in the shared shell file only once (old ~/.bashrc alias moved).
 │                                     #   shell-rc.sh — the shared shell file on a fake HOME: one block after
-│                                     #   many runs, backups, safe-line migration, real `bash -i`.
+│                                     #   many runs, backups, safe-line migration, real `bash -i`, and
+│                                     #   no Polish text in anything written to a fresh HOME.
 │                                     #   shell-settings.sh — Super+A → [h] on fake getent/chsh/pacman/nvim:
 │                                     #   zsh installed and chsh only after "y", plus vi-key capture,
 │                                     #   collision prompts, default restore and atomic personal-file writes.
