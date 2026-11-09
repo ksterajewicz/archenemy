@@ -157,7 +157,7 @@ archenemy/
 │   ├── appbinds/                     # Terminal shortcut manager for apps (Super+A); update-archenemy.sh — [u];
 │   │                                 #   lib/tui.sh — shared look and keys: rice accent, header, [y/N] prompts,
 │   │                                 #   tui_menu — highlighted choices with arrows/j/k, Enter, digits and Esc;
-│   │                                 #   arrows ignored in yes/no prompts, Esc always cancels;
+│   │                                 #   yes/no prompts also use arrows/j/k and Enter; y/n shortcuts remain, Esc cancels;
 │   │                                 #   lib/mpd-output.sh — mpd output switch and its playback test ([o]);
 │   │                                 #   lib/binds.sh — the one place that lists/edits/removes user binds (list and
 │   │                                 #   [d] pick the same lines);
@@ -567,3 +567,5 @@ You can switch the mode **live** in the TUI under `Super + A` → `[w] workspace
 Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.
 
 The monitor list, resolution and refresh-rate choices in `Super+A → [n]` use the shared arrow-key menu, retaining numeric shortcuts and `p`/`h`/`f`/`r`. Text fields and the 15-second trial confirmation keep their existing input.
+
+Yes/no confirmations use the shared arrow-key menu. Enter keeps the shown default; `y`/`n` answer immediately, and Esc or EOF cancels.

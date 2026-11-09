@@ -22,8 +22,8 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 # shellcheck source=../scripts/appbinds/lib/tui.sh
 source "$REPO/scripts/appbinds/lib/tui.sh"
-key() { printf "$1" | read_key "" 2>/dev/null; }
-yes_no() { printf "$1" | confirm "q?" "$2" 2>/dev/null; }
+key() { printf '%b' "$1" | read_key "" 2>/dev/null; }
+yes_no() { printf '%b' "$1" | confirm "q?" "$2" 2>/dev/null; }
 
 echo "== read_key"
 check "zwykły klawisz"                    '[[ "$(key q)" == q ]]'
@@ -44,10 +44,22 @@ check "[y/N] Enter = nie"                 '! yes_no "\n" N'
 check "[y/N] Esc = nie"                   '! yes_no "\e" N'
 check "[y/N] y = tak"                     'yes_no y N'
 
+check "[y/N] strzałka w górę = tak" 'yes_no "\e[A\n" N'
+check "[Y/n] strzałka w dół = nie" '! yes_no "\e[B\n" Y'
+check "j/k zmieniają odpowiedź" 'yes_no "k\n" N'
+check "EOF nie zatwierdza" '! yes_no "" Y'
+# Otwarte wejście bez danych: rzeczywisty timeout, bez oczekiwania 15 sekund.
+start=$SECONDS
+if TUI_MENU_TIMEOUT=1 confirm "timeout" Y < <(sleep 2) 2>/dev/null; then
+    fail "timeout nie zatwierdza"
+else
+    check "timeout kończy przed zamknięciem wejścia" '(( SECONDS - start < 2 ))'
+fi
+
 echo "== menu główne"
 H="$T/home"; mkdir -p "$H/archenemy/config/hypr" "$H/archenemy/data" "$T/bin"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; chmod +x "$T/bin/clear"
-tui() { printf "$1" | HOME="$H" PATH="$T/bin:$PATH" timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1; }
+tui() { printf '%b' "$1" | HOME="$H" PATH="$T/bin:$PATH" timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1; }
 out="$(tui '\e[A\e[Bq')"; rc=$?
 check "strzałki nie zamykają, q zamyka"   '[[ $rc -eq 0 ]]'
 tui '' >/dev/null; rc=$?
@@ -62,7 +74,7 @@ A="$H/archenemy"; rm -rf "$A"; git init -q -b dev "$A"
 mkdir -p "$A/install"; printf '#!/bin/bash\necho INSTALL-RAN\n' > "$A/install/install.sh"; echo v1 > "$A/f"
 g "$A" add -A; g "$A" commit -m v1
 git -C "$A" remote add origin "$T/origin.git"; git -C "$A" push -q origin dev
-upd() { printf "$1" | HOME="$H" bash "$REPO/scripts/appbinds/update-archenemy.sh" 2>&1; }
+upd() { printf '%b' "$1" | HOME="$H" bash "$REPO/scripts/appbinds/update-archenemy.sh" 2>&1; }
 out="$(upd '1\e\n')"
 check "Esc na [Y/n] → bez instalatora"    '[[ "$out" != *INSTALL-RAN* && "$out" == *"Updated"* ]]'
 out="$(upd '1\n\n')"

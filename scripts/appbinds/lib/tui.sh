@@ -112,7 +112,9 @@ read_key() {
 # sam znak. Kod 1 = koniec wejścia.
 read_key_nav() {
     local key="" next="" seq=""
-    if ! IFS= read -rsn1 key && [[ -z "$key" ]]; then
+    local -a timeout_args=()
+    [[ -z "${TUI_KEY_TIMEOUT:-}" ]] || timeout_args=(-t "$TUI_KEY_TIMEOUT")
+    if ! IFS= read -rsn1 "${timeout_args[@]}" key && [[ -z "$key" ]]; then
         return 1
     fi
     if [[ -z "$key" ]]; then
@@ -144,7 +146,8 @@ read_key_nav() {
 TUI_MENU_INDEX=0
 # shellcheck disable=SC2034
 tui_menu() {
-    local selected="$1" key i width hint
+    local selected="$1" key i width hint remaining
+    local deadline=$(( SECONDS + ${TUI_MENU_TIMEOUT:-0} ))
     shift
     local -a items=("$@")
     local count=${#items[@]}
@@ -166,7 +169,12 @@ tui_menu() {
         [[ "${TUI_MENU_CHECKLIST:-0}" == 1 ]] && hint="↑/↓ or j/k: move · Space/Enter: toggle · Esc: back"
         tui_fit "$hint" "$width"
         printf '\n    %b%s%b\n' "$DIM" "$FIT" "$NC"
-        key="$(read_key_nav)" || return 1
+        remaining=""
+        if (( ${TUI_MENU_TIMEOUT:-0} > 0 )); then
+            remaining=$(( deadline - SECONDS ))
+            (( remaining > 0 )) || return 1
+        fi
+        key="$(TUI_KEY_TIMEOUT="$remaining" read_key_nav)" || return 1
         case "$key" in
             up|k) selected=$(( (selected + count - 1) % count )) ;;
             down|j) selected=$(( (selected + 1) % count )) ;;
@@ -192,6 +200,7 @@ tui_menu() {
                         return 0
                     fi
                 done
+                [[ "${TUI_MENU_CANCEL_UNKNOWN:-0}" == 1 ]] && return 1
                 ;;
         esac
         [[ -t 1 ]] && printf '\033[%dA\r' "$(( count + 2 ))"
@@ -231,19 +240,17 @@ tui_menu_lines() {
     esac
 }
 
-# Pytanie tak/nie jednym klawiszem. Kod 0 = tak. confirm <pytanie> <Y|N>:
-# Y = Enter znaczy tak, N = Enter znaczy nie. Esc i każdy inny klawisz to
-# zawsze NIE, niezależnie od domyślnej (audyt TUI 2026-11-05: Esc na [Y/n]
-# uruchamiał instalator).
+# Potwierdzenie przez wspólne menu; Enter zachowuje domyślną odpowiedź.
+# Esc/EOF i nieznany klawisz anulują. Limit czasu dotyczy całego wyboru,
+# nie pojedynczego naciśnięcia — strzałki nie przedłużają próby monitora.
 confirm() {
-    local question="$1" default="${2:-N}" hint="[y/N]" key
-    [[ "$default" == "Y" ]] && hint="[Y/n]"
-    key="$(read_key "  ${question} ${hint}: ")" || return 1
-    case "$key" in
-        y|Y) return 0 ;;
-        "")  [[ "$default" == "Y" ]] ;;
-        *)   return 1 ;;
-    esac
+    local question="$1" default="${2:-N}" hint="[y/N]" initial=1
+    local -a TUI_MENU_KEYS=(y n)
+    local TUI_MENU_CANCEL_UNKNOWN=1
+    if [[ "$default" == "Y" ]]; then hint="[Y/n]"; initial=0; fi
+    printf '  %s %s:\n' "$question" "$hint" >&2
+    tui_menu "$initial" "Yes [y]" "No [n]" >&2 || return 1
+    (( TUI_MENU_INDEX == 0 ))
 }
 
 # Zapis jednowartościowego pliku warstwy maszynowej (data/*.dat) — atomowo
