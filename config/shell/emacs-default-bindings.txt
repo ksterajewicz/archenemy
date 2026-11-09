@@ -1,6 +1,7 @@
 # ZLE Standard Widgets, default bindings in emacs mode (first column):
 # https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html#Standard-Widgets
 # Last checked 2026-11-09. Printable single keys are rejected separately.
+# The first binding column is the emacs keymap.
 ^B	backward-char
 \e[D	backward-char
 \eB	backward-word
@@ -81,10 +82,13 @@
 ^L	clear-screen
 \e^L	clear-screen
 ^X^X	exchange-point-and-mark
+^@	set-mark-command
 ^D	delete-char-or-list
 \t	expand-or-complete
 \e 	expand-history
 \e!	expand-history
+\e?	which-command
+\e-	neg-argument
 ^X*	expand-word
 \eA	accept-and-hold
 \ea	accept-and-hold

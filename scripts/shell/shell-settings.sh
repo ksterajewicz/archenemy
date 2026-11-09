@@ -151,6 +151,7 @@ vi_key_normalize() {
     key="${key//^[/\\e}"
     key="${key//ESC-/\\e}"
     key="${key//\\C-/^}"
+    key="${key//\\t/^I}"
     printf '%s' "$key"
 }
 

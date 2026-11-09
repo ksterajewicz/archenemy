@@ -190,6 +190,8 @@ OUT="$(run $'41a\nx\e')"
 check "walidacja pozostaje widoczna przed następnym clear" '[[ "$OUT" == *"single printable key cannot be used"*"<CLEAR>"* ]]'
 OUT="$(run $'41\xc3\xa9\n\n')"
 check "wielobajtowy śmieć odrzucony"       '[[ "$OUT" == *"Invalid or too long key sequence"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\t\nN\n')"
+check "Tab koliduje z expand-or-complete" '[[ "$OUT" == *"^I replaces the existing expand-or-complete binding"* && "$OUT" == *"No changes made"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41\x18\nN\n')"
 check "prefiks istniejącego skrótu ostrzeżony" '[[ "$OUT" == *"^X is a prefix of existing ^X^V"* && "$OUT" == *"No changes made"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41\x18\x16\nN\n')"
