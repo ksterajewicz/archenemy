@@ -111,6 +111,7 @@ check "drugi raz: exists"                   '[[ "$(shell_keys_ensure)" == exists
 check "generator Ctrl+X Ctrl+Y"             '[[ "$(shell_keys_text "^X^Y")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
 check "generator Alt+v"                     '[[ "$(shell_keys_text "\\ev")" == "bindkey -M emacs '\''\\ev'\'' vi-cmd-mode" ]]'
 check "zapis osobistego skrótu"              '[[ "$(shell_keys_write "^X^Y")" == written && "$(<"$SHELL_KEYS")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
+check "keys.zsh kończy się nową linią"          '[[ "$(tail -c1 "$SHELL_KEYS" | od -An -t x1 | tr -d "[:space:]")" == 0a ]]'
 check "drugi zapis: no-op"                   '[[ "$(shell_keys_write "^X^Y")" == unchanged ]]'
 check "brak plików mktemp po zapisie"        '[[ -z "$(find "$SHELL_RC_DIR" -maxdepth 1 -name "keys.zsh.??????")" ]]'
 n0="$(find "$SHELL_RC_DIR" -maxdepth 1 -name 'keys.zsh.bak-*' | wc -l)"

@@ -129,7 +129,7 @@ shell_keys_write() {
     fi
     tmp="$(mktemp "$SHELL_KEYS.XXXXXX")" || return 1
     chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
-    if ! printf '%s' "$text" > "$tmp" || ! mv -f "$tmp" "$SHELL_KEYS"; then
+    if ! printf '%s\n' "$text" > "$tmp" || ! mv -f "$tmp" "$SHELL_KEYS"; then
         rm -f "$tmp"
         return 1
     fi
