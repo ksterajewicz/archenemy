@@ -63,7 +63,7 @@ echo "nvim \$*" >> "$T/log"
 [[ -f "$T/nvim-action" ]] && bash "$T/nvim-action" "\$1"
 exit 0
 EOF
-printf '#!/bin/bash\nexit 0\n' > "$BIN/clear"
+printf '#!/bin/bash\nprintf "<CLEAR>\\n"\n' > "$BIN/clear"
 mkdir -p "$T/zbin"
 chmod +x "$BIN"/*
 printf '/bin/sh\n/usr/bin/bash\n%s\n' "$T/zbin/zsh" > "$T/shells"
@@ -186,6 +186,8 @@ OUT="$(run $'41\e')"
 check "Esc anuluje bez zapisu"             '[[ "$OUT" == *"Cancelled"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41a\n\n')"
 check "pojedynczy znak drukowalny odrzucony" '[[ "$OUT" == *"single printable key cannot be used"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41a\nx\e')"
+check "walidacja pozostaje widoczna przed następnym clear" '[[ "$OUT" == *"single printable key cannot be used"*"<CLEAR>"* ]]'
 OUT="$(run $'41\xc3\xa9\n\n')"
 check "wielobajtowy śmieć odrzucony"       '[[ "$OUT" == *"Invalid or too long key sequence"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41\x18\nN\n')"

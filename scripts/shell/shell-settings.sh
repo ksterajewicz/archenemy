@@ -287,11 +287,12 @@ vi_key_menu() {
             1)
                 sequence="$(vi_key_read_sequence '  Press the key combination, then Enter (Esc = cancel; 30s idle cancels): ')"
                 case "$?" in
-                    1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; continue ;;
-                    2) echo -e "  ${RED}✗ Invalid or too long key sequence.${NC}"; continue ;;
+                    1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; read -rsn1 -p "  Press any key to continue..." _ || true; echo; continue ;;
+                    2) echo -e "  ${RED}✗ Invalid or too long key sequence.${NC}"; read -rsn1 -p "  Press any key to continue..." _ || true; echo; continue ;;
                 esac
                 if ! vi_key_validate_sequence "$sequence"; then
                     echo -e "  ${RED}✗ Use a non-empty ASCII key combination; a single printable key cannot be used.${NC}"
+                    read -rsn1 -p "  Press any key to continue..." _ || true; echo
                     continue
                 fi
                 if vi_key_conflicts "$sequence"; then
