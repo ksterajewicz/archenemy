@@ -38,8 +38,10 @@
 
 # ─── powłoka (config/shell): plik użytkownika = warstwa osobista, wspólny dla
 # bash i zsh (scripts/shell/lib/shell-rc.sh, Super+A → [h]); w gicie tylko
-# zsh-defaults.zsh. Aktualizator (git pull) go nie rusza; mktemp obok jak wyżej
+# zsh-defaults.zsh i lista domyślnych wiązań ZLE. Aktualizator ich nie rusza;
+# mktemp obok jak wyżej
 /config/shell/shellrc
+/config/shell/keys.zsh
 /config/shell/*.??????
 
 # ─── editor / desktop-environment junk ────────────────────────────────────────
