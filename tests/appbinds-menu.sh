@@ -104,7 +104,7 @@ echo "== [v] pasek głośności"
 reset; out="$(tui 'v2\n\nq')"
 check "wybór zapisany"                         '[[ "$(<"$A/data/volume-bar-style.dat")" == ticks && "$out" == *"Volume bar style: ticks"* ]]'
 out="$(tui 'vx\n\nq')"
-check "zły klawisz bez zmiany"                 '[[ "$(<"$A/data/volume-bar-style.dat")" == ticks && "$out" == *"Pick 1, 2 or 3"* ]]'
+check "zły klawisz bez zmiany"                 '[[ "$(<"$A/data/volume-bar-style.dat")" == ticks && "$out" == *"Cancelled"* ]]'
 out="$(tui 'v\n\nq')"
 check "Enter anuluje"                          '[[ "$out" == *"Cancelled"* ]]'
 check "bez bety bez ostrzeżenia"               '[[ "$out" != *"white-blue_beta"* ]]'
@@ -112,13 +112,13 @@ check "bez bety bez ostrzeżenia"               '[[ "$out" != *"white-blue_beta"
 echo "== [t] timer"
 out="$(tui 't1\n\nq')"
 check "włączenie zapisane"                     '[[ "$(<"$A/data/timer-enabled.dat")" == 1 && "$out" == *"Timer shown"* ]]'
-out="$(tui 't240\n\nq')"
+out="$(tui 't2\n40\nq')"
 check "czas zapisany"                          '[[ "$(<"$A/data/timer-duration.dat")" == 40 ]]'
-out="$(tui 't20\n\nq')"
+out="$(tui 't2\n0\nq')"
 check "czas spoza zakresu odrzucony"           '[[ "$(<"$A/data/timer-duration.dat")" == 40 && "$out" == *"not a number between"* ]]'
-out="$(tui 't300ff00\n\nq')"
+out="$(tui 't3\n00ff00\nq')"
 check "kolor dostaje #"                        '[[ "$(<"$A/data/timer-color.dat")" == "#00ff00" ]]'
-out="$(tui 't3zielony\n\nq')"
+out="$(tui 't3\nzielony\nq')"
 check "zły kolor odrzucony"                    '[[ "$(<"$A/data/timer-color.dat")" == "#00ff00" && "$out" == *"not a #rrggbb"* ]]'
 
 echo "== ostrzeżenie dla bety"

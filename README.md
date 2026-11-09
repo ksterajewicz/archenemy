@@ -568,6 +568,8 @@ Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the
 
 The monitor list, resolution and refresh-rate choices in `Super+A → [n]` use the shared arrow-key menu, retaining numeric shortcuts and `p`/`h`/`f`/`r`. Numbering, wallpaper roles and forgetting a monitor also support arrows. The trial uses a yes/no menu with a 15-second deadline for the whole choice; timeout, Esc and SIGHUP roll back. Text fields keep their existing input.
 
+The remaining `Super+A` selection screens also use the shared menu: bind selection for editing/removal, volume style, audio route and devices (including ALSA), timer action, keyboard layout count and presets, and diagnostics. Keyboard layout codes remain text input when choosing a custom XKB code; timer values and layout order remain text fields. Existing number shortcuts remain available.
+
 Yes/no confirmations use the shared arrow-key menu. Enter keeps the shown default; `y`/`n` answer immediately, and Esc or EOF cancels.
 
 `Super+A → [m]` uses arrow-key menus for mouse settings, device selection and acceleration. Numeric shortcuts remain; speed, DPI, polling and scroll values remain text fields.

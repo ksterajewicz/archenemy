@@ -275,15 +275,17 @@ add_bind() {
 }
 
 edit_bind() {
-    local total num cmd backup
+    local total num cmd backup key
     total="$(bind_count "$BINDS_CONF")"
     if [[ "$total" -eq 0 ]]; then
         echo -e "  ${YELLOW}⚠ Nothing to edit.${NC}"
         return
     fi
     echo ""
-    read -rp "  Bind number to edit (Enter = cancel): " num
-    [[ -z "$num" ]] && return
+    local -a choices=()
+    while IFS=$'\t' read -r _ key cmd; do choices+=("Super + ${key} → ${cmd}"); done < <(user_bind_lines "$BINDS_CONF")
+    tui_menu_lines 0 "${choices[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    num=$((TUI_MENU_INDEX + 1))
     if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
         echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
         return
@@ -306,7 +308,7 @@ edit_bind() {
 }
 
 remove_bind() {
-    local total
+    local total num key cmd
     total="$(bind_count "$BINDS_CONF")"
     if [[ "$total" -eq 0 ]]; then
         echo -e "  ${YELLOW}⚠ Nothing to remove.${NC}"
@@ -314,8 +316,10 @@ remove_bind() {
     fi
 
     echo ""
-    read -rp "  Bind number to remove (Enter = cancel): " num
-    [[ -z "$num" ]] && return
+    local -a choices=()
+    while IFS=$'\t' read -r _ key cmd; do choices+=("Super + ${key} → ${cmd}"); done < <(user_bind_lines "$BINDS_CONF")
+    tui_menu_lines 0 "${choices[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    num=$((TUI_MENU_INDEX + 1))
     if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
         echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
         return
@@ -396,7 +400,7 @@ volume_style_menu() {
     echo -e "    ${BLUE}2${NC}) ticks   ▮▮▮▮▮▮▯▯▯▯"
     echo -e "    ${BLUE}3${NC}) solid   ▬▬▬▬▬▬▬▬▬▬▬▬────────"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "line" "ticks" "solid" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     local target=""
     case "$ans" in
         1) target="line" ;;
@@ -447,7 +451,7 @@ mpd_output_menu() {
     echo -e "    failure the output goes back to pipewire automatically. PipeWire itself is"
     echo -e "    never stopped by this menu. mpd restarts."
     echo ""
-    local ans msg rc; ans="$(read_key "  Choose [1-2, Esc = cancel]: ")"
+    local ans msg rc; tui_menu_lines 0 "pipewire — recommended desktop audio" "alsa — exclusive hardware device" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     case "$ans" in
         1)
             msg="$(apply_mpd_output pipewire)"; rc=$?
@@ -469,8 +473,8 @@ mpd_output_menu() {
                 printf "    ${BLUE}%d${NC}) %-10s %s%b\n" "$((i+1))" "$hw" "${devices[$i]#*$'\t'}" "$busy"
             done
             echo ""
-            read -rp "  Device number (Enter = cancel): " ans
-            [[ "$ans" =~ ^[0-9]+$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+            local -a labels=(); for line in "${devices[@]}"; do labels+=("${line%%$'\t'*} — ${line#*$'\t'}"); done
+            tui_menu_lines 0 "${labels[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
             (( ans >= 1 && ans <= ${#devices[@]} )) || { echo -e "  ${RED}✗ Out of range.${NC}"; return; }
             hw="${devices[$((ans-1))]%%$'\t'*}"
             if alsa_device_busy "$hw"; then
@@ -516,8 +520,8 @@ pick_audio_device() {
         printf "    ${BLUE}%d${NC}) %s %s\n" "$((i+1))" "$mark" "${devices[$i]#*$'\t'}"
     done
     echo ""
-    read -rp "  Device number (Enter = cancel): " ans
-    [[ "$ans" =~ ^[0-9]+$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    local -a labels=(); for line in "${devices[@]}"; do labels+=("${line#*$'\t'}"); done
+    tui_menu_lines 0 "${labels[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     (( ans >= 1 && ans <= ${#devices[@]} )) || { echo -e "  ${RED}✗ Out of range.${NC}"; return; }
     out="$(bash "$script" set "$kind" "${devices[$((ans-1))]%%$'\t'*}" 2>&1)"; rc=$?
     case $rc in
@@ -540,7 +544,7 @@ audio_menu() {
     echo -e "    ${BLUE}3${NC}) mpd music output (pipewire / alsa)"
     echo -e "    ${BLUE}4${NC}) open pavucontrol (per-app streams, ports, profiles)"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-4, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "output device for all apps" "input device (microphone)" "mpd music output (pipewire / alsa)" "open pavucontrol" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     case "$ans" in
         1) pick_audio_device sink "output" ;;
         2) pick_audio_device source "input" ;;
@@ -588,7 +592,7 @@ timer_menu() {
     echo -e "    ${BLUE}2${NC}) default duration (minutes)"
     echo -e "    ${BLUE}3${NC}) text colour (hex)"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "$( [[ "$enabled_label" == on ]] && echo 'turn off' || echo 'turn on' )" "default duration (minutes)" "text colour (hex)" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
 
     case "$ans" in
         1)
@@ -668,12 +672,11 @@ keyboard_layouts_menu() {
     echo -e "    ${BLUE}2${NC}) change order (optional)"
     echo -e "    ${BLUE}3${NC}) reset to pl,us"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "choose layouts (how many and which)" "change order (optional)" "reset to pl,us" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     local new=""
     case "$ans" in
         1)
-            local count; count="$(read_key "  How many layouts? [1-4]: ")"
-            [[ "$count" =~ ^[1-4]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+            local count; tui_menu_lines 0 "1 layout" "2 layouts" "3 layouts" "4 layouts" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; count=$((TUI_MENU_INDEX+1))
             local -a P=() codes=()
             local line
             while IFS= read -r line; do [[ -n "$line" ]] && P+=("$line"); done < <(bash "$script" presets)
@@ -685,8 +688,11 @@ keyboard_layouts_menu() {
             echo ""; echo ""
             echo -e "  Type a number from the list or any XKB code (e.g. ${CYAN}de${NC}, ${CYAN}ie${NC}); Enter = cancel."
             local pick code
+            local -a preset_labels=(); for line in "${P[@]}"; do preset_labels+=("${line%%$'\t'*} — ${line#*$'\t'}"); done
             for (( i = 1; i <= count; i++ )); do
-                read -rp "  Layout #$i: " pick
+                echo "  Layout #$i (choose preset or custom XKB code):"
+                tui_menu_lines 0 "${preset_labels[@]}" "Custom XKB code…" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+                if (( TUI_MENU_INDEX == ${#P[@]} )); then read -rp "  XKB code: " pick; else pick=$((TUI_MENU_INDEX+1)); fi
                 pick=$(trim "$pick")
                 [[ -n "$pick" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
                 if [[ "$pick" =~ ^[0-9]+$ ]]; then
@@ -769,7 +775,7 @@ diagnostics_menu() {
     echo -e "    ${BLUE}2${NC}) workspaces: rules, monitors and windows, saved to a file"
     echo -e "    ${BLUE}3${NC}) GPU and games: drivers and render GPU, saved to a file"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "config check: generated files against connected monitors" "workspaces: rules, monitors and windows" "GPU and games: drivers and render GPU" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     case "$ans" in
         1)
             if [[ ! -f "$check" ]]; then
