@@ -278,12 +278,12 @@ vi_key_menu() {
             1)
                 sequence="$(vi_key_read_sequence '  Press the key combination (Esc = cancel): ')"
                 case "$?" in
-                    1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; return 0 ;;
-                    2) echo -e "  ${RED}✗ Invalid or too long key sequence.${NC}"; return 0 ;;
+                    1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; continue ;;
+                    2) echo -e "  ${RED}✗ Invalid or too long key sequence.${NC}"; continue ;;
                 esac
                 if ! vi_key_validate_sequence "$sequence"; then
                     echo -e "  ${RED}✗ Use a non-empty ASCII key combination; a single printable key cannot be used.${NC}"
-                    return 0
+                    continue
                 fi
                 if vi_key_conflicts "$sequence"; then
                     echo -e "  ${YELLOW}This key combination may change an existing binding or its timeout behavior.${NC}"
