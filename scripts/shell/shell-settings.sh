@@ -1,10 +1,10 @@
 #!/bin/bash
-# shellcheck disable=SC2088,SC2001  # ~ w tekstach UI jest celowo dosłowne; wcięcie listy sedem
+# shellcheck disable=SC1091,SC2088,SC2001  # źródła są względem SELF_DIR; ~ w UI; wcięcie listy sedem
 
 # =============================================
 #   archenemy - shell-settings.sh
-#   Powłoka: wybór bash/zsh i edycja wspólnego pliku z aliasami, funkcjami
-#   i PATH. Jedyna droga do tych funkcji, woła ją TUI Super+A → [h].
+#   Powłoka: wybór bash/zsh, edycja wspólnego pliku oraz skrót vi w zsh.
+#   Jedyna droga do tych funkcji, woła ją TUI Super+A → [h].
 #   UI po angielsku (kontekst Super+A, decyzja właściciela 2026-07-12).
 #
 #   Użycie:  shell-settings.sh                 → menu
@@ -134,6 +134,186 @@ offer_migration() {
 
 reload_hint() {
     echo -e "  ${CYAN}Takes effect in new terminals. In this one: exec \$SHELL${NC}"
+}
+
+vi_key_current() {
+    local sequence
+    if [[ -f "$SHELL_KEYS" ]]; then
+        sequence="$(sed -nE "s/^bindkey -M emacs '([^']*)' vi-cmd-mode$/\\1/p" "$SHELL_KEYS" | head -n1)"
+        [[ -n "$sequence" ]] && { printf '%s' "$sequence"; return; }
+    fi
+    printf '^X^V'
+}
+
+# Czytelną postać klawisza sprowadza do zapisu zwracanego przez bindkey.
+vi_key_normalize() {
+    local key="$1"
+    key="${key//^[/\\e}"
+    key="${key//ESC-/\\e}"
+    key="${key//\\C-/^}"
+    printf '%s' "$key"
+}
+
+# Dopisuje pary sekwencja/widget: statyczne, bieżące i wpisane przez użytkownika.
+vi_key_parse_bindings() {
+    local line key widget pattern quote
+    quote="['\"]"
+    pattern="^[[:space:]]*bindkey([[:space:]]+-M[[:space:]]+emacs)?[[:space:]]+${quote}([^'\"]+)${quote}[[:space:]]+([^[:space:]]+)"
+    while IFS= read -r line; do
+        if [[ "$line" =~ $pattern ]]; then
+            key="$(vi_key_normalize "${BASH_REMATCH[2]}")"
+            widget="${BASH_REMATCH[3]}"
+            printf '%s\t%s\n' "$key" "$widget"
+        fi
+    done
+}
+
+vi_key_bindings() {
+    local file line
+    if [[ -f "$ARCHENEMY_DIR/config/shell/emacs-default-bindings.txt" ]]; then
+        while IFS=$'\t' read -r key widget; do
+            [[ -z "$key" || "$key" == \#* ]] || printf '%s\t%s\n' "$key" "$widget"
+        done < "$ARCHENEMY_DIR/config/shell/emacs-default-bindings.txt"
+    fi
+    if command -v zsh >/dev/null 2>&1; then
+        zsh -f -c 'bindkey -M emacs' 2>/dev/null | vi_key_parse_bindings
+    fi
+    for file in "$SHELLRC" "$ZSHRC"; do
+        [[ -f "$file" ]] || continue
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[[:space:]]*bindkey[[:space:]] ]] || continue
+            printf '%s\n' "$line"
+        done < "$file" | vi_key_parse_bindings
+    done
+}
+
+# Odczytuje surową sekwencję do pierwszej przerwy; Esc samodzielnie anuluje.
+vi_key_read_sequence() {
+    local prompt="$1" char byte count=0 sequence="" chunk=""
+    printf '%b' "$prompt" >&2
+    if ! IFS= read -r -s -N 1 char || [[ -z "$char" ]]; then
+        echo >&2
+        return 1
+    fi
+    while :; do
+        (( count += 1 ))
+        (( count <= 16 )) || { echo >&2; return 2; }
+        printf -v byte '%d' "'${char}"
+        if [[ -n "$sequence" ]] && { (( byte == 10 )) || (( byte == 13 )); }; then break; fi
+        if (( byte == 27 )); then
+            if [[ -z "$sequence" ]]; then
+                if ! IFS= read -r -s -N 1 -t 0.18 char || [[ -z "$char" ]]; then
+                    echo >&2
+                    return 1
+                fi
+                (( count += 1 ))
+                printf -v byte '%d' "'${char}"
+                sequence='\e'
+            else
+                sequence+='\e'
+                if ! IFS= read -r -s -N 1 -t 0.18 char || [[ -z "$char" ]]; then break; fi
+                (( count += 1 ))
+                printf -v byte '%d' "'${char}"
+            fi
+        fi
+        if (( byte == 0 )); then chunk='^@'
+        elif (( byte >= 1 && byte <= 26 )); then printf -v chunk '^%b' "\\$(printf '%03o' "$((byte + 64))")"
+        elif (( byte >= 28 && byte <= 31 )); then
+            case "$byte" in 28) chunk="^\\" ;; 29) chunk='^]' ;; 30) chunk='^^' ;; 31) chunk='^_' ;; esac
+        elif (( byte == 127 )); then chunk='^?'
+        elif (( byte >= 32 && byte <= 126 )); then
+            if [[ "$char" == "'" ]]; then chunk='\\x27'; else chunk="$char"; fi
+        else
+            echo >&2
+            return 2
+        fi
+        sequence+="$chunk"
+        if ! IFS= read -r -s -N 1 -t 0.18 char || [[ -z "$char" ]]; then break; fi
+    done
+    echo >&2
+    printf '%s' "$sequence"
+}
+
+vi_key_validate_sequence() {
+    local sequence="$1"
+    [[ "$sequence" =~ ^(\^([@A-Z\[\\\]\^_?]|\[0-7]{3})|\\e|\\M-|\\C-|\\x[0-9A-Fa-f]{2}|[[:print:]])+$ ]] || return 1
+    [[ ! "$sequence" =~ ^[[:print:]]$ ]]
+}
+
+vi_key_conflicts() {
+    local wanted="$1" existing widget found=0
+    if [[ "$wanted" != ^* && "$wanted" != \\?* ]]; then
+        printf '  - a printable character is the prefix of %s (self-insert); typing it will wait for KEYTIMEOUT.\n' "$wanted"
+        found=1
+    fi
+    while IFS=$'\t' read -r existing widget; do
+        existing="$(vi_key_normalize "$existing")"
+        [[ -n "$existing" ]] || continue
+        if [[ "$existing" == "$wanted" ]]; then
+            printf '  - %s replaces the existing %s binding.\n' "$wanted" "$widget"
+            found=1
+        elif [[ "$existing" == "$wanted"* ]]; then
+            printf '  - %s is a prefix of existing %s (%s); ZLE will wait for KEYTIMEOUT.\n' "$wanted" "$existing" "$widget"
+            found=1
+        elif [[ "$wanted" == "$existing"* ]]; then
+            printf '  - existing %s (%s) is a prefix; the new sequence changes its timeout behavior.\n' "$existing" "$widget"
+            found=1
+        fi
+    done < <(vi_key_bindings)
+    (( found ))
+}
+
+vi_key_menu() {
+    local key sequence current
+    while :; do
+        current="$(vi_key_current)"
+        clear
+        tui_header "vi mode key"
+        printf '  Current key: %s\n\n' "$current"
+        echo -e "    ${BLUE}1${NC}) set a new key combination"
+        echo -e "    ${BLUE}2${NC}) restore the zsh default (^X^V)"
+        echo ""
+        key="$(read_key "  Choose [1-2, Esc = back]: ")" || return 0
+        case "$key" in
+            1)
+                sequence="$(vi_key_read_sequence '  Press the key combination (Esc = cancel): ')"
+                case "$?" in
+                    1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; return 0 ;;
+                    2) echo -e "  ${RED}✗ Invalid or too long key sequence.${NC}"; return 0 ;;
+                esac
+                if ! vi_key_validate_sequence "$sequence"; then
+                    echo -e "  ${RED}✗ Use a non-empty ASCII key combination; a single printable key cannot be used.${NC}"
+                    return 0
+                fi
+                if vi_key_conflicts "$sequence"; then
+                    echo -e "  ${YELLOW}This key combination may change an existing binding or its timeout behavior.${NC}"
+                    if ! confirm "Replace/overlap the listed binding(s)?" N; then
+                        echo -e "  ${YELLOW}No changes made.${NC}"
+                        return 0
+                    fi
+                fi
+                if shell_keys_write "$sequence" >/dev/null; then
+                    printf '  %b✓ Saved key %s.%b\n' "$GREEN" "$sequence" "$NC"
+                    reload_hint
+                else
+                    echo -e "  ${RED}✗ Could not save the key.${NC}"
+                    return 1
+                fi
+                return 0
+                ;;
+            2)
+                if shell_keys_reset >/dev/null; then
+                    echo -e "  ${GREEN}✓ Restored the zsh default key (^X^V).${NC}"
+                    reload_hint
+                else
+                    echo -e "  ${RED}✗ Could not restore the default key.${NC}"
+                fi
+                return 0
+                ;;
+            ''|$'\e'|q|Q) return 0 ;;
+            *) continue ;;
+        esac
+    done
 }
 
 # Edycja w neovimie. Po zapisie: kontrola składni w każdej zainstalowanej
@@ -276,12 +456,14 @@ menu() {
         if (( n > 0 )); then
             echo -e "    ${BLUE}3${NC}) move lines from ~/.bashrc into your file"
         fi
+        echo -e "    ${BLUE}4${NC}) vi mode key"
         echo ""
-        key="$(read_key "  Choose [1-$(( n > 0 ? 3 : 2 )), Esc = back]: ")" || return 0
+        key="$(read_key "  Choose [1-4, Esc = back]: ")" || return 0
         case "$key" in
             1) edit_shellrc ;;
             2) switch_shell "$other" ;;
             3) if (( n > 0 )); then migrate; else continue; fi ;;
+            4) vi_key_menu ;;
             ""|$'\e'|q|Q) return 0 ;;
             *) continue ;;
         esac

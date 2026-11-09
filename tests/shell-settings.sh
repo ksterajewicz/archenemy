@@ -18,6 +18,7 @@
 # shellcheck disable=SC2016,SC2034,SC2088,SC2059  # check() robi eval; ~ w opisach; printf z wejściem testu
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REAL_ZSH="$(command -v zsh 2>/dev/null || true)"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 
@@ -29,7 +30,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 H="$T/home"; A="$H/archenemy"; BIN="$T/bin"
 mkdir -p "$A/config/shell" "$A/scripts" "$BIN"
 mkdir -p "$A/scripts/hypr"; cp -r "$REPO/scripts/shell" "$REPO/scripts/appbinds" "$A/scripts/"; cp -r "$REPO/scripts/hypr/lib" "$A/scripts/hypr/"
-cp "$REPO/config/shell/zsh-defaults.zsh" "$A/config/shell/"
+cp "$REPO/config/shell/zsh-defaults.zsh" "$REPO/config/shell/emacs-default-bindings.txt" "$A/config/shell/"
 S="$A/scripts/shell/shell-settings.sh"
 
 # passwd w pliku: getent czyta, chsh zapisuje (chyba że $T/chsh-fail).
@@ -72,8 +73,8 @@ for d in /usr/local/bin /usr/bin /bin; do [[ -x "$d/zsh" ]] || SYS_PATH+="$d:"; 
 export HOME="$H" SHELL=/usr/bin/bash ARCHENEMY_SHELLS_FILE="$T/shells" PATH="$BIN:$T/zbin:${SYS_PATH%:}"
 if command -v zsh >/dev/null 2>&1; then echo "  – zsh w systemie, scenariusz instalacji nieodtwarzalny"; fi
 
-run() { local input="$1"; shift; printf "$input" | timeout 10 bash "$S" "$@" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
-code() { local input="$1"; shift; printf "$input" | timeout 10 bash "$S" "$@" >/dev/null 2>&1; }
+run() { local input="$1"; shift; printf '%b' "$input" | timeout 10 bash "$S" "$@" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
+code() { local input="$1"; shift; printf '%b' "$input" | timeout 10 bash "$S" "$@" >/dev/null 2>&1; }
 
 cat > "$H/.bashrc" <<'EOF'
 [[ $- != *i* ]] && return
@@ -176,7 +177,61 @@ check "nic do przeniesienia"              '[[ "$(run "" migrate)" == *"Nothing t
 echo "== menu"
 OUT="$(run "\e")"
 check "menu: stan i pozycje"              '[[ "$OUT" == *"Login shell"* && "$OUT" == *"switch to zsh"* && "$OUT" == *"neovim"* ]]'
+check "menu: pozycja 4 zawsze widoczna"    '[[ "$OUT" == *"4) vi mode key"* ]]'
 check "zły argument: kod 1"               '! bash "$S" nonsense >/dev/null 2>&1'
+
+echo "== vi mode key"
+rm -f "$A/config/shell/keys.zsh"
+OUT="$(run $'41\e')"
+check "Esc anuluje bez zapisu"             '[[ "$OUT" == *"Cancelled"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41a\n\n')"
+check "pojedynczy znak drukowalny odrzucony" '[[ "$OUT" == *"single printable key cannot be used"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\xc3\xa9\n\n')"
+check "wielobajtowy śmieć odrzucony"       '[[ "$OUT" == *"Invalid or too long key sequence"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\x18\nN\n')"
+check "prefiks istniejącego skrótu ostrzeżony" '[[ "$OUT" == *"^X is a prefix of existing ^X^V"* && "$OUT" == *"No changes made"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\x18\x16\nN\n')"
+check "kolizja pokazuje zastępowany widget" '[[ "$OUT" == *"^X^V replaces the existing vi-cmd-mode binding"* ]]'
+check "N domyślnie odrzuca kolizję"       '[[ "$OUT" == *"No changes made"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\x18\x16\ny\n')"
+check "y potwierdza kolizję"               '[[ "$OUT" == *"Saved key ^X^V"* && -f "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'42\n')"
+check "potwierdzony skrót można przywrócić" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\x18\x19\n\n')"
+check "Ctrl+X Ctrl+Y zapisany"             '[[ "$OUT" == *"Saved key ^X^Y"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
+check "wskazówka nowego terminala"         '[[ "$OUT" == *"Takes effect in new terminals"* && "$OUT" == *'"'"'exec $SHELL'"'"'* ]]'
+check "zapis atomowy bez resztek"          '[[ -z "$(find "$A/config/shell" -maxdepth 1 -name "keys.zsh.??????")" ]]'
+nkeys="$(find "$A/config/shell" -maxdepth 1 -name 'keys.zsh.bak-*' | wc -l)"
+OUT="$(run $'41\x18\x19\n\n')"
+check "drugi zapis: no-op bez backupu"     '[[ "$OUT" == *"Saved key ^X^Y"* && $(find "$A/config/shell" -maxdepth 1 -name "keys.zsh.bak-*" | wc -l) -eq $nkeys ]]'
+OUT="$(run $'41\x1d\n\n')"
+check "Ctrl+] można ustawić"                 '[[ "$OUT" == *"Saved key ^]"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^]'\'' vi-cmd-mode" ]]'
+OUT="$(run $'42\n')"
+check "Ctrl+] resetowany"                    '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
+OUT="$(run $'41\ev\n\n')"
+check "Alt+v zapisywany w notacji ZLE"       '[[ "$OUT" == *"Saved key \\ev"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''\\ev'\'' vi-cmd-mode" ]]'
+OUT="$(run $'42\n')"
+check "Alt+v resetowany"                     '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
+printf "bindkey -M emacs '^X^Y' user-widget\n" >> "$A/config/shell/shellrc"
+OUT="$(run $'41\x18\x19\nN\n')"
+check "bindkey z shellrc wykryty"          '[[ "$OUT" == *"^X^Y replaces the existing user-widget binding"* && "$OUT" == *"No changes made"* ]]'
+sed -i '/^bindkey -M emacs.*user-widget$/d' "$A/config/shell/shellrc"
+cat > "$BIN/zsh" <<'EOF'
+#!/bin/bash
+printf '%s\n' 'bindkey -M emacs "^Q^Q" live-widget'
+EOF
+chmod +x "$BIN/zsh"
+OUT="$(run $'41\x11\x11\nN\n')"
+check "żywe bindkey z zsh wykryte"         '[[ "$OUT" == *"^Q^Q replaces the existing live-widget binding"* ]]'
+rm -f "$BIN/zsh"
+OUT="$(run $'42\n')"
+check "przywrócenie usuwa wpis"            '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
+check "reset drugi raz bez zmian"          '[[ "$(run $'"'"'42\n'"'"')" == *"Restored the zsh default key (^X^V)"* ]]'
+if [[ -n "$REAL_ZSH" ]]; then
+    check "zsh -n wygenerowanego pliku"     '[[ -f "$A/config/shell/keys.zsh" ]] || { printf "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode\n" > "$A/config/shell/keys.zsh"; }; "$REAL_ZSH" -n "$A/config/shell/keys.zsh"'
+else
+    echo "  – zsh -n pominięty: zsh nie jest zainstalowany (live-only)"
+fi
 
 echo "== menu główne Super+A"
 OUT="$(printf 'q' | ARCHENEMY_TUI_SIZE="40 120" timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"

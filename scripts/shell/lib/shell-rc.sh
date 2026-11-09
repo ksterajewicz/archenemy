@@ -120,7 +120,7 @@ shell_keys_text() {
 
 # Zapis atomowy pliku osobistego z kopią poprzedniej wersji.
 shell_keys_write() {
-    local sequence="$1" text tmp bak
+    local sequence="$1" text tmp bak=""
     text="$(shell_keys_text "$sequence")" || return 1
     mkdir -p "$SHELL_RC_DIR" || return 1
     if [[ -e "$SHELL_KEYS" ]]; then
