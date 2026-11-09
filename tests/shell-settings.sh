@@ -164,6 +164,13 @@ check "błąd składni: ostrzeżenie"         '[[ "$OUT" == *"Syntax error"* && 
 check "r: przywrócone sprzed edycji"      'cmp -s "$A/config/shell/shellrc" "$T/s2"'
 check "k: kod 1, błąd zostaje"            '! code "k" edit && grep -qx "if then" "$A/config/shell/shellrc"'
 cp "$T/s2" "$A/config/shell/shellrc"; rm -f "$T/nvim-action"
+# Edycja shellrc ze starej instalacji: nvim otwiera już angielski znacznik.
+sed -i 's|^# archenemy: TUI (Super+A) as a command$|# archenemy: TUI (Super+A) jako komenda|' "$A/config/shell/shellrc"
+echo 'grep -c "jako komenda" "$1" > "'"$T"'/seen-old"' > "$T/nvim-action"
+OUT="$(run "" edit)"
+check "edycja: znacznik podmieniony przed nvim" '[[ "$(<"$T/seen-old")" == 0 && "$OUT" == *"Comment above the"* ]] && grep -qxF "# archenemy: TUI (Super+A) as a command" "$A/config/shell/shellrc"'
+check "edycja: podmiana to nie zmiana użytkownika" '[[ "$OUT" == *"No changes."* ]]'
+rm -f "$T/nvim-action" "$T/seen-old"
 
 echo "== migrate"
 printf "alias TESTlater='true'\n" >> "$H/.bashrc"

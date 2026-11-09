@@ -93,16 +93,22 @@ ensure_block() {
     esac
 }
 
-# Alias `archenemy` dopisany kiedyś do ~/.bashrc → do pliku wspólnego, żeby
-# działał też w zsh. To linia archenemy, nie użytkownika, więc bez pytania.
-move_legacy_alias() {
-    local st bak
-    # Dawny polski znacznik nad aliasem w shellrc → angielski (ta sama linia).
+# Dawny polski znacznik nad aliasem w shellrc → angielski (ta sama linia,
+# z kopią). Woła ją edycja i przeniesienie aliasu; drugi raz nic nie robi.
+refresh_alias_mark() {
+    local bak
     if ! bak="$(archenemy_alias_mark_refresh)"; then
         echo -e "  ${YELLOW}⚠ Could not update the comment above the 'archenemy' alias in $(tilde "$SHELLRC").${NC}"
     elif [[ -n "$bak" ]]; then
         echo -e "  ${GREEN}✓ Comment above the 'archenemy' alias in your file updated (backup: $(tilde "$bak")).${NC}"
     fi
+}
+
+# Alias `archenemy` dopisany kiedyś do ~/.bashrc → do pliku wspólnego, żeby
+# działał też w zsh. To linia archenemy, nie użytkownika, więc bez pytania.
+move_legacy_alias() {
+    local st bak
+    refresh_alias_mark
     st="$(archenemy_alias_state "$BASHRC" "$ZSHRC")"
     [[ "$st" == legacy* ]] || return 0
     if bak="$(archenemy_alias_move "${st#legacy }")"; then
@@ -347,6 +353,7 @@ edit_shellrc() {
         echo -e "  ${YELLOW}⚠ $(tilde "$(rc_of "$sh")") does not load the shared file yet.${NC}"
         if confirm "Add the archenemy block to it?" Y; then ensure_block "$(rc_of "$sh")" "$sh" || return 1; fi
     fi
+    refresh_alias_mark
     before="$TMPD/before"
     cp "$SHELLRC" "$before"
     while :; do
