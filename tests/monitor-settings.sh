@@ -125,6 +125,19 @@ check "j wybiera monitor" '[[ "$out" == *"Resolution, now"* ]]'
 reset; out="$(run '1\n\e[B\n\e[B\n\n\ny\n')"
 check "strzałki wybierają rozdzielczość i Hz" '[[ "$(get eDP-2 RESOLUTION)" == 2560x1440 && "$(get eDP-2 RATE)" == 165.00 ]]'
 
+echo "== dodatkowe wybory strzałkami"
+reset; out="$(run '1\n1\n1\n1.5\n\n\e[A\n')"
+check "strzałka zatwierdza próbę" '[[ "$(get eDP-2 SCALE)" == 1.5 ]]'
+reset; out="$(run '1\n1\n1\n1.5\n\n\e\n')"
+check "Esc cofa próbę" 'unchanged'
+reset; out="$(run 'r\nj\n2\n1\n\n')"
+check "wybór kolejnych numerów strzałkami" '[[ "$(get HDMI-A-1 ORDER)" == 1 && "$(get eDP-2 ORDER)" == 2 ]]'
+reset; touch "$T/offline"; out="$(run '2\n\e[A\n\n')"
+check "zapomnienie przez strzałkę" '[[ ! -f "$D/HDMI-A-1.dat" ]]'
+
+reset; touch "$T/third"; out="$(run '3\n\n\n\n\n\e[B\n\ny\n')"
+check "rola primary wybrana strzałką" '[[ "$(get DP-2 ROLE)" == primary ]]'
+
 echo "== zmiana z potwierdzeniem"
 reset; out="$(run '1\n1\n1\n1.5\n\ny\n')"
 check "tryb z listy zapisany"                  '[[ "$(get eDP-2 RESOLUTION)" == 2560x1440 && "$(get eDP-2 RATE)" == 165.00 ]]'

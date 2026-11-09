@@ -566,6 +566,6 @@ You can switch the mode **live** in the TUI under `Super + A` → `[w] workspace
 
 Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.
 
-The monitor list, resolution and refresh-rate choices in `Super+A → [n]` use the shared arrow-key menu, retaining numeric shortcuts and `p`/`h`/`f`/`r`. Text fields and the 15-second trial confirmation keep their existing input.
+The monitor list, resolution and refresh-rate choices in `Super+A → [n]` use the shared arrow-key menu, retaining numeric shortcuts and `p`/`h`/`f`/`r`. Numbering, wallpaper roles and forgetting a monitor also support arrows. The trial uses a yes/no menu with a 15-second deadline for the whole choice; timeout, Esc and SIGHUP roll back. Text fields keep their existing input.
 
 Yes/no confirmations use the shared arrow-key menu. Enter keeps the shown default; `y`/`n` answer immediately, and Esc or EOF cancels.

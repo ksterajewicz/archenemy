@@ -373,7 +373,7 @@ after_layout_change() {
 # = bez próby, np. usunięcie odpiętego), plik .dat do sprawdzenia, 1 = także
 # workspace'y. Kod 0 = zapisane, 1 = cofnięte albo nieudane.
 commit_change() {
-    local name="$1" dat="$2" regen="$3" errors rc key=""
+    local name="$1" dat="$2" regen="$3" errors rc
     if ! generate_monitors_conf "$MON_CONF" "$MON_DIR" \
         || { (( regen )) && ! regen_workspaces; }; then
         rollback; cleanup
@@ -410,9 +410,8 @@ commit_change() {
         echo -e "  ${YELLOW}⚠ Hyprland shows something else: $(live_state "$name")${NC}"
         echo -e "  ${YELLOW}  (mode, Hz, position, scale; it may have adjusted a value it rejected).${NC}"
     fi
-    echo -e "  ${CYAN}Look at the screen.${NC} Press ${GREEN}y${NC} within ${CONFIRM_SECONDS} s to keep it; anything else goes back."
-    IFS= read -rsn1 -t "$CONFIRM_SECONDS" key
-    if [[ "$key" == "y" || "$key" == "Y" ]]; then
+    echo -e "  ${CYAN}Look at the screen.${NC} Press ${GREEN}y${NC} within ${CONFIRM_SECONDS} s to keep it; Esc, No or timeout goes back."
+    if TUI_MENU_TIMEOUT="$CONFIRM_SECONDS" confirm "Keep this monitor setting?" N; then
         PENDING=0; cleanup
         echo -e "  ${GREEN}✓ Monitor ${name}: $(live_state "$name")${NC}"
         return 0
@@ -461,7 +460,7 @@ proposed_order() {
 # Wynik: tablica ORDER_PICK, pliki .dat w kolejności numerów. Kod 1 = koniec wejścia.
 declare -a ORDER_PICK=()
 pick_order() {
-    local k n ok seen
+    local k n ok seen line
     local -a picks=() reordered=()
     mapfile -t ORDER_PICK < <(proposed_order)
     ((${#ORDER_PICK[@]} > 1)) || return 0
@@ -471,7 +470,16 @@ pick_order() {
             printf "    ${BLUE}%d${NC}) %-10s position %s\n" "$((k + 1))" \
                 "$(monitor_dat_get "${ORDER_PICK[$k]}" MONITOR)" "$(monitor_dat_get "${ORDER_PICK[$k]}" POSITION)"
         done
-        read -rp "  Enter = accept, or your own order, e.g. 2 1: " -a picks || return 1
+        if [[ -t 0 ]]; then
+            pick_order_menu || return 1
+            return 0
+        fi
+        IFS= read -rp "  Enter = accept, or your own order, e.g. 2 1: " line || return 1
+        if [[ "$line" == *$'\e'* || "$line" == j* || "$line" == k* ]]; then
+            pick_order_menu "$line" || return 1
+            return 0
+        fi
+        read -ra picks <<<"$line"
         ((${#picks[@]} > 0)) || return 0
         ok=1; seen=" "
         ((${#picks[@]} == ${#ORDER_PICK[@]})) || ok=0
@@ -489,6 +497,29 @@ pick_order() {
         fi
         echo -e "  ${RED}✗ Use each number from the list once.${NC}"
     done
+}
+
+# Wybór każdej kolejnej pozycji z pozostałych monitorów, bez wpisywania permutacji.
+pick_order_menu() {
+    local first="${1:-}" i
+    local -a labels=() remaining=("${ORDER_PICK[@]}") chosen=() TUI_MENU_KEYS=(a c)
+    if [[ -n "$first" ]]; then
+        tui_menu 0 "Accept proposed order [a]" "Choose each position [c]" <<<"$first" || return 1
+    else
+        tui_menu 0 "Accept proposed order [a]" "Choose each position [c]" || return 1
+    fi
+    (( TUI_MENU_INDEX != 0 )) || return 0
+    TUI_MENU_KEYS=()
+    while ((${#remaining[@]})); do
+        echo "  Pick monitor number $((${#chosen[@]} + 1)):"
+        labels=()
+        for i in "${remaining[@]}"; do labels+=("$(monitor_dat_get "$i" MONITOR)"); done
+        tui_menu_lines 0 "${labels[@]}" || return 1
+        chosen+=("${remaining[$TUI_MENU_INDEX]}")
+        unset 'remaining[TUI_MENU_INDEX]'
+        remaining=("${remaining[@]}")
+    done
+    ORDER_PICK=("${chosen[@]}")
 }
 
 write_order() {
@@ -707,8 +738,21 @@ add_monitor() {
     MOVES=()
     def_role="$(default_role)"
     while :; do
-        read -rp "  Wallpaper role primary/secondary/other [${def_role}]: " role || return 1
-        role="$(trim "${role:-$def_role}")"
+        local initial=0
+        local -a roles=(primary secondary other) TUI_MENU_KEYS=(primary secondary other)
+        case "$def_role" in secondary) initial=1 ;; other) initial=2 ;; esac
+        echo "  Wallpaper role [${def_role}]:"
+        if [[ -t 0 ]]; then
+            tui_menu "$initial" "${roles[@]}" || return 1
+            role="${roles[$TUI_MENU_INDEX]}"
+        else
+            IFS= read -r role || return 1
+            role="$(trim "${role:-$def_role}")"
+            if [[ "$role" == *$'\e'* || "$role" == j* || "$role" == k* || "$role" =~ ^[1-3]$ ]]; then
+                tui_menu "$initial" "${roles[@]}" <<<"$role" || return 1
+                role="${roles[$TUI_MENU_INDEX]}"
+            fi
+        fi
         [[ "$role" == "primary" || "$role" == "secondary" || "$role" == "other" ]] && break
         echo -e "  ${RED}✗ Pick primary, secondary or other.${NC}"
     done
@@ -746,8 +790,12 @@ forget_monitor() {
         echo -e "  ${YELLOW}${name} is the only saved monitor, so it stays.${NC}"
         return 0
     fi
-    read -rp "  Forget ${name}? Its number and workspaces go away [y/N]: " ans || return 1
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || return 0
+    if [[ -t 0 ]]; then
+        confirm "Forget ${name}? Its number and workspaces go away" N || return 0
+    else
+        IFS= read -r ans || return 1
+        confirm "Forget ${name}? Its number and workspaces go away" N <<<"$ans" || return 0
+    fi
 
     role="$(monitor_dat_get "$dat" ROLE)"
     backup_state || return 1
