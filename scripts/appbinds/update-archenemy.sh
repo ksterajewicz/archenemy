@@ -2,7 +2,7 @@
 
 # =============================================
 #   archenemy - update-archenemy.sh
-#   Aktualizator repo z TUI (Super+A → [p]). Pozwala wybrać gałąź (dev/main)
+#   Aktualizator repo z TUI (Super+A → [u]). Pozwala wybrać gałąź (dev/main)
 #   i pociągnąć najnowsze zmiany bez utraty personalizacji.
 #
 #   Warstwy MASZYNOWA i OSOBISTA (monitory, appbinds.lua, autostart, itd.)

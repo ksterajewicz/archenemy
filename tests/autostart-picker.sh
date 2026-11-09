@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================
 #   archenemy - tests/autostart-picker.sh
-#   Wybór autostartu Super+A → [u] na fałszywych katalogach XDG. Bez Hyprlanda,
+#   Wybór autostartu Super+A → [p] na fałszywych katalogach XDG. Bez Hyprlanda,
 #   zapis tylko w mktemp.
 #
 #   Powód powstania (audyt TUI 2026-11-05, U1–U5): lista bez stron, `q` gubiło

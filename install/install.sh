@@ -866,7 +866,7 @@ else
     echo -e "  ${YELLOW}⚠ volume-bar-style.dat istnieje — nie ruszam.${NC}"
 fi
 
-# 8j. Autostart aplikacji wybranych w TUI (Super+A → [u]) — warstwa RÓWNOLEGŁA
+# 8j. Autostart aplikacji wybranych w TUI (Super+A → [p]) — warstwa RÓWNOLEGŁA
 # do autostartpersonalisation.lua (tamten zostaje w pełni ręczny). Generujemy
 # zawsze, także jako pusty stub: rice'y require'ują ten plik, więc musi istnieć
 # po świeżej instalacji i po ponownym biegu instalatora (git pull).
@@ -908,7 +908,7 @@ seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
 #   - usługa użytkownika włączana wyłącznie po pytaniu [y/N]; gdy mpd działa
 #     jako usługa SYSTEMOWA — tylko informacja (dwa mpd = konflikt portu/karty);
 #   - ~/.local/share/applications/ncmpcpp.desktop (wpis dla rofi drun i dla
-#     [u] autostart) kopiowany tylko gdy go nie ma.
+#     [p] autostart) kopiowany tylko gdy go nie ma.
 # Drugi bieg instalatora jest no-op (same „istnieje — nie ruszam").
 MPD_CONF_DIR="$ARCHENEMY_DIR/config/mpd"
 if command -v mpd >/dev/null 2>&1; then
@@ -995,7 +995,7 @@ if command -v ncmpcpp >/dev/null 2>&1; then
     else
         mkdir -p "$(dirname "$NCMPCPP_DESKTOP")"
         cp "$ARCHENEMY_DIR/config/applications/ncmpcpp.desktop" "$NCMPCPP_DESKTOP"
-        echo -e "  ${GREEN}✓ ncmpcpp.desktop → rofi (Super+R) i [u] autostart${NC}"
+        echo -e "  ${GREEN}✓ ncmpcpp.desktop → rofi (Super+R) i [p] autostart${NC}"
     fi
 fi
 

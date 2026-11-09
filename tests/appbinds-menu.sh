@@ -153,7 +153,7 @@ check "grupy"                                  '[[ "$out" == *"Binds"*"Desktop"*
 check "stan: workspace i monitor"              '[[ "$out" =~ w\ +workspaces\ +decades && "$out" =~ n\ +monitors\ +1920x1080@60 ]]'
 check "stan: klawiatura i mysz"                '[[ "$out" =~ k\ +keyboard\ +de,us && "$out" =~ m\ +mouse\ +0.3 ]]'
 check "stan: pasek i timer"                    '[[ "$out" =~ v\ +volume\ bar\ +ticks && "$out" =~ t\ +timer\ +on ]]'
-check "stan: autostart bez komentarzy"         '[[ "$out" =~ u\ +autostart\ +2\ apps ]]'
+check "stan: autostart bez komentarzy"         '[[ "$out" =~ p\ +autostart\ +2\ apps ]]'
 check "długi opis audio ucięty"                '[[ "$out" == *"Family 17h HD Audio"*"…"* ]]'
 check "podpowiedź klawiszy"                    '[[ "$out" == *"↑↓ move"*"Enter or letter open"*"q quit"* ]]'
 check "ekran mieści się w oknie 27×90"         '[[ "$(wc -l <<<"$out")" -le 27 && "$(wc -L <<<"$out")" -le 90 ]]'
@@ -180,11 +180,23 @@ check "pusta lista skrótów"                    '[[ "$out" == *"No binds yet."*
 out="$(tui '\e[B\e[B\e[B\e[B\e[B\e[Bq')"
 check "podgląd [k]: układy"                    '[[ "$out" == *"2  us"*"Super+Ctrl+2"* ]]'
 out="$(tui '\e[A\e[A\e[A\e[A\e[Aq')"
-check "podgląd [u]: aplikacje"                 '[[ "$out" == *"firefox"* || "$out" == *"steam"* ]]'
+check "podgląd [p]: aplikacje"                 '[[ "$out" == *"firefox"* || "$out" == *"steam"* ]]'
 out="$(tui '\e[A\e[A\e[A\e[Aq')"   # [h] shell wszedł między [o] a [i]
 check "podgląd [o]: wyjście i wejście"         '[[ "$out" == *"Output"*"Input"* ]]'
 out="$(tui '\e[A\e[Aq')"
 check "podgląd [i]: opis"                      '[[ "$out" == *"config check"* ]]'
+
+echo "== [p]/[u] otwierają właściwe narzędzia"
+# Atrapy zapobiegają uruchomieniu aktualizatora i zapisowi autostartu.
+printf '#!/bin/bash\necho opened-autostart\n' > "$A/scripts/appbinds/autostart-picker.sh"
+printf '#!/bin/bash\necho opened-updater\n' > "$A/scripts/appbinds/update-archenemy.sh"
+out="$(tui 'pq')"
+check "[p] otwiera autostart"                   '[[ "$out" == *"opened-autostart"* && "$out" != *"opened-updater"* ]]'
+out="$(tui 'uq')"
+check "[u] otwiera aktualizator"                '[[ "$out" == *"opened-updater"* && "$out" != *"opened-autostart"* ]]'
+out="$(tui '\e[Fq')"
+check "podgląd [u]: aktualizacja"               '[[ "$out" == *"Update archenemy"*"Commit"* ]]'
+rm "$A/scripts/appbinds/autostart-picker.sh" "$A/scripts/appbinds/update-archenemy.sh"
 
 echo "== rozmiar okna"
 out="$(ARCHENEMY_TUI_SIZE="27 60" tui 'q')"

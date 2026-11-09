@@ -2,7 +2,7 @@
 # =============================================
 #   archenemy - tests/repo-hygiene.sh
 #   Higiena repozytorium: rzeczy, które same z siebie brudzą working tree
-#   użytkownika i blokują `git pull` (update-archenemy.sh, Super+A → [p]).
+#   użytkownika i blokują `git pull` (update-archenemy.sh, Super+A → [u]).
 #   Bez roota, bez zapisu poza mktemp — czyta tylko indeks gita.
 #
 #   Powód powstania (audyt 2026-09-23): install.sh stracił bit wykonywania

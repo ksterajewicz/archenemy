@@ -188,6 +188,8 @@ Rules that follow directly from the table:
   young session, where `machine-layer-check.sh` reports it instead.
 - **Wallpapers cover every monitor:** primary gets v1, all others get v2. A monitor
   with no saved wallpaper takes secondary's on `--restore`.
+- **Main TUI keys (Super+A):** `[p]` opens autostart (programs), and `[u]` opens
+  update archenemy. Keep labels, groups, state, previews and dispatch in sync.
 - **TUI look: `scripts/appbinds/lib/tui.sh` is the only palette.** One accent per
   rice (`tui_accent_code`) plus bright state colours; plain ANSI blue is 2.6:1 on
   `white-blue`. New screens start with `tui_header`, and `tui_fit` sizes columns,

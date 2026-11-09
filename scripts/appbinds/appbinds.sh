@@ -647,7 +647,7 @@ timer_menu() {
 keyboard_layouts_menu() {
     local script="$ARCHENEMY_DIR/scripts/hypr/keyboard-layouts.sh"
     if [[ ! -f "$script" ]]; then
-        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([p]).${NC}"
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([u]).${NC}"
         return
     fi
     local cur rice="" i
@@ -746,7 +746,7 @@ keyboard_layouts_menu() {
 run_diag_dump() {
     local script="$ARCHENEMY_DIR/scripts/hypr/$1" name="$2" out
     if [[ ! -f "$script" ]]; then
-        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([p]).${NC}"
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([u]).${NC}"
         return
     fi
     out="$HOME/archenemy-diag-${name}-$(date +%Y%m%d-%H%M%S).txt"
@@ -773,7 +773,7 @@ diagnostics_menu() {
     case "$ans" in
         1)
             if [[ ! -f "$check" ]]; then
-                echo -e "  ${RED}✗ Missing ${check} — update archenemy ([p]).${NC}"
+                echo -e "  ${RED}✗ Missing ${check} — update archenemy ([u]).${NC}"
                 return
             fi
             echo ""
@@ -796,14 +796,14 @@ diagnostics_menu() {
 # zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
 # i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
 
-MENU_KEYS=(a e d s w n k m v t u o h i p)
+MENU_KEYS=(a e d s w n k m v t p o h i u)
 declare -A MENU_LABEL=(
     [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
     [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
-    [v]="volume bar" [t]="timer" [u]="autostart" [o]="audio"
-    [h]="shell" [i]="diagnostics" [p]="update archenemy"
+    [v]="volume bar" [t]="timer" [p]="autostart" [o]="audio"
+    [h]="shell" [i]="diagnostics" [u]="update archenemy"
 )
-declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [u]="Apps" [h]="System")
+declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [p]="Apps" [h]="System")
 declare -A MENU_STATE=() MENU_PREVIEW=()
 MENU_SEL=0
 MENU_LEFT=48            # szerokość listy
@@ -849,7 +849,7 @@ item_state() {
         m) state_from hypr/mouse-settings.sh summary ;;
         v) volume_style_current ;;
         t) state_timer ;;
-        u) n="$(autostart_ids | wc -l)"
+        p) n="$(autostart_ids | wc -l)"
            if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi ;;
         o) state_from appbinds/audio-devices.sh describe sink ;;
         h) state_from shell/shell-settings.sh summary ;;
@@ -913,7 +913,7 @@ build_preview() {
            pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
         t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
            pvw "Turn it on or off, set the default minutes and the text colour." ;;
-        u) total="$(autostart_ids | wc -l)"
+        p) total="$(autostart_ids | wc -l)"
            pvw "Apps that start at login."; pv ""
            shown=0
            while IFS= read -r id; do
@@ -934,7 +934,7 @@ build_preview() {
            pv "2  workspaces"; pvd "   dump saved to a file"
            pv "3  GPU and games"; pvd "   dump saved to a file"; pv ""
            pvw "Read-only, nothing is changed." ;;
-        p) cur="$(git -C "$ARCHENEMY_DIR" log -1 --format='%h %ar' 2>/dev/null)"
+        u) cur="$(git -C "$ARCHENEMY_DIR" log -1 --format='%h %ar' 2>/dev/null)"
            pvd "Branch"; pv "$(git -C "$ARCHENEMY_DIR" branch --show-current 2>/dev/null)"; pv ""
            pvd "Commit"; pv "${cur:-unknown}"; pv ""
            pvw "Pulls dev or main, keeps your monitors, binds and autostart." ;;
@@ -1033,9 +1033,9 @@ run_item() {
         s) show_all_binds; return ;;
         n) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; return ;;
         m) bash "$ARCHENEMY_DIR/scripts/hypr/mouse-settings.sh"; return ;;
-        u) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
+        p) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
         h) bash "$ARCHENEMY_DIR/scripts/shell/shell-settings.sh"; return ;;
-        p) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
+        u) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
     esac
     clear
     tui_header "${MENU_LABEL[$key]}"
@@ -1087,7 +1087,7 @@ while :; do
     esac
     choice="${choice,,}"
     case "$choice" in
-        a|e|d|s|w|n|k|m|v|t|u|o|h|i|p) ;;
+        a|e|d|s|w|n|k|m|v|t|p|o|h|i|u) ;;
         *) continue ;;
     esac
     for i in "${!MENU_KEYS[@]}"; do

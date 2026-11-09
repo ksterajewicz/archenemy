@@ -65,7 +65,7 @@ mesa
 # bez niego rice dither-flux ma tylko zestaw awaryjny v1/v2 z repo
 python
 # gtk3: gtk-launch — uruchamia wpisy .desktop z autostartu wybranego w
-# Super+A → [u] (scripts/hypr/lib/gen-autostart.sh emituje `gtk-launch <id>`
+# Super+A → [p] (scripts/hypr/lib/gen-autostart.sh emituje `gtk-launch <id>`
 # do config/hypr/autostart-apps.lua); bez niego wybrane aplikacje cicho nie startują
 gtk3
 # git: aktualizator (scripts/appbinds/update-archenemy.sh) i kontrola wersji

@@ -4,7 +4,7 @@
 #   archenemy - autostart-picker.sh
 #   Wybór aplikacji odpalanych przy starcie Hyprlanda — checkboxy [x]/[ ]
 #   na liście wszystkich wpisów .desktop, z filtrowaniem po nazwie.
-#   Otwierany z Super+A → [u]. UI po angielsku (decyzja właściciela 2026-07-12).
+#   Otwierany z Super+A → [p]. UI po angielsku (decyzja właściciela 2026-07-12).
 #
 #   Czysty bash (bez rofi/fzf/dialog — świadoma decyzja właściciela).
 #   Wybór ląduje w data/autostart-apps.dat, z niego generator

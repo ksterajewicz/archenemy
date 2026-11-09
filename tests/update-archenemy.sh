@@ -2,7 +2,7 @@
 # =============================================
 #   archenemy - tests/update-archenemy.sh
 #   Testy regresji aktualizatora (scripts/appbinds/update-archenemy.sh,
-#   Super+A → [p]) na PRAWDZIWYM gicie: lokalne repo „origin” (bare) i klon
+#   Super+A → [u]) na PRAWDZIWYM gicie: lokalne repo „origin” (bare) i klon
 #   w atrapie $HOME. Bez sieci, bez roota, bez zapisu poza mktemp.
 #
 #   Powód powstania (audyt 2026-09-23): sprawdzenia `if ! git … | sed …` bez
