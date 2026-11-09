@@ -36,6 +36,12 @@
 /config/mpd/local.conf
 /config/mpd/*.??????
 
+# ─── powłoka (config/shell): plik użytkownika = warstwa osobista, wspólny dla
+# bash i zsh (scripts/shell/lib/shell-rc.sh, Super+A → [h]); w gicie tylko
+# zsh-defaults.zsh. Aktualizator (git pull) go nie rusza; mktemp obok jak wyżej
+/config/shell/shellrc
+/config/shell/*.??????
+
 # ─── editor / desktop-environment junk ────────────────────────────────────────
 .directory
 __pycache__/

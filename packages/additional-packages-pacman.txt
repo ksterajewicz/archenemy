@@ -20,6 +20,9 @@ mpc
 #          rofi kopiuje install.sh [8l] (tylko gdy nie masz własnego)
 ncmpcpp
 pavucontrol
+# zsh: druga powłoka do wyboru w Super+A → [h] (domyślnie bash); TUI doinstalowuje
+# ją po potwierdzeniu, aliasy i PATH zostają we wspólnym config/shell/shellrc
+zsh
 # libratbag: ratbagctl — prawdziwe DPI i częstotliwość raportowania myszy w Super+A → [m]
 # (zapis w pamięci myszy, tylko wspierane modele); bez niego DPI jest emulowane szybkością
 libratbag
