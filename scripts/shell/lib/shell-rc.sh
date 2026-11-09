@@ -12,6 +12,8 @@
 #   Warstwy:
 #     config/shell/shellrc         — OSOBISTA (gitignore): plik użytkownika,
 #                                    tworzony z szablonu niżej, edytowany w nvim
+#     config/shell/keys.zsh        — OSOBISTY skrót ZLE (gitignore),
+#                                    generowany wyłącznie przez tę bibliotekę
 #     config/shell/zsh-defaults.zsh — WSPÓLNA (w gicie): historia, uzupełnianie
 #     ~/.bashrc, ~/.zshrc          — tylko oznaczony blok, który wczytuje powyższe
 #
@@ -31,6 +33,7 @@ SHELL_RC_DIR="$ARCHENEMY_DIR/config/shell"
 SHELLRC="$SHELL_RC_DIR/shellrc"
 # shellcheck disable=SC2034  # czyta shell-settings.sh
 ZSH_DEFAULTS="$SHELL_RC_DIR/zsh-defaults.zsh"
+SHELL_KEYS="$SHELL_RC_DIR/keys.zsh"
 SHELL_BLOCK_BEGIN="# >>> archenemy shell >>>"
 SHELL_BLOCK_END="# <<< archenemy shell <<<"
 # Znacznik aliasu z decyzji 2026-10-14 — ten sam tekst, żeby stare instalacje
@@ -93,6 +96,57 @@ shellrc_ensure() {
     echo created
 }
 
+# Domyślny skrót wejścia do vi-cmd-mode. Pusty plik oznacza brak nadpisania.
+shell_keys_ensure() {
+    if [[ -e "$SHELL_KEYS" ]]; then
+        echo exists
+        return 0
+    fi
+    mkdir -p "$SHELL_RC_DIR" || return 1
+    : > "$SHELL_KEYS" || return 1
+    chmod 600 "$SHELL_KEYS" || return 1
+    echo created
+}
+
+# Zamienia czytelną sekwencję ZLE na jedną linię bindkey.
+shell_keys_text() {
+    local sequence="$1" escaped
+    [[ "$sequence" =~ ^(\^([@A-Z\[\\\]\^_?]|\[0-7]{3})|\\e|\\M-|\\C-|[[:print:]])+$ ]] || return 1
+    # Apostrof ma być przekazany w notacji ZLE, nigdy jako składnia powłoki.
+    [[ "$sequence" != *"'"* ]] || return 1
+    escaped="$sequence"
+    printf "bindkey -M emacs '%s' vi-cmd-mode\n" "$escaped"
+}
+
+# Zapis atomowy pliku osobistego z kopią poprzedniej wersji.
+shell_keys_write() {
+    local sequence="$1" text tmp bak
+    text="$(shell_keys_text "$sequence")" || return 1
+    mkdir -p "$SHELL_RC_DIR" || return 1
+    if [[ -e "$SHELL_KEYS" ]]; then
+        [[ "$(<"$SHELL_KEYS")" == "$text" ]] && { echo unchanged; return 0; }
+        bak="$(rc_backup "$SHELL_KEYS")" || return 1
+    fi
+    tmp="$(mktemp "$SHELL_KEYS.XXXXXX")" || return 1
+    chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
+    if ! printf '%s' "$text" > "$tmp" || ! mv -f "$tmp" "$SHELL_KEYS"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    [[ -n "$bak" ]] && echo "$bak" >&2
+    echo written
+}
+
+# Usunięcie pliku przywraca domyślne wiązanie zsh (^X^V).
+shell_keys_reset() {
+    local bak
+    [[ -e "$SHELL_KEYS" ]] || { echo unchanged; return 0; }
+    bak="$(rc_backup "$SHELL_KEYS")" || return 1
+    rm -f "$SHELL_KEYS" || return 1
+    echo "$bak" >&2
+    echo reset
+}
+
 # Kopia zapasowa z datą obok pliku; stdout: ścieżka kopii. -L: przy symlinku
 # kopiujemy treść, nie sam link.
 rc_backup() {
@@ -148,6 +202,7 @@ rc_block_text() {
     echo "archenemy_shell_dir=$(rc_path_expr "$SHELL_RC_DIR")"
     if [[ "$kind" == zsh ]]; then
         echo 'if [ -f "$archenemy_shell_dir/zsh-defaults.zsh" ]; then . "$archenemy_shell_dir/zsh-defaults.zsh"; fi'
+        echo 'if [ -f "$archenemy_shell_dir/keys.zsh" ]; then . "$archenemy_shell_dir/keys.zsh"; fi'
     fi
     echo 'if [ -f "$archenemy_shell_dir/shellrc" ]; then . "$archenemy_shell_dir/shellrc"; fi'
     echo 'unset archenemy_shell_dir'

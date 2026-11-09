@@ -16,7 +16,7 @@
 #   Uruchom: bash tests/shell-rc.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
-# shellcheck disable=SC2016,SC2034,SC2088  # check() robi eval; ~ w opisach testów
+# shellcheck disable=SC1091,SC2016,SC2034,SC2088  # źródło z dynamicznego REPO; check() robi eval; ~ w opisach testów
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$(mktemp -d)"
@@ -97,12 +97,35 @@ check "bez nowej kopii przy ok"           '[[ $(baks) -eq $((n0 + 1)) ]]'
 check "dokładnie jeden blok"              '[[ $(grep -cxF "$SHELL_BLOCK_BEGIN" "$B") -eq 1 ]]'
 check "blok = wzorzec"                    '[[ "$(rc_block_current "$B")" == "$(rc_block_text bash)" ]]'
 check "blok bash bez zsh-defaults"        '! grep -q zsh-defaults "$B"'
+check "blok bash bez keys.zsh"             '! grep -q keys.zsh "$B"'
 check "ścieżka w bloku raz, względem \$HOME" '[[ $(rc_block_current "$B" | grep -c "archenemy/config/shell") -eq 1 ]] && grep -qxF "archenemy_shell_dir=\"\$HOME/archenemy/config/shell\"" "$B"'
 sed -i 's|^# Added by archenemy.*|# stara wersja bloku|' "$B"
 check "zmieniony blok: updated"           '[[ "$(rc_block_ensure "$B" bash 2>/dev/null)" == updated ]]'
 check "po updated nadal jeden blok"       '[[ $(grep -cxF "$SHELL_BLOCK_BEGIN" "$B") -eq 1 && "$(rc_block_current "$B")" == "$(rc_block_text bash)" ]]'
 check "linie użytkownika nietknięte"      'grep -qx "alias TESTgs='"'"'git status'"'"'" "$B" && grep -qx "shopt -s autocd" "$B"'
 check "~/.bashrc parsuje się"             'bash -n "$B"'
+
+echo "== osobisty skrót ZLE"
+check "utworzony pusty plik skrótu"        '[[ "$(shell_keys_ensure)" == created && -f "$SHELL_KEYS" && ! -s "$SHELL_KEYS" ]]'
+check "drugi raz: exists"                   '[[ "$(shell_keys_ensure)" == exists ]]'
+check "generator Ctrl+X Ctrl+Y"             '[[ "$(shell_keys_text "^X^Y")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
+check "generator Alt+v"                     '[[ "$(shell_keys_text "\\ev")" == "bindkey -M emacs '\''\\ev'\'' vi-cmd-mode" ]]'
+check "zapis osobistego skrótu"              '[[ "$(shell_keys_write "^X^Y")" == written && "$(<"$SHELL_KEYS")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
+check "drugi zapis: no-op"                   '[[ "$(shell_keys_write "^X^Y")" == unchanged ]]'
+check "brak plików mktemp po zapisie"        '[[ -z "$(find "$SHELL_RC_DIR" -maxdepth 1 -name "keys.zsh.??????")" ]]'
+n0="$(find "$SHELL_RC_DIR" -maxdepth 1 -name 'keys.zsh.bak-*' | wc -l)"
+check "zapis zmienionej wartości robi backup" '[[ "$(shell_keys_write "^]")" == written && $(find "$SHELL_RC_DIR" -maxdepth 1 -name "keys.zsh.bak-*" | wc -l) -eq $((n0 + 1)) ]]'
+check "reset usuwa wpis"                     '[[ "$(shell_keys_reset)" == reset && ! -e "$SHELL_KEYS" ]]'
+check "reset drugi raz: no-op"               '[[ "$(shell_keys_reset)" == unchanged ]]'
+
+Z_TEST="$H/.zshrc-block-test"
+printf '# user zshrc\n' > "$Z_TEST"
+check "blok zsh dodany"                      '[[ "$(rc_block_ensure "$Z_TEST" zsh 2>/dev/null)" == added ]]'
+check "kolejność defaults, keys, shellrc"     'awk '\''/zsh-defaults.zsh/ { a=NR } /keys.zsh/ { b=NR } /shellrc"/ { c=NR } END { exit !(a && b && c && a < b && b < c) }'\'' "$Z_TEST"'
+check "blok zsh = wzorzec"                   '[[ "$(rc_block_current "$Z_TEST")" == "$(rc_block_text zsh)" ]]'
+sed -i 's|^# Added by archenemy.*|# stara wersja zsh bloku|' "$Z_TEST"
+check "zmieniony blok zsh odświeżony"        '[[ "$(rc_block_ensure "$Z_TEST" zsh 2>/dev/null)" == updated && "$(rc_block_current "$Z_TEST")" == "$(rc_block_text zsh)" ]]'
+check "odświeżony blok nadal pojedynczy"     '[[ $(grep -cxF "$SHELL_BLOCK_BEGIN" "$Z_TEST") -eq 1 ]]'
 
 echo "== migracja linii użytkownika"
 PREV="$(rc_migrate_preview "$B")"
