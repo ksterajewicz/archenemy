@@ -3,7 +3,7 @@
 # =============================================
 #   archenemy - appbinds.sh
 #   Terminalowe ustawienia pulpitu: skróty aplikacji (Super + klawisz), audio,
-#   monitory, układy klawiatury, autostart, diagnostyka. Każda pozycja woła
+#   monitory, układy klawiatury, autostart, powłoka (bash/zsh), diagnostyka. Każda pozycja woła
 #   skrypt z logiką, menu tylko pyta i pokazuje stan.
 #   Otwierany przez Super+A (pływające okno alacritty).
 #   UI po angielsku (decyzja właściciela 2026-07-12).
@@ -796,14 +796,14 @@ diagnostics_menu() {
 # zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
 # i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
 
-MENU_KEYS=(a e d s w n k m v t u o i p)
+MENU_KEYS=(a e d s w n k m v t u o h i p)
 declare -A MENU_LABEL=(
     [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
     [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
     [v]="volume bar" [t]="timer" [u]="autostart" [o]="audio"
-    [i]="diagnostics" [p]="update archenemy"
+    [h]="shell" [i]="diagnostics" [p]="update archenemy"
 )
-declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [u]="Apps" [i]="System")
+declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [u]="Apps" [h]="System")
 declare -A MENU_STATE=() MENU_PREVIEW=()
 MENU_SEL=0
 MENU_LEFT=48            # szerokość listy
@@ -852,6 +852,7 @@ item_state() {
         u) n="$(autostart_ids | wc -l)"
            if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi ;;
         o) state_from appbinds/audio-devices.sh describe sink ;;
+        h) state_from shell/shell-settings.sh summary ;;
     esac
 }
 
@@ -927,6 +928,8 @@ build_preview() {
            if command -v mpc >/dev/null 2>&1; then
                pv ""; pvd "Music (mpd)"; pv "$(mpd_current_output)"
            fi ;;
+        h) pvw "Bash or zsh. Your aliases, functions and PATH live in one file both shells read, edited in neovim."; pv ""
+           preview_lines_from < <(state_from shell/shell-settings.sh brief) ;;
         i) pv "1  config check"; pvd "   generated files and monitors"
            pv "2  workspaces"; pvd "   dump saved to a file"
            pv "3  GPU and games"; pvd "   dump saved to a file"; pv ""
@@ -1031,6 +1034,7 @@ run_item() {
         n) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; return ;;
         m) bash "$ARCHENEMY_DIR/scripts/hypr/mouse-settings.sh"; return ;;
         u) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
+        h) bash "$ARCHENEMY_DIR/scripts/shell/shell-settings.sh"; return ;;
         p) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
     esac
     clear
@@ -1083,7 +1087,7 @@ while :; do
     esac
     choice="${choice,,}"
     case "$choice" in
-        a|e|d|s|w|n|k|m|v|t|u|o|i|p) ;;
+        a|e|d|s|w|n|k|m|v|t|u|o|h|i|p) ;;
         *) continue ;;
     esac
     for i in "${!MENU_KEYS[@]}"; do

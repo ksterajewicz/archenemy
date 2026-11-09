@@ -181,7 +181,7 @@ out="$(tui '\e[B\e[B\e[B\e[B\e[B\e[Bq')"
 check "podgląd [k]: układy"                    '[[ "$out" == *"2  us"*"Super+Ctrl+2"* ]]'
 out="$(tui '\e[A\e[A\e[A\e[A\e[Aq')"
 check "podgląd [u]: aplikacje"                 '[[ "$out" == *"firefox"* || "$out" == *"steam"* ]]'
-out="$(tui '\e[A\e[A\e[Aq')"
+out="$(tui '\e[A\e[A\e[A\e[Aq')"   # [h] shell wszedł między [o] a [i]
 check "podgląd [o]: wyjście i wejście"         '[[ "$out" == *"Output"*"Input"* ]]'
 out="$(tui '\e[A\e[Aq')"
 check "podgląd [i]: opis"                      '[[ "$out" == *"config check"* ]]'
