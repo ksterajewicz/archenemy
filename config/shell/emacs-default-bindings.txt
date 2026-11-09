@@ -2,7 +2,7 @@
 # https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html#Standard-Widgets
 # Last checked 2026-11-09. Printable single keys are rejected separately.
 # The first binding column is the emacs keymap.
-# Uzupełnienia po porównaniu z pierwszą kolumną dokumentacji: mark, which-command, neg-argument.
+# Added after comparing with the documentation's first column: mark, which-command, neg-argument.
 ^B	backward-char
 \e[D	backward-char
 \eB	backward-word
