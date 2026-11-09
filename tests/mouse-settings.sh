@@ -200,7 +200,7 @@ ok "menu: przełącznik on" "$(grep -q 'NATURAL=on' "$SET" && echo 1)"
 menu '6\n\n\n' >/dev/null
 ok "menu: przełącznik off" "$(grep -q 'NATURAL=off' "$SET" && echo 1)"
 out="$(menu '9\n\n\n')"
-ok "menu: zły numer" "$([[ "$out" == *"no number '9'"* ]] && echo 1)"
+ok "menu: zły numer" "$([[ "$out" == *"no number on this list"* ]] && echo 1)"
 
 PATH="$T/rb:$PATH"
 out="$(menu '\n')"
@@ -219,6 +219,16 @@ out="$(MOCK_RATBAG=none menu '\n')"
 ok "brak myszy w libratbag" "$([[ "$out" == *"no supported mouse"* && "$out" != *"Polling rate"* ]] && echo 1)" "$out"
 out="$(MOCK_RATBAG=dead menu '2\n\n\n')"
 ok "ratbagd nie działa: emulacja" "$([[ "$out" == *"emulated"* ]] && echo 1)" "$out"
+
+# --- nawigacja strzałkami -----------------------------------------------------
+menu '\e[B\e[B\e[B\e[B\n\e[A\e[A\n\n\n' >/dev/null
+ok "strzałki: przyspieszenie adaptive" "$(grep -q 'ACCEL=adaptive' "$SET" && echo 1)"
+before="$(bash "$MS" show)"
+menu '\e\n' >/dev/null
+ok "Esc nie zmienia szybkości" "$([[ "$(bash "$MS" show)" == "$before" ]] && echo 1)"
+: > "$MOCK_RB.dev"
+MOCK_RB_TWO=1 menu 'j\n2\n800\n\n\n' >/dev/null
+ok "j wybiera drugą mysz" "$(grep -q sleeping-puppy "$MOCK_RB.dev" && echo 1)"
 
 # --- wygenerowany Lua w lua5.4: ustawia tylko input.sensitivity -------------
 if command -v lua5.4 >/dev/null 2>&1; then

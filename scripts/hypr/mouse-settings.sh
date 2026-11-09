@@ -292,16 +292,13 @@ ask_hw_rate() {
 }
 
 ask_accel() {
-    local ans
     echo ""
-    echo -e "  ${BLUE}1${NC}) flat: the same distance every time, the choice for games"
-    echo -e "  ${BLUE}2${NC}) adaptive: the pointer speeds up as you move faster"
-    echo -e "  ${BLUE}3${NC}) what the rice sets"
-    read -rp "  Acceleration (Enter = cancel): " ans || return 0
-    case "$(trim "$ans")" in
-        1) menu_run accel flat ;;
-        2) menu_run accel adaptive ;;
-        3) menu_run accel reset ;;
+    tui_menu_lines 3 "flat: the same distance every time, the choice for games" \
+        "adaptive: the pointer speeds up as you move faster" "what the rice sets" "Cancel" || return 1
+    case "$TUI_MENU_INDEX" in
+        0) menu_run accel flat ;;
+        1) menu_run accel adaptive ;;
+        2) menu_run accel reset ;;
         *) return 1 ;;
     esac
 }
@@ -327,27 +324,28 @@ pick_device() {
     local -a devices=("$@")
     local i ans
     ((${#devices[@]} > 1)) || { MENU_DEV="${devices[0]:-}"; return 0; }
-    echo ""
-    for i in "${!devices[@]}"; do
-        echo -e "  ${BLUE}$((i + 1))${NC}) ${devices[$i]#*$'\t'}"
-    done
-    read -rp "  Which mouse (Enter = first): " ans || return 0
-    ans="$(trim "$ans")"
-    MENU_DEV="${devices[0]}"
-    if [[ "$ans" =~ ^[0-9]+$ ]] && (( ans >= 1 && ans <= ${#devices[@]} )); then
-        MENU_DEV="${devices[$((ans - 1))]}"
+    local -a labels=()
+    for i in "${devices[@]}"; do labels+=("${i#*$'\t'}"); done
+    echo "  Which mouse (Enter = first):"
+    if [[ -t 0 ]]; then
+        tui_menu 0 "${labels[@]}" || return 1
+    else
+        IFS= read -r ans || return 1
+        [[ -n "$ans" ]] || ans=1
+        tui_menu_lines 0 "${labels[@]}" <<<"$ans" || return 1
     fi
+    MENU_DEV="${devices[$TUI_MENU_INDEX]}"
 }
 
 menu() {
     # shellcheck source=/dev/null
     source "$(dirname "$SELF")/../appbinds/lib/tui.sh"
     local ans rice="" dev="" name="" eff accel scroll rates hw_row
-    local -a devices=()
+    local -a devices=() labels=()
     MENU_DEV=""
     while :; do
         mapfile -t devices < <(ratbag_devices)
-        if ((${#devices[@]})) && [[ -z "$MENU_DEV" ]]; then pick_device "${devices[@]}"; fi
+        if ((${#devices[@]})) && [[ -z "$MENU_DEV" ]]; then pick_device "${devices[@]}" || return 0; fi
         dev="${MENU_DEV%%$'\t'*}"; name="${MENU_DEV#*$'\t'}"
         rates=""; [[ -z "$dev" ]] || rates="$(hw_rate_list "$dev")"
         eff="$(effective_dpi)"
@@ -363,15 +361,15 @@ menu() {
         else
             hw_row="not set"
         fi
-        printf "  ${BLUE}1${NC}) %-16s %s\n" "Speed" "$(current)"
-        printf "  ${BLUE}2${NC}) %-16s %s\n" "DPI" "$hw_row"
+        labels=("Speed: $(current)" "DPI: $hw_row")
         if [[ -n "$rates" ]]; then
-            printf "  ${BLUE}3${NC}) %-16s %s Hz\n" "Polling rate" "$(hw_rate "$dev")"
+            labels+=("Polling rate: $(hw_rate "$dev") Hz")
+        else
+            labels+=("No rate control for this mouse")
         fi
-        printf "  ${BLUE}4${NC}) %-16s %s\n" "Acceleration" "${accel:-from the rice}"
-        printf "  ${BLUE}5${NC}) %-16s %s\n" "Scroll speed" "${scroll:-1}"
-        printf "  ${BLUE}6${NC}) %-16s %s\n" "Natural scroll" "$(setting_get NATURAL | grep . || echo off)"
-        printf "  ${BLUE}7${NC}) %-16s %s\n" "Left-handed" "$(setting_get LEFT | grep . || echo off)"
+        labels+=("Acceleration: ${accel:-from the rice}" "Scroll speed: ${scroll:-1}"
+            "Natural scroll: $(setting_get NATURAL | grep . || echo off)"
+            "Left-handed: $(setting_get LEFT | grep . || echo off)" "Back")
         echo ""
         if [[ "$rice" == "white-blue_beta" ]]; then
             echo -e "  ${YELLOW}⚠ white-blue_beta does not read these settings, switch rice with Super+T.${NC}"
@@ -382,10 +380,20 @@ menu() {
             echo -e "  ${CYAN}libratbag sees no supported mouse, so DPI here is emulated.${NC}"
         fi
 
-        read -rp "  Number (Enter = back): " ans || return 0
-        ans="$(trim "$ans")"
+        local rc=0 i
+        if [[ ! -t 0 ]]; then
+            for i in "${!labels[@]}"; do printf '  %d) %s\n' "$((i + 1))" "${labels[$i]}"; done
+        fi
+        tui_menu_lines 7 "${labels[@]}" || rc=$?
+        (( rc != 1 )) || return 0
+        ans=$(( TUI_MENU_INDEX + 1 ))
+        if (( rc == 2 )); then
+            echo -e "  ${RED}✗ There is no number on this list.${NC}"
+            read -rp "  Press Enter to continue..." _ || return 0
+            continue
+        fi
         case "$ans" in
-            "") return 0 ;;
+            8) return 0 ;;
             1) ask_speed ;;
             2) if [[ -n "$dev" ]]; then ask_hw_dpi "$dev"; else ask_soft_dpi; fi ;;
             3) if [[ -n "$rates" ]]; then ask_hw_rate "$dev"; else echo -e "  ${RED}✗ No polling rate control for this mouse.${NC}"; fi ;;
