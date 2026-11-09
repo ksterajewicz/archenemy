@@ -563,3 +563,5 @@ You can switch the mode **live** in the TUI under `Super + A` → `[w] workspace
 |---|---|
 | `Print` | Selection screenshot → clipboard |
 | `Super + Print` | Selection screenshot → ~/Screenshots |
+
+Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.

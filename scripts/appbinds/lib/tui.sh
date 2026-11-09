@@ -198,6 +198,39 @@ tui_menu() {
     done
 }
 
+# Menu dawniej czytane całymi wierszami: terminal używa tui_menu, a potok
+# zachowuje numery wielocyfrowe i puste anulowanie. Sekwencje strzałek w atrapach
+# również trafiają do wspólnego dekodera. Kod 2 oznacza błędny wiersz.
+# shellcheck disable=SC2034  # wynik czyta skrypt wywołujący
+tui_menu_lines() {
+    if [[ -t 0 ]]; then
+        tui_menu "$@"
+        return $?
+    fi
+    local line i
+    IFS= read -r line || return 1
+    line="$(trim "$line")"
+    [[ -n "$line" ]] || return 1
+    if [[ "$line" =~ ^[0-9]+$ ]]; then
+        if (( 10#$line >= 1 && 10#$line < $# )); then
+            TUI_MENU_INDEX=$(( 10#$line - 1 ))
+            return 0
+        fi
+        return 2
+    fi
+    for (( i=0; i < $# - 1; i++ )); do
+        if [[ "${line,,}" == "${TUI_MENU_KEYS[$i]:-}" ]]; then
+            TUI_MENU_INDEX=$i
+            return 0
+        fi
+    done
+    case "$line" in
+        *$'\e'*|*[jk]*) tui_menu "$@" <<<"$line" ;;
+        q|Q) return 1 ;;
+        *) return 2 ;;
+    esac
+}
+
 # Pytanie tak/nie jednym klawiszem. Kod 0 = tak. confirm <pytanie> <Y|N>:
 # Y = Enter znaczy tak, N = Enter znaczy nie. Esc i każdy inny klawisz to
 # zawsze NIE, niezależnie od domyślnej (audyt TUI 2026-11-05: Esc na [Y/n]

@@ -385,3 +385,5 @@ no other way to find out.
 
 Say "I don't know" and ask, or check the source. Don't fill the gap with
 plausible-sounding code or a flag name.
+
+Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.
