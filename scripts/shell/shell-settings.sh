@@ -187,19 +187,24 @@ vi_key_bindings() {
     done
 }
 
-# Odczytuje surową sekwencję do pierwszej przerwy; Esc samodzielnie anuluje.
+# Odczytuje sekwencję do Enter; Esc samodzielnie anuluje.
 vi_key_read_sequence() {
     local prompt="$1" char byte count=0 sequence="" chunk=""
     printf '%b' "$prompt" >&2
-    if ! IFS= read -r -s -N 1 char || [[ -z "$char" ]]; then
-        echo >&2
-        return 1
-    fi
     while :; do
+        if ! IFS= read -r -s -N 1 -t 30 char || [[ -z "$char" ]]; then
+            echo >&2
+            return 1
+        fi
+        printf -v byte '%d' "'${char}"
+        if (( byte == 10 || byte == 13 )); then
+            echo >&2
+            [[ -n "$sequence" ]] || return 1
+            printf '%s' "$sequence"
+            return 0
+        fi
         (( count += 1 ))
         (( count <= 16 )) || { echo >&2; return 2; }
-        printf -v byte '%d' "'${char}"
-        if [[ -n "$sequence" ]] && { (( byte == 10 )) || (( byte == 13 )); }; then break; fi
         if (( byte == 27 )); then
             if [[ -z "$sequence" ]]; then
                 if ! IFS= read -r -s -N 1 -t 0.18 char || [[ -z "$char" ]]; then
@@ -207,13 +212,15 @@ vi_key_read_sequence() {
                     return 1
                 fi
                 (( count += 1 ))
+                (( count <= 16 )) || { echo >&2; return 2; }
                 printf -v byte '%d' "'${char}"
+                if (( byte == 10 || byte == 13 )); then
+                    echo >&2
+                    return 1
+                fi
                 sequence='\e'
             else
                 sequence+='\e'
-                if ! IFS= read -r -s -N 1 -t 0.18 char || [[ -z "$char" ]]; then break; fi
-                (( count += 1 ))
-                printf -v byte '%d' "'${char}"
             fi
         fi
         if (( byte == 0 )); then chunk='^@'
@@ -228,10 +235,7 @@ vi_key_read_sequence() {
             return 2
         fi
         sequence+="$chunk"
-        if ! IFS= read -r -s -N 1 -t 0.18 char || [[ -z "$char" ]]; then break; fi
     done
-    echo >&2
-    printf '%s' "$sequence"
 }
 
 vi_key_validate_sequence() {
@@ -276,7 +280,7 @@ vi_key_menu() {
         key="$(read_key "  Choose [1-2, Esc = back]: ")" || return 0
         case "$key" in
             1)
-                sequence="$(vi_key_read_sequence '  Press the key combination (Esc = cancel): ')"
+                sequence="$(vi_key_read_sequence '  Press the key combination, then Enter (Esc = cancel; 30s idle cancels): ')"
                 case "$?" in
                     1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; continue ;;
                     2) echo -e "  ${RED}✗ Invalid or too long key sequence.${NC}"; continue ;;

@@ -199,6 +199,8 @@ OUT="$(run $'42\n')"
 check "potwierdzony skrót można przywrócić" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41\x18\x19\n\n')"
 check "Ctrl+X Ctrl+Y zapisany"             '[[ "$OUT" == *"Saved key ^X^Y"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
+OUT="$( (printf '41\030'; sleep 0.5; printf '\031\n') | timeout 10 bash "$S" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+check "Ctrl+X Ctrl+Y zachowuje odstęp przed Enterem" '[[ "$OUT" == *"Saved key ^X^Y"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
 check "wskazówka nowego terminala"         '[[ "$OUT" == *"Takes effect in new terminals"* && "$OUT" == *'"'"'exec $SHELL'"'"'* ]]'
 check "zapis atomowy bez resztek"          '[[ -z "$(find "$A/config/shell" -maxdepth 1 -name "keys.zsh.??????")" ]]'
 nkeys="$(find "$A/config/shell" -maxdepth 1 -name 'keys.zsh.bak-*' | wc -l)"
