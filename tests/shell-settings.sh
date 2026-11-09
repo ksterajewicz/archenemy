@@ -166,8 +166,11 @@ cp "$T/s2" "$A/config/shell/shellrc"; rm -f "$T/nvim-action"
 echo "== migrate"
 printf "alias TESTlater='true'\n" >> "$H/.bashrc"
 check "n: nic nie przeniesione"           'code "n" migrate && grep -q "^alias TESTlater=" "$H/.bashrc"'
-check "komunikat: tyle linii, ile na liście" '[[ "$(printf "alias TESTc=1\n# kom\nalias TESTd=2\n" >> "$H/.bashrc"; run "y" migrate)" == *"2 line(s) moved"* ]]'
 check "y: przeniesione"                   'code "y" migrate && grep -q "^alias TESTlater=" "$A/config/shell/shellrc" && ! grep -q "^alias TESTlater=" "$H/.bashrc"'
+# Komentarz nad linią przechodzi razem z nią, ale nie liczy się w komunikacie.
+printf "alias TESTc=1\n# kom\nalias TESTd=2\n" >> "$H/.bashrc"
+out="$(run "y" migrate)"
+check "komunikat: tyle linii, ile na liście" '[[ "$out" == *"has 2 line(s)"* && "$out" == *"2 line(s) moved"* ]]'
 check "nic do przeniesienia"              '[[ "$(run "" migrate)" == *"Nothing to move"* ]]'
 
 echo "== menu"
