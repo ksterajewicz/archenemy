@@ -61,6 +61,7 @@ relogin_pending() {
 summary() {
     local sh; sh="$(login_shell)"
     if relogin_pending; then printf '%s, log in again' "$sh"; else printf '%s' "$sh"; fi
+    printf '; plugins: %s' "$(plugins_summary)"
 }
 
 brief() {
@@ -72,6 +73,73 @@ brief() {
     else
         printf 'zsh          not installed\n'
     fi
+}
+
+# Stan w menu oznacza wybór archenemy, nie samo zainstalowanie pakietu.
+plugins_summary() {
+    local name result=""
+    for name in "${SHELL_PLUGIN_NAMES[@]}"; do
+        shell_plugin_enabled "$name" && result+="${result:+, }$name"
+    done
+    printf '%s' "${result:-none}"
+}
+
+plugin_set() {
+    local plugin="$1" enabled="$2" result bak
+    if ! shell_plugins_managed; then
+        echo -e "  ${RED}✗ $(tilde "$SHELL_PLUGINS") contains custom content. Move it aside before using this menu; your file was kept.${NC}"
+        return 1
+    fi
+    if [[ "$enabled" == 1 ]]; then
+        if ! command -v pacman >/dev/null 2>&1; then
+            echo -e "  ${RED}✗ pacman is unavailable. Install ${plugin} on Arch, then try again.${NC}"
+            return 1
+        fi
+        if ! pacman -Q "$plugin" >/dev/null 2>&1; then
+            printf '  Required command: sudo pacman -S --needed %s\n' "$plugin"
+            confirm "Install ${plugin}?" N || { echo '  Cancelled; plugin remains disabled.'; return 0; }
+            if ! command -v sudo >/dev/null 2>&1 || ! sudo pacman -S --needed "$plugin" || ! pacman -Q "$plugin" >/dev/null 2>&1; then
+                echo -e "  ${RED}✗ ${plugin} was not installed; plugin remains disabled.${NC}"
+                return 1
+            fi
+        fi
+        shellrc_ensure >/dev/null || return 1
+        ensure_block "$ZSHRC" zsh || return 1
+    fi
+    if ! result="$(shell_plugin_write "$plugin" "$enabled" 2>"$TMPD/plugins-backup")"; then
+        echo -e "  ${RED}✗ Could not save plugin settings; previous settings kept.${NC}"
+        return 1
+    fi
+    bak="$(<"$TMPD/plugins-backup")"
+    [[ -z "$bak" ]] || printf '  Backup: %s\n' "$(tilde "$bak")"
+    printf '  %s: %s\n' "$plugin" "$([[ "$enabled" == 1 ]] && echo enabled || echo disabled)"
+    reload_hint
+}
+
+plugins_menu() {
+    local selected=0 name mark enabled
+    local -a labels descriptions=(
+        'gray suggestions from history (recommended)'
+        'colors valid and invalid commands'
+        'additional command completions'
+    )
+    while :; do
+        clear
+        tui_header "zsh plugins"
+        printf '  Changes apply in new terminals. Installed packages are kept.\n\n'
+        labels=()
+        for name in "${SHELL_PLUGIN_NAMES[@]}"; do
+            mark=' '; shell_plugin_enabled "$name" && mark=x
+            labels+=("[$mark] $name — ${descriptions[${#labels[@]}]}")
+        done
+        TUI_MENU_CHECKLIST=1 tui_menu "$selected" "${labels[@]}" || return 0
+        selected=$TUI_MENU_INDEX
+        name="${SHELL_PLUGIN_NAMES[$selected]}"
+        enabled=1; shell_plugin_enabled "$name" && enabled=0
+        if ! plugin_set "$name" "$enabled"; then
+            read -rsn1 -p "  Press any key to continue..." _ || return 0
+        fi
+    done
 }
 
 # Blok w pliku rc z komunikatem. Kod 1 tylko przy błędzie.
@@ -442,6 +510,11 @@ switch_shell() {
     echo -e "  ${GREEN}✓ Login shell: ${target}. Log out and back in, then new terminals start ${target}.${NC}"
     echo -e "  ${CYAN}Your aliases and PATH: $(tilde "$SHELLRC"), read by both shells.${NC}"
     echo -e "  ${CYAN}Back to ${cur} any time: Super+A → [h] → 2, or in a terminal: chsh -s ${back}${NC}"
+    if [[ "$target" == zsh ]] && ! shell_plugin_enabled zsh-autosuggestions; then
+        if confirm "Enable zsh-autosuggestions (recommended: gray suggestions from history)?" Y; then
+            plugin_set zsh-autosuggestions 1 || return 1
+        fi
+    fi
 }
 
 migrate() {
@@ -482,7 +555,8 @@ menu() {
             "edit your aliases, functions and PATH in neovim" \
             "choose login shell (switch to ${other})" \
             "$migration_label" \
-            "vi mode key" || return 0
+            "vi mode key" \
+            "zsh plugins" || return 0
         selected=$TUI_MENU_INDEX
         case "$selected" in
             0) edit_shellrc ;;
@@ -496,6 +570,7 @@ menu() {
                 ;;
             2) migrate ;;
             3) vi_key_menu; [[ "$?" == 2 ]] && continue ;;
+            4) plugins_menu; continue ;;
         esac
         echo ""
         read -rp "  Press Enter to continue..." _ || return 0

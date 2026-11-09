@@ -41,6 +41,8 @@
 # zsh-defaults.zsh i lista domyślnych wiązań ZLE. Aktualizator ich nie rusza;
 # mktemp obok jak wyżej
 /config/shell/shellrc
+/config/shell/plugins.zsh
+/config/shell/plugins.zsh.bak-*
 /config/shell/keys.zsh
 /config/shell/*.??????
 

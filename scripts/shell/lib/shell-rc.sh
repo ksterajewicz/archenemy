@@ -34,6 +34,8 @@ SHELLRC="$SHELL_RC_DIR/shellrc"
 # shellcheck disable=SC2034  # czyta shell-settings.sh
 ZSH_DEFAULTS="$SHELL_RC_DIR/zsh-defaults.zsh"
 SHELL_KEYS="$SHELL_RC_DIR/keys.zsh"
+SHELL_PLUGINS="$SHELL_RC_DIR/plugins.zsh"
+SHELL_PLUGIN_NAMES=(zsh-autosuggestions zsh-syntax-highlighting zsh-completions)
 SHELL_BLOCK_BEGIN="# >>> archenemy shell >>>"
 SHELL_BLOCK_END="# <<< archenemy shell <<<"
 # Znacznik aliasu: ląduje w pliku użytkownika, więc po angielsku (właściciel
@@ -135,6 +137,85 @@ shell_keys_reset() {
     rm -f "$SHELL_KEYS" || return 1
     echo "$bak" >&2
     echo reset
+}
+
+# Stan czytamy jako dane, nigdy nie wykonujemy pliku osobistego w TUI.
+shell_plugin_enabled() {
+    [[ -f "$SHELL_PLUGINS" ]] && grep -qxF "# archenemy plugin: $1=1" "$SHELL_PLUGINS"
+}
+
+# Szablon bez ustawiania zmiennych konfiguracyjnych wtyczek użytkownika.
+# Faza completion musi poprzedzać compinit; pozostałe wtyczki są na końcu.
+shell_plugins_text() {
+    local autosuggestions="$1" highlighting="$2" completions="$3"
+    printf '%s\n' '# >>> archenemy zsh plugins >>>' \
+        '# Managed by Super+A -> [h] -> 5. Changes keep a dated backup.' \
+        '# Disable a plugin in that menu, then open a new terminal.' \
+        "# archenemy plugin: zsh-autosuggestions=$autosuggestions" \
+        "# archenemy plugin: zsh-syntax-highlighting=$highlighting" \
+        "# archenemy plugin: zsh-completions=$completions"
+    cat <<'EOF'
+if [[ "${archenemy_plugins_phase:-}" == completion ]]; then
+EOF
+    if [[ "$completions" == 1 ]]; then
+        cat <<'EOF'
+    if [[ -d /usr/share/zsh/site-functions && "${fpath[(Ie)/usr/share/zsh/site-functions]}" == 0 ]]; then
+        fpath+=(/usr/share/zsh/site-functions)
+    fi
+EOF
+    fi
+    printf '%s\n' '    return 0' 'fi'
+    if [[ "$autosuggestions" == 1 ]]; then
+        printf '%s\n' 'if [[ -f /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh ]]; then' \
+            '    source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh' 'fi'
+    fi
+    if [[ "$highlighting" == 1 ]]; then
+        printf '%s\n' 'if [[ -f /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]]; then' \
+            '    source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh' 'fi'
+    fi
+    printf '%s\n' '# <<< archenemy zsh plugins <<<' 'return 0'
+}
+
+# Odmawiamy zastąpienia obcego lub ręcznie zmienionego pliku, nawet ze znacznikiem.
+shell_plugins_managed() {
+    [[ -e "$SHELL_PLUGINS" || -L "$SHELL_PLUGINS" ]] || return 0
+    [[ -f "$SHELL_PLUGINS" && ! -L "$SHELL_PLUGINS" ]] || return 1
+    local name expected
+    local -a states=()
+    for name in "${SHELL_PLUGIN_NAMES[@]}"; do
+        if shell_plugin_enabled "$name"; then states+=(1); else states+=(0); fi
+    done
+    expected="$(shell_plugins_text "${states[@]}")"
+    [[ "$(<"$SHELL_PLUGINS")" == "$expected" ]]
+}
+
+# Jedyny zapis plugins.zsh: atomowo, z kopią; ponowny zapis jest no-op.
+shell_plugin_write() {
+    local plugin="$1" enabled="$2" name text tmp bak="" known=0
+    local -a states=()
+    [[ "$enabled" == 0 || "$enabled" == 1 ]] || return 1
+    shell_plugins_managed || return 1
+    for name in "${SHELL_PLUGIN_NAMES[@]}"; do
+        if [[ "$name" == "$plugin" ]]; then
+            states+=("$enabled"); known=1
+        elif shell_plugin_enabled "$name"; then states+=(1)
+        else states+=(0)
+        fi
+    done
+    (( known )) || return 1
+    text="$(shell_plugins_text "${states[@]}")" || return 1
+    if [[ -f "$SHELL_PLUGINS" ]]; then
+        [[ "$(<"$SHELL_PLUGINS")" == "$text" ]] && { echo unchanged; return 0; }
+        bak="$(rc_backup "$SHELL_PLUGINS")" || return 1
+    fi
+    mkdir -p "$SHELL_RC_DIR" || return 1
+    tmp="$(mktemp "$SHELL_PLUGINS.XXXXXX")" || return 1
+    if ! printf '%s\n' "$text" > "$tmp" || ! mv -f "$tmp" "$SHELL_PLUGINS"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    [[ -n "$bak" ]] && echo "$bak" >&2
+    echo written
 }
 
 # Kopia zapasowa z datą obok pliku; stdout: ścieżka kopii. -L: przy symlinku
@@ -387,6 +468,7 @@ archenemy_alias_mark_refresh() {
     grep -qxF "$ARCHENEMY_ALIAS_MARK_OLD" "$SHELLRC" 2>/dev/null || return 0
     bak="$(rc_backup "$SHELLRC")" || return 1
     tmp="$(mktemp "$SHELLRC.XXXXXX")" || return 1
+    # shellcheck disable=SC2015  # błąd awk lub zapisu ma wspólną ścieżkę sprzątania
     awk -v o="$ARCHENEMY_ALIAS_MARK_OLD" -v n="$ARCHENEMY_ALIAS_MARK" '
         $0 == o { print n; next } { print }' "$SHELLRC" > "$tmp" \
         && rc_write "$SHELLRC" "$tmp" || { rm -f "$tmp"; return 1; }

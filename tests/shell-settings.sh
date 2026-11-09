@@ -118,7 +118,7 @@ alias archenemy='~/archenemy/scripts/appbinds/appbinds.sh'
 EOF
 
 echo "== stan"
-check "summary: bash"                     '[[ "$(bash "$S" summary)" == bash ]]'
+check "summary: bash"                     '[[ "$(bash "$S" summary)" == "bash; plugins: none" ]]'
 B="$(bash "$S" brief)"
 check "brief: plik nie wczytywany"        '[[ "$B" == *"~/.bashrc    does not load the shared file"* ]]'
 check "brief: zsh nie zainstalowany"      '[[ "$B" == *"zsh          not installed"* ]]'
@@ -152,8 +152,8 @@ check "passwd: zsh"                       '[[ "$(<"$T/passwd")" == "$T/zbin/zsh"
 check "komunikat sukcesu"                 '[[ "$OUT" == *"Login shell: zsh"* ]]'
 check "jak wrócić"                        '[[ "$OUT" == *"Back to bash"* && "$OUT" == *"chsh -s /usr/bin/bash"* ]]'
 check "kopie zapasowe ~/.bashrc"          '[[ -n "$(find "$H" -maxdepth 1 -name ".bashrc.bak-*")" ]]'
-check "summary: zsh, relog"               '[[ "$(bash "$S" summary)" == "zsh, log in again" ]]'
-check "summary po relogu: zsh"            '[[ "$(SHELL=$T/zbin/zsh bash "$S" summary)" == zsh ]]'
+check "summary: zsh, relog"               '[[ "$(bash "$S" summary)" == "zsh, log in again; plugins: none" ]]'
+check "summary po relogu: zsh"            '[[ "$(SHELL=$T/zbin/zsh bash "$S" summary)" == "zsh; plugins: none" ]]'
 OUT2="$(HOME="$H" bash -ic "alias TESTgs" 2>/dev/null)"
 check "bash -i nadal ma TESTgs"           '[[ "$OUT2" == *"git status"* ]]'
 
@@ -252,7 +252,7 @@ check "zły argument: kod 1"               '! bash "$S" nonsense >/dev/null 2>&1
 
 echo "== vi mode key"
 rm -f "$A/config/shell/keys.zsh"
-OUT="$(run "k\nj\n\n")"
+OUT="$(run "kk\nj\n\n")"
 check "vi: zawijanie menu głównego i j/Enter resetują" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* ]]'
 OUT="$(run "4\e[A\n\n")"
 check "vi: strzałka w górę zawija na reset" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* ]]'

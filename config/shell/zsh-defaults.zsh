@@ -20,6 +20,12 @@ setopt interactive_comments
 setopt no_beep
 
 # ── completion ──
+# Register optional completion paths before compinit, without loading widgets.
+archenemy_plugins_phase=completion
+if [[ -f "${archenemy_shell_dir}/plugins.zsh" ]]; then
+    source "${archenemy_shell_dir}/plugins.zsh"
+fi
+unset archenemy_plugins_phase
 if (( ! ${+functions[compdef]} )); then
     autoload -Uz compinit
     mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
@@ -46,3 +52,8 @@ bindkey '^[[1;5D' backward-word
 # Like the Arch default bash PS1: [user@host dir]$ (# for root).
 # Only while the prompt is still the zsh default, so your own theme stays.
 if [[ "$PROMPT" == '%m%# ' ]]; then PROMPT='[%n@%m %1~]%# '; fi
+
+# Optional plugins: syntax highlighting is the last plugin sourced.
+if [[ -f "${archenemy_shell_dir}/plugins.zsh" ]]; then
+    source "${archenemy_shell_dir}/plugins.zsh"
+fi

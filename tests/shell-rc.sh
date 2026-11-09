@@ -260,11 +260,12 @@ HOME="$H4" ARCHENEMY_DIR="$A4" bash -c '
     rc_block_ensure "$HOME/.bashrc-new" bash
     rc_block_ensure "$HOME/.zshrc-new" zsh
     shell_keys_write "^X^Y"; shell_keys_write "^]"
+    shell_plugin_write zsh-autosuggestions 1; shell_plugin_write zsh-syntax-highlighting 1; shell_plugin_write zsh-completions 1
     printf "%s\n" "$ARCHENEMY_ALIAS_MARK_OLD" >> "$SHELLRC"; archenemy_alias_mark_refresh
 ' _ "$REPO/scripts/shell/lib/shell-rc.sh" > "$T/en.log" 2>&1
 check "wygenerowano shellrc, bloki i keys.zsh" '[[ -s "$A4/config/shell/shellrc" && -s "$A4/config/shell/keys.zsh" && -s "$H4/.bashrc-new" && -s "$H4/.zshrc-new" ]] && grep -qxF "$SHELL_BLOCK_BEGIN" "$H4/.zshrc" && grep -q "^# moved from" "$A4/config/shell/shellrc"'
 find "$H4" -type f ! -name '*.bak-*' | sort > "$T/en.files"
-PL_CHARS=(-e ą -e ć -e ę -e ł -e ń -e ó -e ś -e ź -e ż -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż -e „ -e ”)
+PL_CHARS=(-e ą -e ć -e ę -e ł -e ń -e ó -e ś -e ź -e ż -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż -e '„' -e '”')
 check "pliki użytkownika bez polskich znaków" '! xargs -d "\n" grep -nF "${PL_CHARS[@]}" < "$T/en.files"'
 check "wspólna warstwa w gicie bez polskich znaków" '! grep -rnF "${PL_CHARS[@]}" "$REPO/config/shell"'
 # Polskie słowa bez znaków diakrytycznych (np. dawny znacznik „jako komenda”).

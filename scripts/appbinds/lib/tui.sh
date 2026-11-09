@@ -144,7 +144,7 @@ read_key_nav() {
 TUI_MENU_INDEX=0
 # shellcheck disable=SC2034
 tui_menu() {
-    local selected="$1" key i width
+    local selected="$1" key i width hint
     shift
     local -a items=("$@")
     local count=${#items[@]}
@@ -162,7 +162,9 @@ tui_menu() {
                 printf '    %s\n' "$FIT"
             fi
         done
-        tui_fit "↑/↓ or j/k: move · Enter: select · 1-${count}: select · Esc: back" "$width"
+        hint="↑/↓ or j/k: move · Enter: select · 1-${count}: select · Esc: back"
+        [[ "${TUI_MENU_CHECKLIST:-0}" == 1 ]] && hint="↑/↓ or j/k: move · Space/Enter: toggle · Esc: back"
+        tui_fit "$hint" "$width"
         printf '\n    %b%s%b\n' "$DIM" "$FIT" "$NC"
         key="$(read_key_nav)" || return 1
         case "$key" in
@@ -171,6 +173,11 @@ tui_menu() {
             home) selected=0 ;;
             end) selected=$(( count - 1 )) ;;
             enter|$'\r') TUI_MENU_INDEX=$selected; return 0 ;;
+            ' ')
+                if [[ "${TUI_MENU_CHECKLIST:-0}" == 1 ]]; then
+                    TUI_MENU_INDEX=$selected; return 0
+                fi
+                ;;
             esc|q|Q) return 1 ;;
             [1-9])
                 if (( key <= count )); then
