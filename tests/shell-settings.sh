@@ -99,6 +99,13 @@ check "EOF anuluje zamiast wybierać" '[[ "$(nav "")" == cancelled ]]'
 check "nieznany klawisz i obca sekwencja nie wybierają" '[[ "$(nav "9x\e[C\n")" == 0 ]]'
 check "Enter zachowuje początkowe zaznaczenie" '[[ "$(nav "\n" 1)" == 1 ]]'
 check "menu podświetla wybrany wiersz" 'grep -Fq $'"'"'\e[7m'"'"' "$T/nav-output" && grep -Fq "› 2) second" "$T/nav-output"'
+check "strzałka w dół zawija na początek" '[[ "$(nav "\e[B\n" 2)" == 0 ]]'
+check "j przesuwa w dół" '[[ "$(nav "j\n")" == 1 ]]'
+check "k zawija na koniec" '[[ "$(nav "k\n")" == 2 ]]'
+check "strzałka SS3 przesuwa w górę" '[[ "$(nav "\eOA\n" 2)" == 1 ]]'
+check "Home/End przesuwają kursor" '[[ "$(nav "\e[F\e[H\n" 1)" == 0 ]]'
+check "q anuluje" '[[ "$(nav "q")" == cancelled ]]'
+check "CR wybiera zaznaczenie" '[[ "$(nav "\r" 1)" == 1 ]]'
 
 cat > "$H/.bashrc" <<'EOF'
 [[ $- != *i* ]] && return
@@ -186,7 +193,14 @@ echo 'echo "if then" >> "$1"' > "$T/nvim-action"
 OUT="$(run "r" edit)"
 check "błąd składni: ostrzeżenie"         '[[ "$OUT" == *"Syntax error"* && "$OUT" == *"bash: "* ]]'
 check "r: przywrócone sprzed edycji"      'cmp -s "$A/config/shell/shellrc" "$T/s2"'
-check "k: kod 1, błąd zostaje"            '! code "k" edit && grep -qx "if then" "$A/config/shell/shellrc"'
+OUT="$(run "\e[B\n" edit)"
+check "strzałka i Enter przywracają plik" '[[ "$OUT" == *"Restored."* ]] && cmp -s "$A/config/shell/shellrc" "$T/s2"'
+OUT="$(run "kjj\n" edit)"
+check "k/j w menu błędu przesuwają kursor" '[[ "$OUT" == *"Restored."* ]] && cmp -s "$A/config/shell/shellrc" "$T/s2"'
+check "3: kod 1, błąd zostaje"            '! code "3" edit && grep -qx "if then" "$A/config/shell/shellrc"'
+cp "$T/s2" "$A/config/shell/shellrc"
+OUT="$(run "\e" edit)"
+check "Esc z menu błędu pokazuje stan pliku" '[[ "$OUT" == *"No recovery action chosen"* ]] && grep -qx "if then" "$A/config/shell/shellrc"'
 cp "$T/s2" "$A/config/shell/shellrc"; rm -f "$T/nvim-action"
 # Edycja shellrc ze starej instalacji: nvim otwiera już angielski znacznik.
 sed -i 's|^# archenemy: TUI (Super+A) as a command$|# archenemy: TUI (Super+A) jako komenda|' "$A/config/shell/shellrc"
@@ -215,10 +229,35 @@ echo "== menu"
 OUT="$(run "\e")"
 check "menu: stan i pozycje"              '[[ "$OUT" == *"Login shell"* && "$OUT" == *"switch to zsh"* && "$OUT" == *"neovim"* ]]'
 check "menu: pozycja 4 zawsze widoczna"    '[[ "$OUT" == *"4) vi mode key"* ]]'
+check "menu: pozycja 3 widoczna bez kandydatów" '[[ "$OUT" == *"3) move lines"* && "$OUT" == *"nothing to move"* ]]'
+check "menu: EOF bez TTY kończy bez akcji" 'code ""'
+: > "$T/log"
+OUT="$(run "\n")"
+check "menu: Enter wybiera edycję" 'grep -q "^nvim " "$T/log" && [[ "$OUT" == *"No changes."* ]]'
+: > "$T/log"
+OUT="$(run "\e[B\e[A\n")"
+check "menu: strzałki poruszają kursorem" 'grep -q "^nvim " "$T/log" && [[ "$OUT" == *"No changes."* ]]'
+OUT="$(run "j\nj\nn\n")"
+check "wybór shella: j/Enter otwiera listę i wybiera zsh" '[[ "$OUT" == *"Current login shell: bash"* && "$OUT" == *"Login shell unchanged (bash)"* && "$(<"$T/passwd")" == /usr/bin/bash ]]'
+: > "$T/log"
+OUT="$(run "22n\n")"
+check "wybór shella: cyfry wybierają bez Enter" '[[ "$OUT" == *"Login shell unchanged (bash)"* ]] && ! grep -q "^chsh " "$T/log"'
+OUT="$(run "2\e")"
+check "wybór shella: Esc wraca bez zmiany" '[[ "$OUT" == *"Current login shell: bash"* && "$OUT" != *"already your login shell"* ]] && ! grep -q "^chsh " "$T/log"'
+OUT="$(run "2k\nn\n")"
+check "wybór shella: k zawija z bash na zsh" '[[ "$OUT" == *"Login shell unchanged (bash)"* ]]'
+OUT="$(run "3\n\n")"
+check "menu: pamięta kursor po powrocie" '[[ "$(grep -c "Nothing to move" <<<"$OUT")" == 2 ]]'
 check "zły argument: kod 1"               '! bash "$S" nonsense >/dev/null 2>&1'
 
 echo "== vi mode key"
 rm -f "$A/config/shell/keys.zsh"
+OUT="$(run "k\nj\n\n")"
+check "vi: zawijanie menu głównego i j/Enter resetują" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* ]]'
+OUT="$(run "4\e[A\n\n")"
+check "vi: strzałka w górę zawija na reset" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* ]]'
+OUT="$(run "4\e")"
+check "vi: Esc wraca bez zapisu" '[[ "$OUT" == *"Current key:"* && "$OUT" != *"Restored the zsh default"* && ! -e "$A/config/shell/keys.zsh" ]]'
 check "lista statyczna zawiera pełne wiązania emacs" 'grep -Fq "^@" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "set-mark-command" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "\\e?" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "which-command" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "\\e-" "$A/config/shell/emacs-default-bindings.txt" && grep -Fq "neg-argument" "$A/config/shell/emacs-default-bindings.txt"'
 OUT="$(run $'41\e')"
 check "Esc anuluje bez zapisu"             '[[ "$OUT" == *"Cancelled"* && ! -e "$A/config/shell/keys.zsh" ]]'

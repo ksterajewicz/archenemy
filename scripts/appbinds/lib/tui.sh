@@ -139,6 +139,7 @@ read_key_nav() {
 # Lista wyboru: tui_menu <indeks początkowy od 0> <etykieta>…
 # Wynik w TUI_MENU_INDEX, kod 0 = wybór, 1 = Esc/q/EOF. Czyta stdin także bez
 # TTY; tylko terminal cofa kursor do przerysowania listy. Nagłówek rysuje wołający.
+# Opcjonalna tablica TUI_MENU_KEYS dodaje skróty literowe (poza j/k/q).
 # shellcheck disable=SC2034  # wynik czyta skrypt wywołujący
 TUI_MENU_INDEX=0
 # shellcheck disable=SC2034
@@ -176,6 +177,14 @@ tui_menu() {
                     TUI_MENU_INDEX=$(( key - 1 ))
                     return 0
                 fi
+                ;;
+            *)
+                for i in "${!items[@]}"; do
+                    if [[ "${key,,}" == "${TUI_MENU_KEYS[$i]:-}" ]]; then
+                        TUI_MENU_INDEX=$i
+                        return 0
+                    fi
+                done
                 ;;
         esac
         [[ -t 1 ]] && printf '\033[%dA\r' "$(( count + 2 ))"

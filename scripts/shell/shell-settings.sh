@@ -285,19 +285,18 @@ vi_key_conflicts() {
     (( found ))
 }
 
+# Kod 2 = powrót z listy bez akcji; menu nadrzędne nie pokazuje wtedy pauzy.
 vi_key_menu() {
-    local key sequence current
+    local selected=0 sequence current
     while :; do
         current="$(vi_key_current)"
         clear
         tui_header "vi mode key"
         printf '  Current key: %s\n\n' "$current"
-        echo -e "    ${BLUE}1${NC}) set a new key combination"
-        echo -e "    ${BLUE}2${NC}) restore the zsh default (^X^V)"
-        echo ""
-        key="$(read_key "  Choose [1-2, Esc = back]: ")" || return 0
-        case "$key" in
-            1)
+        tui_menu "$selected" "set a new key combination" "restore the zsh default (^X^V)" || return 2
+        selected=$TUI_MENU_INDEX
+        case "$selected" in
+            0)
                 sequence="$(vi_key_read_sequence '  Press the key combination, then Enter (Esc = cancel; 30s idle cancels): ')"
                 case "$?" in
                     1) echo -e "  ${YELLOW}Cancelled; no changes made.${NC}"; read -rsn1 -p "  Press any key to continue..." _ || true; echo; continue ;;
@@ -324,7 +323,7 @@ vi_key_menu() {
                 fi
                 return 0
                 ;;
-            2)
+            1)
                 if shell_keys_reset >/dev/null; then
                     echo -e "  ${GREEN}✓ Restored the zsh default key (^X^V).${NC}"
                     reload_hint
@@ -333,8 +332,6 @@ vi_key_menu() {
                 fi
                 return 0
                 ;;
-            ''|$'\e'|q|Q) return 0 ;;
-            *) continue ;;
         esac
     done
 }
@@ -342,7 +339,9 @@ vi_key_menu() {
 # Edycja w neovimie. Po zapisie: kontrola składni w każdej zainstalowanej
 # powłoce; błąd = ostrzeżenie i wybór: popraw, przywróć sprzed edycji, zostaw.
 edit_shellrc() {
-    local before errs key sh
+    local before errs sh
+    # shellcheck disable=SC2034  # skróty odczytuje wspólne tui_menu
+    local -a TUI_MENU_KEYS=(e r)
     if ! command -v nvim >/dev/null 2>&1; then
         echo -e "  ${RED}✗ neovim is missing: sudo pacman -S neovim${NC}"
         return 1
@@ -374,12 +373,14 @@ edit_shellrc() {
         echo -e "  ${RED}✗ Syntax error, new terminals would print it and skip the rest of the file:${NC}"
         sed 's/^/      /' <<<"$errs"
         echo ""
-        echo -e "    ${BLUE}e${NC}) edit again   ${BLUE}r${NC}) restore the version from before this edit   ${BLUE}k${NC}) keep it anyway"
-        key="$(read_key "  Choose [e/r/k]: ")" || return 1
-        case "$key" in
-            e|E|"") continue ;;
-            r|R) cat "$before" > "$SHELLRC"; echo -e "  ${GREEN}✓ Restored.${NC}"; return 0 ;;
-            *) echo -e "  ${YELLOW}⚠ Kept with the error.${NC}"; return 1 ;;
+        if ! tui_menu 0 "edit again [e]" "restore the version from before this edit [r]" "keep it anyway"; then
+            echo -e "  ${YELLOW}⚠ No recovery action chosen; the file still contains the error.${NC}"
+            return 1
+        fi
+        case "$TUI_MENU_INDEX" in
+            0) continue ;;
+            1) cat "$before" > "$SHELLRC"; echo -e "  ${GREEN}✓ Restored.${NC}"; return 0 ;;
+            2) echo -e "  ${YELLOW}⚠ Kept with the error.${NC}"; return 1 ;;
         esac
     done
 }
@@ -455,7 +456,7 @@ migrate() {
 }
 
 menu() {
-    local key cur other n
+    local selected=0 cur other n migration_label shell_selected
     while :; do
         cur="$(login_shell)"
         other=zsh; [[ "$cur" == zsh ]] && other=bash
@@ -475,21 +476,26 @@ menu() {
             printf "  %-14s %s\n" "zsh" "not installed"
         fi
         echo ""
-        echo -e "    ${BLUE}1${NC}) edit your aliases, functions and PATH in neovim"
-        echo -e "    ${BLUE}2${NC}) switch to ${other}"
-        if (( n > 0 )); then
-            echo -e "    ${BLUE}3${NC}) move lines from ~/.bashrc into your file"
-        fi
-        echo -e "    ${BLUE}4${NC}) vi mode key"
-        echo ""
-        key="$(read_key "  Choose [1-4, Esc = back]: ")" || return 0
-        case "$key" in
-            1) edit_shellrc ;;
-            2) switch_shell "$other" ;;
-            3) if (( n > 0 )); then migrate; else continue; fi ;;
-            4) vi_key_menu ;;
-            ""|$'\e'|q|Q) return 0 ;;
-            *) continue ;;
+        migration_label="move lines from ~/.bashrc into your file"
+        (( n > 0 )) || migration_label+=" (nothing to move)"
+        tui_menu "$selected" \
+            "edit your aliases, functions and PATH in neovim" \
+            "choose login shell (switch to ${other})" \
+            "$migration_label" \
+            "vi mode key" || return 0
+        selected=$TUI_MENU_INDEX
+        case "$selected" in
+            0) edit_shellrc ;;
+            1)
+                clear
+                tui_header "login shell"
+                printf '  Current login shell: %s\n\n' "$cur"
+                shell_selected=0; [[ "$cur" == zsh ]] && shell_selected=1
+                tui_menu "$shell_selected" bash zsh || continue
+                if (( TUI_MENU_INDEX == 0 )); then switch_shell bash; else switch_shell zsh; fi
+                ;;
+            2) migrate ;;
+            3) vi_key_menu; [[ "$?" == 2 ]] && continue ;;
         esac
         echo ""
         read -rp "  Press Enter to continue..." _ || return 0
