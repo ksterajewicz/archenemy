@@ -204,6 +204,11 @@ OUT="$(run $'42\n')"
 check "potwierdzony skrót można przywrócić" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
 OUT="$(run $'41\x18\x19\n\n')"
 check "Ctrl+X Ctrl+Y zapisany"             '[[ "$OUT" == *"Saved key ^X^Y"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
+if [[ -n "$REAL_ZSH" ]]; then
+    check "zsh -n prawdziwego keys.zsh"      '"$REAL_ZSH" -n "$A/config/shell/keys.zsh"'
+else
+    echo "  – zsh -n pominięty: zsh nie jest zainstalowany (live-only)"
+fi
 OUT="$( (printf '41\030'; sleep 0.5; printf '\031\n') | timeout 10 bash "$S" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
 check "Ctrl+X Ctrl+Y zachowuje odstęp przed Enterem" '[[ "$OUT" == *"Saved key ^X^Y"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
 check "wskazówka nowego terminala"         '[[ "$OUT" == *"Takes effect in new terminals"* && "$OUT" == *'"'"'exec $SHELL'"'"'* ]]'
@@ -235,12 +240,6 @@ rm -f "$BIN/zsh"
 OUT="$(run $'42\n')"
 check "przywrócenie usuwa wpis"            '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
 check "reset drugi raz bez zmian"          '[[ "$(run $'"'"'42\n'"'"')" == *"Restored the zsh default key (^X^V)"* ]]'
-if [[ -n "$REAL_ZSH" ]]; then
-    check "zsh -n wygenerowanego pliku"     '[[ -f "$A/config/shell/keys.zsh" ]] || { printf "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode\n" > "$A/config/shell/keys.zsh"; }; "$REAL_ZSH" -n "$A/config/shell/keys.zsh"'
-else
-    echo "  – zsh -n pominięty: zsh nie jest zainstalowany (live-only)"
-fi
-
 echo "== menu główne Super+A"
 OUT="$(printf 'q' | ARCHENEMY_TUI_SIZE="40 120" timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
 check "pozycja [h] shell"                 'grep -qE "h  shell +bash" <<<"$OUT"'
