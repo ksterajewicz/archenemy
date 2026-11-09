@@ -39,17 +39,10 @@ cur_branch="$(git -C "$ARCHENEMY_DIR" branch --show-current 2>/dev/null)"
 [[ -z "$cur_branch" ]] && cur_branch="(detached HEAD)"
 
 echo -e "  Current branch: ${CYAN}${cur_branch}${NC}"
-echo -e "    ${BLUE}1${NC}) dev  — latest changes, may be unstable"
-echo -e "    ${BLUE}2${NC}) main — stable releases only"
-echo ""
-ans="$(read_key "  Update from [1-2, Esc = cancel]: ")"
-target=""
-case "$ans" in
-    1) target="dev" ;;
-    2) target="main" ;;
-    ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; pause; exit 0 ;;
-    *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}"; pause; exit 0 ;;
-esac
+if ! tui_menu 0 "dev — latest changes, may be unstable" "main — stable releases only"; then
+    echo -e "  ${YELLOW}Cancelled.${NC}"; pause; exit 0
+fi
+if (( TUI_MENU_INDEX == 0 )); then target=dev; else target=main; fi
 
 echo ""
 echo -e "  ${CYAN}→ Fetching origin/${target}...${NC}"

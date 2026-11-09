@@ -148,6 +148,22 @@ out=$(run_upd '1yn\n')
 check "HEAD = origin/dev"                          '[[ "$(head_of HEAD)" == "$(head_of origin/dev)" ]]'
 check "shellrc bez zmian po aktualizacji"          'cmp -s "$A/config/shell/shellrc" "$T/shellrc.before"'
 
+echo "== wybory strzałkami"
+fresh_clone dev
+before=$(head_of HEAD)
+out=$(run_upd '\e\n')
+check "Esc przed fetch pozostawia HEAD" '[[ "$(head_of HEAD)" == "$before" && "$out" != *"Fetching"* ]]'
+fresh_clone dev
+out=$(run_upd '\e[B\n\e[A\nn\n')
+check "strzałki: main i zgoda na cofnięcie" '[[ "$(git -C "$A" branch --show-current)" == main ]]'
+fresh_clone dev
+echo local > "$A/f.txt"
+out=$(run_upd '1\e[B\n\n')
+check "strzałki: odmowa schowka zachowuje plik" '[[ "$(<"$A/f.txt")" == local && -z "$(git -C "$A" stash list)" ]]'
+fresh_clone dev
+out=$(run_upd '1\e[B\n\n')
+check "strzałki: odmowa instalatora" '[[ "$out" != *INSTALL-RAN* ]]'
+
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev
 check "install.sh w klonie jest 100644"        '[[ ! -x "$A/install/install.sh" ]]'
