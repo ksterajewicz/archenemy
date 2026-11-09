@@ -999,16 +999,25 @@ if command -v ncmpcpp >/dev/null 2>&1; then
     fi
 fi
 
-# 8m. TUI Super+A także z rofi i z terminala (właściciel 2026-10-14).
+# 8m. TUI Super+A także z rofi i z terminala (właściciel 2026-10-14) oraz
+#     wspólny plik powłoki (właściciel 2026-11-09).
 #   - ~/.local/share/applications/archenemy.desktop — wpis „archenemy” w rofi:
 #     to samo pływające okno co Super+A (klasa archenemy-appbinds = te same
 #     reguły okna). Plik GENEROWANY, nie kopiowany z repo: pole Exec w .desktop
 #     nie rozwija `~` ani $HOME, więc potrzebna bezwzględna ścieżka tej maszyny
 #     (warstwa osobista, poza gitem). Istniejącego pliku nie ruszamy.
-#   - alias `archenemy` w ~/.bashrc — TUI w bieżącym terminalu. Repo jest
-#     publiczne: pytamy przed dopisaniem, dopisujemy raz (znacznik), tylko dla
-#     basha; cudzy alias o tej nazwie wygrywa. `~` w aliasie, nie rozwinięta
-#     ścieżka — repo zawsze leży w ~/archenemy (pilnuje tego start instalatora).
+#   - config/shell/shellrc — aliasy, funkcje i PATH użytkownika dla basha i zsh
+#     (warstwa osobista, gitignore); ~/.bashrc dostaje tylko oznaczony blok,
+#     który go wczytuje. PO CICHU, bez nowych pytań: wybór powłoki i
+#     przenoszenie własnych linii z ~/.bashrc należą do Super+A → [h].
+#     Każda zmiana ~/.bashrc zostawia kopię .bak-<czas>; drugi bieg = no-op.
+#     Logika: scripts/shell/lib/shell-rc.sh (ta sama co w TUI).
+#   - alias `archenemy` — TUI w bieżącym terminalu. Repo jest publiczne:
+#     pytamy przed dopisaniem, dopisujemy raz (znacznik); cudzy alias o tej
+#     nazwie wygrywa. Od 2026-11-09 trafia do pliku wspólnego, więc działa
+#     w bashu i zsh; alias dopisany dawniej do ~/.bashrc przenosimy tam sam.
+#     `~` w aliasie, nie rozwinięta ścieżka — repo zawsze leży w ~/archenemy
+#     (pilnuje tego start instalatora).
 APPBINDS_SH="$ARCHENEMY_DIR/scripts/appbinds/appbinds.sh"
 ARCHENEMY_DESKTOP="$HOME/.local/share/applications/archenemy.desktop"
 if [[ -e "$ARCHENEMY_DESKTOP" ]]; then
@@ -1034,29 +1043,61 @@ EOF
     echo -e "  ${GREEN}✓ archenemy.desktop → rofi (Super+R) otwiera TUI Super+A${NC}"
 fi
 
+# shellcheck source=../scripts/shell/lib/shell-rc.sh
+source "$ARCHENEMY_DIR/scripts/shell/lib/shell-rc.sh"
 BASHRC="$HOME/.bashrc"
-ALIAS_MARK="# archenemy: TUI (Super+A) jako komenda"
-if grep -qF "$ALIAS_MARK" "$BASHRC" 2>/dev/null; then
-    echo -e "  ${GREEN}✓ komenda 'archenemy' już jest w ~/.bashrc${NC}"
-elif grep -qE '^[[:space:]]*alias[[:space:]]+archenemy=' "$BASHRC" 2>/dev/null; then
-    echo -e "  ${YELLOW}⚠ ~/.bashrc ma już własny alias 'archenemy' — nie ruszam.${NC}"
-elif [[ "$(basename "${SHELL:-}")" != "bash" ]]; then
-    echo -e "  ${YELLOW}⚠ Twoja powłoka to ${SHELL:-?}, nie bash — pomijam alias w ~/.bashrc.${NC}"
-    SUMMARY_SKIPPED+=("'archenemy' command — not bash; add: alias archenemy='~/archenemy/scripts/appbinds/appbinds.sh'")
-else
-    read -rp "  Add the 'archenemy' command to ~/.bashrc (opens the Super+A menu in the terminal)? [Y/n]: " ans_alias
-    if [[ "$ans_alias" =~ ^[Nn]$ ]]; then
-        SUMMARY_SKIPPED+=("'archenemy' command (your choice) — re-run install.sh to add it")
-    else
-        printf '\n%s\nalias archenemy='\''~/archenemy/scripts/appbinds/appbinds.sh'\''\n' "$ALIAS_MARK" >> "$BASHRC"
-        if grep -qF "$ALIAS_MARK" "$BASHRC"; then
-            echo -e "  ${GREEN}✓ komenda 'archenemy' dopisana do ~/.bashrc (nowy terminal albo: source ~/.bashrc)${NC}"
-            SUMMARY_DONE+=("'archenemy' command added to ~/.bashrc")
+ZSHRC="$HOME/.zshrc"
+if [[ "$(shellrc_ensure)" == created ]]; then
+    echo -e "  ${GREEN}✓ config/shell/shellrc — Twoje aliasy, funkcje i PATH dla basha i zsh (Super+A → [h])${NC}"
+    SUMMARY_DONE+=("Shared shell file: ${SHELLRC/#$HOME/\~} (bash and zsh read it; edit: Super+A → [h])")
+fi
+SHELL_BAK_FILE="$(mktemp)"
+SHELL_RES="$(rc_block_ensure "$BASHRC" bash 2>"$SHELL_BAK_FILE")"
+SHELL_BAK="$(cat "$SHELL_BAK_FILE" 2>/dev/null)"
+rm -f "$SHELL_BAK_FILE"
+case "$SHELL_RES" in
+    ok)      echo -e "  ${GREEN}✓ ~/.bashrc już wczytuje plik wspólny${NC}" ;;
+    created) echo -e "  ${GREEN}✓ ~/.bashrc utworzony, wczytuje plik wspólny${NC}" ;;
+    added|updated)
+        echo -e "  ${GREEN}✓ ~/.bashrc wczytuje plik wspólny (blok archenemy; kopia: ${SHELL_BAK/#$HOME/\~})${NC}"
+        SUMMARY_DONE+=("Your ~/.bashrc loads the shared shell file (backup: ${SHELL_BAK/#$HOME/\~})") ;;
+    *)
+        echo -e "  ${YELLOW}⚠ ~/.bashrc ma początek bloku archenemy bez końca — nie ruszam, popraw ręcznie.${NC}"
+        SUMMARY_SKIPPED+=("Your ~/.bashrc has a broken archenemy block (no '$SHELL_BLOCK_END' line) — fix it by hand") ;;
+esac
+# ~/.zshrc tylko odświeżamy, gdy blok już w nim jest; dopisuje go Super+A → [h].
+if rc_block_present "$ZSHRC"; then
+    rc_block_ensure "$ZSHRC" zsh >/dev/null 2>&1
+elif [[ "$(basename "${SHELL:-}")" == zsh || -e "$ZSHRC" ]]; then
+    SUMMARY_SKIPPED+=("Your ~/.zshrc does not load the shared shell file yet: Super+A → [h] → switch to zsh")
+fi
+
+ALIAS_STATE="$(archenemy_alias_state "$BASHRC" "$ZSHRC")"
+case "$ALIAS_STATE" in
+    ours) echo -e "  ${GREEN}✓ komenda 'archenemy' już jest w pliku wspólnym${NC}" ;;
+    own)  echo -e "  ${YELLOW}⚠ masz już własny alias 'archenemy' — nie ruszam.${NC}" ;;
+    legacy*)
+        if SHELL_BAK="$(archenemy_alias_move "${ALIAS_STATE#legacy }")"; then
+            echo -e "  ${GREEN}✓ komenda 'archenemy' przeniesiona do pliku wspólnego (działa też w zsh; kopia: ${SHELL_BAK/#$HOME/\~})${NC}"
+            SUMMARY_DONE+=("'archenemy' command moved to the shared shell file")
         else
-            echo -e "  ${RED}✗ Nie udało się dopisać aliasu do ~/.bashrc.${NC}"
-            SUMMARY_SKIPPED+=("'archenemy' command — writing ~/.bashrc failed")
-        fi
-    fi
+            echo -e "  ${YELLOW}⚠ Nie udało się przenieść komendy 'archenemy' — zostaje, gdzie była.${NC}"
+        fi ;;
+    *)
+        read -rp "  Add the 'archenemy' command (opens the Super+A menu in the terminal, bash and zsh)? [Y/n]: " ans_alias
+        if [[ "$ans_alias" =~ ^[Nn]$ ]]; then
+            SUMMARY_SKIPPED+=("'archenemy' command (your choice) — re-run install.sh to add it")
+        elif archenemy_alias_add; then
+            echo -e "  ${GREEN}✓ komenda 'archenemy' dopisana do pliku wspólnego (nowy terminal albo: exec \$SHELL)${NC}"
+            SUMMARY_DONE+=("'archenemy' command added to the shared shell file")
+        else
+            echo -e "  ${RED}✗ Nie udało się dopisać aliasu do $SHELLRC.${NC}"
+            SUMMARY_SKIPPED+=("'archenemy' command — writing the shared shell file failed")
+        fi ;;
+esac
+SHELL_MOVABLE="$(rc_migrate_preview "$BASHRC" | grep -cv '^[[:space:]]*#')"
+if (( SHELL_MOVABLE > 0 )); then
+    SUMMARY_SKIPPED+=("$SHELL_MOVABLE line(s) of your ~/.bashrc (aliases, exports) stay bash-only until you move them: Super+A → [h] → 3")
 fi
 
 SUMMARY_DONE+=("Machine-local configs generated (GPU: $GPU_KIND)")

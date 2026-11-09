@@ -136,6 +136,18 @@ check "konflikt pop zgłoszony"                     '[[ "$out" == *"✗ Could no
 check "tapeta na dysku mimo konfliktu schowka"     '[[ -f "$A/wallpapers/moja.jpg" ]]'
 check "schowek bez plików nieśledzonych"           '[[ -z "$(git -C "$A" show --stat "stash@{0}^3" 2>/dev/null)" ]]'
 
+echo "== wspólny plik powłoki (config/shell/shellrc, gitignore) przeżywa aktualizację"
+upstream_commit dev .gitignore "$(cat "$REPO/.gitignore")"
+fresh_clone dev
+mkdir -p "$A/config/shell"; printf "alias TESTmoj='ls'\n" > "$A/config/shell/shellrc"
+cp "$A/config/shell/shellrc" "$T/shellrc.before"
+echo lokalna-wersja > "$A/f.txt"                   # zmiana śledzona → stash i pop
+upstream_commit dev g.txt v7
+check "shellrc ignorowany przez gita"              '[[ -z "$(git -C "$A" status --porcelain --ignored=no -- config/shell)" ]]'
+out=$(run_upd '1yn\n')
+check "HEAD = origin/dev"                          '[[ "$(head_of HEAD)" == "$(head_of origin/dev)" ]]'
+check "shellrc bez zmian po aktualizacji"          'cmp -s "$A/config/shell/shellrc" "$T/shellrc.before"'
+
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev
 check "install.sh w klonie jest 100644"        '[[ ! -x "$A/install/install.sh" ]]'
