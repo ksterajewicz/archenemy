@@ -18,10 +18,16 @@
 #   Zapis do ~/.bashrc i ~/.zshrc: kopia `<plik>.bak-<czas>` przed każdą zmianą,
 #   zapis PRZEZ plik (cat > plik), bo ~/.bashrc bywa symlinkiem do repo dotfiles
 #   (mv podmieniłby symlink na zwykły plik). Ponowne wywołanie niczego nie dubluje.
+#   Ścieżka aplikacji: JEDNO miejsce definicji niżej (ARCHENEMY_DIR, wołający
+#   może podać własną). Blok w rc i alias `archenemy` liczą ścieżkę z niej —
+#   względem $HOME, gdy się da — więc przeprowadzka aplikacji (decyzja
+#   2026-11-09: ~/.local/share/archenemy) zmienia tylko tę linię, a ponowny
+#   bieg install.sh sam odświeża bloki w rc-plikach.
 #   Haki testowe: ARCHENEMY_SHELLS_FILE (zamiast /etc/shells).
 # =============================================
 
-SHELL_RC_DIR="${ARCHENEMY_DIR:-$HOME/archenemy}/config/shell"
+: "${ARCHENEMY_DIR:=$HOME/archenemy}"
+SHELL_RC_DIR="$ARCHENEMY_DIR/config/shell"
 SHELLRC="$SHELL_RC_DIR/shellrc"
 # shellcheck disable=SC2034  # czyta shell-settings.sh
 ZSH_DEFAULTS="$SHELL_RC_DIR/zsh-defaults.zsh"
@@ -30,7 +36,6 @@ SHELL_BLOCK_END="# <<< archenemy shell <<<"
 # Znacznik aliasu z decyzji 2026-10-14 — ten sam tekst, żeby stare instalacje
 # (alias w ~/.bashrc) dało się rozpoznać i przenieść.
 ARCHENEMY_ALIAS_MARK="# archenemy: TUI (Super+A) jako komenda"
-ARCHENEMY_ALIAS_LINE="alias archenemy='~/archenemy/scripts/appbinds/appbinds.sh'"
 SHELLRC_BASH_MARK="# --- bash only ---"
 
 # Szablon pliku użytkownika. Tekst widzi użytkownik, więc po angielsku.
@@ -52,8 +57,9 @@ shellrc_template() {
 #     syntax, keep that line in ~/.zshrc below the archenemy block instead.
 #   - This file is read by interactive terminals. Apply changes: open a new
 #     terminal, or run  exec $SHELL
-#   - It lives in ~/archenemy but is NOT tracked by git (personal layer,
-#     .gitignore): updates never touch it. Back it up like your dotfiles.
+#   - It lives in the archenemy folder (config/shell/shellrc) but is NOT
+#     tracked by git (personal layer, .gitignore): updates never touch it.
+#     Back it up like your dotfiles.
 #
 #   Edit: Super+A -> [h] -> 1 (opens neovim and checks the syntax after),
 #   or type `archenemy` in a terminal.
@@ -104,19 +110,47 @@ rc_write() {
     rm -f "$tmp"
 }
 
-# shellcheck disable=SC2016  # $HOME ma trafić do pliku dosłownie
-# Blok wczytujący dla bash albo zsh. Ścieżki przez $HOME: repo zawsze leży
-# w ~/archenemy (pilnuje tego start instalatora).
+# Ścieżka jako wyrażenie do pliku rc: "$HOME/<reszta>", gdy leży w katalogu
+# domowym i nie ma znaków specjalnych (ten sam plik działa po zmianie $HOME),
+# inaczej ścieżka bezwzględna w cudzysłowie %q (bash i zsh czytają ją tak samo).
+rc_path_expr() {
+    local p="$1" rel="${1#"$HOME"/}"
+    if [[ "$rel" != "$p" && "$rel" =~ ^[A-Za-z0-9._/+-]+$ ]]; then
+        # shellcheck disable=SC2016  # $HOME ma trafić do pliku dosłownie
+        printf '"$HOME/%s"' "$rel"
+    else
+        printf '%q' "$p"
+    fi
+}
+
+# Linia aliasu `archenemy` do pliku wspólnego. `~` w aliasie rozwija się przy
+# użyciu, w obu powłokach; poza $HOME — ścieżka zacytowana dwukrotnie (%q),
+# bo wartość aliasu jest jeszcze raz parsowana.
+archenemy_alias_line() {
+    local target="$ARCHENEMY_DIR/scripts/appbinds/appbinds.sh" rel q
+    rel="${target#"$HOME"/}"
+    if [[ "$rel" != "$target" && "$rel" =~ ^[A-Za-z0-9._/+-]+$ ]]; then
+        printf "alias archenemy='~/%s'\n" "$rel"
+    else
+        printf -v q '%q' "$target"
+        printf 'alias archenemy=%q\n' "$q"
+    fi
+}
+
+# Blok wczytujący dla bash albo zsh. Ścieżka występuje w nim RAZ (zmienna
+# archenemy_shell_dir, potem unset), żeby przeprowadzka zmieniała jedną linię.
+# shellcheck disable=SC2016  # $archenemy_shell_dir ma trafić do pliku dosłownie
 rc_block_text() {
     local kind="$1"
     echo "$SHELL_BLOCK_BEGIN"
-    echo "# Added by archenemy. Your aliases, functions and PATH live in"
-    echo "# ~/archenemy/config/shell/shellrc, shared by bash and zsh."
-    echo "# Edit it with Super+A -> [h]. Switch shells there too."
+    echo "# Added by archenemy: loads your shared shell file (aliases, functions"
+    echo "# and PATH for bash and zsh). Edit it, or switch shells: Super+A -> [h]."
+    echo "archenemy_shell_dir=$(rc_path_expr "$SHELL_RC_DIR")"
     if [[ "$kind" == zsh ]]; then
-        echo 'if [ -f "$HOME/archenemy/config/shell/zsh-defaults.zsh" ]; then . "$HOME/archenemy/config/shell/zsh-defaults.zsh"; fi'
+        echo 'if [ -f "$archenemy_shell_dir/zsh-defaults.zsh" ]; then . "$archenemy_shell_dir/zsh-defaults.zsh"; fi'
     fi
-    echo 'if [ -f "$HOME/archenemy/config/shell/shellrc" ]; then . "$HOME/archenemy/config/shell/shellrc"; fi'
+    echo 'if [ -f "$archenemy_shell_dir/shellrc" ]; then . "$archenemy_shell_dir/shellrc"; fi'
+    echo 'unset archenemy_shell_dir'
     echo "$SHELL_BLOCK_END"
 }
 
@@ -289,7 +323,7 @@ archenemy_alias_state() {
 archenemy_alias_add() {
     local add
     add="$(mktemp)" || return 1
-    printf '%s\n%s\n' "$ARCHENEMY_ALIAS_MARK" "$ARCHENEMY_ALIAS_LINE" > "$add"
+    { echo "$ARCHENEMY_ALIAS_MARK"; archenemy_alias_line; } > "$add"
     shellrc_append_common "$add" >/dev/null || { rm -f "$add"; return 1; }
     rm -f "$add"
     grep -qxF "$ARCHENEMY_ALIAS_MARK" "$SHELLRC"

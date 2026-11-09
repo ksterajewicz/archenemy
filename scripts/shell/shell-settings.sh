@@ -23,7 +23,7 @@
 
 set -uo pipefail
 
-ARCHENEMY_DIR="$HOME/archenemy"
+# ARCHENEMY_DIR ustawia biblioteka niżej (jedno miejsce ze ścieżką aplikacji).
 SELF_DIR="$(dirname "${BASH_SOURCE[0]}")"
 BASHRC="$HOME/.bashrc"
 ZSHRC="$HOME/.zshrc"

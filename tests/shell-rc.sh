@@ -97,6 +97,7 @@ check "bez nowej kopii przy ok"           '[[ $(baks) -eq $((n0 + 1)) ]]'
 check "dokładnie jeden blok"              '[[ $(grep -cxF "$SHELL_BLOCK_BEGIN" "$B") -eq 1 ]]'
 check "blok = wzorzec"                    '[[ "$(rc_block_current "$B")" == "$(rc_block_text bash)" ]]'
 check "blok bash bez zsh-defaults"        '! grep -q zsh-defaults "$B"'
+check "ścieżka w bloku raz, względem \$HOME" '[[ $(rc_block_current "$B" | grep -c "archenemy/config/shell") -eq 1 ]] && grep -qxF "archenemy_shell_dir=\"\$HOME/archenemy/config/shell\"" "$B"'
 sed -i 's|^# Added by archenemy.*|# stara wersja bloku|' "$B"
 check "zmieniony blok: updated"           '[[ "$(rc_block_ensure "$B" bash 2>/dev/null)" == updated ]]'
 check "po updated nadal jeden blok"       '[[ $(grep -cxF "$SHELL_BLOCK_BEGIN" "$B") -eq 1 && "$(rc_block_current "$B")" == "$(rc_block_text bash)" ]]'
@@ -141,7 +142,7 @@ check "zmienna z shellrc"                 '[[ "$OUT" == *"V=1"* ]]'
 echo "== ~/.zshrc"
 Z="$H/.zshrc"
 check "brak pliku: created"               '[[ "$(rc_block_ensure "$Z" zsh)" == created ]]'
-check "zshrc: zsh-defaults przed shellrc" '[[ $(grep -n zsh-defaults "$Z" | cut -d: -f1) -lt $(grep -n "shell/shellrc\"; fi" "$Z" | cut -d: -f1) ]]'
+check "zshrc: zsh-defaults przed shellrc" '[[ $(grep -n zsh-defaults "$Z" | cut -d: -f1) -lt $(grep -n "/shellrc\"; fi" "$Z" | cut -d: -f1) ]]'
 check "zshrc: drugi raz ok"               '[[ "$(rc_block_ensure "$Z" zsh)" == ok ]]'
 if command -v zsh >/dev/null 2>&1; then
     OUT="$(HOME="$H" ZDOTDIR="$H" zsh -ic 'alias TESTll; echo "V=$TESTVAR"' 2>/dev/null)"
@@ -150,6 +151,31 @@ if command -v zsh >/dev/null 2>&1; then
 else
     echo "  – zsh nie jest zainstalowany: test zsh -i pominięty (live-only)"
 fi
+
+echo "== inna ścieżka aplikacji (przeprowadzka, decyzja 2026-11-09)"
+# Jedna zmienna: blok i alias idą za ARCHENEMY_DIR, a ponowne wywołanie
+# odświeża blok (updated), zamiast dopisać drugi.
+H2="$T/home2"; A2="$H2/.local/share/archenemy"
+mkdir -p "$A2/scripts/appbinds" "$A2/config/shell"
+printf '#!/bin/bash\necho "TUI2 $*"\n' > "$A2/scripts/appbinds/appbinds.sh"; chmod +x "$A2/scripts/appbinds/appbinds.sh"
+printf '[[ $- != *i* ]] && return\n' > "$H2/.bashrc"
+OUT="$(HOME="$H2" ARCHENEMY_DIR="$A2" bash -c 'source "$1"; rc_block_ensure "$HOME/.bashrc" bash 2>/dev/null; archenemy_alias_add && echo alias-ok' _ "$REPO/scripts/shell/lib/shell-rc.sh")"
+check "blok i alias dodane"               '[[ "$OUT" == *added*alias-ok* ]]'
+check "blok: \$HOME/.local/share/…"       'grep -qxF "archenemy_shell_dir=\"\$HOME/.local/share/archenemy/config/shell\"" "$H2/.bashrc"'
+check "alias: ~/.local/share/…"           'grep -qxF "alias archenemy='"'"'~/.local/share/archenemy/scripts/appbinds/appbinds.sh'"'"'" "$A2/config/shell/shellrc"'
+RUN="$(HOME="$H2" bash -ic 'archenemy x' 2>/dev/null)"
+check "bash -i: alias z nowej ścieżki"    '[[ "$RUN" == "TUI2 x" ]]'
+# stary blok (~/archenemy) → po przeprowadzce jeden odświeżony blok
+OUT="$(HOME="$H2" ARCHENEMY_DIR="$H2/archenemy" bash -c 'source "$1"; rc_block_ensure "$HOME/.bashrc" bash 2>/dev/null' _ "$REPO/scripts/shell/lib/shell-rc.sh")"
+OUT="$(HOME="$H2" ARCHENEMY_DIR="$A2" bash -c 'source "$1"; rc_block_ensure "$HOME/.bashrc" bash 2>/dev/null' _ "$REPO/scripts/shell/lib/shell-rc.sh")"
+check "przeprowadzka: updated, jeden blok" '[[ "$OUT" == updated && $(grep -cxF "$SHELL_BLOCK_BEGIN" "$H2/.bashrc") -eq 1 ]] && grep -q "share/archenemy/config/shell" "$H2/.bashrc"'
+# poza $HOME i ze spacją: ścieżka bezwzględna w cudzysłowie
+A3="$T/opt dir/archenemy"; mkdir -p "$A3/scripts/appbinds" "$A3/config/shell"
+cp "$A2/scripts/appbinds/appbinds.sh" "$A3/scripts/appbinds/"
+H3="$T/home3"; mkdir -p "$H3"
+HOME="$H3" ARCHENEMY_DIR="$A3" bash -c 'source "$1"; rc_block_ensure "$HOME/.bashrc" bash >/dev/null 2>&1; archenemy_alias_add' _ "$REPO/scripts/shell/lib/shell-rc.sh"
+RUN="$(HOME="$H3" bash -ic 'archenemy y' 2>/dev/null)"
+check "poza \$HOME ze spacją: bash -i działa" '[[ "$RUN" == "TUI2 y" ]]'
 
 echo "== brzegi"
 L="$T/dotfiles/bashrc"; mkdir -p "$T/dotfiles"; printf 'alias TESTx=1\n' > "$L"
