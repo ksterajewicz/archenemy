@@ -793,17 +793,34 @@ print_monitors() {
 # Numer z listy albo Enter. Wynik: zmienna PICK (pusto = Enter). Kod 1 = koniec wejścia.
 PICK=""
 pick_number() {
-    local prompt="$1" max="$2" extra="${3:-}" ans
+    local prompt="$1" max="$2" extra="${3:-}" i rc
+    local -a labels=("${GRID[@]}") TUI_MENU_KEYS=()
     PICK=""
+    for (( i=0; i<max; i++ )); do TUI_MENU_KEYS+=(""); done
+    for (( i=0; i<${#extra}; i++ )); do
+        case "${extra:i:1}" in
+            p) labels+=("monitor's preferred [p]") ;;
+            h) labels+=("highest resolution [h]") ;;
+            f) labels+=("highest refresh rate [f]") ;;
+        esac
+        TUI_MENU_KEYS+=("${extra:i:1}")
+    done
+    labels+=("keep current setting")
     while :; do
-        read -rp "$prompt" ans || return 1
-        ans="$(trim "$ans")"
-        [[ -z "$ans" ]] && return 0
-        if [[ -n "$extra" && "$ans" =~ ^[$extra]$ ]] || { [[ "$ans" =~ ^[0-9]+$ ]] && (( ans >= 1 && ans <= max )); }; then
-            PICK="$ans"
-            return 0
+        echo "$prompt"
+        rc=0
+        tui_menu_lines "$((${#labels[@]} - 1))" "${labels[@]}" || rc=$?
+        (( rc != 1 )) || return 0
+        if (( rc == 2 )); then
+            echo -e "  ${RED}✗ Pick a number from the list.${NC}"
+            continue
         fi
-        echo -e "  ${RED}✗ Pick a number from the list.${NC}"
+        if (( TUI_MENU_INDEX < max )); then
+            PICK=$((TUI_MENU_INDEX + 1))
+        elif (( TUI_MENU_INDEX < max + ${#extra} )); then
+            PICK="${extra:TUI_MENU_INDEX-max:1}"
+        fi
+        return 0
     done
 }
 
@@ -904,7 +921,8 @@ edit_monitor() {
 }
 
 menu() {
-    local ans total hint="Monitor number"
+    local ans total hint="Monitor number" rc i
+    local -a labels=() TUI_MENU_KEYS=()
     load_dats
     mapfile -t NEW_MONS < <(new_monitors)
     clear
@@ -919,9 +937,22 @@ menu() {
         echo ""
         total=$(( ${#DATS[@]} + ${#NEW_MONS[@]} ))
         ((${#DATS[@]} < 2)) || hint+=", r = renumber left to right"
-        read -rp "  ${hint} (Enter = back): " ans
-        ans="$(trim "$ans")"
-        [[ -z "$ans" ]] && return 0
+        for i in "${!DATS[@]}"; do
+            labels+=("$(monitor_dat_get "${DATS[$i]}" MONITOR) — $(dat_mode "${DATS[$i]}")")
+            TUI_MENU_KEYS+=("")
+        done
+        for i in "${NEW_MONS[@]}"; do labels+=("$i — new, pick to set up"); TUI_MENU_KEYS+=(""); done
+        if ((${#DATS[@]} >= 2)); then
+            labels+=("renumber left to right [r]"); TUI_MENU_KEYS+=(r)
+        fi
+        echo "  ${hint} (Esc = back):"
+        rc=0
+        tui_menu_lines 0 "${labels[@]}" || rc=$?
+        (( rc != 1 )) || return 0
+        ans=$(( TUI_MENU_INDEX + 1 ))
+        if (( rc == 2 )); then ans="invalid"
+        elif (( TUI_MENU_INDEX == total )); then ans=r
+        fi
         if [[ "$ans" == "r" ]]; then
             renumber_monitors
         elif [[ "$ans" =~ ^[0-9]+$ ]] && (( ans >= 1 && ans <= ${#DATS[@]} )); then

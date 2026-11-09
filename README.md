@@ -565,3 +565,5 @@ You can switch the mode **live** in the TUI under `Super + A` → `[w] workspace
 | `Super + Print` | Selection screenshot → ~/Screenshots |
 
 Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.
+
+The monitor list, resolution and refresh-rate choices in `Super+A → [n]` use the shared arrow-key menu, retaining numeric shortcuts and `p`/`h`/`f`/`r`. Text fields and the 15-second trial confirmation keep their existing input.

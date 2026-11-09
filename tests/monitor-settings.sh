@@ -115,6 +115,16 @@ check "odpiętego nie zmienia"                  '[[ "$out" == *"is not connected
 out="$(run '7\n\n')"
 check "zły numer monitora"                     '[[ "$out" == *"no monitor number"* ]]'
 
+echo "== strzałki"
+reset; out="$(run '\e[B\n\e\n\n\n')"
+check "strzałka wybiera drugi monitor" '[[ "$out" == *"Resolution, now"* ]]'
+reset; out="$(run '\e\n')"
+check "Esc nie przeładowuje konfiguracji" '! grep -q "hyprctl reload" "$T/log" && unchanged'
+reset; out="$(run 'j\n\e\n\n\n')"
+check "j wybiera monitor" '[[ "$out" == *"Resolution, now"* ]]'
+reset; out="$(run '1\n\e[B\n\e[B\n\n\ny\n')"
+check "strzałki wybierają rozdzielczość i Hz" '[[ "$(get eDP-2 RESOLUTION)" == 2560x1440 && "$(get eDP-2 RATE)" == 165.00 ]]'
+
 echo "== zmiana z potwierdzeniem"
 reset; out="$(run '1\n1\n1\n1.5\n\ny\n')"
 check "tryb z listy zapisany"                  '[[ "$(get eDP-2 RESOLUTION)" == 2560x1440 && "$(get eDP-2 RATE)" == 165.00 ]]'
@@ -126,7 +136,7 @@ check "uwaga o tapetach dither"                '[[ "$out" == *"dither-flux"* ]]'
 check "bez plików tymczasowych"                '[[ "$(find "$D" "$A/config/hypr" -name "*.??????" | wc -l)" == 0 ]]'
 
 echo "== duplikat trybu"
-reset; out="$(run '1\n3\n\n\n\n\n')"
+reset; out="$(run '1\n9\n\n\n\n\n')"
 check "lista bez powtórzeń"                    '[[ "$out" == *"Pick a number"* ]]'
 
 echo "== cofnięcie"
@@ -230,7 +240,7 @@ reset; out="$(run '1\n\n\n4000x0\ny\n')"
 check "pozycja rozjeżdża numery → uwaga"       '[[ "$out" == *"no longer run left to right"*"press r"* ]]'
 check "numer zostaje"                          '[[ "$(get eDP-2 ORDER)" == 1 ]]'
 reset; out="$(run '1\n\n\n0x100\ny\n')"
-check "ta sama kolejność bez uwagi"            '[[ "$out" != *"left to right"* ]]'
+check "ta sama kolejność bez uwagi"            '[[ "$out" != *"no longer run left to right"* ]]'
 
 echo "== nowy monitor: lista"
 reset; touch "$T/third"; out="$(run '\n')"
