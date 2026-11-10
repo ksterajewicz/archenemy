@@ -27,6 +27,10 @@ zsh
 zsh-autosuggestions
 zsh-syntax-highlighting
 zsh-completions
+# Opcjonalne narzędzia CLI: Super+A → [h] → 6, osobno dla bash/zsh.
+fd
+ripgrep
+zoxide
 # libratbag: ratbagctl — prawdziwe DPI i częstotliwość raportowania myszy w Super+A → [m]
 # (zapis w pamięci myszy, tylko wspierane modele); bez niego DPI jest emulowane szybkością
 libratbag

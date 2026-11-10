@@ -142,6 +142,80 @@ plugins_menu() {
     done
 }
 
+# Narzędzia zwykłe pozostają w PATH dla obu powłok; przełącznik zapisuje
+# osobny wybór i inicjalizację, nigdy nie usuwa pakietu ani polecenia cd.
+cli_tool_set() {
+    local kind="$1" i="$2" enabled="$3" result bak
+    if ! shell_cli_supported "${CLI_SHELLS[$i]}" "$kind"; then
+        printf '  Unavailable for %s: %s. No changes.\n' "$kind" "${CLI_NAMES[$i]}"
+        return 0
+    fi
+    if ! shell_cli_managed "$kind"; then
+        printf '  CLI settings contain custom content or a symlink. Move the file aside; your file was kept.\n'
+        return 1
+    fi
+    if [[ "$enabled" == 1 ]]; then
+        if ! command -v "${CLI_COMMANDS[$i]}" >/dev/null 2>&1; then
+            printf '  Required command: sudo pacman -S --needed %s\n' "${CLI_PACKAGES[$i]}"
+            confirm "Install ${CLI_NAMES[$i]}?" Y || { echo '  Cancelled; tool remains disabled.'; return 0; }
+            if ! command -v sudo >/dev/null 2>&1 || ! command -v pacman >/dev/null 2>&1 ||
+               ! sudo pacman -S --needed "${CLI_PACKAGES[$i]}" ||
+               ! command -v "${CLI_COMMANDS[$i]}" >/dev/null 2>&1; then
+                echo '  Installation failed or command is unavailable; tool remains disabled.'
+                return 1
+            fi
+        fi
+        shellrc_ensure >/dev/null && ensure_block "$(rc_of "$kind")" "$kind" || return 1
+    fi
+    if ! result="$(shell_cli_write "$kind" "${CLI_NAMES[$i]}" "$enabled" 2>"$TMPD/cli-backup")"; then
+        echo '  Could not save CLI settings; previous settings kept.'; return 1
+    fi
+    bak="$(<"$TMPD/cli-backup")"
+    [[ -z "$bak" ]] || printf '  Backup: %s\n' "$(tilde "$bak")"
+    printf '  %s (%s): %s\n' "${CLI_NAMES[$i]}" "$kind" "$([[ "$enabled" == 1 ]] && echo enabled || echo disabled)"
+    reload_hint
+}
+
+cli_tools_list() {
+    local kind="$1" selected=0 i mark enabled
+    local -a labels
+    shell_cli_load || { echo '  Could not read the CLI tools catalog.'; return 1; }
+    while :; do
+        clear
+        tui_header "CLI tools: $kind"
+        printf '  Choices apply in new terminals. Packages stay available in both shells.\n'
+        printf '  zoxide adds z/zi; cd stays unchanged. zi needs optional fzf.\n\n'
+        labels=()
+        for i in "${!CLI_NAMES[@]}"; do
+            mark=' '; shell_cli_enabled "$kind" "${CLI_NAMES[$i]}" && mark=x
+            if ! shell_cli_supported "${CLI_SHELLS[$i]}" "$kind"; then
+                labels+=("[-] ${CLI_NAMES[$i]} (${CLI_LICENSES[$i]}) — unavailable for $kind")
+            else
+                labels+=("[$mark] ${CLI_NAMES[$i]} (${CLI_LICENSES[$i]})")
+            fi
+        done
+        TUI_MENU_CHECKLIST=1 tui_menu "$selected" "${labels[@]}" || return 0
+        selected=$TUI_MENU_INDEX
+        enabled=1; shell_cli_enabled "$kind" "${CLI_NAMES[$selected]}" && enabled=0
+        if ! cli_tool_set "$kind" "$selected" "$enabled"; then
+            read -rsn1 -p '  Press any key to continue...' _ || return 0
+        fi
+    done
+}
+
+cli_tools_menu() {
+    local selected=0 kind
+    while :; do
+        clear
+        tui_header 'CLI tools'
+        printf '  All choices start disabled, independently for bash and zsh.\n\n'
+        tui_menu "$selected" bash zsh || return 0
+        selected=$TUI_MENU_INDEX
+        kind=bash; (( selected == 1 )) && kind=zsh
+        cli_tools_list "$kind"
+    done
+}
+
 # Blok w pliku rc z komunikatem. Kod 1 tylko przy błędzie.
 ensure_block() {
     local rc="$1" kind="$2" res bak
@@ -556,7 +630,8 @@ menu() {
             "choose login shell (switch to ${other})" \
             "$migration_label" \
             "vi mode key" \
-            "zsh plugins" || return 0
+            "zsh plugins" \
+            "CLI tools" || return 0
         selected=$TUI_MENU_INDEX
         case "$selected" in
             0) edit_shellrc ;;
@@ -571,6 +646,7 @@ menu() {
             2) migrate ;;
             3) vi_key_menu; [[ "$?" == 2 ]] && continue ;;
             4) plugins_menu; continue ;;
+            5) cli_tools_menu; continue ;;
         esac
         echo ""
         read -rp "  Press Enter to continue..." _ || return 0

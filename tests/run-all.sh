@@ -4,6 +4,7 @@
 #   Uruchamia wszystkie pakiety testów z tests/*.sh (poza sobą) i podaje
 #   zbiorczy wynik. Każdy pakiet działa na atrapach w mktemp — bez
 #   Hyprlanda, bez roota, bez zapisu poza katalogami tymczasowymi.
+#   Glob obejmuje też shell-cli-tools.sh (bash/zsh i instalacja na atrapach).
 #   Uruchom: bash tests/run-all.sh   (kod 0 = wszystkie pakiety zielone)
 # =============================================
 

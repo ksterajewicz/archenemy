@@ -106,6 +106,12 @@ check "strzałka SS3 przesuwa w górę" '[[ "$(nav "\eOA\n" 2)" == 1 ]]'
 check "Home/End przesuwają kursor" '[[ "$(nav "\e[F\e[H\n" 1)" == 0 ]]'
 check "q anuluje" '[[ "$(nav "q")" == cancelled ]]'
 check "CR wybiera zaznaczenie" '[[ "$(nav "\r" 1)" == 1 ]]'
+confirm_nav() {
+    printf '%b' "$1" | timeout 5 bash -c 'source "$1"; if confirm "Confirm test?" Y; then echo yes; else echo no; fi' _ "$REPO/scripts/appbinds/lib/tui.sh" 2>/dev/null
+}
+check "confirm: strzałka w dół i Enter wybierają No" '[[ "$(confirm_nav "\e[B\n")" == no ]]'
+check "confirm: y zachowuje skrót" '[[ "$(confirm_nav "y")" == yes ]]'
+check "confirm: Esc anuluje" '[[ "$(confirm_nav "\e")" == no ]]'
 
 cat > "$H/.bashrc" <<'EOF'
 [[ $- != *i* ]] && return
@@ -252,7 +258,7 @@ check "zły argument: kod 1"               '! bash "$S" nonsense >/dev/null 2>&1
 
 echo "== vi mode key"
 rm -f "$A/config/shell/keys.zsh"
-OUT="$(run "kk\nj\n\n")"
+OUT="$(run "kkk\nj\n\n")"
 check "vi: zawijanie menu głównego i j/Enter resetują" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* ]]'
 OUT="$(run "4\e[A\n\n")"
 check "vi: strzałka w górę zawija na reset" '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* ]]'

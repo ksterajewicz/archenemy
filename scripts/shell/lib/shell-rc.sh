@@ -218,6 +218,101 @@ shell_plugin_write() {
     echo written
 }
 
+# Katalog jest danymi, nigdy nie source'ujemy go w TUI. Puste pola TSV
+# zachowujemy przez separator niebędący białym znakiem IFS.
+# shellcheck disable=SC2034  # tablice czyta też shell-settings.sh
+shell_cli_load() {
+    local line name url license package command shells bash_init zsh_init extra
+    CLI_NAMES=(); CLI_URLS=(); CLI_LICENSES=(); CLI_PACKAGES=()
+    CLI_COMMANDS=(); CLI_SHELLS=(); CLI_BASH_INIT=(); CLI_ZSH_INIT=()
+    [[ -f "$SHELL_RC_DIR/cli-tools.tsv" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -n "$line" && "$line" != \#* ]] || continue
+        IFS=$'\034' read -r name url license package command shells bash_init zsh_init extra <<< "${line//$'\t'/$'\034'}"
+        [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$ && "$package" =~ ^[a-zA-Z0-9][a-zA-Z0-9@._+-]*$ &&
+           "$command" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+-]*$ && "$url" == https://* && -n "$license" &&
+           "$shells" =~ ^(bash|zsh)(,(bash|zsh))*$ && -z "$extra" ]] || return 1
+        [[ " ${CLI_NAMES[*]} " != *" $name "* ]] || return 1
+        CLI_NAMES+=("$name"); CLI_URLS+=("$url"); CLI_LICENSES+=("$license")
+        CLI_PACKAGES+=("$package"); CLI_COMMANDS+=("$command"); CLI_SHELLS+=("$shells")
+        CLI_BASH_INIT+=("$bash_init"); CLI_ZSH_INIT+=("$zsh_init")
+    done < "$SHELL_RC_DIR/cli-tools.tsv"
+    (( ${#CLI_NAMES[@]} > 0 ))
+}
+
+shell_cli_supported() { [[ ",$1," == *",$2,"* ]]; }
+
+shell_cli_enabled() {
+    [[ "$1" == bash || "$1" == zsh ]] || return 1
+    [[ -f "$SHELL_RC_DIR/cli-tools.$1" ]] &&
+        grep -qxF "# >>> archenemy CLI: $2 >>>" "$SHELL_RC_DIR/cli-tools.$1"
+}
+
+# Blok narzędzia pochodzi wyłącznie ze śledzonego katalogu, stan z komentarzy.
+shell_cli_block() {
+    local kind="$1" i="$2" init
+    if [[ "$kind" == bash ]]; then init="${CLI_BASH_INIT[$i]}"; else init="${CLI_ZSH_INIT[$i]}"; fi
+    printf '# >>> archenemy CLI: %s >>>\n' "${CLI_NAMES[$i]}"
+    if [[ -n "$init" ]]; then
+        printf 'if command -v %s >/dev/null 2>&1; then\n    %s\nfi\n' "${CLI_COMMANDS[$i]}" "$init"
+    else
+        printf '%s\n' '# Available in PATH; no shell initialization needed.'
+    fi
+    printf '# <<< archenemy CLI: %s <<<\n' "${CLI_NAMES[$i]}"
+}
+
+shell_cli_text() {
+    local kind="$1" target="${2:-}" enabled="${3:-0}" i
+    printf '%s\n' '# Managed by Super+A -> [h] -> 6. Disable there; packages are kept.'
+    for i in "${!CLI_NAMES[@]}"; do
+        if [[ "${CLI_NAMES[$i]}" == "$target" ]]; then
+            [[ "$enabled" == 1 ]] || continue
+        else
+            shell_cli_enabled "$kind" "${CLI_NAMES[$i]}" || continue
+        fi
+        shell_cli_supported "${CLI_SHELLS[$i]}" "$kind" || return 1
+        shell_cli_block "$kind" "$i"
+    done
+}
+
+# Jak dla plugins.zsh: obcej treści i symlinków nie zastępujemy.
+shell_cli_managed() {
+    local kind="$1" file="$SHELL_RC_DIR/cli-tools.$1" expected
+    [[ "$kind" == bash || "$kind" == zsh ]] || return 1
+    [[ -e "$file" || -L "$file" ]] || return 0
+    [[ -f "$file" && ! -L "$file" ]] || return 1
+    expected="$(shell_cli_text "$kind")" || return 1
+    [[ "$(<"$file")" == "$expected" ]]
+}
+
+# Jedyny zapis plików osobistych CLI: idempotentnie, atomowo i z kopią.
+shell_cli_write() {
+    local kind="$1" name="$2" enabled="$3" i known=0 text file tmp bak=""
+    [[ "$kind" == bash || "$kind" == zsh ]] || return 1
+    [[ "$enabled" == 0 || "$enabled" == 1 ]] || return 1
+    shell_cli_load && shell_cli_managed "$kind" || return 1
+    for i in "${!CLI_NAMES[@]}"; do
+        if [[ "${CLI_NAMES[$i]}" == "$name" ]]; then
+            shell_cli_supported "${CLI_SHELLS[$i]}" "$kind" || return 1
+            known=1
+        fi
+    done
+    (( known )) || return 1
+    file="$SHELL_RC_DIR/cli-tools.$kind"
+    [[ -e "$file" || "$enabled" == 1 ]] || { echo unchanged; return 0; }
+    text="$(shell_cli_text "$kind" "$name" "$enabled")" || return 1
+    if [[ -f "$file" ]]; then
+        [[ "$(<"$file")" == "$text" ]] && { echo unchanged; return 0; }
+        bak="$(rc_backup "$file")" || return 1
+    fi
+    tmp="$(mktemp "$file.XXXXXX")" || return 1
+    if ! chmod 600 "$tmp" || ! printf '%s\n' "$text" > "$tmp" || ! mv -f "$tmp" "$file"; then
+        rm -f "$tmp"; return 1
+    fi
+    [[ -z "$bak" ]] || echo "$bak" >&2
+    echo written
+}
+
 # Kopia zapasowa z datą obok pliku; stdout: ścieżka kopii. -L: przy symlinku
 # kopiujemy treść, nie sam link.
 rc_backup() {
@@ -276,6 +371,7 @@ rc_block_text() {
         echo 'if [ -f "$archenemy_shell_dir/keys.zsh" ]; then . "$archenemy_shell_dir/keys.zsh"; fi'
     fi
     echo 'if [ -f "$archenemy_shell_dir/shellrc" ]; then . "$archenemy_shell_dir/shellrc"; fi'
+    printf 'if [ -f "$archenemy_shell_dir/cli-tools.%s" ]; then . "$archenemy_shell_dir/cli-tools.%s"; fi\n' "$kind" "$kind"
     echo 'unset archenemy_shell_dir'
     echo "$SHELL_BLOCK_END"
 }
