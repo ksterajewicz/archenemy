@@ -41,6 +41,16 @@ echo "== hyprctl dispatch w składni Lua"
 bad=$(git -C "$REPO" grep -nE 'hyprctl dispatch +[a-z]+ ' -- 'scripts/*' 'install/*' 'rices/*' 'config/*' ':!*.bak' || true)
 if [[ -z "$bad" ]]; then ok "brak hyprctl dispatch w starej składni"; else fail "stara składnia: $bad"; fi
 
+echo "== angielskie komunikaty instalatorów"
+# Zgrubny strażnik pojedynczych linii: komentarze kodu są dozwolone,
+# ale wypisywane opisy plików i odkładane podsumowania też są tekstem użytkownika.
+bad=$(awk '
+    /^[[:space:]]*#/ { next }
+    /(echo|printf|read[[:space:]]+-[[:alpha:]]*p|die|warn|log|SUMMARY_(DONE|SKIPPED).*\+=|UFW_FAIL=|regenerate_bootloader)/ &&
+    /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/ { print FILENAME ":" FNR ":" $0 }
+' "$REPO"/install/*.sh)
+if [[ -z "$bad" ]]; then ok "brak polskich liter w komunikatach install/*.sh"; else fail "polski tekst instalatora: $bad"; fi
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ $FAIL -eq 0 ]]

@@ -79,7 +79,7 @@ check ".current_rice = alfa"                     '[[ "$(<"$A/.current_rice")" ==
 check "link-only: bez hyprctl/waybar/notify"     '[[ ! -s "$MOCK_LOG" ]]'
 check "brak linków wewnątrz rices/"              '[[ $(find "$A/rices" -type l | wc -l) -eq 0 ]]'
 check "instalator: ✓ dla każdego folderu"        '[[ "$out" == *"✓ ~/.config/hypr → $A/rices/alfa/hypr"* && "$out" == *"✓ ~/.config/waybar → "* && "$out" == *"✓ ~/.config/mako → "* ]]'
-check "instalator: komunikat o .bak dla waybar i hypr" '[[ "$out" == *"~/.config/waybar zachowany jako waybar.bak-"* && "$out" == *"~/.config/hypr zachowany jako hypr.bak-"* ]]'
+check "instalator: komunikat o .bak dla waybar i hypr" '[[ "$out" == *"~/.config/waybar was kept as waybar.bak-"* && "$out" == *"~/.config/hypr was kept as hypr.bak-"* ]]'
 check "SUMMARY_DONE: rice podlinkowany"          'grep -q "^DONE=Rice .alfa. symlinked" "$T/summary" && ! grep -q "^SKIPPED=Rice" "$T/summary"'
 
 echo "== ponowny bieg (idempotencja): brak nowych .bak, linki bez zmian"
@@ -87,12 +87,12 @@ n_bak_before=$(ls -d "$C"/*.bak-* | wc -l)
 out="$(run_step9 alfa)"
 check "linki nadal → alfa"                       '[[ "$(link_of hypr)" == "$A/rices/alfa/hypr" && "$(link_of waybar)" == "$A/rices/alfa/waybar" ]]'
 check "bez nowych .bak"                          '[[ $(ls -d "$C"/*.bak-* | wc -l) -eq $n_bak_before ]]'
-check "bez komunikatu o .bak"                    '[[ "$out" != *"zachowany jako"* ]]'
+check "bez komunikatu o .bak"                    '[[ "$out" != *"was kept as"* ]]'
 
 echo "== błąd biblioteki → ✗ i SUMMARY_SKIPPED, nie ✓"
 out="$(run_step9 nie-ma-takiego)"
 check "brak ✓ przy nieistniejącym ricie"         '[[ "$out" != *"✓ ~/.config"* && "$out" == *"✗"* ]]'
-check "SUMMARY_SKIPPED zamiast DONE"             'grep -q "^SKIPPED=Rice .nie-ma-takiego. NIE podlinkowany" "$T/summary" && ! grep -q "^DONE=Rice" "$T/summary"'
+check "SUMMARY_SKIPPED zamiast DONE"             'grep -q "^SKIPPED=Rice .nie-ma-takiego. NOT fully linked" "$T/summary" && ! grep -q "^DONE=Rice" "$T/summary"'
 check "poprzednie linki (alfa) nietknięte"       '[[ "$(link_of hypr)" == "$A/rices/alfa/hypr" && "$(<"$A/.current_rice")" == alfa ]]'
 
 echo ""

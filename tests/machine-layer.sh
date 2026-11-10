@@ -176,7 +176,7 @@ check "pełny bieg: stary .dat (odpięty monitor) usunięty" '[[ ! -e "$I/monito
 check "pełny bieg: .dat kompletny (opis, rola, ORDER)" 'grep -q "^DESCRIPTION=$DESC_HDMI$" "$I/monitors/HDMI-A-3.dat" && grep -q "^ROLE=" "$I/monitors/HDMI-A-3.dat" && grep -q "^ORDER=[12]$" "$I/monitors/eDP-1.dat" && grep -q "^ORDER=[12]$" "$I/monitors/HDMI-A-3.dat"'
 check "pełny bieg: bez katalogów tymczasowych (także resztki)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
 check "pełny bieg: workspace-mode.dat = shared" '[[ "$(<"$I/workspace-mode.dat")" == shared ]]'
-check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat zapisane (2 monitors)"* ]]'
+check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat saved (2 monitors)"* ]]'
 
 echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
 # Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie

@@ -139,7 +139,7 @@ for mon in "${MONITOR_NAMES[@]}"; do
     for other in "${MONITOR_NAMES[@]}"; do
         [[ "$other" == "$mon" || -z "${CUR_DESC[$other]:-}" ]] && continue
         if monitor_descs_collide "${CUR_DESC[$mon]}" "${CUR_DESC[$other]}"; then
-            echo -e "  ${YELLOW}⚠ $mon i $other mają nierozróżnialny opis EDID: ${CUR_DESC[$mon]} — reguły dostaną nazwy złączy.${NC}"
+            echo -e "  ${YELLOW}⚠ $mon and $other have indistinguishable EDID descriptions: ${CUR_DESC[$mon]} — rules will use connector names.${NC}"
             CUR_DESC[$mon]=""; CUR_DESC[$other]=""
         fi
     done
@@ -148,8 +148,8 @@ done
 echo -e "  ${GREEN}Detected monitors:${NC}"
 for i in "${!MONITOR_NAMES[@]}"; do
     mon="${MONITOR_NAMES[$i]}"
-    echo "    $((i+1))) $mon — ${CUR_RES[$mon]:-?}@${CUR_RATE[$mon]:-?}Hz, pozycja ${CUR_POS[$mon]:-?}, skala ${CUR_SCALE[$mon]:-?}"
-    echo "       opis (EDID): ${CUR_DESC[$mon]:-BRAK — reguły dostaną nazwę złącza}"
+    echo "    $((i+1))) $mon — ${CUR_RES[$mon]:-?}@${CUR_RATE[$mon]:-?}Hz, position ${CUR_POS[$mon]:-?}, scale ${CUR_SCALE[$mon]:-?}"
+    echo "       description (EDID): ${CUR_DESC[$mon]:-NONE — rules will use the connector name}"
 done
 echo ""
 
@@ -188,7 +188,7 @@ echo ""
 
 mon_idx=0
 for mon in "${MONITOR_NAMES[@]}"; do
-    echo -e "${YELLOW}Monitor: ${BLUE}$mon${NC}  ${NC}(Enter = zostaw obecne ustawienie)${NC}"
+    echo -e "${YELLOW}Monitor: ${BLUE}$mon${NC}  ${NC}(Enter = keep current setting)${NC}"
 
     # Domyślne = to, co monitor robi TERAZ (odczytane w [3]); gdy odczyt się
     # nie udał — bezpieczne 'preferred'/'auto', którymi Hyprland sam zarządzi.
@@ -198,10 +198,10 @@ for mon in "${MONITOR_NAMES[@]}"; do
     def_scale="${CUR_SCALE[$mon]:-1}"
 
     while :; do
-        read -rp "  Rozdzielczość [${def_res}]: " res
+        read -rp "  Resolution [${def_res}]: " res
         res="${res:-$def_res}"
         [[ "$res" =~ ^[0-9]+x[0-9]+$ || "$res" == "preferred" || "$res" == "highres" || "$res" == "highrr" ]] && break
-        echo -e "  ${YELLOW}⚠ Format: SZERxWYS (np. 1920x1080) albo preferred/highres/highrr.${NC}"
+        echo -e "  ${YELLOW}⚠ Format: WIDTHxHEIGHT (e.g. 1920x1080) or preferred/highres/highrr.${NC}"
     done
 
     if [[ "$res" == "preferred" || "$res" == "highres" || "$res" == "highrr" ]]; then
@@ -209,26 +209,26 @@ for mon in "${MONITOR_NAMES[@]}"; do
         rate=""
     else
         while :; do
-            read -rp "  Odświeżanie w Hz [${def_rate:-auto}]: " rate
+            read -rp "  Refresh rate in Hz [${def_rate:-auto}]: " rate
             rate="${rate:-$def_rate}"
             [[ -z "$rate" || "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]] && break
-            echo -e "  ${YELLOW}⚠ Podaj liczbę (np. 144) albo Enter.${NC}"
+            echo -e "  ${YELLOW}⚠ Enter a number (e.g. 144) or press Enter.${NC}"
         done
     fi
 
     while :; do
-        read -rp "  Pozycja XxY [${def_pos}]: " pos
+        read -rp "  Position XxY [${def_pos}]: " pos
         pos="${pos:-$def_pos}"
         pos="${pos// /x}"   # akceptuj też zapis '1920 0'
         [[ "$pos" =~ ^-?[0-9]+x-?[0-9]+$ || "$pos" == "auto" ]] && break
-        echo -e "  ${YELLOW}⚠ Format: XxY (np. 1920x0) albo 'auto'.${NC}"
+        echo -e "  ${YELLOW}⚠ Format: XxY (e.g. 1920x0) or 'auto'.${NC}"
     done
 
     while :; do
-        read -rp "  Skala [${def_scale}]: " scale
+        read -rp "  Scale [${def_scale}]: " scale
         scale="${scale:-$def_scale}"
         [[ "$scale" =~ ^[0-9]+(\.[0-9]+)?$ || "$scale" == "auto" ]] && break
-        echo -e "  ${YELLOW}⚠ Podaj liczbę (np. 1, 1.33, 2) albo 'auto'.${NC}"
+        echo -e "  ${YELLOW}⚠ Enter a number (e.g. 1, 1.33, 2) or 'auto'.${NC}"
     done
 
     # Sensible default: first monitor = primary, second = secondary, rest = other.
@@ -239,10 +239,10 @@ for mon in "${MONITOR_NAMES[@]}"; do
         *) def_role="other" ;;
     esac
     while :; do
-        read -rp "  Rola (primary/secondary/other) [${def_role}]: " role
+        read -rp "  Role (primary/secondary/other) [${def_role}]: " role
         role="${role:-$def_role}"
         [[ "$role" == "primary" || "$role" == "secondary" || "$role" == "other" ]] && break
-        echo -e "  ${YELLOW}⚠ Wybierz: primary, secondary albo other.${NC}"
+        echo -e "  ${YELLOW}⚠ Choose: primary, secondary or other.${NC}"
     done
 
     # Rola NIE trafia do tablicy — od 2026-07-17 [8b] nie czyta ról (workspace'y
@@ -262,7 +262,7 @@ for mon in "${MONITOR_NAMES[@]}"; do
         echo "DESCRIPTION=${CUR_DESC[$mon]:-}"
     } > "$MON_TMP/$mon.dat"
 
-    echo -e "  ${GREEN}✓ $mon.dat gotowy (do data/monitors/ trafi po [3.7])${NC}"
+    echo -e "  ${GREEN}✓ $mon.dat ready (saved to data/monitors/ after [3.7])${NC}"
     echo ""
     mon_idx=$((mon_idx + 1))
 done
@@ -271,9 +271,9 @@ done
 
 echo -e "${CYAN}[3.6] Monitor numbering (left→right)...${NC}"
 echo ""
-echo -e "  Monitory dostają numery ${YELLOW}1, 2, 3…${NC} liczone ${YELLOW}od lewej do prawej${NC}"
-echo -e "  (monitor 1 = skrajnie lewy na biurku). Od tych numerów zależy przydział"
-echo -e "  workspace'ów — tryb wybierzesz w następnym kroku."
+echo -e "  Monitors get numbers ${YELLOW}1, 2, 3…${NC} counted ${YELLOW}from left to right${NC}"
+echo -e "  (monitor 1 = leftmost on the desk). These numbers determine workspace"
+echo -e "  assignment — choose the mode in the next step."
 echo ""
 
 # Propozycja automatyczna: sortowanie po współrzędnej X pozycji z [3.5].
@@ -302,19 +302,19 @@ if [[ ${#MONITOR_NAMES[@]} -eq 1 ]]; then
     mon="${MONITOR_NAMES[0]}"
     MON_ORDER[$mon]=1
     echo "ORDER=1" >> "$MON_TMP/$mon.dat"
-    echo -e "  ${GREEN}✓ Jeden monitor ($mon) — numer 1.${NC}"
+    echo -e "  ${GREEN}✓ One monitor ($mon) — number 1.${NC}"
 else
     while :; do
-        echo -e "  Proponowana numeracja (z pozycji X):"
+        echo -e "  Proposed numbering (from X positions):"
         for k in "${!ORDER_PROPOSED[@]}"; do
             i="${ORDER_PROPOSED[$k]}"
             mon="${MONITOR_NAMES[$i]}"
-            echo "    $((k+1))) $mon  (pozycja ${MON_POS[$mon]})"
+            echo "    $((k+1))) $mon  (position ${MON_POS[$mon]})"
         done
-        read -rp "  Enter = zatwierdź, albo wpisz własną kolejność numerami z listy (np. '2 1'): " -a picks
+        read -rp "  Enter = confirm, or enter your own order using list numbers (e.g. '2 1'): " -a picks
         [[ ${#picks[@]} -eq 0 ]] && break
         if [[ ${#picks[@]} -ne ${#ORDER_PROPOSED[@]} ]]; then
-            echo -e "  ${YELLOW}⚠ Podaj dokładnie ${#ORDER_PROPOSED[@]} numerów (po jednym na monitor).${NC}"
+            echo -e "  ${YELLOW}⚠ Enter exactly ${#ORDER_PROPOSED[@]} numbers (one per monitor).${NC}"
             continue
         fi
         _ok=1
@@ -328,7 +328,7 @@ else
             _seen+=" $n"
         done
         if [[ $_ok -eq 0 ]]; then
-            echo -e "  ${YELLOW}⚠ To musi być permutacja liczb 1..${#ORDER_PROPOSED[@]} (bez powtórzeń).${NC}"
+            echo -e "  ${YELLOW}⚠ Use each number from 1..${#ORDER_PROPOSED[@]} exactly once.${NC}"
             continue
         fi
         _reordered=()
@@ -353,27 +353,27 @@ echo ""
 
 echo -e "${CYAN}[3.7] Workspace mode...${NC}"
 echo ""
-echo -e "  1) ${GREEN}shared${NC}  — 10 wspólnych workspace'ów (1-10) dla wszystkich monitorów."
-echo -e "     Monitor k (numeracja L→P) ma domowy workspace k. Super+1..0 działa"
-echo -e "     globalnie. Odporny na odpinanie monitora (bez demona-guarda)."
-echo -e "  2) ${GREEN}decades${NC} — każdy monitor ma WŁASNE workspace'y 1-10 (izolowane"
-echo -e "     dekady). Super+1..0 działa w obrębie monitora z fokusem. Demon"
-echo -e "     scala workspace'y po odpięciu monitora."
+echo -e "  1) ${GREEN}shared${NC}  — 10 shared workspaces (1-10) across all monitors."
+echo -e "     Monitor k (left→right numbering) has home workspace k. Super+1..0 works"
+echo -e "     globally. Handles monitor unplugging without a guard daemon."
+echo -e "  2) ${GREEN}decades${NC} — each monitor has its OWN workspaces 1-10 (isolated"
+echo -e "     decades). Super+1..0 works on the focused monitor. A daemon"
+echo -e "     merges workspaces when a monitor is unplugged."
 echo ""
 while :; do
-    read -rp "  Wybierz tryb [1/2]: " ws_choice
+    read -rp "  Choose mode [1/2]: " ws_choice
     case "$ws_choice" in
         1) WS_MODE="shared";  break ;;
         2) WS_MODE="decades"; break ;;
-        *) echo -e "  ${YELLOW}⚠ Wpisz 1 albo 2.${NC}" ;;
+        *) echo -e "  ${YELLOW}⚠ Enter 1 or 2.${NC}" ;;
     esac
 done
 # Ostatnie pytanie o monitory za nami — dopiero teraz podmieniamy
 # data/monitors/*.dat (patrz [3]).
 commit_monitor_dats
-echo -e "  ${GREEN}✓ data/monitors/*.dat zapisane (${#MONITOR_NAMES[@]} monitors)${NC}"
+echo -e "  ${GREEN}✓ data/monitors/*.dat saved (${#MONITOR_NAMES[@]} monitors)${NC}"
 echo "$WS_MODE" > "$DATA_DIR/workspace-mode.dat"
-echo -e "  ${GREEN}✓ Tryb workspace'ów: $WS_MODE${NC}"
+echo -e "  ${GREEN}✓ Workspace mode: $WS_MODE${NC}"
 echo ""
 
 # ─── 4. CHECK YAY ─────────────────────────────────────────────────────────────
@@ -429,11 +429,11 @@ if [[ ${#MISSING_PACMAN[@]} -gt 0 ]]; then
     read -rp "Install missing pacman packages? [Y/n]: " ans
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
         if ! sudo pacman -S --needed "${MISSING_PACMAN[@]}"; then
-            echo -e "${RED}✗ pacman zgłosił błąd przy pakietach wymaganych.${NC}"
-            SUMMARY_SKIPPED+=("WYMAGANE pakiety pacman — instalacja NIE powiodła się: ${MISSING_PACMAN[*]}")
+            echo -e "${RED}✗ pacman failed to install required packages.${NC}"
+            SUMMARY_SKIPPED+=("REQUIRED pacman packages — installation FAILED: ${MISSING_PACMAN[*]}")
         fi
     else
-        SUMMARY_SKIPPED+=("WYMAGANE pakiety pacman pominięte na życzenie: ${MISSING_PACMAN[*]}")
+        SUMMARY_SKIPPED+=("REQUIRED pacman packages skipped by request: ${MISSING_PACMAN[*]}")
     fi
 fi
 
@@ -460,15 +460,15 @@ if [[ ${#MISSING_AUR[@]} -gt 0 ]]; then
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
         if command -v yay &>/dev/null; then
             if ! yay -S --needed "${MISSING_AUR[@]}"; then
-                echo -e "${RED}✗ yay zgłosił błąd przy pakietach wymaganych.${NC}"
-                SUMMARY_SKIPPED+=("WYMAGANE pakiety AUR — instalacja NIE powiodła się: ${MISSING_AUR[*]}")
+                echo -e "${RED}✗ yay failed to install required packages.${NC}"
+                SUMMARY_SKIPPED+=("REQUIRED AUR packages — installation FAILED: ${MISSING_AUR[*]}")
             fi
         else
             echo -e "${YELLOW}⚠ yay not available — skipping AUR packages.${NC}"
-            SUMMARY_SKIPPED+=("WYMAGANE pakiety AUR pominięte (brak yay): ${MISSING_AUR[*]}")
+            SUMMARY_SKIPPED+=("REQUIRED AUR packages skipped (no yay): ${MISSING_AUR[*]}")
         fi
     else
-        SUMMARY_SKIPPED+=("WYMAGANE pakiety AUR pominięte na życzenie: ${MISSING_AUR[*]}")
+        SUMMARY_SKIPPED+=("REQUIRED AUR packages skipped by request: ${MISSING_AUR[*]}")
     fi
 fi
 
@@ -494,7 +494,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     done
 
     if [[ ${#ADD_NAMES[@]} -eq 0 ]]; then
-        echo -e "  ${YELLOW}⚠ Brak pozycji w packages/additional-packages-*.txt${NC}"
+        echo -e "  ${YELLOW}⚠ No entries in packages/additional-packages-*.txt${NC}"
     else
         echo ""
         echo -e "  ${CYAN}Additional programs:${NC}"
@@ -528,9 +528,9 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
             case "$p" in steam|lib32-*) NEEDS_MULTILIB=1 ;; esac
         done
         if [[ "$NEEDS_MULTILIB" -eq 1 ]] && ! grep -qE '^\[multilib\]' /etc/pacman.conf; then
-            echo -e "  ${YELLOW}⚠ Wybrane pakiety wymagają repo [multilib], które jest wyłączone —${NC}"
-            echo -e "  ${YELLOW}  ich instalacja się nie powiedzie. Włącz je instalatorem GPU${NC}"
-            echo -e "  ${YELLOW}  (install/gpudrivers-installation.sh) albo ręcznie w /etc/pacman.conf.${NC}"
+            echo -e "  ${YELLOW}⚠ Selected packages require [multilib], which is disabled —${NC}"
+            echo -e "  ${YELLOW}  installation will fail. Enable it with the GPU installer${NC}"
+            echo -e "  ${YELLOW}  (install/gpudrivers-installation.sh) or manually in /etc/pacman.conf.${NC}"
         fi
 
         if [[ ${#sel_pacman[@]} -gt 0 ]]; then
@@ -540,7 +540,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
             if command -v yay &>/dev/null; then
                 yay -S --needed "${sel_aur[@]}"
             else
-                echo -e "  ${YELLOW}⚠ yay niedostępny — pomijam z AUR: ${sel_aur[*]}${NC}"
+                echo -e "  ${YELLOW}⚠ yay unavailable — skipping AUR packages: ${sel_aur[*]}${NC}"
             fi
         fi
     fi
@@ -558,9 +558,9 @@ DMI_VENDOR="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)"
 HW_DEFAULT=3
 if [[ "${DMI_VENDOR,,}" == *asus* ]]; then
     HW_DEFAULT=1
-    echo -e "  ${GREEN}Wykryto sprzęt ASUS${NC} ($DMI_VENDOR)."
+    echo -e "  ${GREEN}ASUS hardware detected${NC} ($DMI_VENDOR)."
 elif [[ -n "$DMI_VENDOR" ]]; then
-    echo "  Wykryty producent: $DMI_VENDOR"
+    echo "  Detected manufacturer: $DMI_VENDOR"
 fi
 echo "  1) ASUS ROG notebook"
 echo "  2) HP Omen"
@@ -587,9 +587,9 @@ case "$hw_choice" in
         # opis w skrypcie. Decyzja właściciela 2026-10-14: pakiety z repo, nie z AUR.
         bash "$ARCHENEMY_DIR/install/asus-installation.sh"
         case $? in
-            0) SUMMARY_DONE+=("ASUS: asusctl + rog-control-center z repo Archa, asusd działa") ;;
-            2) SUMMARY_SKIPPED+=("ASUS: pakiety są, asusd jeszcze nie działa: zrestartuj komputer") ;;
-            *) SUMMARY_SKIPPED+=("ASUS: instalacja nie powiodła się, profile przez power-profiles-daemon (ponownie: bash ~/archenemy/install/asus-installation.sh)") ;;
+            0) SUMMARY_DONE+=("ASUS: asusctl + rog-control-center from the Arch repo, asusd running") ;;
+            2) SUMMARY_SKIPPED+=("ASUS: packages installed, asusd not running yet: reboot") ;;
+            *) SUMMARY_SKIPPED+=("ASUS: installation failed, profiles via power-profiles-daemon (retry: bash ~/archenemy/install/asus-installation.sh)") ;;
         esac
         setup_universal_ppd
         ;;
@@ -617,11 +617,11 @@ echo "$HW_PROFILE" > "$DATA_DIR/hardware.dat"
 # zamiast zostawiać cichy sukces i pusty/zepsuty moduł na pasku.
 PROFILE_CHECK="$(bash "$ARCHENEMY_DIR/scripts/waybar/profile-get.sh" 2>/dev/null)"
 if [[ -z "$PROFILE_CHECK" || "$PROFILE_CHECK" == "brak" ]]; then
-    echo -e "  ${RED}✗ Przełącznik profili nie działa (profile-get.sh → \"brak\").${NC}"
-    echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Inne: systemctl enable --now power-profiles-daemon."
-    SUMMARY_SKIPPED+=("Hardware profile: $HW_PROFILE — narzędzie profili NIE odpowiada, pasek pokaże \"brak\"")
+    echo -e "  ${RED}✗ Profile switcher is not working (profile-get.sh → \"brak\").${NC}"
+    echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Other devices: systemctl enable --now power-profiles-daemon."
+    SUMMARY_SKIPPED+=("Hardware profile: $HW_PROFILE — profile tool is NOT responding, the bar will show \"brak\"")
 else
-    SUMMARY_DONE+=("Hardware profile: $HW_PROFILE (aktywny profil: $PROFILE_CHECK)")
+    SUMMARY_DONE+=("Hardware profile: $HW_PROFILE (active profile: $PROFILE_CHECK)")
 fi
 
 echo ""
@@ -719,13 +719,13 @@ done < <(for mon in "${MONITOR_NAMES[@]}"; do
 done | sort -n -s -k1,1)
 
 generate_workspaces_monitors "$HYPR_LOCAL_DIR/workspaces-monitors.lua" "$WS_MODE" "${ORDERED_LR[@]}"
-echo -e "  ${GREEN}✓ workspaces-monitors.lua (tryb: $WS_MODE, ${#ORDERED_LR[@]} monitors)${NC}"
+echo -e "  ${GREEN}✓ workspaces-monitors.lua (mode: $WS_MODE, ${#ORDERED_LR[@]} monitors)${NC}"
 
 # 8c. Bindy sprzętowe (klawisze ASUS ROG tylko na ASUS-ach) — emisja Lua
 {
     echo "-- generated by archenemy install.sh"
     if [[ "$HW_PROFILE" == "asus" ]]; then
-        echo "-- Górne klawisze ASUS ROG"
+        echo "-- ASUS ROG top-row keys"
         echo "hl.bind(\"XF86Launch1\", hl.dsp.exec_cmd(\"rog-control-center\"))"
         # Klawisz profilu idzie DOKŁADNIE tą samą drogą co klik w module waybara:
         # profile-switch.sh weryfikuje efekt w sysfs, przy martwym asusd spada na
@@ -738,7 +738,7 @@ echo -e "  ${GREEN}✓ workspaces-monitors.lua (tryb: $WS_MODE, ${#ORDERED_LR[@]
         # profili, wyłącznie po POTWIERDZONEJ zmianie.
         echo "hl.bind(\"XF86Launch4\", hl.dsp.exec_cmd(\"~/archenemy/scripts/waybar/profile-switch.sh\"))"
     else
-        echo "-- Brak bindów sprzętowych dla tego profilu ($HW_PROFILE)"
+        echo "-- No hardware binds for this profile ($HW_PROFILE)"
     fi
 } > "$HYPR_LOCAL_DIR/hardware-keys.lua"
 echo -e "  ${GREEN}✓ hardware-keys.lua ($HW_PROFILE)${NC}"
@@ -761,7 +761,7 @@ fi
         echo "hl.env(\"__GL_GSYNC_ALLOWED\", \"1\")"
         echo "hl.env(\"__GL_VRR_ALLOWED\", \"1\")"
     else
-        echo "-- Karta $GPU_KIND nie wymaga dodatkowych zmiennych"
+        echo "-- GPU $GPU_KIND needs no additional variables"
     fi
 } > "$HYPR_LOCAL_DIR/gpu-env.lua"
 echo -e "  ${GREEN}✓ gpu-env.lua ($GPU_KIND)${NC}"
@@ -771,8 +771,8 @@ AUTOSTART_CONF="$HYPR_LOCAL_DIR/autostartpersonalisation.lua"
 if [[ ! -f "$AUTOSTART_CONF" ]]; then
     {
         echo "-- generated by archenemy install.sh"
-        echo "-- Osobisty autostart tej maszyny — dopisz swoje aplikacje"
-        echo "-- (hl.exec_cmd wewnątrz hl.on(\"hyprland.start\", ...) = dawne exec-once)."
+        echo "-- Personal autostart for this machine — add your apps"
+        echo "-- (hl.exec_cmd inside hl.on(\"hyprland.start\", ...) replaces exec-once)."
         if [[ "$HW_PROFILE" == "asus" ]]; then
             echo "hl.on(\"hyprland.start\", function()"
             echo "    hl.exec_cmd(\"rog-control-center\")"
@@ -784,9 +784,9 @@ if [[ ! -f "$AUTOSTART_CONF" ]]; then
             echo "-- end)"
         fi
     } > "$AUTOSTART_CONF"
-    echo -e "  ${GREEN}✓ autostartpersonalisation.lua (nowy)${NC}"
+    echo -e "  ${GREEN}✓ autostartpersonalisation.lua (new)${NC}"
 else
-    echo -e "  ${YELLOW}⚠ autostartpersonalisation.lua istnieje — nie ruszam.${NC}"
+    echo -e "  ${YELLOW}⚠ autostartpersonalisation.lua already exists, left as it is.${NC}"
 fi
 
 # 8f. Bindy aplikacji użytkownika (edycja przez Super+A — nie nadpisuj)
@@ -799,9 +799,9 @@ if [[ ! -f "$APPBINDS_CONF" ]]; then
         echo "-- Your app shortcuts — edit via Super+A (scripts/appbinds/appbinds.sh)."
         echo "local mainMod = \"SUPER\""
     } > "$APPBINDS_CONF"
-    echo -e "  ${GREEN}✓ appbinds.lua (nowy)${NC}"
+    echo -e "  ${GREEN}✓ appbinds.lua (new)${NC}"
 else
-    echo -e "  ${YELLOW}⚠ appbinds.lua istnieje — nie ruszam.${NC}"
+    echo -e "  ${YELLOW}⚠ appbinds.lua already exists, left as it is.${NC}"
 fi
 
 # 8g. hyprpaper.conf (warstwa maszynowa — rice'y wskazują na niego symlinkiem;
@@ -811,13 +811,13 @@ HYPRPAPER_MACHINE_CONF="$HYPR_LOCAL_DIR/hyprpaper.conf"
 if [[ ! -f "$HYPRPAPER_MACHINE_CONF" ]]; then
     {
         echo "# generated by archenemy - do not edit by hand"
-        echo "# Tapetę ustawisz przez Super+W (rofi_wallpaper_switcher.sh)."
+        echo "# Set the wallpaper via Super+W (rofi_wallpaper_switcher.sh)."
         # Wyłącz splash hyprpapera (cytat/wersja Hyprlanda rysowana na tapecie).
         echo "splash = false"
     } > "$HYPRPAPER_MACHINE_CONF"
-    echo -e "  ${GREEN}✓ hyprpaper.conf (nowy)${NC}"
+    echo -e "  ${GREEN}✓ hyprpaper.conf (new)${NC}"
 else
-    echo -e "  ${YELLOW}⚠ hyprpaper.conf istnieje — nie ruszam.${NC}"
+    echo -e "  ${YELLOW}⚠ hyprpaper.conf already exists, left as it is.${NC}"
 fi
 
 # 8h. hyprlock-background-<rice>.conf (warstwa maszynowa — rice'y wskazują na
@@ -826,11 +826,11 @@ fi
 # przez checkbox "Set as hyprlock background")
 generate_hyprlock_background() {
     local out="$1" brightness="$2"
-    [[ -f "$out" ]] && { echo -e "  ${YELLOW}⚠ $(basename "$out") istnieje — nie ruszam.${NC}"; return; }
+    [[ -f "$out" ]] && { echo -e "  ${YELLOW}⚠ $(basename "$out") already exists, left as it is.${NC}"; return; }
     {
         echo "# generated by archenemy install.sh - do not edit by hand"
-        echo "# Tło ekranu blokady. Domyślnie: żywy zrzut ekranu + blur."
-        echo "# Zmienisz przez Super+W -> [ ] Set as hyprlock background (no blur)."
+        echo "# Lock screen background. Default: live screenshot + blur."
+        echo "# Change via Super+W -> [ ] Set as hyprlock background (no blur)."
         echo "background {"
         echo "    monitor ="
         echo "    path       = screenshot"
@@ -842,7 +842,7 @@ generate_hyprlock_background() {
         echo "    vibrancy   = 0.18"
         echo "}"
     } > "$out"
-    echo -e "  ${GREEN}✓ $(basename "$out") (nowy)${NC}"
+    echo -e "  ${GREEN}✓ $(basename "$out") (new)${NC}"
 }
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-white-blue.conf" "0.85"
 # tron: ciemniej niż white-blue — blokada ma wyglądać jak zgaszony Grid.
@@ -863,7 +863,7 @@ if [[ ! -f "$VOLSTYLE_DAT" ]]; then
     echo "line" > "$VOLSTYLE_DAT"
     echo -e "  ${GREEN}✓ volume-bar-style.dat (line)${NC}"
 else
-    echo -e "  ${YELLOW}⚠ volume-bar-style.dat istnieje — nie ruszam.${NC}"
+    echo -e "  ${YELLOW}⚠ volume-bar-style.dat already exists, left as it is.${NC}"
 fi
 
 # 8j. Autostart aplikacji wybranych w TUI (Super+A → [p]) — warstwa RÓWNOLEGŁA
@@ -888,7 +888,7 @@ seed_dat() {
         echo "$value" > "$file"
         echo -e "  ${GREEN}✓ $(basename "$file") ($value)${NC}"
     else
-        echo -e "  ${YELLOW}⚠ $(basename "$file") istnieje — nie ruszam.${NC}"
+        echo -e "  ${YELLOW}⚠ $(basename "$file") already exists, left as it is.${NC}"
     fi
 }
 seed_dat "$DATA_DIR/timer-enabled.dat"  "0"
@@ -917,8 +917,8 @@ if command -v mpd >/dev/null 2>&1; then
 
     if [[ ! -f "$MPD_CONF_DIR/output.conf" ]]; then
         {
-            echo "# generated by archenemy install.sh — wyjście audio mpd (warstwa maszynowa)."
-            echo "# Przełączasz je w Super+A → [o] → 3 (pipewire zalecane; alsa = tryb wyłączny)."
+            echo "# generated by archenemy install.sh — mpd audio output (machine layer)."
+            echo "# Switch via Super+A → [o] → 3 (pipewire recommended; alsa = exclusive mode)."
             echo "audio_output {"
             echo "    type  \"pipewire\""
             echo "    name  \"PipeWire\""
@@ -926,38 +926,38 @@ if command -v mpd >/dev/null 2>&1; then
         } > "$MPD_CONF_DIR/output.conf"
         echo -e "  ${GREEN}✓ config/mpd/output.conf (pipewire)${NC}"
     else
-        echo -e "  ${YELLOW}⚠ config/mpd/output.conf istnieje — nie ruszam.${NC}"
+        echo -e "  ${YELLOW}⚠ config/mpd/output.conf already exists, left as it is.${NC}"
     fi
     seed_dat "$DATA_DIR/mpd-output.dat" "pipewire"
 
     if [[ ! -f "$MPD_CONF_DIR/local.conf" ]]; then
         {
-            echo "# archenemy — Twoje nadpisania mpd (warstwa osobista, poza gitem)."
-            echo "# Np. inna biblioteka:  music_directory \"/mnt/music\""
-            echo "# Ten plik jest wczytywany na końcu mpd.conf (include_optional)."
+            echo "# archenemy — Your mpd overrides (personal layer, outside git)."
+            echo "# Example, another library:  music_directory \"/mnt/music\""
+            echo "# This file is loaded at the end of mpd.conf (include_optional)."
         } > "$MPD_CONF_DIR/local.conf"
-        echo -e "  ${GREEN}✓ config/mpd/local.conf (pusty stub)${NC}"
+        echo -e "  ${GREEN}✓ config/mpd/local.conf (empty stub)${NC}"
     else
-        echo -e "  ${YELLOW}⚠ config/mpd/local.conf istnieje — nie ruszam.${NC}"
+        echo -e "  ${YELLOW}⚠ config/mpd/local.conf already exists, left as it is.${NC}"
     fi
 
     MPD_USER_DIR="$CONFIG_DIR/mpd"
     if [[ -L "$MPD_USER_DIR" && "$(readlink -f "$MPD_USER_DIR")" == "$(readlink -f "$MPD_CONF_DIR")" ]]; then
-        echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (już podlinkowane)${NC}"
+        echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (already linked)${NC}"
     elif [[ -e "$MPD_USER_DIR" || -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]]; then
-        echo -e "  ${YELLOW}⚠ Masz już własną konfigurację mpd (~/.config/mpd, ~/.mpdconf lub ~/.mpd).${NC}"
-        echo -e "    archenemy NIE podmienia jej sam. Możesz to zrobić teraz (stary katalog"
-        echo -e "    zostanie jako ~/.config/mpd.bak-<data>) albo później ręcznie."
+        echo -e "  ${YELLOW}⚠ You already have an mpd config (~/.config/mpd, ~/.mpdconf or ~/.mpd).${NC}"
+        echo -e "    archenemy does NOT replace it automatically. You can replace it now (the old directory"
+        echo -e "    will be kept as ~/.config/mpd.bak-<timestamp>) or manually later."
         read -rp "  Replace ~/.config/mpd with archenemy's config now (backup kept)? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
             [[ -e "$MPD_USER_DIR" ]] && mv "$MPD_USER_DIR" "$MPD_USER_DIR.bak-$(date +%Y%m%d_%H%M%S)"
             ln -s "$MPD_CONF_DIR" "$MPD_USER_DIR"
-            echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (poprzedni zachowany jako .bak)${NC}"
-            [[ -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]] && echo -e "  ${YELLOW}⚠ ~/.mpdconf / ~/.mpd zostają na miejscu — mpd czyta najpierw ~/.config/mpd/mpd.conf.${NC}"
+            echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (previous kept as .bak)${NC}"
+            [[ -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]] && echo -e "  ${YELLOW}⚠ ~/.mpdconf / ~/.mpd are kept — mpd reads ~/.config/mpd/mpd.conf first.${NC}"
             SUMMARY_DONE+=("mpd config linked (previous kept as .bak)")
         else
-            echo -e "  ${YELLOW}⚠ Zostawiam Twoją konfigurację mpd. Skórka ncmpcpp i tak działa;${NC}"
-            echo -e "    wizualizer ncmpcpp wymaga w Twoim mpd.conf wyjścia fifo (patrz config/mpd/mpd.conf)."
+            echo -e "  ${YELLOW}⚠ Keeping your mpd config. The ncmpcpp theme still works;${NC}"
+            echo -e "    the ncmpcpp visualizer needs a fifo output in your mpd.conf (see config/mpd/mpd.conf)."
             SUMMARY_SKIPPED+=("mpd: existing user config kept (archenemy's config/mpd not linked)")
         fi
     else
@@ -967,11 +967,11 @@ if command -v mpd >/dev/null 2>&1; then
     fi
 
     if systemctl is-enabled --quiet mpd.service 2>/dev/null || systemctl is-active --quiet mpd.service 2>/dev/null; then
-        echo -e "  ${YELLOW}⚠ mpd działa jako usługa SYSTEMOWA — nie włączam usługi użytkownika${NC}"
-        echo -e "    (dwa mpd naraz = konflikt portu 6600 i karty dźwiękowej). Zostawiam jak jest."
+        echo -e "  ${YELLOW}⚠ mpd runs as a SYSTEM service — skipping the user service${NC}"
+        echo -e "    (two mpd instances conflict over port 6600 and the sound card). Left as it is."
         SUMMARY_SKIPPED+=("mpd user service (system-wide mpd is enabled)")
     elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null || systemctl --user is-enabled --quiet mpd.socket 2>/dev/null; then
-        echo -e "  ${GREEN}✓ usługa użytkownika mpd już włączona${NC}"
+        echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
     else
         read -rp "  Enable mpd as your user service now (systemctl --user enable --now mpd)? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
@@ -979,7 +979,7 @@ if command -v mpd >/dev/null 2>&1; then
                 echo -e "  ${GREEN}✓ mpd.service (user) enabled${NC}"
                 SUMMARY_DONE+=("mpd user service enabled")
             else
-                echo -e "  ${RED}✗ systemctl --user enable --now mpd.service nie powiodło się — sprawdź: journalctl --user -u mpd${NC}"
+                echo -e "  ${RED}✗ systemctl --user enable --now mpd.service failed — check: journalctl --user -u mpd${NC}"
                 SUMMARY_SKIPPED+=("mpd user service (enable failed — see journalctl --user -u mpd)")
             fi
         else
@@ -991,11 +991,11 @@ fi
 if command -v ncmpcpp >/dev/null 2>&1; then
     NCMPCPP_DESKTOP="$HOME/.local/share/applications/ncmpcpp.desktop"
     if [[ -e "$NCMPCPP_DESKTOP" ]]; then
-        echo -e "  ${YELLOW}⚠ $(basename "$NCMPCPP_DESKTOP") istnieje — nie ruszam.${NC}"
+        echo -e "  ${YELLOW}⚠ $(basename "$NCMPCPP_DESKTOP") already exists, left as it is.${NC}"
     else
         mkdir -p "$(dirname "$NCMPCPP_DESKTOP")"
         cp "$ARCHENEMY_DIR/config/applications/ncmpcpp.desktop" "$NCMPCPP_DESKTOP"
-        echo -e "  ${GREEN}✓ ncmpcpp.desktop → rofi (Super+R) i [p] autostart${NC}"
+        echo -e "  ${GREEN}✓ ncmpcpp.desktop → rofi (Super+R) and [p] autostart${NC}"
     fi
 fi
 
@@ -1145,22 +1145,22 @@ if RICE_NAME="$TARGET_RICE" SWITCH_RICE_LINK_ONLY=1 bash "$SWITCH_RICE_LIB"; the
         if [[ "$(readlink "$CONFIG_DIR/$name" 2>/dev/null)" == "${src%/}" ]]; then
             echo -e "  ${GREEN}✓ ~/.config/$name → ${src%/}${NC}"
         else
-            echo -e "  ${RED}✗ ~/.config/$name nie wskazuje na ${src%/}${NC}"
+            echo -e "  ${RED}✗ ~/.config/$name does not point to ${src%/}${NC}"
             LINK_FAIL=1
         fi
     done
     for name in "${LINK_PRE_BAK[@]}"; do
         bak="$(ls -d "$CONFIG_DIR/$name".bak-* 2>/dev/null | tail -n1)"
-        echo -e "  ${YELLOW}⚠ Twój dotychczasowy ~/.config/$name zachowany jako ${bak##*/}${NC}"
+        echo -e "  ${YELLOW}⚠ Your previous ~/.config/$name was kept as ${bak##*/}${NC}"
     done
 else
-    echo -e "  ${RED}✗ lib/switch-rice.sh zakończył się błędem (blokada innego przełączenia? brak rice'a?).${NC}"
+    echo -e "  ${RED}✗ lib/switch-rice.sh failed (another switch holding the lock? missing rice?).${NC}"
     LINK_FAIL=1
 fi
 if [[ $LINK_FAIL -eq 0 ]]; then
     SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
 else
-    SUMMARY_SKIPPED+=("Rice '$TARGET_RICE' NIE podlinkowany w całości — uruchom scripts/changing-theme-scripts/$TARGET_RICE.sh (Super+T)")
+    SUMMARY_SKIPPED+=("Rice '$TARGET_RICE' NOT fully linked — run scripts/changing-theme-scripts/$TARGET_RICE.sh (Super+T)")
 fi
 echo ""
 
@@ -1216,20 +1216,20 @@ for mod in wayland-client wayland-egl egl glesv2 libpulse-simple; do
 done
 
 if [[ ${#FLUX_WALL_MISSING[@]} -gt 0 ]]; then
-    echo -e "  ${YELLOW}⚠ flux-wall pominięty — brakuje: ${FLUX_WALL_MISSING[*]}${NC}"
-    echo -e "    (pakiety: base-devel wayland mesa libpulse; tapety zostają w hyprpaper)"
-    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — brakuje: ${FLUX_WALL_MISSING[*]} (tapety w hyprpaper)")
+    echo -e "  ${YELLOW}⚠ flux-wall skipped — missing: ${FLUX_WALL_MISSING[*]}${NC}"
+    echo -e "    (packages: base-devel wayland mesa libpulse; wallpapers stay in hyprpaper)"
+    SUMMARY_SKIPPED+=("flux-wall NOT built — missing: ${FLUX_WALL_MISSING[*]} (wallpapers via hyprpaper)")
 elif ! FLUX_WALL_LOG=$(make -C "$FLUX_WALL_DIR" 2>&1); then
-    echo -e "  ${RED}✗ flux-wall: błąd budowania — ostatnie linie:${NC}"
+    echo -e "  ${RED}✗ flux-wall: build failed — last lines:${NC}"
     echo "$FLUX_WALL_LOG" | tail -5 | sed 's/^/    /'
-    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — błąd make (tapety w hyprpaper; szczegóły: make -C src/flux-wall)")
+    SUMMARY_SKIPPED+=("flux-wall NOT built — make failed (wallpapers via hyprpaper; details: make -C src/flux-wall)")
 elif [[ -x "$FLUX_WALL_DIR/build/flux-wall" ]]; then
-    echo -e "  ${GREEN}✓ flux-wall zbudowany: src/flux-wall/build/flux-wall${NC}"
+    echo -e "  ${GREEN}✓ flux-wall built: src/flux-wall/build/flux-wall${NC}"
     echo -e "    start: scripts/wallpapers/flux-wall.sh start   stop: ... stop"
-    SUMMARY_DONE+=("flux-wall zbudowany (scripts/wallpapers/flux-wall.sh start)")
+    SUMMARY_DONE+=("flux-wall built (scripts/wallpapers/flux-wall.sh start)")
 else
-    echo -e "  ${RED}✗ flux-wall: make wyszedł czysto, ale binarki nie ma${NC}"
-    SUMMARY_SKIPPED+=("flux-wall NIE zbudowany — make bez błędu, brak binarki (tapety w hyprpaper)")
+    echo -e "  ${RED}✗ flux-wall: make succeeded but the binary is missing${NC}"
+    SUMMARY_SKIPPED+=("flux-wall NOT built — make succeeded, binary missing (wallpapers via hyprpaper)")
 fi
 
 # Wybór animacji z Super+W (data/flux-wall.dat) może wskazywać shader, którego
@@ -1250,13 +1250,13 @@ if [[ -f "$FLUX_CHOICE_DAT" ]]; then
     esac
     if [[ "$FLUX_CHOICE" != "$FLUX_OLD_CHOICE" ]]; then
         printf '%s\n' "$FLUX_CHOICE" > "$FLUX_CHOICE_DAT"
-        echo -e "  ${GREEN}✓ flux-wall: wybór '$FLUX_OLD_CHOICE' przepisany na \"$FLUX_CHOICE\" (zmiana nazwy)${NC}"
+        echo -e "  ${GREEN}✓ flux-wall: choice '$FLUX_OLD_CHOICE' migrated to \"$FLUX_CHOICE\" (renamed)${NC}"
     fi
     if [[ -n "$FLUX_CHOICE" && "$FLUX_CHOICE" != "off" && ! -f "$FLUX_WALL_DIR/shaders/$FLUX_CHOICE.frag" ]]; then
         rm -f "$FLUX_CHOICE_DAT"
-        echo -e "  ${YELLOW}⚠ Wybrana animacja '$FLUX_CHOICE' już nie istnieje — wybór wyczyszczony,${NC}"
-        echo -e "    wraca domyślna animacja rice'a (Super+W → Animation, żeby wybrać inną)."
-        SUMMARY_DONE+=("flux-wall: usunięty wybór nieistniejącej animacji '$FLUX_CHOICE' (Super+W → Animation)")
+        echo -e "  ${YELLOW}⚠ Selected animation '$FLUX_CHOICE' no longer exists — choice cleared,${NC}"
+        echo -e "    restoring the rice default animation (Super+W → Animation to choose another)."
+        SUMMARY_DONE+=("flux-wall: cleared choice of missing animation '$FLUX_CHOICE' (Super+W → Animation)")
     fi
 fi
 echo ""
@@ -1278,25 +1278,25 @@ if command -v python3 &>/dev/null && [[ -f "$FLUX_GEN" ]]; then
     source "$ARCHENEMY_DIR/scripts/wallpapers/lib/dither-flux-sizes.sh"
     dither_flux_plan "$DATA_DIR/monitors" "$FLUX_OUT"
     for _flux in "${FLUX_READY[@]}"; do
-        echo -e "  ${GREEN}✓ $_flux — już wygenerowane${NC}"
+        echo -e "  ${GREEN}✓ $_flux — already generated${NC}"
     done
     for _flux in "${FLUX_SIZES[@]}"; do
         echo -e "  → $_flux"
     done
     if [[ ${#FLUX_SIZES[@]} -gt 0 ]]; then
         dither_flux_start "$FLUX_GEN" "$FLUX_OUT"
-        echo -e "  ${GREEN}✓ generowanie w tle (${FLUX_SIZES[*]}); log: wallpapers/dither-flux/generated/generate.log${NC}"
-        SUMMARY_DONE+=("dither-flux: tapety pod ${FLUX_SIZES[*]} generują się w tle (Super+W pokaże je za kilka minut)")
+        echo -e "  ${GREEN}✓ generating in background (${FLUX_SIZES[*]}); log: wallpapers/dither-flux/generated/generate.log${NC}"
+        SUMMARY_DONE+=("dither-flux: wallpapers for ${FLUX_SIZES[*]} generating in background (available in Super+W in a few minutes)")
     elif [[ ${#FLUX_SKIPPED_MONS[@]} -eq 0 ]]; then
-        echo -e "  ${GREEN}✓ nic do zrobienia${NC}"
+        echo -e "  ${GREEN}✓ nothing to do${NC}"
     fi
     if [[ ${#FLUX_SKIPPED_MONS[@]} -gt 0 ]]; then
-        echo -e "  ${YELLOW}⚠ pominięte: ${FLUX_SKIPPED_MONS[*]}${NC}"
-        SUMMARY_SKIPPED+=("dither-flux: tapety NIE wygenerowane dla: ${FLUX_SKIPPED_MONS[*]} — podaj rozdzielczość WxH w [3.5] albo uruchom z sesji Hyprlanda")
+        echo -e "  ${YELLOW}⚠ skipped: ${FLUX_SKIPPED_MONS[*]}${NC}"
+        SUMMARY_SKIPPED+=("dither-flux: wallpapers NOT generated for: ${FLUX_SKIPPED_MONS[*]} — enter a WxH resolution in [3.5] or run from a Hyprland session")
     fi
 else
-    echo -e "  ${YELLOW}⚠ brak python3 albo generatora — tapety dither-flux tylko z repo (v1/v2)${NC}"
-    SUMMARY_SKIPPED+=("dither-flux: generowanie tapet pod monitory pominięte (brak python3)")
+    echo -e "  ${YELLOW}⚠ python3 or generator missing — using only repo dither-flux wallpapers (v1/v2)${NC}"
+    SUMMARY_SKIPPED+=("dither-flux: monitor wallpaper generation skipped (no python3)")
 fi
 echo ""
 
@@ -1311,11 +1311,11 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     # zgłasza „Status: active" I usługa jest włączona, nie kod wyjścia.
     UFW_FAIL=""
     if ! sudo pacman -S --needed ufw; then
-        UFW_FAIL="pacman (pakiet ufw)"
+        UFW_FAIL="pacman (ufw package)"
     elif ! sudo ufw default deny incoming || ! sudo ufw default allow outgoing; then
         UFW_FAIL="ufw default deny/allow"
     elif ! sudo ufw enable || ! sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-        UFW_FAIL="ufw enable (status nie jest 'active')"
+        UFW_FAIL="ufw enable (status is not 'active')"
     elif ! sudo systemctl enable ufw || ! systemctl is-enabled --quiet ufw; then
         UFW_FAIL="systemctl enable ufw"
     fi
@@ -1323,29 +1323,29 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         echo -e "  ${GREEN}✓ UFW configured.${NC}"
         SUMMARY_DONE+=("UFW configured")
     else
-        echo -e "  ${RED}✗ UFW NIE skonfigurowany — nie powiodło się: $UFW_FAIL${NC}"
-        SUMMARY_SKIPPED+=("UFW — nie powiodło się: $UFW_FAIL (dokończ ręcznie: sudo ufw enable && sudo systemctl enable ufw)")
+        echo -e "  ${RED}✗ UFW NOT configured — failed: $UFW_FAIL${NC}"
+        SUMMARY_SKIPPED+=("UFW — failed: $UFW_FAIL (finish manually: sudo ufw enable && sudo systemctl enable ufw)")
     fi
 fi
 
 # NetworkManager to twarde wymaganie (moduł sieci waybara, Super+N) — pomijamy
 # tylko, gdy już jest włączony.
 if systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
-    echo -e "  ${GREEN}✓ NetworkManager już włączony.${NC}"
+    echo -e "  ${GREEN}✓ NetworkManager already enabled.${NC}"
 else
-    echo -e "  ${YELLOW}Uwaga: jeśli używasz iwd/systemd-networkd, NetworkManager przejmie sieć.${NC}"
-    read -rp "Enable NetworkManager (wymagany przez moduł sieci)? [Y/n]: " ans
+    echo -e "  ${YELLOW}Warning: if you use iwd/systemd-networkd, NetworkManager will take over networking.${NC}"
+    read -rp "Enable NetworkManager (required by the network module)? [Y/n]: " ans
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
         # Sukces = usługa realnie włączona (is-enabled), nie kod systemctl.
         if sudo systemctl enable --now NetworkManager && systemctl is-enabled --quiet NetworkManager; then
             echo -e "  ${GREEN}✓ NetworkManager enabled.${NC}"
             SUMMARY_DONE+=("NetworkManager enabled")
         else
-            echo -e "  ${RED}✗ NetworkManager NIE włączony — sprawdź: systemctl status NetworkManager${NC}"
-            SUMMARY_SKIPPED+=("NetworkManager — enable nie powiódł się (moduł sieci i Super+N nie zadziałają): sudo systemctl enable --now NetworkManager")
+            echo -e "  ${RED}✗ NetworkManager NOT enabled — check: systemctl status NetworkManager${NC}"
+            SUMMARY_SKIPPED+=("NetworkManager — enable failed (network module and Super+N will not work): sudo systemctl enable --now NetworkManager")
         fi
     else
-        SUMMARY_SKIPPED+=("NetworkManager (moduł sieci i Super+N nie zadziałają)")
+        SUMMARY_SKIPPED+=("NetworkManager (network module and Super+N will not work)")
     fi
 fi
 
@@ -1356,14 +1356,14 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     # pacman i systemctl sprawdzane osobno; sukces = bluetooth.service
     # realnie włączony, nie kod wyjścia (audyt 2026-09-25).
     if ! sudo pacman -S --needed bluez bluez-utils; then
-        echo -e "  ${RED}✗ bluez NIE zainstalowany — pomijam bluetooth.service.${NC}"
-        SUMMARY_SKIPPED+=("Bluetooth — pacman nie zainstalował bluez/bluez-utils")
+        echo -e "  ${RED}✗ bluez NOT installed — skipping bluetooth.service.${NC}"
+        SUMMARY_SKIPPED+=("Bluetooth — pacman did not install bluez/bluez-utils")
     elif sudo systemctl enable --now bluetooth && systemctl is-enabled --quiet bluetooth; then
         echo -e "  ${GREEN}✓ Bluetooth enabled.${NC}"
         SUMMARY_DONE+=("Bluetooth enabled")
     else
-        echo -e "  ${RED}✗ bluetooth.service NIE włączony — sprawdź: systemctl status bluetooth${NC}"
-        SUMMARY_SKIPPED+=("Bluetooth — bluez jest, ale enable bluetooth.service nie powiódł się")
+        echo -e "  ${RED}✗ bluetooth.service NOT enabled — check: systemctl status bluetooth${NC}"
+        SUMMARY_SKIPPED+=("Bluetooth — bluez installed, but enable bluetooth.service failed")
     fi
 fi
 
@@ -1376,8 +1376,8 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     bash "$ARCHENEMY_DIR/install/virtualbox-installation.sh"
     case $? in
         0) SUMMARY_DONE+=("VirtualBox installed (vboxdrv loaded)") ;;
-        2) SUMMARY_SKIPPED+=("VirtualBox — zainstalowany, ale vboxdrv nie działa w bieżącym jądrze: zrestartuj system") ;;
-        *) SUMMARY_SKIPPED+=("VirtualBox — instalacja nie powiodła się (szczegóły wyżej; ponownie: bash ~/archenemy/install/virtualbox-installation.sh)") ;;
+        2) SUMMARY_SKIPPED+=("VirtualBox — installed, but vboxdrv is not running in the current kernel: reboot") ;;
+        *) SUMMARY_SKIPPED+=("VirtualBox — installation failed (details above; retry: bash ~/archenemy/install/virtualbox-installation.sh)") ;;
     esac
 fi
 
@@ -1385,13 +1385,13 @@ fi
 # dostarcza pipewire-pulse (socket użytkownika, na Archu włączany presetem).
 if systemctl --user is-active --quiet pipewire-pulse.socket \
    || systemctl --user is-active --quiet pipewire-pulse.service; then
-    echo -e "  ${GREEN}✓ Audio (pipewire-pulse) już działa.${NC}"
+    echo -e "  ${GREEN}✓ Audio (pipewire-pulse) already running.${NC}"
 elif systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service &>/dev/null; then
-    echo -e "  ${GREEN}✓ pipewire-pulse uruchomiony.${NC}"
+    echo -e "  ${GREEN}✓ pipewire-pulse started.${NC}"
     SUMMARY_DONE+=("Audio: pipewire-pulse started")
 else
-    echo -e "  ${YELLOW}⚠ Nie udało się uruchomić pipewire-pulse — wyloguj i zaloguj się ponownie.${NC}"
-    SUMMARY_SKIPPED+=("audio: pipewire-pulse (wymagany re-login)")
+    echo -e "  ${YELLOW}⚠ Could not start pipewire-pulse — log out and back in.${NC}"
+    SUMMARY_SKIPPED+=("audio: pipewire-pulse (re-login required)")
 fi
 
 echo ""
@@ -1442,7 +1442,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     if RELOAD_OUT="$(hyprctl reload 2>&1)" && [[ "$RELOAD_OUT" == ok* ]]; then
         echo -e "${GREEN}✓ Hyprland reloaded.${NC}"
     else
-        echo -e "${RED}✗ Hyprland reload nie powiódł się:${NC} ${RELOAD_OUT:-brak odpowiedzi}"
-        echo -e "  Sprawdź config (hyprctl reload) lub wyloguj się i zaloguj ponownie."
+        echo -e "${RED}✗ Hyprland reload failed:${NC} ${RELOAD_OUT:-no response}"
+        echo -e "  Check the config (hyprctl reload) or log out and back in."
     fi
 fi
