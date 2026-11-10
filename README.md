@@ -90,6 +90,7 @@ archenemy/
 │   ├── kernel-install.sh             # Installs an alternative kernel (zen/lts) + regenerates the bootloader.
 │   ├── asus-installation.sh          # ASUS laptops: asusctl + rog-control-center from the official repo,
 │   │                                 #   replaces AUR variants, starts asusd (exit codes are a contract with step [6]).
+│   ├── bluetooth-installation.sh     # Optional Bluetooth + bluetui: verified service and bar visibility flag.
 │   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
 │                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
@@ -244,6 +245,7 @@ archenemy/
 │                                     #   profile-switch.sh — also the ASUS hardware key path) +
 │                                     #   volume-bar.sh — volume bar in place of the pulseaudio module;
 │                                     #   line/ticks/solid style switchable in Super+A → [v].
+│                                     #   bluetooth.sh — optional D-Bus event stream, power toggle and bluetui launcher.
 │                                     #   timer.sh + timer-ctl.sh — countdown timer next to the clock,
 │                                     #   optional, enabled in Super+A → [t];
 │                                     #   lib/timer-state.sh — shared read/write of timer state.
@@ -344,6 +346,7 @@ archenemy/
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
+│                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
 │                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
@@ -547,6 +550,32 @@ required packages. History persists across logins and may contain private data.
 preserves that behavior. Verify KeePassXC's sensitive clipboard handling in your
 live session: do not assume every application marks secrets correctly.
 See the [cliphist 0.7 source](https://github.com/sentriz/cliphist/blob/v0.7.0/cliphist.go).
+
+## Bluetooth (optional)
+
+Step [10] offers Bluetooth with bluez, bluez-utils, dbus (`dbus-monitor`) and
+bluetui from Extra. Nothing is enabled by default. The separate installer
+`install/bluetooth-installation.sh` verifies installed packages and that
+`bluetooth.service` is both enabled and active before creating
+`data/bluetooth-enabled.dat` (machine state, covered by `/data/` in `.gitignore`).
+Failures appear in the installer summary with a command to retry.
+
+Reload waybar after installation (or switch rice with `Super+T`). The five
+non-beta rices include `custom/bluetooth`; it emits empty text without the
+flag, required commands or a controller. With a controller it shows off,
+on or connected, with connected device names in the tooltip. Updates come
+from BlueZ D-Bus events, including controller hotplug and daemon restart;
+there is no polling interval. The stream follows the [custom module contract](https://man.archlinux.org/man/waybar-custom.5.en)
+and uses [bluetoothctl](https://man.archlinux.org/man/bluetoothctl.1.en) and
+[dbus-monitor](https://man.archlinux.org/man/dbus-monitor.1.en). Left-click opens a floating Alacritty running
+bluetui, right-click toggles controller power. Power off keeps the off icon;
+removing the controller hides it. Beta remains frozen. There is no Bluetooth
+entry in `Super+A` yet. Removing the flag and reloading waybar hides the icon
+without disabling the service; stream processes also accept SIGUSR1 to reread it.
+
+Live-only: in each of the five rices inspect the icon, connect headphones,
+check the tooltip and both clicks, remove/replug the controller and verify
+`systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
 
 ## Timer
 

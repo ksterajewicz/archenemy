@@ -1349,21 +1349,13 @@ else
     fi
 fi
 
-# Bluetooth jest opcjonalny — bluez instalujemy PRZED enable, żeby nie było
-# błędu o nieistniejącym bluetooth.service.
-read -rp "Set up bluetooth (installs bluez)? [y/N]: " ans
+# Bluetooth jest opcjonalny; osobny instalator weryfikuje stan przed flagą.
+read -rp "Set up Bluetooth and its bar icon (bluez, bluez-utils, bluetui)? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    # pacman i systemctl sprawdzane osobno; sukces = bluetooth.service
-    # realnie włączony, nie kod wyjścia (audyt 2026-09-25).
-    if ! sudo pacman -S --needed bluez bluez-utils; then
-        echo -e "  ${RED}✗ bluez NOT installed — skipping bluetooth.service.${NC}"
-        SUMMARY_SKIPPED+=("Bluetooth — pacman did not install bluez/bluez-utils")
-    elif sudo systemctl enable --now bluetooth && systemctl is-enabled --quiet bluetooth; then
-        echo -e "  ${GREEN}✓ Bluetooth enabled.${NC}"
-        SUMMARY_DONE+=("Bluetooth enabled")
+    if bash "$ARCHENEMY_DIR/install/bluetooth-installation.sh"; then
+        SUMMARY_DONE+=("Bluetooth enabled with bluetui and bar icon (reload waybar)")
     else
-        echo -e "  ${RED}✗ bluetooth.service NOT enabled — check: systemctl status bluetooth${NC}"
-        SUMMARY_SKIPPED+=("Bluetooth — bluez installed, but enable bluetooth.service failed")
+        SUMMARY_SKIPPED+=("Bluetooth — setup incomplete; retry: bash ~/archenemy/install/bluetooth-installation.sh")
     fi
 fi
 

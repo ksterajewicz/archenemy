@@ -9,7 +9,7 @@
     "reload_style_on_change": true,
     "modules-left":   ["custom/launcher", "hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock", "custom/timer"],
-    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "battery", "tray"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "tray"],
     // Sygnatura rice'a: neonowy „portal do Gridu" — glyph Archa otwiera rofi.
     "custom/launcher": {
         "format": "󰣇",
@@ -116,6 +116,14 @@
         "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
         "on-click": "pavucontrol",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    },
+    // Strumień zdarzeń D-Bus; bez interval i signal (tryb ciągły).
+    "custom/bluetooth": {
+        "exec": "~/archenemy/scripts/waybar/bluetooth.sh",
+        "return-type": "json",
+        "exec-on-event": false,
+        "on-click": "~/archenemy/scripts/waybar/bluetooth.sh open",
+        "on-click-right": "~/archenemy/scripts/waybar/bluetooth.sh toggle"
     },
     "network": {
         "format-wifi":         "󰖩 {essid}",
