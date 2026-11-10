@@ -50,3 +50,9 @@ gamemode
 lib32-gamemode
 # gamescope: mikrokompozytor Valve — ratuje problematyczne gry Proton
 gamescope
+
+# Opcjonalny moduł Bluetooth: install.sh [10], flaga dopiero po weryfikacji.
+bluez
+bluez-utils
+dbus
+bluetui

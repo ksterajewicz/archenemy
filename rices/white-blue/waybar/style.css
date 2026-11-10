@@ -120,6 +120,7 @@ window#waybar.solo  #window {
     margin:     0;
 }
 #custom-volumebar,
+#custom-bluetooth,
 #network,
 #battery,
 #tray,
@@ -142,6 +143,7 @@ window#waybar.solo  #window {
     font-weight: 600;
 }
 #custom-volumebar:hover,
+#custom-bluetooth:hover,
 #network:hover,
 #battery:hover,
 #custom-profileswitcher:hover,
@@ -188,4 +190,15 @@ tooltip {
 tooltip label {
     color:   #0a0a0a;
     padding: 4px;
+}
+
+/* Bluetooth: kolory stanu w palecie rice'a; pusty moduł bez odstępów. */
+#custom-bluetooth.disabled { color: #767676; }
+#custom-bluetooth.connected { color: #0148ED; }
+#custom-bluetooth.off {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
