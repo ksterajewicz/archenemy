@@ -147,11 +147,15 @@ unset HYPRLAND_INSTANCE_SIGNATURE
 bash "$KL" reset >/dev/null
 # Kolejność gotowych układów: 1 pl, 4 de (patrz PRESETS w skrypcie).
 nr_de="$(bash "$KL" presets | awk -F'\t' '$1=="de"{print NR}')"
-printf 'k12%s\n%s\n\nq' 1 "$nr_de" | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
+nr_custom=$(( $(bash "$KL" presets | wc -l) + 1 ))
+printf 'k1\n2\n1\n%s\nq' "$nr_de" | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
 ok "TUI [k] → 1 → 2 układy: pl, de" "$([[ "$(cat "$DAT")" == pl,de ]] && echo 1)" "$(cat "$DAT")"
-printf 'k22 1\n\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
+printf 'k1\n1\n%s\nru\nq' "$nr_custom" | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
+ok "TUI [k] → custom XKB code: ru" "$([[ "$(cat "$DAT")" == ru ]] && echo 1)" "$(cat "$DAT")"
+printf 'k1\n2\n1\n%s\nq' "$nr_de" | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
+printf 'k2\n2 1\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
 ok "TUI [k] → 2 → kolejność '2 1' → de,pl" "$([[ "$(cat "$DAT")" == de,pl ]] && echo 1)" "$(cat "$DAT")"
-printf 'k22 2\n\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
+printf 'k2\n2 2\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
 ok "TUI [k] → 2 → zła kolejność '2 2' nic nie zmienia" "$([[ "$(cat "$DAT")" == de,pl ]] && echo 1)"
 printf 'k3\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
 ok "TUI [k] → 3 → reset pl,us" "$([[ "$(cat "$DAT")" == pl,us ]] && echo 1)"
