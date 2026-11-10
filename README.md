@@ -510,10 +510,12 @@ Failures appear in the installer summary with a command to retry.
 
 Reload waybar after installation (or switch rice with `Super+T`). The five
 non-beta rices include `custom/bluetooth`; it emits empty text without the
-flag, required commands or a controller. With a controller it shows off,
-on or connected, with connected device names in the tooltip. Updates come
+flag, `bluetoothctl`, `timeout` (coreutils), Python or a controller. With a
+controller it shows off, on or connected, with connected device names in the tooltip. Updates come
 from BlueZ D-Bus events, including controller hotplug and daemon restart;
-there is no polling interval. The stream follows the [custom module contract](https://man.archlinux.org/man/waybar-custom.5.en)
+bursts are coalesced after 0.3 seconds of quiet. Without `dbus-monitor`, it
+falls back to refreshing every 60 seconds and the icon can remain visible.
+The stream follows the [custom module contract](https://man.archlinux.org/man/waybar-custom.5.en)
 and uses [bluetoothctl](https://man.archlinux.org/man/bluetoothctl.1.en) and
 [dbus-monitor](https://man.archlinux.org/man/dbus-monitor.1.en). Left-click opens a floating Alacritty running
 bluetui, right-click toggles controller power. Power off keeps the off icon;
