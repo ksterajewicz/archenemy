@@ -41,7 +41,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}✓ $UCODE installed.${NC}"
         # Mikrokod ładuje bootloader wczesnym initrd — sam pakiet nic nie robi,
         # dopóki config bootloadera się do niego nie odwoła.
-        regenerate_bootloader "mikrokod $UCODE"
+        regenerate_bootloader "microcode $UCODE"
     else
         echo -e "${RED}✗ $UCODE was not installed — check pacman output above; bootloader unchanged.${NC}"
         # Skrypt jest wołany przez install.sh jako osobny proces (bash …),
