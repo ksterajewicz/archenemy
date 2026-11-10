@@ -31,7 +31,7 @@ detect_bootloader() {
 # Zwraca: 0 = zregenerowano (GRUB), 1 = próba się nie powiodła,
 #         2 = wymagany krok ręczny (systemd-boot / nieznany).
 regenerate_bootloader() {
-    local context="${1:-zmiana rozruchowa}"
+    local context="${1:-boot configuration change}"
     local bl
     bl="$(detect_bootloader)"
 
@@ -54,7 +54,7 @@ regenerate_bootloader() {
             echo -e "      for the new kernel. With system kernel-install, find the NEW kernel"
             echo -e "      version (not the running one: \$(uname -r) is the old version) with:"
             echo -e "        ls /usr/lib/modules"
-            echo -e "        sudo kernel-install add <WERSJA-NOWEGO-KERNELA> /boot/vmlinuz-<KERNEL>"
+            echo -e "        sudo kernel-install add <NEW-KERNEL-VERSION> /boot/vmlinuz-<KERNEL>"
             echo -e "    • microcode: add BEFORE the main initrd line in every entry:"
             echo -e "        initrd  /amd-ucode.img      # AMD"
             echo -e "        initrd  /intel-ucode.img    # Intel"
