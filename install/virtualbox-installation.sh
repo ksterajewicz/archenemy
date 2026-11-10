@@ -43,18 +43,18 @@ for d in "$KMOD_DIR"/*/; do
 done
 
 if [[ ${#KVERS[@]} -eq 0 ]]; then
-    echo -e "${YELLOW}⚠ Nie znalazłem jądra z repo Archa (pkgbase w $KMOD_DIR) —${NC}"
-    echo -e "${YELLOW}  nagłówki swojego jądra doinstaluj ręcznie, inaczej DKMS nie zbuduje vboxdrv.${NC}"
+    echo -e "${YELLOW}⚠ No Arch kernel found (pkgbase in $KMOD_DIR) —${NC}"
+    echo -e "${YELLOW}  install your kernel headers manually, or DKMS cannot build vboxdrv.${NC}"
 fi
 
 echo -e "${YELLOW}Instaluję: ${PKGS[*]}${NC}"
 if ! sudo pacman -S --needed "${PKGS[@]}"; then
-    echo -e "${RED}✗ pacman zgłosił błąd — VirtualBox NIE zainstalowany.${NC}"
+    echo -e "${RED}✗ pacman failed — VirtualBox was not installed.${NC}"
     exit 1
 fi
 for p in virtualbox virtualbox-host-dkms; do
     if ! pacman -Qi "$p" &>/dev/null; then
-        echo -e "${RED}✗ Pakiet $p nie jest zainstalowany mimo instalacji — sprawdź wyjście pacmana.${NC}"
+        echo -e "${RED}✗ Package $p is not installed despite the install attempt — check pacman output.${NC}"
         exit 1
     fi
 done
@@ -71,16 +71,16 @@ done
 
 RUNNING="$(uname -r)"
 if [[ ${#MISSING[@]} -gt 0 ]]; then
-    echo -e "  ${RED}✗ vboxdrv nie jest zbudowany dla jądra: ${MISSING[*]}${NC}"
-    echo -e "  ${RED}  Sprawdź: dkms status; brakujące nagłówki: sudo pacman -S <jądro>-headers;${NC}"
+    echo -e "  ${RED}✗ vboxdrv is not built for these kernels: ${MISSING[*]}${NC}"
+    echo -e "  ${RED}  Check: dkms status; install missing headers: sudo pacman -S <kernel>-headers;${NC}"
     echo -e "  ${RED}  potem: sudo dkms autoinstall${NC}"
 fi
 
 if [[ ! -d "$KMOD_DIR/$RUNNING" ]]; then
     # Jądro zaktualizowane, a system nie zrestartowany — modułów działającego
     # jądra już nie ma na dysku, modprobe nic tu nie załaduje.
-    echo -e "  ${YELLOW}⚠ Działające jądro $RUNNING nie ma już modułów na dysku (aktualizacja bez restartu).${NC}"
-    echo -e "  ${YELLOW}  Zrestartuj system — vboxdrv załaduje się sam (modules-load.d).${NC}"
+    echo -e "  ${YELLOW}⚠ The running kernel $RUNNING no longer has modules on disk (updated without reboot).${NC}"
+    echo -e "  ${YELLOW}  Reboot — vboxdrv will load automatically (modules-load.d).${NC}"
     exit 2
 fi
 if [[ " ${MISSING[*]} " == *" $RUNNING "* ]]; then
@@ -93,8 +93,8 @@ if [[ -d "$SYSMOD_DIR/vboxdrv" ]]; then
     loaded_ver="$(cat "$SYSMOD_DIR/vboxdrv/version" 2>/dev/null || true)"
     built_ver="$(modinfo -k "$RUNNING" -F version vboxdrv 2>/dev/null || true)"
     if [[ -n "$loaded_ver" && -n "$built_ver" && "$loaded_ver" != "$built_ver" ]]; then
-        echo -e "  ${YELLOW}⚠ Załadowany vboxdrv $loaded_ver, zbudowany $built_ver —${NC}"
-        echo -e "  ${YELLOW}  wyłącz maszyny wirtualne i uruchom: sudo vboxreload (albo zrestartuj system).${NC}"
+        echo -e "  ${YELLOW}⚠ Loaded vboxdrv $loaded_ver, built $built_ver —${NC}"
+        echo -e "  ${YELLOW}  shut down virtual machines and run: sudo vboxreload (or reboot).${NC}"
         exit 2
     fi
     echo -e "  ${GREEN}✓ vboxdrv już załadowany.${NC}"
@@ -103,13 +103,13 @@ else
     # ich porażka nie blokuje maszyn wirtualnych, więc tylko ostrzegamy.
     sudo modprobe vboxdrv
     if [[ ! -d "$SYSMOD_DIR/vboxdrv" ]]; then
-        echo -e "  ${RED}✗ modprobe vboxdrv nie załadował modułu — sprawdź: sudo dmesg | grep -i vbox${NC}"
+    echo -e "  ${RED}✗ modprobe vboxdrv did not load the module — check: sudo dmesg | grep -i vbox${NC}"
         exit 1
     fi
     echo -e "  ${GREEN}✓ vboxdrv załadowany.${NC}"
     for m in vboxnetadp vboxnetflt; do
         sudo modprobe "$m" && [[ -d "$SYSMOD_DIR/$m" ]] \
-            || echo -e "  ${YELLOW}⚠ $m niezaładowany — sieć bridged/host-only ruszy po restarcie.${NC}"
+            || echo -e "  ${YELLOW}⚠ $m not loaded — bridged/host-only networking will work after reboot.${NC}"
     done
 fi
 
@@ -123,7 +123,7 @@ in_vboxusers() { [[ " $(id -nG "$VB_USER" 2>/dev/null) " == *" vboxusers "* ]]; 
 if in_vboxusers; then
     echo -e "  ${GREEN}✓ $VB_USER jest już w grupie vboxusers.${NC}"
 elif ! getent group vboxusers &>/dev/null; then
-    echo -e "  ${YELLOW}⚠ Brak grupy vboxusers — USB w maszynach wirtualnych nie zadziała (pakiet powinien ją utworzyć).${NC}"
+    echo -e "  ${YELLOW}⚠ vboxusers group is missing — USB in virtual machines will not work (the package should create it).${NC}"
 else
     read -rp "  Add $VB_USER to vboxusers (USB devices in virtual machines)? [y/N]: " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
@@ -131,7 +131,7 @@ else
         if in_vboxusers; then
             echo -e "  ${GREEN}✓ Dodano do vboxusers — zadziała po ponownym zalogowaniu.${NC}"
         else
-            echo -e "  ${RED}✗ Nie udało się dodać do vboxusers — ręcznie: sudo usermod -aG vboxusers $VB_USER${NC}"
+            echo -e "  ${RED}✗ Could not add user to vboxusers — run manually: sudo usermod -aG vboxusers $VB_USER${NC}"
         fi
     fi
 fi

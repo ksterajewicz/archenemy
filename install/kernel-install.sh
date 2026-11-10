@@ -43,7 +43,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         # Nowy kernel bez wpisu w bootloaderze jest niebootowalny.
         regenerate_bootloader "kernel $KERNEL"
     else
-        echo -e "${RED}✗ NIE zainstalowano: ${MISSING[*]} — sprawdź wyjście pacmana wyżej; bootloader bez zmian.${NC}"
+        echo -e "${RED}✗ Not installed: ${MISSING[*]} — check pacman output above; bootloader unchanged.${NC}"
         # Skrypt jest wołany przez install.sh jako osobny proces (bash …),
         # więc niezerowy kod nie przerywa instalatora — tylko sygnalizuje stan.
         exit 1

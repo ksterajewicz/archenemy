@@ -43,7 +43,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         # dopóki config bootloadera się do niego nie odwoła.
         regenerate_bootloader "mikrokod $UCODE"
     else
-        echo -e "${RED}✗ $UCODE NIE zainstalowany — sprawdź wyjście pacmana wyżej; bootloader bez zmian.${NC}"
+        echo -e "${RED}✗ $UCODE was not installed — check pacman output above; bootloader unchanged.${NC}"
         # Skrypt jest wołany przez install.sh jako osobny proces (bash …),
         # więc niezerowy kod nie przerywa instalatora — tylko sygnalizuje stan.
         exit 1

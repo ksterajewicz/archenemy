@@ -37,32 +37,32 @@ regenerate_bootloader() {
 
     case "$bl" in
         grub)
-            echo -e "  Wykryto GRUB — regeneruję /boot/grub/grub.cfg..."
+            echo -e "  GRUB detected — regenerating /boot/grub/grub.cfg..."
             if sudo grub-mkconfig -o /boot/grub/grub.cfg; then
-                echo -e "  ${_BL_GREEN}✓ GRUB zaktualizowany ($context).${_BL_NC}"
+                echo -e "  ${_BL_GREEN}✓ GRUB updated ($context).${_BL_NC}"
                 return 0
             else
-                echo -e "  ${_BL_RED}✗ grub-mkconfig nie powiódł się — uruchom ręcznie:${_BL_NC}"
+                echo -e "  ${_BL_RED}✗ grub-mkconfig failed — run manually:${_BL_NC}"
                 echo -e "      sudo grub-mkconfig -o /boot/grub/grub.cfg"
                 return 1
             fi
             ;;
         systemd-boot)
-            echo -e "  ${_BL_YELLOW}Wykryto systemd-boot — nie modyfikuję wpisów automatycznie${_BL_NC}"
-            echo -e "  ${_BL_YELLOW}(błędny wpis = brak bootu). Dokończ ręcznie dla: $context${_BL_NC}"
-            echo -e "    • kernel: sprawdź, czy /boot/loader/entries/*.conf ma linie 'linux' i 'initrd'"
-            echo -e "      dla nowego kernela. Z systemowym kernel-install — wersję NOWEGO"
-            echo -e "      kernela (nie działającego: \$(uname -r) wskazuje stary!) znajdziesz przez:"
+            echo -e "  ${_BL_YELLOW}systemd-boot detected — entries are not modified automatically${_BL_NC}"
+            echo -e "  ${_BL_YELLOW}(an invalid entry prevents booting). Finish manually for: $context${_BL_NC}"
+            echo -e "    • kernel: check that /boot/loader/entries/*.conf has 'linux' and 'initrd' lines"
+            echo -e "      for the new kernel. With system kernel-install, find the NEW kernel"
+            echo -e "      version (not the running one: \$(uname -r) is the old version) with:"
             echo -e "        ls /usr/lib/modules"
             echo -e "        sudo kernel-install add <WERSJA-NOWEGO-KERNELA> /boot/vmlinuz-<KERNEL>"
-            echo -e "    • mikrokod: dodaj PRZED główną linią initrd w każdym wpisie:"
+            echo -e "    • microcode: add BEFORE the main initrd line in every entry:"
             echo -e "        initrd  /amd-ucode.img      # AMD"
             echo -e "        initrd  /intel-ucode.img    # Intel"
             return 2
             ;;
         *)
-            echo -e "  ${_BL_YELLOW}⚠ Nie rozpoznano bootloadera — zaktualizuj konfigurację rozruchową${_BL_NC}"
-            echo -e "  ${_BL_YELLOW}  ręcznie dla: $context${_BL_NC}"
+            echo -e "  ${_BL_YELLOW}⚠ Bootloader not recognized — update the boot configuration${_BL_NC}"
+            echo -e "  ${_BL_YELLOW}  manually for: $context${_BL_NC}"
             return 2
             ;;
     esac
