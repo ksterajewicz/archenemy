@@ -506,7 +506,9 @@ previews use the shared thumbnail library with a time budget and a private,
 temporary cache under `$XDG_CACHE_HOME` (default `~/.cache`), removed on exit.
 `Delete entry` opens a second list to choose what to remove; `Clear history`
 asks for confirmation, with **No** selected by default. These actions remove
-saved history; they do not clear the current clipboard.
+saved history; they do not clear the current clipboard. The selected entry is decoded
+into a private temporary file before copying. A failed or empty decode leaves
+the current clipboard unchanged; temporary files are removed when the menu exits.
 
 The existing `wl-paste` watchers store text and images using `cliphist` (default
 750 entries in `~/.cache/cliphist/db`). Both `cliphist` and `wl-clipboard` are

@@ -44,6 +44,14 @@ CACHE_DIR=""
 trap '[[ -z "$CACHE_DIR" ]] || rm -rf -- "$CACHE_DIR"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
+# Jeden prywatny katalog dla miniatur i wybranego wpisu; EXIT usuwa całość.
+ensure_cache_dir() {
+    [[ -n "$CACHE_DIR" ]] && return 0
+    local cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
+    mkdir -p -- "$cache_root" || return 1
+    CACHE_DIR=$(mktemp -d "$cache_root/archenemy-clipboard.XXXXXX") || return 1
+    THUMB_DIR="$CACHE_DIR/thumbs"
+}
 thumb_init
 while IFS= read -r row; do
     [[ "$row" == *$'\t'* ]] || continue
@@ -56,14 +64,7 @@ while IFS= read -r row; do
     icon=""
     if [[ "$label" =~ ^\[\[\ binary\ data\ .*\ (png|jpeg|gif|bmp|tiff)\ [0-9]+x[0-9]+\ \]\]$ ]] && (( SECONDS < THUMB_DEADLINE )); then
         # Prywatny cache tylko na czas menu: wipe/delete nie zostawiają kopii obrazów.
-        if [[ -z "$CACHE_DIR" ]]; then
-            cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
-            if mkdir -p -- "$cache_root"; then
-                CACHE_DIR=$(mktemp -d "$cache_root/archenemy-clipboard.XXXXXX") || CACHE_DIR=""
-            fi
-            THUMB_DIR="$CACHE_DIR/thumbs"
-        fi
-        if [[ -n "$CACHE_DIR" ]]; then
+        if ensure_cache_dir; then
             raw="$CACHE_DIR/$id"
             if timeout -k 1 1 cliphist decode "$id" > "$raw" 2>/dev/null && [[ -s "$raw" ]]; then
                 thumb_get "$raw"
@@ -100,7 +101,17 @@ selected=$(select_entry 'Clipboard history:' yes) || exit 0
 [[ "$selected" =~ ^[0-9]+$ && ${#selected} -lt 9 ]] || exit 0
 selected=$((10#$selected))
 if (( selected < count )); then
-    if ! cliphist decode "${IDS[$selected]}" | wl-copy; then
+    if ! ensure_cache_dir; then
+        message 'Cannot prepare clipboard entry. Check cache directory permissions.'
+        exit 1
+    fi
+    decoded="$CACHE_DIR/selected"
+    # Nie uruchamiaj wl-copy dla pustego ani częściowo zdekodowanego wpisu.
+    if ! cliphist decode "${IDS[$selected]}" > "$decoded" || [[ ! -s "$decoded" ]]; then
+        message 'Cannot decode clipboard entry. It may have been removed.'
+        exit 1
+    fi
+    if ! wl-copy < "$decoded"; then
         message 'Cannot copy clipboard entry. It may have been removed.'
         exit 1
     fi
