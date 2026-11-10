@@ -30,13 +30,11 @@ summary() {
     fi
 }
 
-# Wiersz fastfetcha: rodzina i rozmiar terminala, jak moduł terminalfont.
+# Wiersz fastfetcha opisuje wybór, nigdy nie obiecuje pomiaru otwartego okna.
 current() {
-    local font size
+    local font
     font="$(font_effective)"
-    [[ -n "$font" ]] || { echo "unknown"; return 0; }
-    size="$(font_rice_size "$(font_active_rice)")"
-    if [[ -n "$size" ]]; then printf '%s (%spt)\n' "$font" "$size"; else printf '%s\n' "$font"; fi
+    printf '%s (archenemy choice; unverified: %s)\n' "${font:-unknown}" "$(font_terminal_scope)"
 }
 
 brief() {
@@ -61,7 +59,8 @@ apply_message() {
            else
                echo -e "  ${GREEN}✓ Back to the rice font.${NC}"
            fi
-           echo "  Alacritty reloads open windows by itself; rofi menus and fastfetch use it next time."
+           echo "  Open a new terminal using the rice Alacritty config; personal configs may override or omit the import."
+           echo "  Rofi uses the choice next time; fastfetch labels it as an unverified archenemy choice."
            echo "  Waybar, mako and hyprlock keep the rice font (see the table)."
            echo "  Saved in $FONT_DIR (outside the repository); the previous value is kept for undo." ;;
         2) echo -e "  ${RED}✗ Font name has characters archenemy does not write into configs; no changes made.${NC}" ;;
@@ -193,7 +192,7 @@ menu() {
                apply_message "$rc" ""
            fi ;;
         l) pick_font ;;
-        u) font_apply "$prev"; rc=$?
+        u) font_apply "" undo; rc=$?
            apply_message "$rc" "$prev" ;;
     esac
 }
@@ -221,7 +220,7 @@ case "${1:-menu}" in
         # shellcheck source=lib/tui.sh
         source "$LIB_DIR/tui.sh"
         prev="$(font_previous)" || { echo "Nothing to undo." >&2; exit 1; }
-        font_apply "$prev"; rc=$?
+        font_apply "" undo; rc=$?
         apply_message "$rc" "$prev"
         exit "$rc" ;;
     *) echo "Usage: $0 [menu|summary|brief|current|list [--all]|set <family>|reset|undo]" >&2; exit 2 ;;

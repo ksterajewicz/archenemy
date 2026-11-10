@@ -88,7 +88,7 @@ font_override() {
     font_name_valid "$name" && printf '%s' "$name"
 }
 
-# Font, którego terminal faktycznie używa w aktywnym rice'ie.
+# Deklarowany wybór archenemy; nie jest pomiarem fontu otwartego terminala.
 font_effective() {
     local rice over
     rice="$(font_active_rice)"
@@ -136,11 +136,12 @@ font_installed() {
 }
 
 font_installed_has() {
-    local want="$1" name
+    local want="$1" name found=1
+    # Odczytaj całą listę: wczesny return zrywa potok producenta (SIGPIPE).
     while IFS= read -r name; do
-        [[ "$name" == "$want" ]] && return 0
+        [[ "$name" == "$want" ]] && found=0
     done < <(font_installed 1)
-    return 1
+    return "$found"
 }
 
 # Czy rodzina ma glif Nerd Font (U+F303, logo Archa). Fontconfig rozumie `-`
@@ -162,38 +163,111 @@ font_dir_safe() {
     mkdir -p -- "$FONT_DIR"
 }
 
-# Atomowy zapis jednej treści: plik tymczasowy obok i mv.
-font_write_file() {
-    local file="$1" content="$2" tmp
-    tmp="$(mktemp "${file}.XXXXXX")" || return 1
-    if ! printf '%s' "$content" >"$tmp" || ! chmod 644 "$tmp" || ! mv -f -- "$tmp" "$file"; then
-        rm -f -- "$tmp"
-        return 1
-    fi
+# Każdy cel, także blokada, musi być zwykłym plikiem albo nie istnieć.
+font_targets_safe() {
+    local target
+    for target in alacritty.toml family family.prev .lock; do
+        [[ ! -L "$FONT_DIR/$target" ]] || return 1
+        [[ ! -e "$FONT_DIR/$target" || -f "$FONT_DIR/$target" ]] || return 1
+    done
 }
 
-# Ustawia rodzinę ($1) albo usuwa wybór (pusty $1). Najpierw kopia poprzedniej
-# wartości, potem plik alacritty, na końcu `family` — stan pokazuje wybór
-# dopiero, gdy konfiguracja jest gotowa. Kody: 0 ok, 1 błąd zapisu,
-# 2 niepoprawna nazwa, 3 font niezainstalowany, 4 katalog wskazuje repo.
-font_apply() {
-    local name="$1" prev
-    if [[ -n "$name" ]]; then
+# Transakcja obejmuje konfigurację, wybór i historię. Kopie twarde zachowują
+# oryginały przed publikacją; rollback nie używa mv, które mogło zawieść.
+# Podpowłoka zwalnia blokadę również przy błędzie i sygnale.
+font_apply() (
+    local name="$1" prev stage target failed=0 committed=0
+    local -a targets=(alacritty.toml family family.prev)
+    if [[ -n "$name" && "${2:-}" != undo ]]; then
         font_name_valid "$name" || return 2
         font_installed_has "$name" || return 3
     fi
     font_dir_safe || return 4
-    prev="$(font_override)"
-    font_write_file "$FONT_DIR/family.prev" "${prev:+$prev$'\n'}" || return 1
-    if [[ -z "$name" ]]; then
-        rm -f -- "$FONT_DIR/family" "$FONT_DIR/alacritty.toml" || return 1
-        return 0
+    font_targets_safe || return 1
+    exec 8>>"$FONT_DIR/.lock" || return 1
+    flock -x 8 || return 1
+    font_targets_safe || return 1
+    if [[ "${2:-}" == undo ]]; then
+        name="$(font_previous)" || return 1
+        if [[ -n "$name" ]]; then
+            font_name_valid "$name" || return 2
+            font_installed_has "$name" || return 3
+        fi
     fi
-    font_write_file "$FONT_DIR/alacritty.toml" "# archenemy font choice (Super+A -> [f]). Delete this file to use the rice font.
-[font.normal]
-family = \"$name\"
-" || return 1
-    font_write_file "$FONT_DIR/family" "$name"$'\n' || return 1
+    prev="$(font_override)"
+    stage="$(mktemp -d "$FONT_DIR/.transaction.XXXXXX")" || return 1
+    # shellcheck disable=SC2329  # wywoływana przez trap EXIT
+    font_transaction_cleanup() {
+        local item rollback_failed=0
+        if (( ! committed )); then
+            for item in "${targets[@]}"; do
+                if [[ -f "$stage/old/$item" ]]; then
+                    cp -p --remove-destination -- "$stage/old/$item" "$FONT_DIR/$item" || rollback_failed=1
+                    cmp -s -- "$stage/old/$item" "$FONT_DIR/$item" || rollback_failed=1
+                elif [[ -f "$stage/ready" ]]; then
+                    rm -f -- "$FONT_DIR/$item" || rollback_failed=1
+                fi
+            done
+        fi
+        if (( rollback_failed )); then
+            echo "Font rollback failed; originals retained in $stage/old" >&2
+        else
+            rm -rf -- "$stage"
+        fi
+    }
+    trap font_transaction_cleanup EXIT
+    trap 'exit 1' HUP INT TERM
+    mkdir "$stage/old" "$stage/new" || return 1
+    for target in "${targets[@]}"; do
+        if [[ -e "$FONT_DIR/$target" ]]; then
+            ln -T -- "$FONT_DIR/$target" "$stage/old/$target" || return 1
+        fi
+    done
+    # Dopiero komplet kopii pozwala usuwać cele nieobecne przed transakcją.
+    touch "$stage/ready" || return 1
+    printf '%s' "${prev:+$prev$'\n'}" >"$stage/new/family.prev" || return 1
+    if [[ -n "$name" ]]; then
+        printf '%s\n' "$name" >"$stage/new/family" || return 1
+        printf '# archenemy font choice (Super+A -> [f]).\n[font.normal]\nfamily = "%s"\n' "$name" >"$stage/new/alacritty.toml" || return 1
+    fi
+    chmod 644 "$stage/new/"* || return 1
+    for target in "${targets[@]}"; do
+        if [[ -f "$stage/new/$target" ]]; then
+            mv -fT -- "$stage/new/$target" "$FONT_DIR/$target" || { failed=1; break; }
+        elif [[ -e "$FONT_DIR/$target" ]]; then
+            mv -T -- "$FONT_DIR/$target" "$stage/removed-$target" || { failed=1; break; }
+        fi
+    done
+    (( failed == 0 )) || return 1
+    # Wynik publikacji musi odpowiadać przygotowanej treści.
+    [[ ! -L "$FONT_DIR/family.prev" && -f "$FONT_DIR/family.prev" ]] || return 1
+    [[ "$(cat "$FONT_DIR/family.prev")" == "$prev" ]] || return 1
+    if [[ -n "$name" ]]; then
+        [[ ! -L "$FONT_DIR/family" && ! -L "$FONT_DIR/alacritty.toml" ]] || return 1
+        [[ "$(font_override)" == "$name" && "$(font_toml_family "$FONT_DIR/alacritty.toml")" == "$name" ]] || return 1
+    else
+        [[ ! -e "$FONT_DIR/family" && ! -e "$FONT_DIR/alacritty.toml" ]] || return 1
+    fi
+    committed=1
+)
+
+# Konfiguracja na dysku nie potwierdza fontu w oknie (CLI -c/-o, zoom,
+# brak obserwacji pierwszego importu). Własnych konfiguracji nie interpretujemy
+# jak konfiguracji rice'a; identyczność sprawdzamy po rozwiązaniu symlinków.
+font_terminal_scope() {
+    local active expected
+    if [[ ( -n "${TERM_PROGRAM:-}" && "$TERM_PROGRAM" != Alacritty ) ||
+          ( -z "${TERM_PROGRAM:-}" && "${TERM:-}" != alacritty ) ]]; then
+        printf 'other or unknown terminal'
+        return
+    fi
+    active="$(readlink -f -- "${XDG_CONFIG_HOME:-$HOME/.config}/alacritty/alacritty.toml" 2>/dev/null)"
+    expected="$(readlink -f -- "$FONT_REPO/rices/$(font_active_rice)/alacritty/alacritty.toml" 2>/dev/null)"
+    if [[ -n "$active" && "$active" == "$expected" ]]; then
+        printf 'rice Alacritty config; open a new terminal'
+    else
+        printf 'personal or unknown Alacritty config; import and local overrides unverified'
+    fi
 }
 
 font_previous() {
@@ -208,10 +282,10 @@ font_previous() {
 # podglądu w menu głównym i README.
 font_coverage() {
     printf '%s\t%s\t%s\n' \
-        "alacritty" yes "live reload; new windows always" \
-        "terminal apps" yes "nvim, ncmpcpp, btop follow alacritty" \
+        "alacritty" yes "open a new terminal; requires rice config imports" \
+        "terminal apps" yes "follow their terminal; personal configs unverified" \
         "rofi menus" yes "launcher, power, rice and wallpaper menus; next open" \
-        "fastfetch" yes "FONT row; next run" \
+        "fastfetch" yes "archenemy choice, unverified terminal; next run" \
         "waybar" no "GTK CSS import of a missing file stops the bar" \
         "mako" no "a missing include aborts its config" \
         "hyprlock" no "labels cannot be overridden; lock screen kept safe" \
