@@ -55,4 +55,12 @@ fi
 # a nie rozwija `~`. Znak ' w $HOME wymaga zamiany, by nie rozerwać szablonu.
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SELF="${SELF//\'/\'\\\'\'}"
-exec rofi -show drun -run-command "'$SELF' --exec {cmd}" "$@"
+# Font z Super+A → [f] (scripts/appbinds/lib/fonts.sh); pusto = font rice'a.
+FONT_ARGS=()
+FONT_LIB="${ARCHENEMY_DIR:-$HOME/archenemy}/scripts/appbinds/lib/fonts.sh"
+if [[ -f "$FONT_LIB" ]]; then
+    # shellcheck source=/dev/null
+    FONT_THEME="$( source "$FONT_LIB" && font_rofi_theme_str )"
+    [[ -n "$FONT_THEME" ]] && FONT_ARGS=(-theme-str "$FONT_THEME")
+fi
+exec rofi -show drun -run-command "'$SELF' --exec {cmd}" "${FONT_ARGS[@]}" "$@"

@@ -585,7 +585,10 @@ else
         fi
         TOP=("$toggle" "$lock_toggle" "$FOLDER_WALL")
         [[ ${#ANIM[@]} -gt 0 ]] && TOP+=("$FOLDER_ANIM" "$ANIM_OFF")
-        SEL=$(printf '%s\n' "${TOP[@]}" | rofi -dmenu -i -p "Select wallpaper:")
+        font_args=()
+        font_theme="$(rofi_font_theme)"
+        [[ -n "$font_theme" ]] && font_args=(-theme-str "$font_theme")
+        SEL=$(printf '%s\n' "${TOP[@]}" | rofi -dmenu -i -p "Select wallpaper:" "${font_args[@]}")
         [[ -z "$SEL" ]] && exit 0
         case "$SEL" in
             "$TOGGLE_ON")      MODE_ALL=0; continue ;;

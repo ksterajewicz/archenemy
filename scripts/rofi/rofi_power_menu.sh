@@ -26,6 +26,10 @@ window   { width: 340px; }
 listview { lines: 2; fixed-height: false; }
 inputbar { children: [ prompt ]; }
 '
+# Font z Super+A → [f] (scripts/appbinds/lib/fonts.sh); pusto = font rice'a.
+FONT_LIB="${ARCHENEMY_DIR:-$HOME/archenemy}/scripts/appbinds/lib/fonts.sh"
+# shellcheck source=/dev/null
+[[ -f "$FONT_LIB" ]] && THEME_STR+="$( source "$FONT_LIB" && font_rofi_theme_str )"
 
 CHOICE=$(printf '%s\n%s\n' "$POWEROFF" "$REBOOT" \
     | rofi -dmenu -i -p "Power" -theme-str "$THEME_STR")

@@ -52,18 +52,32 @@ rofi_preview_theme() {
         "$lines" "$ROFI_PREVIEW_ICON_SIZE"
 }
 
+# Font z Super+A → [f] (scripts/appbinds/lib/fonts.sh) jako -theme-str; pusto =
+# motyw rice'a bez zmian. Podpowłoka, żeby zmienne biblioteki nie przeciekały.
+rofi_font_theme() {
+    local lib="${ARCHENEMY_DIR:-$HOME/archenemy}/scripts/appbinds/lib/fonts.sh"
+    [[ -f "$lib" ]] || return 0
+    # shellcheck source=/dev/null
+    ( source "$lib" && font_rofi_theme_str )
+}
+
 # Menu dmenu z podglądami. Wejście: pary (etykieta, ikona) w dwóch tablicach
 # przekazanych NAZWĄ: rofi_preview_menu PROMPT LABELS_VAR ICONS_VAR.
 # Pusta ikona albo nieistniejący plik = wpis bez ikony. Gdy żaden wpis nie ma
 # podglądu — zwykła lista motywu rice'a (bez -theme-str). Wypisuje wybór.
 rofi_preview_menu() {
-    local prompt="$1" i any=0
+    local prompt="$1" i any=0 font_theme
     local -n _labels="$2" _icons="$3"
     local -a args=(-dmenu -i -p "$prompt")
     for i in "${!_labels[@]}"; do
         [[ -n "${_icons[$i]:-}" && -f "${_icons[$i]}" ]] && { any=1; break; }
     done
-    (( any )) && args+=(-show-icons -theme-str "$(rofi_preview_theme "${#_labels[@]}")")
+    font_theme="$(rofi_font_theme)"
+    if (( any )); then
+        args+=(-show-icons -theme-str "$(rofi_preview_theme "${#_labels[@]}") $font_theme")
+    elif [[ -n "$font_theme" ]]; then
+        args+=(-theme-str "$font_theme")
+    fi
     for i in "${!_labels[@]}"; do
         if [[ -n "${_icons[$i]:-}" && -f "${_icons[$i]}" ]]; then
             printf '%s\0icon\x1f%s\n' "${_labels[$i]}" "${_icons[$i]}"

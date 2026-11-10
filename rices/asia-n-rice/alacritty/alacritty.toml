@@ -1,6 +1,18 @@
 # made by kst - https://github.com/ksterajewicz
 # asia-n-rice: mauve (#b47687) na granacie (#182130)
 
+# ─── Font family ───────────────────────────────────────
+# Rodzina fontu rice'a jest w font.toml, a wybór z Super+A → [f] w
+# ~/.config/archenemy/fonts/alacritty.toml (poza repo). Importy wczytują się
+# po kolei, późniejszy wygrywa, brakujący plik jest pomijany; ten plik
+# wczytuje się na końcu, więc nie może ustawiać `family`. Bold/italic
+# biorą rodzinę z [font.normal]; rozmiar i style zostają tutaj.
+[general]
+import = [
+    "~/.config/alacritty/font.toml",
+    "~/.config/archenemy/fonts/alacritty.toml",
+]
+
 # ─── Window ────────────────────────────────────────────
 [window]
 padding        = { x = 14, y = 10 }
@@ -13,15 +25,12 @@ blur           = true
 size = 11.5
 
 [font.normal]
-family = "JetBrainsMono Nerd Font"
 style  = "Regular"
 
 [font.bold]
-family = "JetBrainsMono Nerd Font"
 style  = "Bold"
 
 [font.italic]
-family = "JetBrainsMono Nerd Font"
 style  = "Italic"
 
 # ─── Cursor ────────────────────────────────────────────
