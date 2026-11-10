@@ -38,6 +38,7 @@
 #     flux-wall.sh list-audio            nazwy animacji będących wizualizacją muzyki
 #     flux-wall.sh start [opcje]         jak restore, ale głośno; opcje → flux-wall
 #     flux-wall.sh stop | status
+#     flux-wall.sh doctor-safe          sonda bez source konfiguracji (publiczny doctor)
 #     flux-wall.sh doctor               zrzut stanu do diagnozy (repo, binarka,
 #                                        shadery, wybór, proces, log) — tylko odczyt
 #
@@ -57,6 +58,54 @@ CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 DATA_DIR="$ARCHENEMY_DIR/data"
 CHOICE_DAT="$DATA_DIR/flux-wall.dat"
 LOG="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
+
+# Bezpieczna sonda publicznego doctora: nigdy nie wykonuje konfiguracji.
+# Wszystkie odczyty są ograniczone; dowiązania muszą zostać w drzewie repo.
+if [[ "${1:-}" == doctor-safe ]]; then
+    exec python - "$ARCHENEMY_DIR" <<'PY'
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+repo = Path(sys.argv[1]).resolve()
+def read_repo(path, maximum=65536):
+    try:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(repo):
+            return None
+        info = resolved.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
+            return None
+        fd = os.open(resolved, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
+                return None
+            data = stream.read(maximum + 1)
+            return data.decode('utf-8', errors='replace') if len(data) <= maximum else None
+    except (OSError, RuntimeError):
+        return None
+
+rice = (read_repo(repo / '.current_rice', 256) or '').strip()
+if not re.fullmatch(r'[a-z0-9_-]+', rice):
+    print('Rice configuration: rejected')
+    sys.exit(1)
+conf = repo / 'rices' / rice / 'flux-wall.conf'
+try:
+    allowed = conf.resolve().is_relative_to(repo / 'rices')
+except (OSError, RuntimeError):
+    allowed = False
+if not allowed:
+    print('Rice configuration: rejected')
+    sys.exit(1)
+text = read_repo(conf)
+print('Rice configuration: present (not executed)' if text is not None else 'Rice configuration: absent or rejected')
+print('Binary: ' + ('present' if (repo / 'src/flux-wall/build/flux-wall').is_file() else 'absent'))
+sys.exit(0 if text is not None else 1)
+PY
+fi
 
 # ─── odczyt konfiguracji ──────────────────────────────────────────────────────
 

@@ -54,6 +54,16 @@ for f in monitorshyprl.lua workspaces-monitors.lua hardware-keys.lua gpu-env.lua
     [[ -e "$HYPR_DIR/$f" ]] || problem "brak config/hypr/$f"
 done
 
+# Tło aktywnego hyprlock jest wymaganym source, beta dziedziczy white-blue.
+rice=""
+if [[ -f "$ARCHENEMY_DIR/.current_rice" && $(stat -Lc %s "$ARCHENEMY_DIR/.current_rice") -le 256 ]]; then
+    rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+fi
+[[ "$rice" == white-blue_beta ]] && rice=white-blue
+if [[ "$rice" =~ ^[a-z0-9_-]+$ ]]; then
+    [[ -f "$HYPR_DIR/hyprlock-background-$rice.conf" ]] || problem "brak config/hypr/hyprlock-background-$rice.conf"
+fi
+
 # 5. wersja kodu a ostatni install.sh. Kod powstaje gdzie indziej, a maszyna
 #    bywa na innej wersji niż ta, z której wygenerowano warstwę maszynową
 #    (2026-09-17: laptop 10 commitów za origin, zgłoszenia dotyczyły starego

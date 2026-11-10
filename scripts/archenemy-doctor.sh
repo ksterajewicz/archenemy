@@ -15,6 +15,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -26,7 +27,45 @@ if args not in ([], ['--full'], ['--help']):
 if args == ['--help']:
     print('Usage: archenemy doctor [--full]\nRead-only, offline diagnostics for public bug reports.')
     sys.exit(0)
+# Osobny nadzorca obejmuje również odczyty plików i sprzątanie potomków.
+sys.stdout.reconfigure(line_buffering=True)
+started = time.monotonic()
+worker = os.fork()
+if worker:
+    status = None
+    while time.monotonic() - started < 4.5:
+        done, status = os.waitpid(worker, os.WNOHANG)
+        if done:
+            break
+        time.sleep(0.01)
+    else:
+        status = None
+    try:
+        os.killpg(worker, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if status is None:
+        print('  Problem: collection deadline exceeded\n\n1 problems found')
+        sys.exit(1)
+    sys.exit(os.waitstatus_to_exitcode(status))
+os.setsid()
 full = bool(args)
+
+# O_NONBLOCK chroni także przed podmianą pliku na FIFO między stat i open.
+def read_local(path, maximum=1024 * 1024):
+    try:
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
+            return ''
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
+                return ''
+            data = stream.read(maximum + 1)
+            return data.decode('utf-8', errors='replace') if len(data) <= maximum else ''
+    except OSError:
+        return ''
 repo = Path(sys.argv[1]).resolve().parent.parent
 home = Path.home()
 config = Path(os.environ.get('XDG_CONFIG_HOME', str(home / '.config')))
@@ -61,13 +100,16 @@ def run(*cmd, limit=0.25):
         return None, ''
     try:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                   text=True, errors='replace', start_new_session=True,
+                                   text=True, errors='replace', start_new_session=False,
                                    env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'LC_ALL': 'C'})
         try:
             output, _ = process.communicate(timeout=min(limit, remaining))
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
+            process.kill()
+            try:
+                process.communicate(timeout=0.05)
+            except subprocess.TimeoutExpired:
+                process.stdout.close()
             return None, ''
         return process.returncode, output
     except (OSError, subprocess.TimeoutExpired):
@@ -83,11 +125,11 @@ def git(*cmd):
 
 print('archenemy doctor (public report; free-form output withheld for privacy)')
 section('Repository')
-print('  Path: ' + safe(repo))
+print('  Path: ' + ('~/archenemy' if repo == home / 'archenemy' else '[checkout path withheld]'))
 code, branch = git('rev-parse', '--abbrev-ref', 'HEAD')
 if code == 0:
     branch = branch.strip()
-    print('  Branch: ' + safe(branch))
+    print('  Branch: ' + (branch if branch in {'dev', 'main', 'master', 'HEAD'} else '[custom branch withheld]'))
     _, commit = git('rev-parse', '--short=12', 'HEAD')
     print('  Commit: ' + (commit.strip() if re.fullmatch(r'[a-f0-9]{7,40}\n?', commit) else 'unknown'))
     code, status = git('status', '--porcelain', '--untracked-files=normal')
@@ -99,11 +141,13 @@ else:
 
 section('Rice')
 try:
-    rice = (repo / '.current_rice').read_text().strip()
+    rice = read_local(repo / '.current_rice', 256).strip()
 except OSError:
     rice = ''
 # Nazwa musi być katalogiem śledzonego rice, nie dowolną ścieżką z pliku.
-valid_rice = bool(re.fullmatch(r'[a-z0-9_-]+', rice)) and (repo / 'rices' / rice).is_dir()
+known_rices = {'white-blue', 'white-blue_beta', 'tron', 'asia-n-rice', 'dither-flux', 'crt'}
+valid_rice = (rice in known_rices and (repo / 'rices' / rice).is_dir()
+              and (repo / 'rices' / rice).resolve().is_relative_to(repo / 'rices'))
 print('  Active: ' + (safe(rice) if valid_rice else 'missing or invalid'))
 if valid_rice:
     checked = 0
@@ -176,6 +220,9 @@ if full:
     for name in files:
         if name not in missing:
             print('  Present: config/' + safe(name))
+lock_rice = 'white-blue' if rice == 'white-blue_beta' else rice
+if valid_rice and not (repo / 'config/hypr' / ('hyprlock-background-' + lock_rice + '.conf')).is_file():
+    problem('required hyprlock background missing')
 canonical = (home / 'archenemy').resolve() == repo
 if canonical:
     code, _ = run('bash', str(repo / 'scripts/hypr/machine-layer-check.sh'), '--doctor', limit=0.45)
@@ -194,7 +241,7 @@ else:
         problem('package query unavailable')
     else:
         installed = set(installed.splitlines())
-        required = [line.split('#', 1)[0].strip() for line in (repo / 'packages/requirements-pacman.txt').read_text().splitlines()]
+        required = [line.split('#', 1)[0].strip() for line in read_local(repo / 'packages/requirements-pacman.txt').splitlines()]
         missing_packages = [p for p in required if p and p not in installed]
         print(f'  Missing: {len(missing_packages)}')
         for package in missing_packages:
@@ -209,7 +256,7 @@ section('Shell')
 print('  Login shell: ' + safe(identity.pw_shell))
 for kind, rc in [('bash', home / '.bashrc'), ('zsh', Path(os.environ.get('ZDOTDIR', str(home))) / '.zshrc')]:
     try:
-        text = rc.read_text()
+        text = read_local(rc)
     except OSError:
         text = ''
     start = text.find('# >>> archenemy shell >>>')
@@ -235,7 +282,7 @@ print('  ASUS profile: ' + (profiles[-1] if profiles else 'unavailable'))
 
 if full:
     section('Existing diagnostics (private contents withheld)')
-    for label, script, extra, needs_session in [('workspace-diag', 'hypr/workspace-diag.sh', [], True), ('gaming-diag', 'hypr/gaming-diag.sh', [], False), ('flux-wall doctor', 'wallpapers/flux-wall.sh', ['doctor'], False)]:
+    for label, script, extra, needs_session in [('workspace-diag', 'hypr/workspace-diag.sh', [], True), ('gaming-diag', 'hypr/gaming-diag.sh', [], False), ('flux-wall doctor', 'wallpapers/flux-wall.sh', ['doctor-safe'], False)]:
         if not canonical:
             state = 'skipped (checkout is outside ~/archenemy)'
         elif needs_session and not running:

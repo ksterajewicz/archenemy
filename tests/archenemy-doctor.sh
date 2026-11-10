@@ -27,7 +27,8 @@ repo = home / 'archenemy'
 bin_dir = root / 'bin'
 bin_dir.mkdir()
 for name in ['scripts/archenemy-doctor.sh', 'scripts/appbinds/appbinds.sh',
-             'scripts/hypr/machine-layer-check.sh', 'scripts/hypr/lib/monitor-id.sh']:
+             'scripts/hypr/machine-layer-check.sh', 'scripts/hypr/lib/monitor-id.sh',
+             'scripts/wallpapers/flux-wall.sh']:
     path = repo / name
     path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / name, path)
@@ -38,7 +39,8 @@ for name in ['scripts/archenemy-doctor.sh', 'scripts/appbinds/appbinds.sh',
 (home / '.config/hypr').symlink_to(repo / 'rices/white-blue/hypr')
 (repo / '.current_rice').write_text('white-blue\n')
 for name in ['monitorshyprl.lua', 'workspaces-monitors.lua', 'hardware-keys.lua',
-             'gpu-env.lua', 'autostartpersonalisation.lua', 'appbinds.lua', 'hyprpaper.conf']:
+             'gpu-env.lua', 'autostartpersonalisation.lua', 'appbinds.lua', 'hyprpaper.conf',
+             'hyprlock-background-white-blue.conf']:
     path = repo / 'config/hypr' / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch()
@@ -88,10 +90,11 @@ esac
 }
 for name, text in mocks.items():
     path = bin_dir / name
+    text = text.replace('#!/bin/bash\n', '#!/bin/bash\n[[ "${DOCTOR_CASE:-}" == slow ]] && sleep 10\n', 1)
     path.write_text(text)
     path.chmod(0o755)
 # Istniejące duże diagnostyki mają atrapy z jawnymi danymi prywatnymi.
-for name in ['hypr/workspace-diag.sh', 'hypr/gaming-diag.sh', 'wallpapers/flux-wall.sh']:
+for name in ['hypr/workspace-diag.sh', 'hypr/gaming-diag.sh']:
     path = repo / 'scripts' / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('#!/bin/bash\nprintf "%s\\n" "$DOCTOR_SECRETS"\n')
@@ -140,8 +143,9 @@ assert 'not loaded' in check('wrong-bind', expected=1)
 assert 'Lua target not exposed' in check('lua')
 assert 'not running' in check('hung')
 check(full=True, running=False)
-env['DOCTOR_BRANCH'] = env['USER'] + '-' + socket.gethostname() + '-token=PRIVATE-CREDENTIAL-123'
-check('branch-privacy')
+check('slow', full=True, expected=1)
+env['DOCTOR_BRANCH'] = 'fix/SERIAL-EDID-PRIVATE-123'
+assert 'Branch: [custom branch withheld]' in check('branch-privacy')
 env.pop('DOCTOR_BRANCH')
 # Kontrolowana ścieżka bez pacmana, niezależnie od pakietów hosta.
 (bin_dir / 'python').symlink_to(sys.executable)
@@ -154,10 +158,79 @@ env['PATH'] = old_path
 (bin_dir / 'pacman.disabled').rename(bin_dir / 'pacman')
 (home / '.config/hypr').unlink()
 (home / '.config/hypr').symlink_to(repo / 'rices/missing/hypr')
-check('broken-link', expected=1)
+assert 'wrong rice link: hypr' in check('broken-link', expected=1)
+(home / '.config/hypr').unlink()
+(home / '.config/hypr').symlink_to(repo / 'rices/white-blue/hypr')
+assert 'machine-layer-check: OK' in check()
 # Prawdziwy helper w trybie --doctor nie może wysyłać powiadomień.
 (repo / 'config/hypr/gpu-env.lua').unlink()
-check('machine-layer', full=True, expected=1)
+assert 'machine-layer-check: problems; rerun install.sh' in check('machine-layer', full=True, expected=1)
+(repo / 'config/hypr/gpu-env.lua').touch()
+assert 'machine-layer-check: OK' in check()
+background = repo / 'config/hypr/hyprlock-background-white-blue.conf'
+background.unlink()
+out = check('missing-lock-background', expected=1)
+assert 'machine-layer-check: problems; rerun install.sh' in out
+assert 'required hyprlock background missing' in out
+background.touch()
+assert '0 problems found' in check()
+# Beta współdzieli tło white-blue, tron ma własne; opcjonalne pliki pozostają nieobecne.
+for active, missing in [('white-blue_beta', False), ('tron', True)]:
+    (repo / '.current_rice').write_text(active + '\n')
+    result = subprocess.run(['bash', str(repo / 'scripts/hypr/machine-layer-check.sh'), '--doctor'],
+                            env=env, capture_output=True, text=True, timeout=2)
+    assert result.returncode == int(missing), (active, result)
+    assert not result.stdout and not result.stderr
+(repo / '.current_rice').write_text('white-blue\n')
 assert not (home / 'NOTIFIED').exists()
+# Nie-UTF-8 i FIFO nie przerywają raportu ani nie blokują open().
+rc = home / '.bashrc'
+rc.write_bytes(b'\xff\n# >>> archenemy shell >>>\n# <<< archenemy shell <<<\n')
+assert 'bash managed rc block: present' in check('non-utf8')
+rc.unlink()
+os.mkfifo(rc)
+assert 'bash managed rc block: missing or incomplete' in check('fifo', full=True)
+rc.unlink()
+rc.write_text('')
+rc.write_bytes(b'x' * (1024 * 1024 + 1))
+assert 'bash managed rc block: missing or incomplete' in check('oversized-rc')
+rc.write_text('')
+
+# Rzeczywisty helper; wartownik poza repo i snapshot całego HOME.
+payload = home / 'payload'
+payload.mkdir()
+sentinel = home / 'DOCTOR_MUTATION'
+conf = payload / 'flux-wall.conf'
+conf.write_text('printf mutated > "$HOME/DOCTOR_MUTATION"\n')
+(repo / '.current_rice').write_text('../../payload\n')
+assert 'flux-wall doctor: reported unavailable components' in check('traversal', full=True, expected=1)
+assert not sentinel.exists()
+(repo / '.current_rice').write_text('white-blue\n')
+local_conf = repo / 'rices/white-blue/flux-wall.conf'
+local_conf.symlink_to(conf)
+assert 'flux-wall doctor: reported unavailable components' in check('external-conf-link', full=True)
+assert not sentinel.exists()
+local_conf.unlink()
+os.mkfifo(local_conf)
+assert 'flux-wall doctor: reported unavailable components' in check('fifo-rice-conf', full=True)
+local_conf.unlink()
+local_conf.write_text(conf.read_text())
+assert 'flux-wall doctor: completed' in check('local-conf-not-executed', full=True)
+assert not sentinel.exists()
+# Cel samego katalogu rice także nie może wyjść poza repo.
+(repo / 'rices/escape').symlink_to(payload, target_is_directory=True)
+(repo / '.current_rice').write_text('escape\n')
+assert 'flux-wall doctor: reported unavailable components' in check('external-rice-link', full=True, expected=1)
+assert not sentinel.exists()
+(repo / 'rices/escape').unlink()
+(repo / '.current_rice').write_text('white-blue\n')
+
+# Prywatne segmenty ścieżki checkoutu są ukryte również poza ~/archenemy.
+private_repo = home / 'SERIAL-EDID-PRIVATE-123' / 'checkout'
+shutil.copytree(repo, private_repo, symlinks=True)
+result = subprocess.run(['bash', str(private_repo / 'scripts/archenemy-doctor.sh')],
+                        env=env, capture_output=True, text=True, timeout=5)
+assert not result.stderr and 'Path: [checkout path withheld]' in result.stdout
+assert 'SERIAL-EDID-PRIVATE-123' not in result.stdout
 print('Doctor: all isolated checks passed')
 PY
