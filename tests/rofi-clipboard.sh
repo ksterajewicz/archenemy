@@ -20,13 +20,21 @@ cat > "$T/bin/cliphist" <<'MOCK'
 printf '%s\n' "$*" >> "$TEST_DIR/commands"
 case "$1" in
     list) cat "$TEST_DIR/history"; exit "${LIST_RC:-0}" ;;
-    decode) [[ "${DECODE_FAIL:-0}" == 0 ]] || exit 1; printf 'full entry %s\nsecond line\n' "$2" ;;
+    decode)
+        case "${DECODE_MODE:-success}" in
+            fail) exit 1 ;;
+            partial) printf 'partial entry'; exit 1 ;;
+            empty) exit 0 ;;
+        esac
+        if [[ -n "${DECODE_FILE:-}" ]]; then cat "$DECODE_FILE"
+        else printf 'full entry %s\nsecond line\n' "$2"; fi ;;
     delete) cat > "$TEST_DIR/deleted" ;;
     wipe) : > "$TEST_DIR/wiped" ;;
 esac
 MOCK
 cat > "$T/bin/wl-copy" <<'MOCK'
 #!/bin/bash
+: > "$TEST_DIR/copy-called"
 cat > "$TEST_DIR/copied"
 MOCK
 cat > "$T/bin/rofi" <<'MOCK'
@@ -55,7 +63,7 @@ done
 MOCK
 chmod +x "$T/bin/"*
 reset_case() {
-    rm -f "$T/"{commands,copied,deleted,wiped,message,rofi-args,menu-*}
+    rm -f "$T/"{commands,copied,copy-called,deleted,wiped,message,rofi-args,menu-*}
     printf '92\tfirst\tline\r\n11\tsecond entry\n' > "$T/history"
     printf '%s\n' "$@" > "$T/answers"
 }
@@ -65,8 +73,15 @@ check 'selected index decodes the matching ID' grep -qx 'decode 11' "$T/commands
 printf 'full entry 11\nsecond line\n' > "$T/expected"
 check 'full multiline content reaches wl-copy' cmp -s "$T/expected" "$T/copied"
 check 'one line per entry, no control characters' python3 -c 'import pathlib,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); assert b == b"first line \nsecond entry\nDelete entry\nClear history\n"' "$T/menu-0"
-check 'text-only menu creates no cache' test ! -e "$XDG_CACHE_HOME"
-check 'text-only menu has no icon override' bash -c '! grep -q element-icon "$1"' _ "$T/rofi-args"
+check 'decoded text cache is removed after copying' test -z "$(find "$XDG_CACHE_HOME" -mindepth 1 -print -quit)"
+no_icon_override() { ! grep -q element-icon "$T/rofi-args"; }
+check 'text-only menu has no icon override' no_icon_override
+check 'successful multiline copy returns zero' test "$RC" = 0
+reset_case 0
+printf '\211PNG\r\n\032\n\000\377\200binary\000\n' > "$T/expected"
+DECODE_FILE="$T/expected" run
+check 'binary content including NUL reaches wl-copy unchanged' cmp -s "$T/expected" "$T/copied"
+check 'successful binary copy returns zero' test "$RC" = 0
 reset_case ESC
 printf '92\t%s\n' "$(printf '%160s' x)" > "$T/history"
 run
@@ -92,8 +107,17 @@ LIST_RC=1 run
 check 'missing database is an empty history' test "$RC" = 0
 reset_case; printf 'permission denied' > "$T/history"; LIST_RC=1 run
 check 'database errors are reported as errors' test "$RC" = 1
-reset_case 0; DECODE_FAIL=1 run
-check 'decode failure is reported' test "$RC" = 1
+for mode in fail partial empty; do
+    reset_case 0
+    printf 'previous clipboard\ncontents\000\377' > "$T/expected"
+    cp "$T/expected" "$T/copied"
+    DECODE_MODE="$mode" run
+    check "$mode decode is reported as an error" test "$RC" = 1
+    check "$mode decode shows English error" grep -Fxq 'Cannot decode clipboard entry. It may have been removed.' "$T/message"
+    check "$mode decode does not invoke wl-copy" test ! -e "$T/copy-called"
+    check "$mode decode preserves previous clipboard" cmp -s "$T/expected" "$T/copied"
+    check "$mode decode removes private cache" test -z "$(find "$XDG_CACHE_HOME" -mindepth 1 -print -quit)"
+done
 reset_case ESC; printf '92\t[[ binary data 1 KiB png 32x32 ]]\n' > "$T/history"; run
 check 'image entry carries rofi icon metadata' python3 -c 'import pathlib,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); assert b"\0icon\x1f" in b; assert b"thumbnail" in b or b"archenemy-clipboard." in b' "$T/menu-0"
 check 'image previews decode only numeric ID' grep -qx 'decode 92' "$T/commands"
