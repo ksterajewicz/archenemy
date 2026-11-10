@@ -225,7 +225,7 @@ archenemy/
 │   │                                 #   (data/installed-head.dat vs HEAD — re-run the installer).
 │   │                                 #   window-history.sh — Super+Tab: reopens recently closed apps
 │   │                                 #   (daemon started from autostart-common.lua + `restore`).
-│   ├── rofi/                         # Rofi menus: app launcher (rofi_drun.sh), rices, wallpapers, network (with rescan), power.
+│   ├── rofi/                         # Rofi menus: app launcher (rofi_drun.sh), rices, wallpapers, clipboard history (rofi_clipboard.sh), network (with rescan), power.
 │   │                                 #   lib/rofi-preview.sh — PNG previews in Super+W / Super+T (3-column
 │   │                                 #   grid with big icons; lazy wallpaper thumbnails in data/thumbs/).
 │   ├── wallpapers/                   # lib/dither-flux-sizes.sh — which dither-flux wallpapers the current
@@ -326,6 +326,7 @@ archenemy/
 │                                     #   monitor-settings.sh — monitor trials and rollback; audio-devices.sh /
 │                                     #   mpd-output.sh — system and mpd outputs; focus-highlight.sh — cursor-aware borders.
 │                                     #   rofi-drun.sh — launcher command gate.
+│                                     #   rofi-clipboard.sh — clipboard selection, deletion, clearing, previews and dependency errors on mocks.
 │                                     #   keyboard-layouts.sh — [k] on a fake HOME/hyprctl/evdev.lst: 1–4 known
 │                                     #   codes, reload + read-back, switch N, the TUI menu driven via stdin.
 │                                     #   mouse-settings.sh — [m] on a fake HOME/hyprctl/ratbagctl: range checks,
@@ -496,6 +497,25 @@ Nothing here is required: `mpd`, `mpc`, `ncmpcpp` (and `mpv`) live in `packages/
 
 **Audio output: pipewire is recommended.** `Super+A → [o] → 3` switches mpd's output between `pipewire` and an exclusive ALSA `hw:C,D` device (listed from `/proc/asound`, with a "busy" hint when something — usually PipeWire — holds it). Read the warning before choosing ALSA: while mpd holds the card, notifications, the browser, volume keys and the ♪ wallpapers may lose audio, and if PipeWire holds the card first, mpd cannot open it. The switch rewrites `output.conf`, restarts `mpd.service`, runs a 1-second test play, puts playback back as it was and, if mpd reports an error, **rolls back to pipewire on its own**; it never stops or restarts PipeWire/WirePlumber — that would take the whole desktop's audio with it. ALSA output uses `mixer_type "software"` so mpd never turns the hardware mixer knob underneath PipeWire. Releasing the card from PipeWire for bit-perfect playback is deliberately left as a manual, out-of-archenemy step. The menu refuses to act when mpd would not read the change (`~/.config/mpd` not linked, or mpd running as a system service). After switching it plays one second from your queue on the main output alone, with the visualizer `fifo` output disabled for the test: mpd reports an output error only when no output opens, and the fifo always opens, so otherwise a dead output would look like success. An empty queue is reported as "not verified", never as success.
 
+## Clipboard history
+
+`Super+C` opens `scripts/rofi/rofi_clipboard.sh` in the current rice's rofi theme
+(all five non-beta rices). Select an entry to copy its full text or image, then
+paste with `Ctrl+V`. Esc closes the menu. Text previews occupy one line; image
+previews use the shared thumbnail library with a time budget and a private,
+temporary cache under `$XDG_CACHE_HOME` (default `~/.cache`), removed on exit.
+`Delete entry` opens a second list to choose what to remove; `Clear history`
+asks for confirmation, with **No** selected by default. These actions remove
+saved history; they do not clear the current clipboard.
+
+The existing `wl-paste` watchers store text and images using `cliphist` (default
+750 entries in `~/.cache/cliphist/db`). Both `cliphist` and `wl-clipboard` are
+required packages. History persists across logins and may contain private data.
+`cliphist` skips data marked `CLIPBOARD_STATE=sensitive` by `wl-paste`; this menu
+preserves that behavior. Verify KeePassXC's sensitive clipboard handling in your
+live session: do not assume every application marks secrets correctly.
+See the [cliphist 0.7 source](https://github.com/sentriz/cliphist/blob/v0.7.0/cliphist.go).
+
 ## Timer
 
 An optional countdown timer, as a **separate island just to the right of
@@ -536,6 +556,7 @@ These tables describe the five non-beta rices. `white-blue_beta` retains its leg
 | `Super + N` | Network manager (with Wi-Fi rescan) |
 | `Super + T` | Rice switcher |
 | `Super + W` | Wallpaper switcher |
+| `Super + C` | Clipboard history (copy a saved entry, then Ctrl+V to paste) |
 | `Super + L` | Lock screen (hyprlock) |
 | `Super + K` | Switch keyboard layout (next on your list) |
 | `Super + Ctrl + 1…4` | Switch straight to keyboard layout #1–4 of your list (`Super + A` → `[k]`) |
