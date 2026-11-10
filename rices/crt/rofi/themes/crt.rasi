@@ -51,10 +51,13 @@ inputbar {
 prompt {
     background-color: transparent;
     text-color:       @accent;
-    font:             "JetBrainsMono Nerd Font 13";
+    font:             "JetBrainsMono Nerd Font 11";
+    vertical-align:   0.5;
 }
 
 entry {
+    font:             "JetBrainsMono Nerd Font 11";
+    vertical-align:   0.5;
     background-color: transparent;
     text-color:       @bright;
     placeholder:      "Search…";

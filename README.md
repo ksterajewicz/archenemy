@@ -289,6 +289,7 @@ archenemy/
 │                                     #   ON SCREEN in all three .dat scenarios; plus the menu previews on a
 │                                     #   fake rofi (thumbnail cache by mtime, no tool → original image).
 │                                     #   `bash tests/wallpaper-switcher.sh`.
+│                                     #   rofi-inputbar.sh — static font and vertical alignment checks for every rice input bar.
 │                                     #   rofi-theme-switcher.sh — Super+T previews on a fake rofi; every rice
 │                                     #   stub has a valid rices/<RICE_NAME>/preview.png.
 │                                     #   render-previews.sh — tools/render-previews.sh on a fake offscreen:
@@ -623,7 +624,7 @@ There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, L
 **Live-only — a real Arch + Hyprland session is required:**
 
 1. Run `~/archenemy/install/install.sh`, review its summary, log in again and inspect `hyprctl configerrors`.
-2. Switch rices with `Super+T`; check the bar, notifications, terminal, lock screen, wallpaper and app shortcuts. Check that a saved animation restarts after logout/login and follows the new rice's palette.
+2. Switch rices with `Super+T`; in each rice, check that the rofi prompt, placeholder and typed text align in `Super+T`, `Super+W` and `Super+R`. Beta keeps its input-only bar. Check the bar, notifications, terminal, lock screen, wallpaper and app shortcuts. Check that a saved animation restarts after logout/login and follows the new rice's palette.
 3. Open `Super+A`; check `[h]` in newly opened bash/zsh terminals, `[p]` after login, `[u]` on the intended branch, and `[c]` with a personal Alacritty config outside the repo. A rice symlink must be refused.
 4. In `[n]`, try a monitor change and let its 15-second confirmation expire; verify restoration. Replug a monitor, check `[w]` shared/decades workspaces and `Super+W` on every output. Run `hyprctl hyprpaper listactive` to compare the active images.
 5. On applicable hardware, verify the ASUS profile key and bar against the actual profile; if VirtualBox was installed, check `modinfo vboxdrv`, the loaded module and a test VM after any requested reboot. For the optional music stack, test playback and `[o] → 3` with a non-empty queue.
