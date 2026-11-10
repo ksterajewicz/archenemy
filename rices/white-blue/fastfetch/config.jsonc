@@ -27,7 +27,9 @@
     "font",
     "cursor",
     "terminal",
-    "terminalfont",
+    // Font terminala z uwzględnieniem wyboru Super+A → [f]; rodzina jest w importach
+    // alacritty (font.toml), których terminalfont może nie uwzględniać.
+    { "type": "command", "key": "Terminal Font", "text": "\"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current" },
     "cpu",
     "gpu",
     "memory",

@@ -149,6 +149,47 @@ check "menu bez odpowiedzi kończy się po limicie czasu" '(( SECONDS - start < 
 out="$(printf 'fq\nq' | timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1)"
 check "menu główne: [f] otwiera ekran fontów" '[[ "$out" == *"Rice font"* && "$out" == *fonts* ]]'
 
+echo "== fastfetch"
+# jsonc → json: komentarze // poza łańcuchami (w "$schema" jest https://).
+cat > "$T/jsonc.py" <<'PY'
+import json, sys
+def strip(text):
+    out, i, q = [], 0, False
+    while i < len(text):
+        c = text[i]
+        if q:
+            out.append(c)
+            if c == "\\": out.append(text[i + 1]); i += 1
+            elif c == '"': q = False
+        elif c == '"': q = True; out.append(c)
+        elif text.startswith("//", i):
+            while i < len(text) and text[i] != "\n": i += 1
+            continue
+        else: out.append(c)
+        i += 1
+    return "".join(out)
+d = json.loads(strip(open(sys.argv[1], encoding="utf-8").read()))
+mods = d["modules"]
+cmds = [m for m in mods if isinstance(m, dict) and m.get("type") == "command"]
+tf = [m for m in mods if m == "terminalfont" or (isinstance(m, dict) and m.get("type") == "terminalfont")]
+if sys.argv[2] == "beta":
+    sys.exit(0 if not cmds and tf else 1)
+ok = len(cmds) == 1 and not tf and "font-settings.sh\" current" in cmds[0]["text"]
+keys = [m["key"] for m in mods if isinstance(m, dict) and "key" in m]
+if sys.argv[2] == "panel":
+    ok = ok and cmds[0]["key"] == "FONT " and all(len(k) == 5 for k in keys)
+print(cmds[0]["text"] if cmds else "")
+sys.exit(0 if ok else 1)
+PY
+for rice in asia-n-rice white-blue tron crt dither-flux; do
+    kind=list; [[ "$rice" == tron || "$rice" == crt || "$rice" == dither-flux ]] && kind=panel
+    text="$(python3 "$T/jsonc.py" "$REPO/rices/$rice/fastfetch/config.jsonc" "$kind")"; rc=$?
+    check "$rice: jsonc się parsuje, jeden wiersz fontu ($kind)" '(( rc == 0 ))'
+    check "$rice: polecenie wiersza pokazuje realny font" '[[ "$(sh -c "$text")" == "Iosevka Term (11.5pt)" ]]'
+done
+python3 "$T/jsonc.py" "$REPO/rices/white-blue_beta/fastfetch/config.jsonc" beta >/dev/null
+check "white-blue_beta: zostaje terminalfont (rice zamrożony)" '(( $? == 0 ))'
+
 check "repozytorium nadal bez zmian" '[[ "$(repo_state)" == "$before_repo" ]]'
 echo ""
 echo "PASS: $PASS  FAIL: $FAIL"

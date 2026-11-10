@@ -31,6 +31,8 @@
     { "type": "shell",        "key": "SHELL" },
     { "type": "wm",           "key": "WM   " },
     { "type": "terminal",     "key": "TERM " },
+    // Font terminala z uwzględnieniem wyboru Super+A → [f] (rodzina jest w importach alacritty).
+    { "type": "command",      "key": "FONT ", "text": "\"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current" },
     { "type": "custom", "format": "────────────────────────────────" },
     { "type": "cpu",          "key": "CPU  " },
     { "type": "gpu",          "key": "GPU  " },
