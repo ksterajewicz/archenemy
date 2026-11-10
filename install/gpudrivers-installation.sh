@@ -19,19 +19,19 @@ KMOD_DIR="${ARCHENEMY_MODULES_DIR:-/usr/lib/modules}"
 # lspci (pciutils) bywa nieobecne na minimalnym Archu — bez guarda cała
 # instalacja GPU cicho się pomijała z mylącym „nie dopasowano żadnego GPU".
 if ! command -v lspci &>/dev/null; then
-    echo -e "${YELLOW}Brak lspci (pakiet pciutils) — bez niego nie wykryję GPU. Instaluję...${NC}"
+    echo -e "${YELLOW}lspci (pciutils) is missing — required to detect the GPU. Installing...${NC}"
     if ! sudo pacman -S --needed pciutils; then
-        echo -e "${RED}✗ Nie udało się zainstalować pciutils — zainstaluj ręcznie (sudo pacman -S pciutils) i uruchom skrypt ponownie.${NC}"
+        echo -e "${RED}✗ Could not install pciutils — install it manually (sudo pacman -S pciutils) and run this script again.${NC}"
         exit 1
     fi
 fi
 
 GPU_INFO="$(lspci | grep -Ei 'vga|3d|display')"
 if [[ -z "$GPU_INFO" ]]; then
-    echo -e "${YELLOW}lspci nie zgłasza żadnego GPU (vga/3d/display) — pomijam instalację sterowników.${NC}"
+    echo -e "${YELLOW}lspci reports no GPU (vga/3d/display) — skipping driver installation.${NC}"
     exit 0
 fi
-echo -e "${YELLOW}Wykryte GPU:${NC}"
+echo -e "${YELLOW}Detected GPUs:${NC}"
 echo "$GPU_INFO"
 echo ""
 
@@ -43,10 +43,10 @@ MULTILIB_ENABLED_NOW=0
 # NVIDIA: sterownik open kontra własnościowy zależy od generacji karty, a tego
 # nie da się pewnie odczytać z lspci — pytamy użytkownika, z sensowną domyślną.
 choose_nvidia_variant() {
-    echo -e "${YELLOW}Wybierz wariant modułów jądra NVIDIA:${NC}"
-    echo "  1) nvidia-open-dkms   (zalecane dla Turing i nowszych: GTX 16xx / RTX 20xx+)"
-    echo "  2) nvidia-dkms        (własnościowy: Maxwell/Pascal i starsze, GTX 9xx/10xx)"
-    read -rp "  Wybór [default: 1]: " nv_choice
+    echo -e "${YELLOW}Choose the NVIDIA kernel module variant:${NC}"
+    echo "  1) nvidia-open-dkms   (recommended for Turing and newer: GTX 16xx / RTX 20xx+)"
+    echo "  2) nvidia-dkms        (proprietary: Maxwell/Pascal and older, GTX 9xx/10xx)"
+    read -rp "  Choice [default: 1]: " nv_choice
     case "$nv_choice" in
         2) PKGS+=(nvidia-dkms nvidia-utils) ;;
         *) PKGS+=(nvidia-open-dkms nvidia-utils) ;;
@@ -85,21 +85,21 @@ if grep -qi 'nvidia' <<<"$GPU_INFO"; then
     done
 
     if [[ -n "$NV_INSTALLED" ]]; then
-        echo -e "${YELLOW}Sterownik NVIDIA już zainstalowany: $NV_INSTALLED${NC}"
-        echo "  1) Aktualizuj sterowniki"
-        echo "  2) Zmień wariant (open ↔ własnościowy)"
-        echo "  3) Zostaw bez zmian"
-        read -rp "  Wybór [default: 3]: " nv_action
+        echo -e "${YELLOW}NVIDIA driver already installed: $NV_INSTALLED${NC}"
+        echo "  1) Update drivers"
+        echo "  2) Switch variant (open ↔ proprietary)"
+        echo "  3) Leave unchanged"
+        read -rp "  Choice [default: 3]: " nv_action
         case "$nv_action" in
             1)
                 # Aktualizacja samego sterownika to partial upgrade — moduł może
                 # rozjechać się z jądrem (czarny ekran). Jedyna wspierana droga
                 # na Archu to pełne -Syu; moduły DKMS przebudują się same.
-                echo -e "  Pełna aktualizacja systemu (bezpieczna droga na Archu)..."
+                echo -e "  Full system upgrade (the safe approach on Arch)..."
                 if sudo pacman -Syu; then
-                    echo -e "  ${GREEN}✓ System i sterownik NVIDIA zaktualizowane.${NC}"
+                    echo -e "  ${GREEN}✓ System and NVIDIA driver updated.${NC}"
                 else
-                    echo -e "  ${RED}✗ Aktualizacja nie powiodła się — uruchom ręcznie: sudo pacman -Syu${NC}"
+                    echo -e "  ${RED}✗ Upgrade failed — run manually: sudo pacman -Syu${NC}"
                 fi
                 ;;
             2)
@@ -107,7 +107,7 @@ if grep -qi 'nvidia' <<<"$GPU_INFO"; then
                 choose_nvidia_variant
                 ;;
             *)
-                echo -e "  Zostawiam $NV_INSTALLED bez zmian (dociągnę tylko brakującą konfigurację)."
+                echo -e "  Keeping $NV_INSTALLED unchanged (only adding missing configuration)."
                 ;;
         esac
     else
@@ -121,23 +121,23 @@ grep -qi 'intel'       <<<"$GPU_INFO" && PKGS+=(mesa vulkan-intel intel-media-dr
 # PKGS bywa puste także przy NVIDII (ścieżki „aktualizuj"/„zostaw") — wtedy
 # nie wychodzimy, tylko przechodzimy do kroków poinstalacyjnych (idempotentne).
 if [[ ${#PKGS[@]} -eq 0 && "$HAS_NVIDIA" -eq 0 ]]; then
-    echo -e "${YELLOW}Nie dopasowano żadnego znanego GPU — pomijam.${NC}"
+    echo -e "${YELLOW}No known GPU matched — skipping.${NC}"
     exit 0
 fi
 
 if [[ ${#PKGS[@]} -gt 0 ]]; then
     echo ""
-    echo -e "${YELLOW}Proponowane pakiety: ${PKGS[*]}${NC}"
-    read -rp "Zainstalować? [y/N]: " ans
-    [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "${YELLOW}Pominięto.${NC}"; exit 0; }
+    echo -e "${YELLOW}Proposed packages: ${PKGS[*]}${NC}"
+    read -rp "Install? [y/N]: " ans
+    [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "${YELLOW}Skipped.${NC}"; exit 0; }
 
     # Wynik sprawdzany: dawniej „✓” pojawiało się zawsze, a kroki
     # poinstalacyjne (initramfs) szły mimo nieudanej instalacji.
     if sudo pacman -S --needed "${PKGS[@]}"; then
-        echo -e "${GREEN}✓ Sterowniki GPU zainstalowane.${NC}"
+        echo -e "${GREEN}✓ GPU drivers installed.${NC}"
     else
         PKG_FAILED=1
-        echo -e "${RED}✗ Instalacja pakietów nie powiodła się — nie ruszam initramfs. Popraw błąd pacmana i uruchom skrypt ponownie.${NC}"
+        echo -e "${RED}✗ Package installation failed — leaving initramfs unchanged. Fix the pacman error and run this script again.${NC}"
     fi
 fi
 
@@ -147,7 +147,7 @@ fi
 # a gdy go w ogóle nie ma — dopisuje na końcu. Backup: .bak-archenemy.
 ensure_multilib() {
     if grep -qE '^\[multilib\]' $ETC_DIR/pacman.conf; then
-        echo -e "  ${GREEN}✓ Repo [multilib] już włączone.${NC}"
+        echo -e "  ${GREEN}✓ Repository [multilib] already enabled.${NC}"
         return 0
     fi
     sudo cp $ETC_DIR/pacman.conf $ETC_DIR/pacman.conf.bak-archenemy
@@ -157,13 +157,13 @@ ensure_multilib() {
         printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' | sudo tee -a $ETC_DIR/pacman.conf >/dev/null
     fi
     if grep -qE '^\[multilib\]' $ETC_DIR/pacman.conf; then
-        echo -e "  ${GREEN}✓ Włączono [multilib] (backup: $ETC_DIR/pacman.conf.bak-archenemy).${NC}"
+        echo -e "  ${GREEN}✓ Enabled [multilib] (backup: $ETC_DIR/pacman.conf.bak-archenemy).${NC}"
         # Bez `pacman -Sy` tutaj: samo odświeżenie baz + instalacja to
         # częściowa aktualizacja (niewspierana na Archu). Instalacja lib32
         # niżej robi wtedy pełne -Syu w jednej transakcji.
         MULTILIB_ENABLED_NOW=1
     else
-        echo -e "  ${RED}✗ Nie udało się włączyć [multilib] — zrób to ręcznie w $ETC_DIR/pacman.conf.${NC}"
+        echo -e "  ${RED}✗ Could not enable [multilib] — enable it manually in $ETC_DIR/pacman.conf.${NC}"
         return 1
     fi
 }
@@ -182,27 +182,27 @@ done
 
 if [[ ${#MISSING32[@]} -gt 0 ]]; then
     echo ""
-    echo -e "${YELLOW}Wsparcie 32-bit dla gier (Steam/Proton/Wine): ${MISSING32[*]}${NC}"
-    read -rp "Zainstalować? (włączy repo [multilib], jeśli trzeba) [Y/n]: " ans32
+    echo -e "${YELLOW}32-bit gaming support (Steam/Proton/Wine): ${MISSING32[*]}${NC}"
+    read -rp "Install? (enables [multilib] if needed) [Y/n]: " ans32
     if [[ ! "$ans32" =~ ^[Nn]$ ]]; then
         if ensure_multilib; then
             if [[ "$MULTILIB_ENABLED_NOW" -eq 1 ]]; then
-                echo -e "  ${YELLOW}Nowe repo = nowe bazy pakietów: pełna aktualizacja systemu razem z lib32 (pacman -Syu).${NC}"
+                echo -e "  ${YELLOW}New repository requires new package databases: full system upgrade with lib32 (pacman -Syu).${NC}"
                 LIB32_CMD=(sudo pacman -Syu --needed "${MISSING32[@]}")
             else
                 LIB32_CMD=(sudo pacman -S --needed "${MISSING32[@]}")
             fi
             if "${LIB32_CMD[@]}"; then
-                echo -e "${GREEN}✓ Pakiety lib32 zainstalowane.${NC}"
+                echo -e "${GREEN}✓ lib32 packages installed.${NC}"
             else
-                echo -e "${RED}✗ Instalacja lib32 nie powiodła się — Steam/Proton mogą nie wystartować.${NC}"
+                echo -e "${RED}✗ lib32 installation failed — Steam/Proton may not start.${NC}"
             fi
         fi
     else
-        echo -e "${YELLOW}Pominięto — bez lib32 Steam i 32-bitowe gry nie wystartują.${NC}"
+        echo -e "${YELLOW}Skipped — Steam and 32-bit games will not start without lib32.${NC}"
     fi
 elif [[ ${#LIB32_PKGS[@]} -gt 0 ]]; then
-    echo -e "  ${GREEN}✓ Pakiety lib32 dla gier już zainstalowane.${NC}"
+    echo -e "  ${GREEN}✓ lib32 gaming packages already installed.${NC}"
 fi
 
 # ─── NVIDIA: KROKI POINSTALACYJNE ─────────────────────────────────────────────
@@ -212,12 +212,12 @@ fi
 # initramfs, żeby KMS działał od wczesnego bootu (brak migotania/czarnego ekranu).
 if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     echo ""
-    echo -e "${YELLOW}Konfiguruję NVIDIA pod Wayland/Hyprland...${NC}"
+    echo -e "${YELLOW}Configuring NVIDIA for Wayland/Hyprland...${NC}"
 
     # 1) DRM KMS przez modprobe.d
     MODPROBE_CONF="$ETC_DIR/modprobe.d/nvidia.conf"
     if [[ -f "$MODPROBE_CONF" ]] && grep -q 'nvidia_drm' "$MODPROBE_CONF"; then
-        echo -e "  ${GREEN}✓ $MODPROBE_CONF już ustawia nvidia_drm — nie ruszam.${NC}"
+        echo -e "  ${GREEN}✓ $MODPROBE_CONF already sets nvidia_drm — left as it is.${NC}"
     else
         echo 'options nvidia_drm modeset=1 fbdev=1' | sudo tee "$MODPROBE_CONF" >/dev/null
         echo -e "  ${GREEN}✓ $MODPROBE_CONF (modeset=1 fbdev=1).${NC}"
@@ -227,16 +227,16 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     MKINIT="$ETC_DIR/mkinitcpio.conf"
     NV_MISSING="$(nvidia_module_missing)"
     if [[ "$PKG_FAILED" -eq 1 ]]; then
-        echo -e "  ${YELLOW}⚠ Pomijam moduły w initramfs — instalacja sterownika się nie udała.${NC}"
+        echo -e "  ${YELLOW}⚠ Skipping initramfs modules — driver installation failed.${NC}"
     elif [[ -n "$NV_MISSING" ]]; then
         # Moduł w MODULES bez zbudowanego modułu = mkinitcpio z błędem
         # albo start bez sterownika (czarny ekran) — nie ryzykujemy.
-        echo -e "  ${RED}✗ Moduł nvidia nie jest zbudowany dla jądra: $(tr '\n' ' ' <<<"$NV_MISSING")${NC}"
-        echo -e "  ${RED}  Nie ruszam $MKINIT. Sprawdź: dkms status; brakujące nagłówki: sudo pacman -S <jądro>-headers;${NC}"
-        echo -e "  ${RED}  potem uruchom ten skrypt ponownie.${NC}"
+        echo -e "  ${RED}✗ The nvidia module is not built for kernel: $(tr '\n' ' ' <<<"$NV_MISSING")${NC}"
+        echo -e "  ${RED}  Leaving $MKINIT unchanged. Check: dkms status; missing headers: sudo pacman -S <kernel>-headers;${NC}"
+        echo -e "  ${RED}  then run this script again.${NC}"
     elif [[ -f "$MKINIT" ]]; then
         if grep -qE '^MODULES=.*nvidia_drm' "$MKINIT"; then
-            echo -e "  ${GREEN}✓ mkinitcpio już ma moduły NVIDIA.${NC}"
+            echo -e "  ${GREEN}✓ mkinitcpio already has NVIDIA modules.${NC}"
         else
             sudo cp "$MKINIT" "$MKINIT.bak-archenemy"
             # Wstaw 4 moduły na początek tablicy MODULES=(...) — działa i dla pustej.
@@ -246,25 +246,25 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
             # sed nic nie robi, gdy linia MODULES=(...) jest zakomentowana albo
             # w formie MODULES=""— zweryfikuj wynik, zanim ogłosimy sukces.
             if grep -qE '^MODULES=.*nvidia_drm' "$MKINIT"; then
-                echo -e "  ${GREEN}✓ Dopisano moduły NVIDIA do $MKINIT (backup: .bak-archenemy).${NC}"
+                echo -e "  ${GREEN}✓ Added NVIDIA modules to $MKINIT (backup: .bak-archenemy).${NC}"
                 if sudo mkinitcpio -P; then
-                    echo -e "  ${GREEN}✓ initramfs przebudowany.${NC}"
+                    echo -e "  ${GREEN}✓ initramfs rebuilt.${NC}"
                 else
-                    echo -e "  ${RED}✗ mkinitcpio -P nie powiódł się — sprawdź $MKINIT (backup obok).${NC}"
+                    echo -e "  ${RED}✗ mkinitcpio -P failed — check $MKINIT (backup alongside).${NC}"
                 fi
             else
-                echo -e "  ${RED}✗ Nie znalazłem aktywnej linii MODULES=(...) w $MKINIT — dopisz ręcznie:${NC}"
+                echo -e "  ${RED}✗ No active MODULES=(...) line found in $MKINIT — add manually:${NC}"
                 echo -e "      MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)"
-                echo -e "      i przebuduj initramfs: sudo mkinitcpio -P"
+                echo -e "      and rebuild initramfs: sudo mkinitcpio -P"
             fi
         fi
     else
-        echo -e "  ${YELLOW}⚠ Brak $MKINIT — pomijam wczesne moduły (użyj swojego generatora initramfs).${NC}"
+        echo -e "  ${YELLOW}⚠ No $MKINIT — skipping early modules (use your own initramfs generator).${NC}"
     fi
 
     # 3) Zmienne środowiskowe Hyprlanda (GBM_BACKEND, LIBVA_DRIVER_NAME, ...)
     #    generuje już główny install.sh do config/hypr/gpu-env.lua — tu ich nie
     #    dublujemy, żeby nie rozjechać się z warstwą maszynową.
-    echo -e "  ${YELLOW}Zmienne Wayland dla NVIDIA ustawia install.sh (config/hypr/gpu-env.lua).${NC}"
-    echo -e "  ${YELLOW}Zrestartuj system, aby modeset i moduły weszły w życie.${NC}"
+    echo -e "  ${YELLOW}install.sh sets NVIDIA Wayland variables (config/hypr/gpu-env.lua).${NC}"
+    echo -e "  ${YELLOW}Reboot to apply modeset and module changes.${NC}"
 fi

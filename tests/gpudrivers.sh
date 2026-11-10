@@ -94,8 +94,8 @@ check "modeset przez modprobe.d"               'grep -q "modeset=1" "$T/etc/modp
 echo "== B: instalacja nieudana"
 setup "linux-6.16"
 out=$(MOCK_INSTALLED="" MOCK_PACMAN_FAIL=1 run_gpu '1\ny\nn\n')
-check "brak fałszywego „✓ zainstalowane”"      '[[ "$out" != *"✓ Sterowniki GPU zainstalowane"* ]]'
-check "jawny błąd"                             '[[ "$out" == *"✗ Instalacja pakietów nie powiodła się"* ]]'
+check "brak fałszywego „✓ zainstalowane”"      '[[ "$out" != *"✓ GPU drivers installed"* ]]'
+check "jawny błąd"                             '[[ "$out" == *"✗ Package installation failed"* ]]'
 check "MODULES nietknięte"                     'grep -q "^MODULES=()$" "$T/etc/mkinitcpio.conf"'
 check "initramfs NIE przebudowany"             '! grep -q mkinitcpio "$MOCK_LOG"'
 
