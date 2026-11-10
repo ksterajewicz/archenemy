@@ -24,8 +24,11 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FW="$REPO/src/flux-wall"
 OFF="$FW/build/offscreen"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }

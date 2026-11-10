@@ -17,8 +17,11 @@
 # shellcheck disable=SC2016,SC1091,SC1007,SC2034  # check() robi eval na cytowanym wyrażeniu; źródła przez $REPO; puste kolory dla wycinka install.sh
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 export PATH="$REPO/tests/mock:$PATH"
 export MOCK_LOG="$T/dispatch.log"
 

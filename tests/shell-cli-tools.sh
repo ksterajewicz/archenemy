@@ -6,8 +6,11 @@
 # shellcheck disable=SC1091,SC2016  # źródło z repo, dosłowny kod atrap
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 export HOME="$T/home" ARCHENEMY_DIR="$T/home/archenemy" MOCK_ROOT="$T"
 mkdir -p "$ARCHENEMY_DIR/config/shell" "$ARCHENEMY_DIR/scripts" "$T/bin"
 cp -r "$REPO/scripts/shell" "$REPO/scripts/appbinds" "$ARCHENEMY_DIR/scripts/"

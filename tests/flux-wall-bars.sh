@@ -29,8 +29,11 @@ if [[ ! -x "$OFF" ]]; then
     echo "SKIP: brak $OFF — zbuduj: make -C src/flux-wall tools"
     exit 0
 fi
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 
 FAIL=0
 for size in 1920x1080 2560x1600; do

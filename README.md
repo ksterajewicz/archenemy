@@ -618,7 +618,7 @@ Yes/no menus use the same navigation: Enter keeps the displayed default, `y`/`n`
 
 ## Verification
 
-There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
 
 **Live-only — a real Arch + Hyprland session is required:**
 

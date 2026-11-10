@@ -11,8 +11,11 @@
 
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 
 mkdir -p "$T/a"
 rows=""
