@@ -128,7 +128,7 @@ echo "== C: pacman „udany”, a pakietu nie ma"
 setup linux-7.2 linux-7.2
 MOCK_NOT_INSTALLED="virtualbox-host-dkms" run_vb 'n\n'
 check "kod 1"                                  '[[ $rc -eq 1 ]]'
-check "brak fałszywego ✓ pakietów"             '[[ "$out" != *"✓ Pakiety VirtualBox zainstalowane"* ]]'
+check "brak fałszywego ✓ pakietów"             '[[ "$out" != *"✓ VirtualBox packages installed"* ]]'
 
 echo "== D: moduł nie powstał dla działającego jądra"
 setup linux-7.2 linux-lts-6.18 -- linux-7.2
@@ -148,7 +148,7 @@ setup linux-7.1 linux-7.2
 run_vb 'n\n'
 check "kod 2"                                  '[[ $rc -eq 2 ]]'
 check "brak modprobe"                          '! grep -q modprobe "$MOCK_LOG"'
-check "prośba o restart"                       '[[ "$out" == *"Zrestartuj"* ]]'
+check "prośba o restart"                       '[[ "$out" == *"Reboot"* ]]'
 
 echo "== G: vboxdrv już załadowany"
 setup linux-7.2 linux-7.2
@@ -165,7 +165,7 @@ echo "== H: modprobe nie ładuje modułu"
 setup linux-7.2 linux-7.2
 MOCK_MODPROBE_FAIL=1 run_vb 'n\n'
 check "kod 1"                                  '[[ $rc -eq 1 ]]'
-check "brak fałszywego ✓ vboxdrv"              '[[ "$out" != *"✓ vboxdrv załadowany"* ]]'
+check "brak fałszywego ✓ vboxdrv"              '[[ "$out" != *"✓ vboxdrv loaded"* ]]'
 
 echo "== I: grupa vboxusers"
 setup linux-7.2 linux-7.2

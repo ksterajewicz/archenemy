@@ -47,7 +47,7 @@ if [[ ${#KVERS[@]} -eq 0 ]]; then
     echo -e "${YELLOW}  install your kernel headers manually, or DKMS cannot build vboxdrv.${NC}"
 fi
 
-echo -e "${YELLOW}Instaluję: ${PKGS[*]}${NC}"
+echo -e "${YELLOW}Installing: ${PKGS[*]}${NC}"
 if ! sudo pacman -S --needed "${PKGS[@]}"; then
     echo -e "${RED}✗ pacman failed — VirtualBox was not installed.${NC}"
     exit 1
@@ -58,7 +58,7 @@ for p in virtualbox virtualbox-host-dkms; do
         exit 1
     fi
 done
-echo -e "  ${GREEN}✓ Pakiety VirtualBox zainstalowane.${NC}"
+echo -e "  ${GREEN}✓ VirtualBox packages installed.${NC}"
 
 # ─── MODUŁ JĄDRA ──────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ RUNNING="$(uname -r)"
 if [[ ${#MISSING[@]} -gt 0 ]]; then
     echo -e "  ${RED}✗ vboxdrv is not built for these kernels: ${MISSING[*]}${NC}"
     echo -e "  ${RED}  Check: dkms status; install missing headers: sudo pacman -S <kernel>-headers;${NC}"
-    echo -e "  ${RED}  potem: sudo dkms autoinstall${NC}"
+    echo -e "  ${RED}  then: sudo dkms autoinstall${NC}"
 fi
 
 if [[ ! -d "$KMOD_DIR/$RUNNING" ]]; then
@@ -97,7 +97,7 @@ if [[ -d "$SYSMOD_DIR/vboxdrv" ]]; then
         echo -e "  ${YELLOW}  shut down virtual machines and run: sudo vboxreload (or reboot).${NC}"
         exit 2
     fi
-    echo -e "  ${GREEN}✓ vboxdrv już załadowany.${NC}"
+    echo -e "  ${GREEN}✓ vboxdrv already loaded.${NC}"
 else
     # vboxnetadp/vboxnetflt są potrzebne tylko dla sieci bridged/host-only —
     # ich porażka nie blokuje maszyn wirtualnych, więc tylko ostrzegamy.
@@ -106,7 +106,7 @@ else
     echo -e "  ${RED}✗ modprobe vboxdrv did not load the module — check: sudo dmesg | grep -i vbox${NC}"
         exit 1
     fi
-    echo -e "  ${GREEN}✓ vboxdrv załadowany.${NC}"
+    echo -e "  ${GREEN}✓ vboxdrv loaded.${NC}"
     for m in vboxnetadp vboxnetflt; do
         sudo modprobe "$m" && [[ -d "$SYSMOD_DIR/$m" ]] \
             || echo -e "  ${YELLOW}⚠ $m not loaded — bridged/host-only networking will work after reboot.${NC}"
@@ -121,7 +121,7 @@ fi
 VB_USER="${USER:-$(id -un)}"
 in_vboxusers() { [[ " $(id -nG "$VB_USER" 2>/dev/null) " == *" vboxusers "* ]]; }
 if in_vboxusers; then
-    echo -e "  ${GREEN}✓ $VB_USER jest już w grupie vboxusers.${NC}"
+    echo -e "  ${GREEN}✓ $VB_USER is already in vboxusers.${NC}"
 elif ! getent group vboxusers &>/dev/null; then
     echo -e "  ${YELLOW}⚠ vboxusers group is missing — USB in virtual machines will not work (the package should create it).${NC}"
 else
@@ -129,12 +129,12 @@ else
     if [[ "$ans" =~ ^[Yy]$ ]]; then
         sudo usermod -aG vboxusers "$VB_USER"
         if in_vboxusers; then
-            echo -e "  ${GREEN}✓ Dodano do vboxusers — zadziała po ponownym zalogowaniu.${NC}"
+            echo -e "  ${GREEN}✓ Added to vboxusers — takes effect after logging in again.${NC}"
         else
             echo -e "  ${RED}✗ Could not add user to vboxusers — run manually: sudo usermod -aG vboxusers $VB_USER${NC}"
         fi
     fi
 fi
 
-echo -e "  ${YELLOW}Guest Additions dla gości innych niż Arch: sudo pacman -S virtualbox-guest-iso${NC}"
+echo -e "  ${YELLOW}Guest Additions for non-Arch guests: sudo pacman -S virtualbox-guest-iso${NC}"
 exit 0
