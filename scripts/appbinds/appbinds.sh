@@ -802,11 +802,11 @@ diagnostics_menu() {
 # zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
 # i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
 
-MENU_KEYS=(a e d s w n k m v t p o h i u)
+MENU_KEYS=(a e d s w n k m v t c p o h i u)
 declare -A MENU_LABEL=(
     [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
     [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
-    [v]="volume bar" [t]="timer" [p]="autostart" [o]="audio"
+    [v]="volume bar" [t]="timer" [c]="terminal" [p]="autostart" [o]="audio"
     [h]="shell" [i]="diagnostics" [u]="update archenemy"
 )
 declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [p]="Apps" [h]="System")
@@ -855,6 +855,7 @@ item_state() {
         m) state_from hypr/mouse-settings.sh summary ;;
         v) volume_style_current ;;
         t) state_timer ;;
+        c) state_from appbinds/terminal-settings.sh summary ;;
         p) n="$(autostart_ids | wc -l)"
            if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi ;;
         o) state_from appbinds/audio-devices.sh describe sink ;;
@@ -919,6 +920,8 @@ build_preview() {
            pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
         t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
            pvw "Turn it on or off, set the default minutes and the text colour." ;;
+        c) pvw "Copy selected text to the clipboard. Now: ${MENU_STATE[c]:-unknown}."; pv ""
+           pvw "Change only Alacritty's save_to_clipboard setting. Restore the .bak file to undo." ;;
         p) total="$(autostart_ids | wc -l)"
            pvw "Apps that start at login."; pv ""
            shown=0
@@ -1042,6 +1045,7 @@ run_item() {
         p) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
         h) bash "$ARCHENEMY_DIR/scripts/shell/shell-settings.sh"; return ;;
         u) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
+        c) bash "$ARCHENEMY_DIR/scripts/appbinds/terminal-settings.sh"; return ;;
     esac
     clear
     tui_header "${MENU_LABEL[$key]}"
@@ -1093,7 +1097,7 @@ while :; do
     esac
     choice="${choice,,}"
     case "$choice" in
-        a|e|d|s|w|n|k|m|v|t|p|o|h|i|u) ;;
+        a|e|d|s|w|n|k|m|v|t|c|p|o|h|i|u) ;;
         *) continue ;;
     esac
     for i in "${!MENU_KEYS[@]}"; do
