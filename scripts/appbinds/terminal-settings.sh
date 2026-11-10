@@ -31,6 +31,15 @@ write_state() {
         echo "⚠ Alacritty config not found: $CONFIG"
         return 0
     fi
+    # Symlink rice'a prowadzi do pliku śledzonego; nie zapisujemy tam stanu osobistego.
+    local resolved repo_root
+    resolved="$(readlink -f -- "$CONFIG")" || return 1
+    repo_root="$(readlink -f -- "$ARCHENEMY_DIR")" || return 1
+    if [[ "$resolved" == "$repo_root/"* ]]; then
+        echo "⚠ Rice config is inside the repository; no changes made."
+        echo "Copy your Alacritty config outside the repository and use that personal config to change this setting."
+        return 1
+    fi
     found="$(awk '
         /^\[selection\][[:space:]]*([#].*)?$/ { in_selection=1; next }
         /^\[/ { in_selection=0 }

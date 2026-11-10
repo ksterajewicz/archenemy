@@ -51,6 +51,21 @@ CONF
 out="$(bash "$S" off)"
 check "missing setting line reports issue without failing" '[[ "$out" == *"line not found"* ]]'
 
+# Rzeczywisty układ instalacji: katalog konfiguracji jest symlinkiem do rice'a.
+mkdir -p "$T/repo/rices/demo/alacritty" "$T/user-config"
+cp "$T/original" "$T/repo/rices/demo/alacritty/alacritty.toml"
+ln -s "$T/repo/rices/demo/alacritty" "$T/user-config/alacritty"
+git -C "$T/repo" init -q
+git -C "$T/repo" add rices/demo/alacritty/alacritty.toml
+CONFIG="$T/user-config/alacritty/alacritty.toml"
+if out="$(ARCHENEMY_DIR="$T/repo" ALACRITTY_CONFIG="$CONFIG" bash "$S" off)"; then
+    fail "refuses to edit rice through directory symlink"
+else
+    ok "refuses to edit rice through directory symlink"
+fi
+check "refusal explains personal config recovery" '[[ "$out" == *"outside the repository"* ]]'
+check "rice and backup leave git tree unchanged" '[[ -z "$(git -C "$T/repo" status --short --untracked-files=all | sed "/^A  /d")" ]] && cmp -s "$T/original" "$CONFIG" && [[ ! -e "$CONFIG.bak" ]]'
+
 echo ""
 echo "Result: $PASS ✓ / $FAIL ✗"
 [[ "$FAIL" -eq 0 ]]

@@ -146,7 +146,7 @@ shell_plugin_enabled() {
 
 # Szablon bez ustawiania zmiennych konfiguracyjnych wtyczek użytkownika.
 # Faza completion musi poprzedzać compinit; pozostałe wtyczki są na końcu.
-shell_plugins_text() {
+shell_plugins_v1_text() {
     local autosuggestions="$1" highlighting="$2" completions="$3"
     printf '%s\n' '# >>> archenemy zsh plugins >>>' \
         '# Managed by Super+A -> [h] -> 5. Changes keep a dated backup.' \
@@ -176,16 +176,41 @@ EOF
     printf '%s\n' '# <<< archenemy zsh plugins <<<' 'return 0'
 }
 
+# Wersja v1 powyżej pozostaje niezmienna: rozpoznaje pliki sprzed sum kontrolnych.
+# Suma obejmuje całą treść, także znaczniki i stan; pliku nigdy nie wykonujemy.
+shell_managed_text() {
+    local text="$1" digest
+    digest="$(printf '%s\n' "$text" | sha256sum)" || return 1
+    printf '%s\n# archenemy managed sha256: %s\n' "$text" "${digest%% *}"
+}
+
+shell_managed_checksum() {
+    local file="$1" text body marker digest
+    text="$(<"$file")"
+    marker="${text##*$'\n'}"
+    [[ "$marker" =~ ^'# archenemy managed sha256: '[a-f0-9]{64}$ ]] || return 1
+    body="${text%$'\n'*}"
+    digest="$(printf '%s\n' "$body" | sha256sum)" || return 1
+    [[ "$marker" == "# archenemy managed sha256: ${digest%% *}" ]]
+}
+
+shell_plugins_text() {
+    local text
+    text="$(shell_plugins_v1_text "$@")" || return 1
+    shell_managed_text "$text"
+}
+
 # Odmawiamy zastąpienia obcego lub ręcznie zmienionego pliku, nawet ze znacznikiem.
 shell_plugins_managed() {
     [[ -e "$SHELL_PLUGINS" || -L "$SHELL_PLUGINS" ]] || return 0
     [[ -f "$SHELL_PLUGINS" && ! -L "$SHELL_PLUGINS" ]] || return 1
+    shell_managed_checksum "$SHELL_PLUGINS" && return 0
     local name expected
     local -a states=()
     for name in "${SHELL_PLUGIN_NAMES[@]}"; do
         if shell_plugin_enabled "$name"; then states+=(1); else states+=(0); fi
     done
-    expected="$(shell_plugins_text "${states[@]}")"
+    expected="$(shell_plugins_v1_text "${states[@]}")"
     [[ "$(<"$SHELL_PLUGINS")" == "$expected" ]]
 }
 
@@ -225,7 +250,8 @@ shell_cli_load() {
     local line name url license package command shells bash_init zsh_init extra
     CLI_NAMES=(); CLI_URLS=(); CLI_LICENSES=(); CLI_PACKAGES=()
     CLI_COMMANDS=(); CLI_SHELLS=(); CLI_BASH_INIT=(); CLI_ZSH_INIT=()
-    [[ -f "$SHELL_RC_DIR/cli-tools.tsv" ]] || return 1
+    local catalog="${1:-$SHELL_RC_DIR/cli-tools.tsv}"
+    [[ -f "$catalog" ]] || return 1
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -n "$line" && "$line" != \#* ]] || continue
         IFS=$'\034' read -r name url license package command shells bash_init zsh_init extra <<< "${line//$'\t'/$'\034'}"
@@ -236,7 +262,7 @@ shell_cli_load() {
         CLI_NAMES+=("$name"); CLI_URLS+=("$url"); CLI_LICENSES+=("$license")
         CLI_PACKAGES+=("$package"); CLI_COMMANDS+=("$command"); CLI_SHELLS+=("$shells")
         CLI_BASH_INIT+=("$bash_init"); CLI_ZSH_INIT+=("$zsh_init")
-    done < "$SHELL_RC_DIR/cli-tools.tsv"
+    done < "$catalog"
     (( ${#CLI_NAMES[@]} > 0 ))
 }
 
@@ -261,7 +287,7 @@ shell_cli_block() {
     printf '# <<< archenemy CLI: %s <<<\n' "${CLI_NAMES[$i]}"
 }
 
-shell_cli_text() {
+shell_cli_body() {
     local kind="$1" target="${2:-}" enabled="${3:-0}" i
     printf '%s\n' '# Managed by Super+A -> [h] -> 6. Disable there; packages are kept.'
     for i in "${!CLI_NAMES[@]}"; do
@@ -275,14 +301,25 @@ shell_cli_text() {
     done
 }
 
+shell_cli_text() {
+    local text
+    text="$(shell_cli_body "$@")" || return 1
+    shell_managed_text "$text"
+}
+
 # Jak dla plugins.zsh: obcej treści i symlinków nie zastępujemy.
 shell_cli_managed() {
     local kind="$1" file="$SHELL_RC_DIR/cli-tools.$1" expected
     [[ "$kind" == bash || "$kind" == zsh ]] || return 1
     [[ -e "$file" || -L "$file" ]] || return 0
     [[ -f "$file" && ! -L "$file" ]] || return 1
-    expected="$(shell_cli_text "$kind")" || return 1
-    [[ "$(<"$file")" == "$expected" ]]
+    shell_managed_checksum "$file" && return 0
+    # Niezmienny katalog v1 pozwala migrować stare, niepodpisane pliki.
+    local matched=1
+    shell_cli_load "$SHELL_RC_DIR/cli-tools-v1.tsv" || return 1
+    expected="$(shell_cli_body "$kind")" && [[ "$(<"$file")" == "$expected" ]] && matched=0
+    shell_cli_load || return 1
+    return "$matched"
 }
 
 # Jedyny zapis plików osobistych CLI: idempotentnie, atomowo i z kopią.
@@ -367,11 +404,16 @@ rc_block_text() {
     echo "# and PATH for bash and zsh). Edit it, or switch shells: Super+A -> [h]."
     echo "archenemy_shell_dir=$(rc_path_expr "$SHELL_RC_DIR")"
     if [[ "$kind" == zsh ]]; then
+        echo 'archenemy_plugins_deferred=1'
         echo 'if [ -f "$archenemy_shell_dir/zsh-defaults.zsh" ]; then . "$archenemy_shell_dir/zsh-defaults.zsh"; fi'
         echo 'if [ -f "$archenemy_shell_dir/keys.zsh" ]; then . "$archenemy_shell_dir/keys.zsh"; fi'
     fi
     echo 'if [ -f "$archenemy_shell_dir/shellrc" ]; then . "$archenemy_shell_dir/shellrc"; fi'
     printf 'if [ -f "$archenemy_shell_dir/cli-tools.%s" ]; then . "$archenemy_shell_dir/cli-tools.%s"; fi\n' "$kind" "$kind"
+    if [[ "$kind" == zsh ]]; then
+        echo 'if [ -f "$archenemy_shell_dir/plugins.zsh" ]; then . "$archenemy_shell_dir/plugins.zsh"; fi'
+        echo 'unset archenemy_plugins_deferred'
+    fi
     echo 'unset archenemy_shell_dir'
     echo "$SHELL_BLOCK_END"
 }

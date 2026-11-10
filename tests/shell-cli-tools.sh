@@ -11,6 +11,7 @@ trap 'rm -rf "$T"' EXIT
 export HOME="$T/home" ARCHENEMY_DIR="$T/home/archenemy" MOCK_ROOT="$T"
 mkdir -p "$ARCHENEMY_DIR/config/shell" "$ARCHENEMY_DIR/scripts" "$T/bin"
 cp -r "$REPO/scripts/shell" "$REPO/scripts/appbinds" "$ARCHENEMY_DIR/scripts/"
+cp "$REPO/config/shell/cli-tools-v1.tsv" "$ARCHENEMY_DIR/config/shell/"
 cp "$REPO/config/shell/cli-tools.tsv" "$ARCHENEMY_DIR/config/shell/"
 source "$REPO/scripts/shell/lib/shell-rc.sh"
 PASS=0; FAIL=0
@@ -19,7 +20,7 @@ check() {
     else FAIL=$((FAIL+1)); printf '  ✗ %s\n' "$1"; fi
 }
 # Izolowany PATH gwarantuje brak prawdziwych fd, rg, zoxide, zsh i pacman.
-for cmd in bash awk cut dirname mktemp mkdir ln rm cat grep sed date cp chmod mv timeout tput stty wc basename getent id; do
+for cmd in bash awk cut dirname mktemp mkdir ln rm cat grep sed date cp chmod mv timeout tput stty wc basename getent id sha256sum; do
     real="$(command -v "$cmd")" || exit 1
     ln -s "$real" "$T/bin/$cmd"
 done
@@ -108,6 +109,16 @@ check 'niewspierany shell odrzucony w bibliotece' bash -c 'source "$1"; ! shell_
 OUT="$(run '6j\nk\ny')"
 check 'nowy wiersz działa bez zmiany logiki' shell_cli_enabled zsh demo
 check 'nowy init zapisany' grep -qF 'printf demo-loaded' "$SHELL_RC_DIR/cli-tools.zsh"
+# Dawny plik bez sumy rozpoznajemy mimo zmiany inicjalizacji w nowym katalogu.
+shell_cli_body bash > "$SHELL_RC_DIR/cli-tools.bash"
+cp "$SHELL_RC_DIR/cli-tools.bash" "$T/legacy-cli"
+sed -i 's/zoxide init bash/zoxide init bash --hook prompt/' "$SHELL_RC_DIR/cli-tools.tsv"
+check 'stary katalog nie blokuje wyłączenia' shell_cli_write bash fd 0
+check 'migracja zachowuje kopię starego pliku' bash -c 'for f in "$1".bak-*; do [[ "$(cat "$f")" == "$(cat "$2")" ]] && exit 0; done; exit 1' _ "$SHELL_RC_DIR/cli-tools.bash" "$T/legacy-cli"
+# Podpisana stara treść pozostaje zarządzana także po usunięciu pozycji z katalogu.
+sed -i '/^demo\t/d' "$SHELL_RC_DIR/cli-tools.tsv"
+check 'usunięty wpis nie blokuje wyłączenia w podpisanym pliku' shell_cli_write zsh fd 0
+check 'usunięte narzędzie znika przy regeneracji' bash -c '! grep -qF "archenemy CLI: demo" "$1"' _ "$SHELL_RC_DIR/cli-tools.zsh"
 # Próby zapisu obcej treści i symlinku odrzucamy bez jej wykonania.
 printf '\ntouch "$MOCK_ROOT/pwned"\n' >> "$SHELL_RC_DIR/cli-tools.zsh"
 cp "$SHELL_RC_DIR/cli-tools.zsh" "$T/custom"

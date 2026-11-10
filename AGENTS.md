@@ -175,13 +175,16 @@ Rules that follow directly from the table:
   place. Static emacs-mode bindings are sourced from the ZLE Standard Widgets
   documentation in `emacs-default-bindings.txt`. `tests/shell-rc.sh`,
   `tests/shell-settings.sh`.
-  Personal `plugins.zsh` defaults to all plugins disabled; `[h] → 5` uses the
+  Personal `plugins.zsh` defaults to all plugins disabled; zsh-completions
+  remain available while their package is installed (the toggle only registers
+  a missing system path); `[h] → 5` uses the
   shared `tui_menu` checklist (Space/Enter toggles). Only `shell-rc.sh` writes
-  it, with a marker and dated backups; custom content is refused. Package
+  it, with a marker, SHA-256 checksum and dated backups; custom content is refused. Package
   installs always need `[y/N]`, including after the `[Y/n]` autosuggestions
   offer following a successful switch to zsh. Register completion paths before
-  `compinit`, load plugins at the end of `zsh-defaults.zsh`, and source syntax
-  highlighting last. Skip missing files and preserve user plugin variables.
+  `compinit`, load plugins at the end of the managed rc block after `shellrc` and CLI
+  initialization, and source syntax highlighting last within that block. User
+  code after the block still runs later. Skip missing files and preserve user plugin variables.
   `tests/shell-plugins.sh` uses mocks without requiring zsh or pacman.
 - **Optional CLI tools:** `[h] → 6` uses `tui_menu` for shell selection and each checklist. The trusted catalog `config/shell/cli-tools.tsv` supplies packages, commands, licenses, support and initialization; one row extends the menu without code changes. All tools default off independently for bash/zsh. Only `shell-rc.sh` writes personal `cli-tools.bash` / `cli-tools.zsh`, with marked blocks, dated backups, idempotence and custom-content/symlink refusal. The rc block loads the selected file after `shellrc`. Missing commands require `[Y/n]` before `sudo pacman -S --needed`; verify the command exists afterwards. Disabling removes only the initialization block and keeps packages. Plain PATH tools cannot be hidden per shell. zoxide must preserve `cd` (default `z`/`zi`, never `--cmd cd`). Keep README and THIRD-PARTY license tables in sync. `tests/shell-cli-tools.sh` uses isolated mocks without zsh, pacman or real tools.
 - **New monitor notification:** `hl.on("monitor.added")` in `autostart-common.lua`
@@ -194,7 +197,8 @@ Rules that follow directly from the table:
 - **Alacritty copy on select:** `[c] terminal` in Super+A edits only
   `[selection].save_to_clipboard` in the active `~/.config/alacritty/alacritty.toml`.
   `scripts/appbinds/terminal-settings.sh` keeps the first-change `.bak`; preserve
-  every other config line and leave Alacritty's live reload alone.
+  every other config line and leave Alacritty's live reload alone. Refuse writes
+  when the resolved file is inside the repository, including rice symlinks.
 - **TUI look: `scripts/appbinds/lib/tui.sh` is the only palette.** One accent per
   rice (`tui_accent_code`) plus bright state colours; plain ANSI blue is 2.6:1 on
   `white-blue`. New screens start with `tui_header`, and `tui_fit` sizes columns,
@@ -392,3 +396,7 @@ Say "I don't know" and ask, or check the source. Don't fill the gap with
 plausible-sounding code or a flag name.
 
 Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.
+
+Shared menus collect multi-digit choices through Enter when there are more than nine items and scroll to fit the terminal. Confirmations reject digits. Autostart labels use global app numbers and no numbers on action rows. Removing a bind requires confirmation with default No.
+
+Managed shell plugin/CLI files use a checksum independent of the current template; unsigned v1 CLI files are recognized with the frozen `config/shell/cli-tools-v1.tsv` catalog. Keep that catalog and `shell_plugins_v1_text` unchanged for migration. Plugin package prompts default to No, CLI package prompts to Yes; both require a separate confirmation.

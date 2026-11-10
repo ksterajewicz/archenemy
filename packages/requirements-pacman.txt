@@ -78,3 +78,6 @@ ttf-jetbrains-mono-nerd
 ttf-nerd-fonts-symbols-mono
 noto-fonts
 papirus-icon-theme
+
+# coreutils: sha256sum — rozpoznawanie niezmienionych plików osobistych po aktualizacji szablonów powłoki
+coreutils

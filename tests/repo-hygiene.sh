@@ -44,12 +44,34 @@ if [[ -z "$bad" ]]; then ok "brak hyprctl dispatch w starej składni"; else fail
 echo "== angielskie komunikaty instalatorów"
 # Zgrubny strażnik pojedynczych linii: komentarze kodu są dozwolone,
 # ale wypisywane opisy plików i odkładane podsumowania też są tekstem użytkownika.
-bad=$(awk '
-    /^[[:space:]]*#/ { next }
-    /(echo|printf|read[[:space:]]+-[[:alpha:]]*p|die|warn|log|SUMMARY_(DONE|SKIPPED).*\+=|UFW_FAIL=|regenerate_bootloader)/ &&
-    /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/ { print FILENAME ":" FNR ":" $0 }
-' "$REPO"/install/*.sh)
-if [[ -z "$bad" ]]; then ok "brak polskich liter w komunikatach install/*.sh"; else fail "polski tekst instalatora: $bad"; fi
+# grep -F rozpoznaje pełne ciągi bajtów, niezależnie od locale awk.
+user_message_lines() {
+    awk '
+        /^[[:space:]]*#/ { next }
+        /(echo|printf|read[[:space:]]+-[[:alpha:]]*p|die|warn|log|SUMMARY_(DONE|SKIPPED).*\+=|UFW_FAIL=|regenerate_bootloader)/ {
+            print FILENAME ":" FNR ":" $0
+        }
+    ' "$@"
+}
+polish_text() {
+    grep -F -e ą -e ć -e ę -e ł -e ń -e ó -e ś -e ź -e ż \
+        -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż
+}
+mapfile -t generators < <(git -C "$REPO" ls-files 'scripts/**/gen-*.sh')
+files=("$REPO"/install/*.sh)
+for f in "${generators[@]}"; do files+=("$REPO/$f"); done
+bad=$(user_message_lines "${files[@]}" | polish_text || true)
+if [[ -z "$bad" ]]; then ok "brak polskich liter w komunikatach instalatorów i generatorów"; else fail "polski tekst użytkownika: $bad"; fi
+if printf '%s\n' 'echo "⚠ →"' | LC_ALL=C polish_text >/dev/null; then
+    fail "strażnik myli symbole z polskimi literami"
+else
+    ok "symbole ⚠/→ są dozwolone także przy LC_ALL=C"
+fi
+if printf '%s\n' 'echo "Zażółć"' | LC_ALL=C polish_text >/dev/null; then
+    ok "strażnik rozpoznaje polski tekst także przy LC_ALL=C"
+else
+    fail "strażnik przepuszcza polski tekst"
+fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

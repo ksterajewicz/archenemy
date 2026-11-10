@@ -92,7 +92,10 @@ tui 'e2\ndate\n\nq' >/dev/null
 check "[e] zmienia komendę wybranego"     'grep -Fq " + h\", hl.dsp.exec_cmd(\"date\"))" "$BINDS" && grep -Fq "exec_cmd(\"ls\")" "$BINDS"'
 out="$(tui 'e1\n\n\nq')"
 check "[e] Enter nic nie zmienia"         '[[ "$out" == *Cancelled* ]] && grep -Fq "exec_cmd(\"ls\")" "$BINDS"'
+before="$(cat "$BINDS")"
 out="$(tui 'd1\n\nq')"
+check "[d] Enter nie usuwa" '[[ "$(cat "$BINDS")" == "$before" ]]'
+out="$(tui 'd1\ny\nq')"
 check "[d] usuwa i sprawdza reload"       '! grep -Fq "\"ls\"" "$BINDS" && [[ "$out" == *"no config errors"* ]]'
 
 echo "== bindy pisane ręcznie"

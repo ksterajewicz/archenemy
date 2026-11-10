@@ -62,7 +62,7 @@ for name in "${SHELL_PLUGIN_NAMES[@]}"; do
     if shell_plugin_enabled "$name"; then check 'domyślnie wyłączona' false; fi
 done
 OUT="$(run '5\e')"
-check 'checklista ma trzy opisy, recommended i Space/Enter' bash -c '[[ "$1" == *"[ ] zsh-autosuggestions"* && "$1" == *recommended* && "$1" == *"colors valid and invalid commands"* && "$1" == *"additional command completions"* && "$1" == *"Space/Enter: toggle"* ]]' _ "$OUT"
+check 'checklista ma trzy opisy, recommended i Space/Enter' bash -c '[[ "$1" == *"[ ] zsh-autosuggestions"* && "$1" == *recommended* && "$1" == *"colors valid and invalid commands"* && "$1" == *"completions active while package is installed"* && "$1" == *"Space/Enter: toggle"* ]]' _ "$OUT"
 check 'Esc nie zapisuje ustawień' test ! -e "$SHELL_PLUGINS"
 OUT="$(run '5 \nn')"
 check 'Enter na instalacji domyślnie odmawia' test ! -e "$SHELL_PLUGINS"
@@ -135,7 +135,17 @@ check 'highlighting ładuje się po autosuggestions' test "$(cat "$T/load-order"
 rm -r "$T/share"
 check 'brak plików pakietu nie powoduje błędu startu' bash -c 'source "$1"' _ "$T/loader"
 check 'fpath jest przed ładowaniem widgetów' awk '/fpath\+=/ { a=NR } /source .*zsh-autosuggestions/ { b=NR } /source .*zsh-syntax-highlighting/ { c=NR } END { exit !(a && a < b && b < c) }' "$SHELL_PLUGINS"
-check 'defaults rejestruje completions przed compinit, widgety na końcu' awk '/archenemy_plugins_phase=completion/ { a=NR } /compinit -d/ { b=NR } /source .*plugins.zsh/ { c=NR } END { exit !(a && a < b && b < c) }' "$REPO/config/shell/zsh-defaults.zsh"
+check 'defaults rejestruje completions przed compinit' awk '/archenemy_plugins_phase=completion/ { a=NR } /source .*plugins.zsh/ && !c { c=NR } /compinit -d/ { b=NR } END { exit !(a && a < c && c < b) }' "$REPO/config/shell/zsh-defaults.zsh"
+rc_block_text zsh > "$T/rc-block"
+check 'nowy blok odracza widgety, stary zachowuje ich ładowanie' bash -c 'grep -qF "archenemy_plugins_deferred=1" "$1" && grep -qF "archenemy_plugins_deferred:-0" "$2"' _ "$T/rc-block" "$REPO/config/shell/zsh-defaults.zsh"
+check 'widgety po shellrc i CLI w bloku rc' awk '/cli-tools.zsh/ { a=NR } /source.*plugins.zsh|[.] .*plugins.zsh/ { b=NR } END { exit !(a && a < b) }' "$T/rc-block"
+# Stary podpisany nagłówek nie musi odpowiadać bieżącemu szablonowi.
+old="$(shell_plugins_v1_text 1 1 0 | sed 's/Changes keep a dated backup./Previous template header./')"
+shell_managed_text "$old" > "$SHELL_PLUGINS"
+check 'starszy podpisany szablon pozwala wyłączyć wtyczkę' shell_plugin_write zsh-autosuggestions 0
+shell_plugins_v1_text 1 0 0 > "$SHELL_PLUGINS"
+check 'stary niepodpisany v1 migruje bez blokowania' shell_plugin_write zsh-autosuggestions 0
+
 check 'plugins jest ignorowany przez git' git -C "$REPO" check-ignore -q config/shell/plugins.zsh
 check 'backup jest ignorowany przez git' git -C "$REPO" check-ignore -q config/shell/plugins.zsh.bak-20260101
 printf '\nWynik: %s ✓ / %s ✗\n' "$PASS" "$FAIL"

@@ -53,7 +53,7 @@ bindkey '^[[1;5D' backward-word
 # Only while the prompt is still the zsh default, so your own theme stays.
 if [[ "$PROMPT" == '%m%# ' ]]; then PROMPT='[%n@%m %1~]%# '; fi
 
-# Optional plugins: syntax highlighting is the last plugin sourced.
-if [[ -f "${archenemy_shell_dir}/plugins.zsh" ]]; then
+# Compatibility for existing rc blocks; refreshed blocks load widgets after CLI tools.
+if [[ "${archenemy_plugins_deferred:-0}" != 1 && -f "${archenemy_shell_dir}/plugins.zsh" ]]; then
     source "${archenemy_shell_dir}/plugins.zsh"
 fi

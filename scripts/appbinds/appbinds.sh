@@ -327,6 +327,7 @@ remove_bind() {
 
     # Ten sam wybór linii co lista wyżej — numer N kasuje dokładnie linię
     # pokazaną jako N, niezależnie od innych `hl.bind(` w pliku.
+    confirm "Remove ${choices[$((num - 1))]}?" N || { echo "Cancelled."; return; }
     remove_bind_by_index "$BINDS_CONF" "$num" || {
         echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
         return

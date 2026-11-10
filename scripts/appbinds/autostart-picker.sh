@@ -183,7 +183,8 @@ build_view() {
 
 picker_loop() {
     local input token i id box count bad size pages cursor=0 rc
-    local -a labels=() actions=() TUI_MENU_KEYS=()
+    local -a labels=() actions=() TUI_MENU_KEYS=() TUI_MENU_NUMBERS=()
+    # shellcheck disable=SC2034  # opcje odczytuje tui_menu przez zakres dynamiczny
     local TUI_MENU_CHECKLIST=1 TUI_MENU_CAPTURE_DIGITS=1
     while :; do
         build_view
@@ -229,6 +230,9 @@ picker_loop() {
             done
         fi
 
+        # Numer aplikacji jest globalny; akcje nie dostają numerów aplikacji.
+        # shellcheck disable=SC2034  # etykiety odczytuje tui_menu
+        TUI_MENU_NUMBERS=("${actions[@]}")
         count=0
         for id in "${!SELECTED[@]}"; do
             [[ -n "${SELECTED[$id]:-}" ]] && count=$((count + 1))

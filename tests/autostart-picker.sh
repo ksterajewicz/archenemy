@@ -105,6 +105,44 @@ generate_autostart_apps "$DAT" "$LUA"
 check "znak psujący Lua pominięty"        'grep -q "dobra.app" "$LUA" && ! grep -q "nazwa" "$LUA"'
 check "plik bez resztek tymczasowych"     '[[ -z "$(ls "$A/config/hypr" | grep -v "^autostart-apps.lua$")" ]]'
 
+# Rzeczywisty terminal: etykiety i wpisywane numery muszą wskazywać tę samą aplikację.
+: > "$DAT"
+if python - "$REPO/scripts/appbinds/autostart-picker.sh" "$DAT" <<'PYTEST'
+import fcntl, os, pty, re, select, signal, struct, sys, termios, time
+pid, master = pty.fork()
+if pid == 0:
+    os.execv('/bin/bash', ['bash', sys.argv[1]])
+fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 110, 0, 0))
+stage = 0
+buffer = ''
+all_output = ''
+deadline = time.monotonic() + 8
+while time.monotonic() < deadline:
+    if not select.select([master], [], [], .1)[0]: continue
+    try: chunk = os.read(master, 65536)
+    except OSError: break
+    if not chunk: break
+    buffer += chunk.decode(errors='replace')
+    all_output += chunk.decode(errors='replace')
+    if 'Cancel [q/Esc]' not in buffer: continue
+    clean = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', buffer)
+    if stage == 0:
+        os.write(master, b'n'); stage = 1; buffer = ''
+    elif stage == 1 and '11) [ ] App 11' in clean:
+        assert not re.search(r'\d+\) Next page', clean), clean
+        os.write(master, b'11\n'); stage = 2; buffer = ''
+    elif stage == 2 and '11) [x] App 11' in clean:
+        os.write(master, b's\n'); stage = 3; buffer = ''
+else:
+    os.kill(pid, signal.SIGKILL)
+os.close(master)
+_, status = os.waitpid(pid, 0)
+assert stage == 3 and os.waitstatus_to_exitcode(status) == 0, all_output
+with open(sys.argv[2]) as file: assert file.read().strip() == 'app11'
+PYTEST
+then ok "TTY: globalny numer 11 na drugiej stronie zaznacza app11"
+else fail "TTY: globalny numer 11 na drugiej stronie zaznacza app11"; fi
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ $FAIL -eq 0 ]]

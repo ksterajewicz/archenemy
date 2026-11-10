@@ -121,7 +121,7 @@ plugins_menu() {
     local -a labels descriptions=(
         'gray suggestions from history (recommended)'
         'colors valid and invalid commands'
-        'additional command completions'
+        'completions active while package is installed'
     )
     while :; do
         clear

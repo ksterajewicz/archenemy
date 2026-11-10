@@ -728,7 +728,7 @@ add_monitor() {
 
     res="$mode"
     rate="$(LC_ALL=C printf '%.0f' "$hz")"
-    pick_mode "$name" "$res"
+    pick_mode "$name" "$res" || return 1
     split_picked_mode
     ask_scale "$scale" "$res" || return 1
     scale="$ASK_SCALE"
@@ -858,7 +858,7 @@ pick_number() {
         echo "$prompt"
         rc=0
         tui_menu_lines "$((${#labels[@]} - 1))" "${labels[@]}" || rc=$?
-        (( rc != 1 )) || return 0
+        (( rc != 1 )) || { [[ "${TUI_MENU_CANCELLED:-0}" == 1 ]] && return 1; return 0; }
         if (( rc == 2 )); then
             echo -e "  ${RED}✗ Pick a number from the list.${NC}"
             continue
@@ -896,7 +896,7 @@ pick_mode() {
     local -a ress=("${GRID[@]}")
     echo ""
     echo -e "  Resolution, now ${CYAN}${cur}${NC}:"
-    print_grid
+    [[ -t 0 ]] || print_grid
     echo -e "    ${BLUE}p${NC}) monitor's preferred   ${BLUE}h${NC}) highest resolution   ${BLUE}f${NC}) highest refresh rate"
     pick_number "  Resolution number (Enter = keep): " "${#ress[@]}" phf || return
     case "$PICK" in
@@ -916,12 +916,12 @@ pick_mode() {
     local -a rates=("${GRID[@]}")
     echo ""
     echo -e "  Refresh rate for ${CYAN}${res}${NC}, Hz:"
-    print_grid
+    [[ -t 0 ]] || print_grid
     if [[ "$res" == "$cur" ]]; then
         pick_number "  Rate number (Enter = keep): " "${#rates[@]}" || return
         [[ -n "$PICK" ]] && PICKED_MODE="$res@${rates[$((PICK - 1))]}"
     else
-        pick_number "  Rate number (Enter = ${rates[0]}): " "${#rates[@]}" || { PICKED_MODE="$res@${rates[0]}"; return; }
+        pick_number "  Rate number (Enter = ${rates[0]}): " "${#rates[@]}" || return 1
         PICKED_MODE="$res@${rates[$((${PICK:-1} - 1))]}"
     fi
     return 0
@@ -948,7 +948,7 @@ edit_monitor() {
     res="$(monitor_dat_get "$dat" RESOLUTION)"; rate="$(monitor_dat_get "$dat" RATE)"
     pos="$(monitor_dat_get "$dat" POSITION)"; scale="$(monitor_dat_get "$dat" SCALE)"
 
-    pick_mode "$live" "$res"
+    pick_mode "$live" "$res" || return 1
     split_picked_mode
 
     ask_scale "$scale" "$res" || return 1

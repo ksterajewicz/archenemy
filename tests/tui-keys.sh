@@ -56,6 +56,9 @@ else
     check "timeout kończy przed zamknięciem wejścia" '(( SECONDS - start < 2 ))'
 fi
 
+check "cyfra 1 nie zatwierdza Y" '! yes_no "1\n" Y'
+check "cyfra 1 nie zatwierdza N" '! yes_no "1\n" N'
+
 echo "== menu główne"
 H="$T/home"; mkdir -p "$H/archenemy/config/hypr" "$H/archenemy/data" "$T/bin"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; chmod +x "$T/bin/clear"

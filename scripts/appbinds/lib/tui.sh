@@ -146,7 +146,7 @@ read_key_nav() {
 TUI_MENU_INDEX=0
 # shellcheck disable=SC2034
 tui_menu() {
-    local selected="$1" key i width hint remaining
+    local selected="$1" key i width hint remaining top=0 visible end number rest
     local deadline=$(( SECONDS + ${TUI_MENU_TIMEOUT:-0} ))
     shift
     local -a items=("$@")
@@ -157,8 +157,20 @@ tui_menu() {
         tui_size
         width=$(( TUI_COLS - 6 ))
         (( width > 0 )) || width=1
-        for i in "${!items[@]}"; do
-            tui_fit "$(( i + 1 ))) ${items[$i]}" "$width"
+        # Okno listy mieści się w terminalu; przewijamy tylko widoczne wiersze.
+        visible=$(( TUI_ROWS > 4 ? TUI_ROWS - 4 : 1 ))
+        (( visible > count )) && visible=$count
+        (( selected < top )) && top=$selected
+        (( selected >= top + visible )) && top=$((selected - visible + 1))
+        end=$((top + visible))
+        for ((i=top; i<end; i++)); do
+            number="$(( i + 1 ))) "
+            if declare -p TUI_MENU_NUMBERS &>/dev/null; then
+                number="${TUI_MENU_NUMBERS[$i]:-}"
+                [[ -z "$number" ]] || number+=') '
+            fi
+            [[ "${TUI_MENU_NO_DIGITS:-0}" != 1 ]] || number=""
+            tui_fit "$number${items[$i]}" "$width"
             if (( i == selected )); then
                 printf '  %b› %s%b\n' "${ACCENT}\033[7m" "$FIT" "$NC"
             else
@@ -166,6 +178,8 @@ tui_menu() {
             fi
         done
         hint="↑/↓ or j/k: move · Enter: select · 1-${count}: select · Esc: back"
+        (( count <= 9 )) || hint="↑/↓ or j/k: move · digits + Enter: select · Esc: back"
+        [[ "${TUI_MENU_NO_DIGITS:-0}" != 1 ]] || hint="↑/↓ or j/k: move · Enter: select · y/n · Esc: back"
         [[ "${TUI_MENU_CHECKLIST:-0}" == 1 ]] && hint="↑/↓ or j/k: move · Space/Enter: toggle · Esc: back"
         tui_fit "$hint" "$width"
         printf '\n    %b%s%b\n' "$DIM" "$FIT" "$NC"
@@ -187,17 +201,24 @@ tui_menu() {
                 fi
                 ;;
             esc|q|Q) return 1 ;;
-            [1-9])
+            [0-9])
+                [[ "${TUI_MENU_NO_DIGITS:-0}" != 1 ]] || return 1
                 if [[ "${TUI_MENU_CAPTURE_DIGITS:-0}" == 1 ]]; then
                     # Stary picker przyjmuje także wiele numerów i numery >9.
-                    local rest=""
+                    rest=""
                     IFS= read -r rest || return 1
                     TUI_MENU_INPUT="$key$rest"
                     TUI_MENU_INDEX=-1
                     return 0
                 fi
-                if (( key <= count )); then
-                    TUI_MENU_INDEX=$(( key - 1 ))
+                if (( count > 9 )); then
+                    # Długi numer zatwierdza dopiero Enter, nigdy pierwsza cyfra.
+                    rest=""
+                    IFS= read -r rest || return 1
+                    key+="$rest"
+                fi
+                if [[ "$key" =~ ^[0-9]{1,9}$ ]] && (( 10#$key >= 1 && 10#$key <= count )); then
+                    TUI_MENU_INDEX=$(( 10#$key - 1 ))
                     return 0
                 fi
                 ;;
@@ -211,7 +232,7 @@ tui_menu() {
                 [[ "${TUI_MENU_CANCEL_UNKNOWN:-0}" == 1 ]] && return 1
                 ;;
         esac
-        [[ -t 1 ]] && printf '\033[%dA\r' "$(( count + 2 ))"
+        [[ -t 1 ]] && printf '\033[%dA\r' "$(( visible + 2 ))"
     done
 }
 
@@ -220,9 +241,11 @@ tui_menu() {
 # również trafiają do wspólnego dekodera. Kod 2 oznacza błędny wiersz.
 # shellcheck disable=SC2034  # wynik czyta skrypt wywołujący
 tui_menu_lines() {
+    TUI_MENU_CANCELLED=0
     if [[ -t 0 ]]; then
-        tui_menu "$@"
-        return $?
+        tui_menu "$@" && return 0
+        TUI_MENU_CANCELLED=1
+        return 1
     fi
     local line i
     IFS= read -r line || return 1
@@ -242,8 +265,12 @@ tui_menu_lines() {
         fi
     done
     case "$line" in
-        *$'\e'*|*[jk]*) tui_menu "$@" <<<"$line" ;;
-        q|Q) return 1 ;;
+        *$'\e'*|*[jk]*)
+            tui_menu "$@" <<<"$line" && return 0
+            TUI_MENU_CANCELLED=1
+            return 1
+            ;;
+        q|Q) TUI_MENU_CANCELLED=1; return 1 ;;
         *) return 2 ;;
     esac
 }
@@ -254,7 +281,7 @@ tui_menu_lines() {
 confirm() {
     local question="$1" default="${2:-N}" hint="[y/N]" initial=1
     local -a TUI_MENU_KEYS=(y n)
-    local TUI_MENU_CANCEL_UNKNOWN=1 TUI_MENU_CHECKLIST=0 TUI_MENU_CAPTURE_DIGITS=0
+    local TUI_MENU_CANCEL_UNKNOWN=1 TUI_MENU_CHECKLIST=0 TUI_MENU_CAPTURE_DIGITS=0 TUI_MENU_NO_DIGITS=1
     if [[ "$default" == "Y" ]]; then hint="[Y/n]"; initial=0; fi
     printf '  %s %s:\n' "$question" "$hint" >&2
     tui_menu "$initial" "Yes [y]" "No [n]" >&2 || return 1
