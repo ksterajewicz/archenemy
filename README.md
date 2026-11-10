@@ -164,6 +164,7 @@ archenemy/
 │                                     #   layer set (incl. ncmpcpp + mpv colors); networkmanager-dmenu
 │                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
+│   ├── archenemy-doctor.sh           # Public, offline installation diagnostics (`archenemy doctor`).
 │   ├── shell/                        # shell-settings.sh — Super+A → [h]: bash ↔ zsh (package, chsh),
 │   │                                 #   arrow-key menus, editing shellrc in neovim, configuring the zsh vi-mode key, optional zsh plugins and CLI tools for bash/zsh;
 │   │                                 #   lib/shell-rc.sh — the shared shell file, rc blocks and personal
@@ -324,7 +325,8 @@ archenemy/
 │                                     #   `hl` API (lua5.4) and checks what starts with the session.
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
-│                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer language.
+│                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
+│                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language.
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
 │                                     #   autostart-picker.sh, terminal-settings.sh — app checklist and copy on select.
@@ -699,9 +701,37 @@ Yes/no menus use the same navigation: Enter keeps the displayed default, `y`/`n`
 - `[f] fonts`: `d` rice font, `l` installed fonts (`a` toggles all fonts; more than nine fonts take the number and Enter), `u` undo; the new font is confirmed with a yes/no menu.
 - `[u] update archenemy`: choose dev/main with arrows and Enter or `1`/`2`. Stashing changes, switching to an older branch and running the installer use yes/no menus.
 
+## Diagnostics
+
+Run `archenemy doctor` (or `bash ~/archenemy/scripts/archenemy-doctor.sh`) for
+an English plain-text report suitable for a public bug report. `--full` adds
+generated-file details and bounded calls to the existing workspace, gaming and
+flux-wall diagnostics. Their raw output, config error text, monitor descriptions,
+logs, process arguments and personal file contents are withheld in both modes;
+paths and branch names mask the home directory, user, host and common secret/address
+patterns. Only numeric versions, PCI IDs and status fields are published.
+
+The command reads local state only, does not fetch from the network, install
+packages, edit files or send notifications, and has a shared four-second probe
+budget. Missing Hyprland is reported as `not running`. Exit status is 1 for
+problems (including broken/wrong rice links, config errors and missing required
+packages), otherwise 0. The last line gives the problem count. Origin comparison
+uses cached refs, so it may predate the latest upstream changes. Generated optional
+shell/music files may be absent without constituting a critical problem. A Lua
+Super+A bind can be counted, but its callback target cannot be verified through
+`hyprctl`; the report explicitly marks that limitation. Existing helpers expect
+`~/archenemy` and are skipped for checkouts elsewhere.
+
+Tests: `bash tests/archenemy-doctor.sh` uses isolated homes and mock commands;
+`bash tests/run-all.sh` includes it automatically. The required `procps-ng`
+package supplies `pgrep` for daemon status; no daemon arguments are published. **Live-only:** on Arch with
+Hyprland running, run both report modes, check the Super+A status against the
+actual shortcut, inspect link/package results, and repeat from a TTY without
+Hyprland. No new settings-menu entry is added.
+
 ## Verification
 
-There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
 
 **Live-only — a real Arch + Hyprland session is required:**
 

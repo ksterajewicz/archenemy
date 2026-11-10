@@ -9,8 +9,11 @@
 # shellcheck disable=SC2016,SC2034  # check() robi eval na cytowanym wyrażeniu
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 AD="$REPO/scripts/appbinds/audio-devices.sh"
 
 PASS=0; FAIL=0

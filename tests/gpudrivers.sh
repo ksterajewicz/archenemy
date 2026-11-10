@@ -24,8 +24,11 @@ if ! grep -q 'ARCHENEMY_ETC_DIR' "$GPU" || ! grep -q 'ARCHENEMY_MODULES_DIR' "$G
     echo "✗ $GPU bez haków testowych — nie uruchamiam (dotknąłby prawdziwego /etc)"
     exit 1
 fi
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }

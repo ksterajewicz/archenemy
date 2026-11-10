@@ -22,8 +22,11 @@
 # shellcheck disable=SC1091,SC2016,SC2034,SC2088  # źródło z dynamicznego REPO; check() robi eval; ~ w opisach testów
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
