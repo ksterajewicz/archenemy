@@ -625,16 +625,25 @@ an English plain-text report suitable for a public bug report. `--full` adds
 generated-file details and bounded calls to the existing workspace, gaming and
 flux-wall diagnostics. Their raw output, config error text, monitor descriptions,
 logs, process arguments and personal file contents are withheld in both modes;
-paths and branch names mask the home directory, user, host and common secret/address
-patterns. Only numeric versions, PCI IDs and status fields are published.
+the canonical checkout path is shown as `~/archenemy`, other checkout paths are
+withheld, and only standard branch names (`dev`, `main`, `master`, `HEAD`) are
+published. Custom branch names are withheld. Other displayed fields mask the
+home directory, user, host and common secret/address patterns. Version and hardware output is limited to numeric versions, PCI IDs,
+driver module names and status fields.
 
 The command reads local state only, does not fetch from the network, install
 packages, edit files or send notifications, and has a shared four-second probe
-budget. Missing Hyprland is reported as `not running`. Exit status is 1 for
+budget plus an external 4.5-second collection deadline, including file reads and
+process cleanup. Direct file reads accept only regular files up to 1 MiB (256
+bytes for the rice name), opened without blocking on FIFOs; invalid UTF-8 is
+replaced. Full mode uses `flux-wall.sh doctor-safe`, which never executes rice
+configuration and rejects traversal and configuration symlinks outside the repo.
+Missing Hyprland is reported as `not running`. Exit status is 1 for
 problems (including broken/wrong rice links, config errors and missing required
 packages), otherwise 0. The last line gives the problem count. Origin comparison
 uses cached refs, so it may predate the latest upstream changes. Generated optional
-shell/music files may be absent without constituting a critical problem. A Lua
+shell/music files may be absent without constituting a critical problem. The
+active rice's generated hyprlock background is required (beta uses white-blue). A Lua
 Super+A bind can be counted, but its callback target cannot be verified through
 `hyprctl`; the report explicitly marks that limitation. Existing helpers expect
 `~/archenemy` and are skipped for checkouts elsewhere.
