@@ -15,6 +15,12 @@
 
 set -uo pipefail
 
+# Obsługa polecenia przed wczytaniem TUI i tworzeniem plików osobistych.
+if [[ "${1:-}" == doctor ]]; then
+    shift
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../archenemy-doctor.sh" "$@"
+fi
+
 # Szerokość kolumn liczona w znakach wymaga locale UTF-8.
 [[ "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" == *[Uu][Tt][Ff]* ]] || export LC_ALL=C.UTF-8
 

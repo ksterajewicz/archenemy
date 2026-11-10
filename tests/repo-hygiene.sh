@@ -48,7 +48,7 @@ echo "== angielskie komunikaty instalatorów"
 user_message_lines() {
     awk '
         /^[[:space:]]*#/ { next }
-        /(echo|printf|read[[:space:]]+-[[:alpha:]]*p|die|warn|log|SUMMARY_(DONE|SKIPPED).*\+=|UFW_FAIL=|regenerate_bootloader)/ {
+        /(echo|printf|print[(]|read[[:space:]]+-[[:alpha:]]*p|die|warn|log|SUMMARY_(DONE|SKIPPED).*\+=|UFW_FAIL=|regenerate_bootloader)/ {
             print FILENAME ":" FNR ":" $0
         }
     ' "$@"
@@ -58,7 +58,7 @@ polish_text() {
         -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż
 }
 mapfile -t generators < <(git -C "$REPO" ls-files 'scripts/**/gen-*.sh')
-files=("$REPO"/install/*.sh)
+files=("$REPO"/install/*.sh "$REPO/scripts/archenemy-doctor.sh")
 for f in "${generators[@]}"; do files+=("$REPO/$f"); done
 bad=$(user_message_lines "${files[@]}" | polish_text || true)
 if [[ -z "$bad" ]]; then ok "brak polskich liter w komunikatach instalatorów i generatorów"; else fail "polski tekst użytkownika: $bad"; fi

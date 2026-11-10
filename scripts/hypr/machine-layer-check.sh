@@ -25,8 +25,9 @@
 #   dlatego 2/3 alarmują dopiero, gdy ŻADNA reguła nie pasuje do NICZEGO
 #   (to znaczy zmieniły się nazwy, a nie że czegoś chwilowo nie ma).
 #
-#   Użycie: machine-layer-check.sh [--quiet]   (kod 0 = OK, 1 = problemy;
-#           bez --quiet raport na stdout, z problemami także notify-send)
+#   Użycie: machine-layer-check.sh [--quiet|--doctor]   (kod 0 = OK, 1 = problemy;
+#           bez --quiet raport na stdout, z problemami także notify-send;
+#           --doctor: bez stdout i bez powiadomień, wyłącznie kod wyniku)
 # =============================================
 
 set -uo pipefail
@@ -39,6 +40,8 @@ WS_CONF="$HYPR_DIR/workspaces-monitors.lua"
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
 
 QUIET=0
+DOCTOR=0
+[[ "${1:-}" == "--doctor" ]] && { QUIET=1; DOCTOR=1; }
 [[ "${1:-}" == "--quiet" ]] && QUIET=1
 
 PROBLEMS=()
@@ -147,7 +150,7 @@ fi
 FIX="Fix: run ~/archenemy/install/install.sh again (steps [3]–[3.7] re-read the monitors), then log out and back in."
 (( NEW_MONITORS == ${#PROBLEMS[@]} )) && FIX="Fix: Super+A → [n] sets up the new monitor."
 (( QUIET )) || printf 'machine layer: %s\n' "${PROBLEMS[@]}" "$FIX"
-if command -v notify-send >/dev/null 2>&1; then
+if (( ! DOCTOR )) && command -v notify-send >/dev/null 2>&1; then
     notify-send -u critical "archenemy: machine layer out of date" \
         "$(printf '%s\n' "${PROBLEMS[@]}")
 $FIX"
