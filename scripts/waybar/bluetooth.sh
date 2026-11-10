@@ -13,31 +13,41 @@ sleeper=''
 cleanup() {
     [[ -z "$monitor_pid" ]] || kill "$monitor_pid" 2>/dev/null || :
     [[ -z "$sleeper" ]] || kill "$sleeper" 2>/dev/null || :
+    [[ -z "$monitor_pid" ]] || wait "$monitor_pid" 2>/dev/null || :
+    [[ -z "$sleeper" ]] || wait "$sleeper" 2>/dev/null || :
 }
 trap cleanup EXIT
 trap 'exit 0' TERM INT HUP
 
 render() {
     local info devices state=disabled icon='󰂲' tooltip='Bluetooth: off'
-    if [[ ! -f "$FLAG" ]] || ! command -v bluetoothctl >/dev/null; then
+    if [[ ! -f "$FLAG" ]] || ! command -v bluetoothctl >/dev/null \
+        || ! command -v timeout >/dev/null || ! command -v python >/dev/null; then
         printf '{"text":"","class":"off"}\n'
         return
     fi
-    info=$(bluetoothctl --timeout 3 show 2>/dev/null) || info=''
+    info=$(timeout 3 bluetoothctl show 2>/dev/null) || info=''
     if [[ "$info" != *'Controller '* ]]; then
         printf '{"text":"","class":"off"}\n'
         return
     fi
     if [[ "$info" == *'Powered: yes'* ]]; then
         state=enabled; icon='󰂯'; tooltip='Bluetooth: on'
-        devices=$(bluetoothctl --timeout 3 devices Connected 2>/dev/null) || devices=''
+        devices=$(timeout 3 bluetoothctl devices Connected 2>/dev/null) || devices=''
+        # BlueZ miesza rekordy z komunikatami asynchronicznymi na stdout.
+        devices=$(python -c 'import re,sys
+text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", sys.stdin.read())
+text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text).replace("\r", "")
+for line in text.splitlines():
+    match = re.fullmatch(r"Device (?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2} (\S.*)", line)
+    if match:
+        print(match[1])' <<< "$devices")
         if [[ -n "$devices" ]]; then
             state=connected; icon='󰂱'
-            tooltip="Bluetooth: connected"$'\n'"$(sed -nE 's/^Device [[:xdigit:]:]+ //p' <<< "$devices")"
+            tooltip="Bluetooth: connected"$'\n'"$devices"
         fi
     fi
     # Nazwy urządzeń są niezaufane: osobno kodowanie JSON i escapowanie Pango.
-    command -v python >/dev/null || { printf '{"text":"","class":"off"}\n'; return; }
     python -c 'import html,json,sys; print(json.dumps(dict(text=sys.argv[1], **{"class":sys.argv[2]}, tooltip=html.escape(sys.argv[3])+"\nLMB: bluetui · RMB: power on/off")))' "$icon" "$state" "$tooltip"
 }
 trap render USR1
@@ -45,11 +55,11 @@ trap render USR1
 case "${1:-stream}" in
     status) render; exit ;;
     toggle)
-        [[ -f "$FLAG" ]] && command -v bluetoothctl >/dev/null || exit 0
-        info=$(bluetoothctl --timeout 3 show 2>/dev/null) || exit 1
+        [[ -f "$FLAG" ]] && command -v bluetoothctl >/dev/null && command -v timeout >/dev/null || exit 0
+        info=$(timeout 3 bluetoothctl show 2>/dev/null) || exit 1
         [[ "$info" == *'Controller '* ]] || exit 0
         if [[ "$info" == *'Powered: yes'* ]]; then power=off; else power=on; fi
-        bluetoothctl --timeout 3 power "$power" >/dev/null 2>&1
+        timeout 3 bluetoothctl power "$power" >/dev/null 2>&1
         exit $? ;;
     open)
         [[ -f "$FLAG" ]] && command -v bluetui >/dev/null && command -v alacritty >/dev/null || exit 0
@@ -74,7 +84,11 @@ while :; do
     render
     while :; do
         if IFS= read -r -u "$events" line; then
-            [[ "$line" != signal* ]] || render
+            if [[ "$line" == signal* ]]; then
+                # Jedna migawka po serii; nie odtwarzamy zaległych zmian RSSI.
+                while IFS= read -r -t 0.3 -u "$events" line; do :; done
+                render
+            fi
         else
             # read przerwany przez SIGUSR1 nie oznacza końca strumienia.
             rc=$?

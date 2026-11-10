@@ -16,32 +16,49 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import time
 
 repo = Path(os.environ['REPO'])
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
-    for name in ['scripts/waybar', 'install', 'data', 'bin']:
+    for name in ['scripts/waybar', 'install', 'data', 'bin', 'home', 'config', 'cache', 'state-home', 'runtime']:
         (root / name).mkdir(parents=True)
     for name in ['scripts/waybar/bluetooth.sh', 'install/bluetooth-installation.sh']:
         shutil.copy2(repo / name, root / name)
     env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'], MOCK_ROOT=tmp)
+    for key in ['DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']:
+        env.pop(key, None)
+    env.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
+               XDG_CACHE_HOME=str(root / 'cache'), XDG_STATE_HOME=str(root / 'state-home'),
+               XDG_DATA_HOME=str(root / 'data'), XDG_RUNTIME_DIR=str(root / 'runtime'), TMPDIR=tmp)
     mocks = {
         'bluetoothctl': '''#!/bin/bash
 printf 'bluetoothctl %s\\n' "$*" >> "$MOCK_ROOT/log"
-shift 2
+# Wewnętrzny timeout utrzymuje proces przy życiu, zewnętrzny jest tylko limitem.
+if [[ "$1" == --timeout ]]; then
+ lifetime=$2
+ trap 'sleep "$lifetime"' EXIT
+ shift 2
+fi
 state=$(cat "$MOCK_ROOT/state")
 case "$1" in
  show)
   [[ "$state" == missing ]] && exit 0
   echo 'Controller 00:11:22:33:44:55 (public)'
   if [[ "$state" == disabled ]]; then echo 'Powered: no'; else echo 'Powered: yes'; fi ;;
- devices) [[ "$state" != connected ]] || printf 'Device AA:BB:CC:DD:EE:FF Headphones "A" <&>\\nDevice 11:22:33:44:55:66 Keyboard\\n' ;;
+ devices)
+  printf '\\033[0;33m[CHG] Device AA:BB:CC:DD:EE:FF RSSI: -65\\033[0m\\r\\n'
+  if [[ "$state" != chg-only ]]; then
+   printf '[NEW] Device AA:BB:CC:DD:EE:FF Noise\\n[DEL] Device AA:BB:CC:DD:EE:FF Noise\\nDiagnostic message\\nDevice AA:BB Invalid\\nDevice GG:BB:CC:DD:EE:FF Invalid\\n'
+  fi
+  [[ "$state" != connected ]] || printf '\\033[0;32mDevice AA:BB:CC:DD:EE:FF Headphones "A" <&>\\033[0m\\r\\nDevice 11:22:33:44:55:66 Keyboard\\n' ;;
  power) echo "power $2" >> "$MOCK_ROOT/log" ;;
 esac
 exit 0
 ''',
         'dbus-monitor': '''#!/bin/bash
 printf 'dbus-monitor %s\\n' "$*" >> "$MOCK_ROOT/log"
+[[ "${MOCK_EOF:-0}" == 0 ]] || exit 0
 exec cat "$MOCK_ROOT/events"
 ''',
         'sudo': '#!/bin/bash\nexec "$@"\n',
@@ -93,6 +110,18 @@ esac
         check(bool(data['text']) == (value != 'missing'), 'widoczność ' + value)
         if value == 'connected':
             check('Headphones &quot;A&quot; &lt;&amp;&gt;' in data['tooltip'] and 'Keyboard' in data['tooltip'], 'nazwy i escaping tooltipa')
+    for value in ['chg-only', 'noise']:
+        state.write_text(value)
+        data = status()
+        check(data['class'] == 'enabled' and data['tooltip'].startswith('Bluetooth: on\n')
+              and not any(word in data['tooltip'] for word in ['RSSI', 'Noise', 'Invalid', 'Diagnostic']),
+              'szum asynchroniczny bez połączonych urządzeń: ' + value)
+    state.write_text('connected')
+    started = time.monotonic()
+    data = status()
+    elapsed = time.monotonic() - started
+    check(data['class'] == 'connected' and elapsed < 1,
+          f'pojedynczy render {elapsed:.3f} s < 1 s mimo semantyki wewnętrznego --timeout')
     for value, target in [('disabled', 'on'), ('enabled', 'off')]:
         state.write_text(value)
         log.write_text('')
@@ -122,6 +151,13 @@ esac
                 state.write_text(value)
                 events.write('signal sender=:1.2 -> destination=(null destination) interface=org.freedesktop.DBus.Properties; member=PropertiesChanged\n')
                 check(receive()['class'] == ('off' if value == 'missing' else value), 'strumień zdarzeń: ' + value)
+            before = log.read_text().count('bluetoothctl show')
+            state.write_text('connected')
+            events.write('signal RSSI changed\n' * 100)
+            check(receive()['class'] == 'connected', 'seria 100 zdarzeń odświeża stan końcowy')
+            time.sleep(0.7)
+            renders = log.read_text().count('bluetoothctl show') - before
+            check(1 <= renders <= 2, f'seria 100 zdarzeń daje {renders} render(y), najwyżej 2')
             flag.unlink()
             proc.send_signal(signal.SIGUSR1)
             check(receive()['text'] == '', 'USR1 ponownie odczytuje flagę')
@@ -136,6 +172,66 @@ esac
         os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=5)
         check(not proc.stderr.read(), 'strumień bez błędów stderr')
+
+    # EOF wymusza opóźniony reconnect i nową migawkę, bez ciasnej pętli.
+    state.write_text('enabled')
+    proc = subprocess.Popen([str(bar)], env=env | {'MOCK_EOF': '1'}, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        check(receive()['class'] == 'enabled', 'EOF: pierwsza migawka')
+        started = time.monotonic()
+        before = log.read_text().count('dbus-monitor ')
+        check(not select.select([proc.stdout], [], [], 0.5)[0], 'EOF: brak natychmiastowego reconnectu')
+        assert select.select([proc.stdout], [], [], 7)[0], 'brak reconnectu po EOF'
+        check(json.loads(proc.stdout.readline())['class'] == 'enabled'
+              and time.monotonic() - started >= 4.5
+              and log.read_text().count('dbus-monitor ') == before + 1,
+              'EOF: ponowna subskrypcja i migawka po 5 s')
+    finally:
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.communicate(timeout=5)
+
+    # Osobno TERM tylko do rodzica i killpg, zarówno przy nasłuchu, jak i reconnect.
+    def children(pid):
+        path = Path(f'/proc/{pid}/task/{pid}/children')
+        return [int(x) for x in path.read_text().split()] if path.exists() else []
+    def alive(pid):
+        path = Path(f'/proc/{pid}/stat')
+        return path.exists() and path.read_text().split(') ', 1)[1][0] != 'Z'
+    for eof in [False, True]:
+        for group in [False, True]:
+            holder = os.open(root / 'events', os.O_RDWR | os.O_NONBLOCK)
+            proc = subprocess.Popen([str(bar)], env=env | {'MOCK_EOF': str(int(eof))},
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, start_new_session=True)
+            descendants = []
+            try:
+                receive()
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    descendants = children(proc.pid)
+                    if len(descendants) == 1 and any(('sleep' if eof else 'cat') in
+                                           Path(f'/proc/{pid}/comm').read_text()
+                                           for pid in descendants if Path(f'/proc/{pid}/comm').exists()):
+                        break
+                    time.sleep(0.02)
+                else:
+                    raise AssertionError('nie uruchomiono oczekiwanego potomka')
+                if group:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                else:
+                    proc.terminate()
+                _, errors = proc.communicate(timeout=3)
+                check(proc.returncode == 0 and not errors and not any(alive(pid) for pid in descendants),
+                      f'sprzątanie potomków: EOF={eof}, killpg={group}')
+            finally:
+                os.close(holder)
+                if proc.poll() is None:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.communicate(timeout=3)
+                for pid in descendants:
+                    if alive(pid):
+                        os.kill(pid, signal.SIGKILL)
 
     for failure in ['FAIL_INSTALL', 'FAIL_QUERY', 'FAIL_ENABLE', 'FAIL_ENABLED', 'FAIL_ACTIVE', None]:
         flag.unlink(missing_ok=True)
