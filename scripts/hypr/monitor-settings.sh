@@ -16,6 +16,8 @@
 #   też cofa. Kopia obejmuje cały data/monitors i oba pliki Lua, bo dodanie
 #   monitora rusza numery i opisy także w istniejących plikach .dat.
 #
+#   Numeracja (r) zmienia tylko numery i workspace'y, nigdy pozycji ekranów.
+#
 #   Układ w przestrzeni: pozycja to lewy górny róg w pikselach LOGICZNYCH, czyli
 #   po skali i obrocie (wiki Hyprlanda, „Positioning”). Monitory nie mogą na siebie
 #   nachodzić, bo Hyprland takiego nie zarejestruje, więc odmawiamy już przy pytaniu.
@@ -97,9 +99,27 @@ live_transform() {
 }
 
 # Rozmiar logiczny "szer wys": piksele przez skalę, obrót o 90° zamienia boki.
+# `hyprctl monitors` drukuje skalę z dwiema cyframi ("\tscale: {:.2f}"), a Hyprland
+# trzyma wielokrotność 1/120, która dzieli rozdzielczość bez reszty (Monitor.cpp,
+# applyMonitorRule: od round(skala * 120) w górę i w dół). Liczymy tak samo, inaczej
+# panel 2560 przy 1.33 wychodzi na 1925 zamiast 1920 i styk 1920x0 uchodzi za
+# nakładanie, a `r N` zostawia szczelinę (zgłoszenie 2026-11-13).
 logical_size() {
-    awk -v m="$1" -v s="$2" -v t="${3:-0}" 'BEGIN {
-        split(m, a, "x"); w = a[1] / s; h = a[2] / s
+    awk -v m="$1" -v s="$2" -v t="${3:-0}" '
+        function whole(v) { v -= int(v + 0.5); return v > -0.000001 && v < 0.000001 }
+        function fits(k) { return k > 0 && (a[1] * 120) % k == 0 && (a[2] * 120) % k == 0 }
+        BEGIN {
+        split(m, a, "x")
+        if (s <= 0) s = 1
+        w = a[1] / s; h = a[2] / s
+        if (!whole(w) || !whole(h)) {
+            k0 = int(s * 120 + 0.5)
+            for (i = 0; i < 90 && !k; i++) {
+                if (fits(k0 + i)) k = k0 + i
+                else if (fits(k0 - i)) k = k0 - i
+            }
+            if (k) { w = a[1] * 120 / k; h = a[2] * 120 / k }
+        }
         if (t % 2) { x = w; w = h; h = x }
         printf "%d %d\n", w + 0.5, h + 0.5 }'
 }
@@ -322,9 +342,8 @@ trap 'rollback; cleanup; exit 143' TERM
 trap 'rollback; cleanup; exit 130' INT
 trap 'rollback; cleanup' EXIT
 
-# Numery monitorów mają iść od lewej. Zmiana pozycji może to rozjechać, a nowa
-# numeracja przenosi workspace'y, więc o niej mówimy, nie robimy jej sami.
-warn_if_order_changed() {
+# Czy numery (kolejność DATS) idą od lewej wg zapisanych pozycji. Kod 0 = tak.
+order_follows_layout() {
     local want="" have="" list="" f pos
     for f in "${DATS[@]}"; do
         pos="$(monitor_dat_get "$f" POSITION)"
@@ -334,7 +353,13 @@ warn_if_order_changed() {
         list+="${BASH_REMATCH[1]}"$'\t'"$(basename "$f" .dat)"$'\n'
     done
     have="$(sort -n -s -k1,1 <<<"$list" | sed '/^$/d' | cut -f2)"$'\n'
-    [[ "$have" == "$want" ]] && return 0
+    [[ "$have" == "$want" ]]
+}
+
+# Numery monitorów mają iść od lewej. Zmiana pozycji może to rozjechać, a nowa
+# numeracja przenosi workspace'y, więc o niej mówimy, nie robimy jej sami.
+warn_if_order_changed() {
+    order_follows_layout && return 0
     echo -e "  ${YELLOW}⚠ Monitor numbers no longer run left to right. Workspaces keep the old${NC}"
     echo -e "  ${YELLOW}  numbering; press r in this menu to renumber them.${NC}"
 }
@@ -406,14 +431,28 @@ commit_change() {
         echo -e "  ${YELLOW}⚠ ${name} is gone, change undone.${NC}"
         return 1
     fi
+    # Sukces to stan odczytany z Hyprlanda, także dla sąsiadów przesuniętych razem
+    # z monitorem. Rozjazd nie dostaje zielonego ✓ nawet po klawiszu y.
+    local differs=0 move
     if ! state_matches "$name" "$dat"; then
+        differs=1
         echo -e "  ${YELLOW}⚠ Hyprland shows something else: $(live_state "$name")${NC}"
         echo -e "  ${YELLOW}  (mode, Hz, position, scale; it may have adjusted a value it rejected).${NC}"
     fi
+    for move in "${MOVES[@]}"; do
+        state_matches "${move##*|}" "${move%%|*}" && continue
+        differs=1
+        echo -e "  ${YELLOW}⚠ ${move##*|} did not move: Hyprland shows $(live_state "${move##*|}")${NC}"
+    done
     echo -e "  ${CYAN}Look at the screen.${NC} Press ${GREEN}y${NC} within ${CONFIRM_SECONDS} s to keep it; Esc, No or timeout goes back."
     if TUI_MENU_TIMEOUT="$CONFIRM_SECONDS" confirm "Keep this monitor setting?" N; then
         PENDING=0; cleanup
-        echo -e "  ${GREEN}✓ Monitor ${name}: $(live_state "$name")${NC}"
+        if (( differs )); then
+            echo -e "  ${YELLOW}⚠ Saved, but Hyprland shows ${name}: $(live_state "$name")${NC}"
+            echo -e "  ${YELLOW}  The saved setting and the screen differ; run hyprctl configerrors to see why.${NC}"
+        else
+            echo -e "  ${GREEN}✓ Monitor ${name}: $(live_state "$name")${NC}"
+        fi
         return 0
     fi
     rollback; cleanup
@@ -475,7 +514,7 @@ pick_order() {
             return 0
         fi
         IFS= read -rp "  Enter = accept, or your own order, e.g. 2 1: " line || return 1
-        if [[ "$line" == *$'\e'* || "$line" == j* || "$line" == k* ]]; then
+        if [[ "$line" == *$'\e'* || "$line" == j* || "$line" == k* || "${line,,}" == [ac] ]]; then
             pick_order_menu "$line" || return 1
             return 0
         fi
@@ -499,14 +538,16 @@ pick_order() {
     done
 }
 
-# Wybór każdej kolejnej pozycji z pozostałych monitorów, bez wpisywania permutacji.
+# Wybór monitora dla każdego kolejnego numeru, bez wpisywania permutacji. Etykieta
+# mówi o numerach: „position” brzmiało jak układ ekranów w przestrzeni, a to menu
+# zmienia tylko numery i workspace'y (zgłoszenie 2026-11-13).
 pick_order_menu() {
     local first="${1:-}" i
     local -a labels=() remaining=("${ORDER_PICK[@]}") chosen=() TUI_MENU_KEYS=(a c)
     if [[ -n "$first" ]]; then
-        tui_menu 0 "Accept proposed order [a]" "Choose each position [c]" <<<"$first" || return 1
+        tui_menu 0 "Accept proposed order [a]" "Choose each number [c]" <<<"$first" || return 1
     else
-        tui_menu 0 "Accept proposed order [a]" "Choose each position [c]" || return 1
+        tui_menu 0 "Accept proposed order [a]" "Choose each number [c]" || return 1
     fi
     (( TUI_MENU_INDEX != 0 )) || return 0
     TUI_MENU_KEYS=()
@@ -544,6 +585,12 @@ renumber_monitors() {
     write_order
     commit_change "" "" 1 || return 1
     echo -e "  ${GREEN}✓ Monitor numbers updated.${NC}"
+    # Numery to nie układ: kolejność inna niż od lewej nie przestawia ekranów.
+    load_dats
+    if ! order_follows_layout; then
+        echo -e "  ${YELLOW}⚠ Only the numbers changed, the screens did not move. To change which screen is on${NC}"
+        echo -e "  ${YELLOW}  which side, pick a monitor from the list and set its Position (l 2 = left of 2).${NC}"
+    fi
     after_layout_change
 }
 
@@ -591,7 +638,7 @@ settle_description() {
 ASK_POS=""
 ASK_SCALE=""
 ask_position() {
-    local cur="$1" self="$2" w="$3" h="$4" old_w="${5:-$3}" old_h="${6:-$4}" i dir x y hit
+    local cur="$1" self="$2" w="$3" h="$4" old_w="${5:-$3}" old_h="${6:-$4}" i dir x y hit n
     MOVES=()
     echo -e "  Position: ${BLUE}XxY${NC} in logical pixels, ${BLUE}auto${NC}, or next to a monitor from the list:"
     echo -e "  ${BLUE}l 2${NC} left of 2, ${BLUE}r 2${NC} right of 2, ${BLUE}a 2${NC} above 2, ${BLUE}b 2${NC} below 2."
@@ -624,12 +671,15 @@ ask_position() {
         for i in "${!ROW_NUM[@]}"; do
             [[ "${ROW_NUM[$i]}" == "$self" ]] && continue
             if (( x < ROW_X[i] + ROW_W[i] && x + w > ROW_X[i] && y < ROW_Y[i] + ROW_H[i] && y + h > ROW_Y[i] )); then
-                hit="${ROW_NAME[$i]}"
+                hit="${ROW_NAME[$i]}"; n="${ROW_NUM[$i]}"
                 break
             fi
         done
         [[ -n "$hit" ]] || return 0
-        echo -e "  ${RED}✗ That overlaps ${hit}, and Hyprland would not register it.${NC}"
+        # Sama odmowa zostawiała bez wyjścia kogoś, kto chce zamienić ekrany stronami:
+        # miejsce docelowe zawsze zajmuje ten drugi. Mówimy, którą formą to zrobić.
+        echo -e "  ${RED}✗ That overlaps ${hit} (${ROW_W[$i]}x${ROW_H[$i]} at ${ROW_X[$i]}x${ROW_Y[$i]}), and Hyprland would not register it.${NC}"
+        echo -e "  ${YELLOW}  To change sides put this monitor beside it: l ${n}, r ${n}, a ${n} or b ${n}. Or move ${hit} first.${NC}"
         MOVES=()
         load_layout
     done
@@ -891,34 +941,37 @@ pick_mode() {
     mapfile -t GRID < <(live_resolutions "$name")
     if ((${#GRID[@]} == 0)); then
         echo -e "  ${YELLOW}⚠ Hyprland lists no modes for ${name}, keeping the current one.${NC}"
-        return
+        return 0
     fi
     local -a ress=("${GRID[@]}")
     echo ""
     echo -e "  Resolution, now ${CYAN}${cur}${NC}:"
     [[ -t 0 ]] || print_grid
     echo -e "    ${BLUE}p${NC}) monitor's preferred   ${BLUE}h${NC}) highest resolution   ${BLUE}f${NC}) highest refresh rate"
-    pick_number "  Resolution number (Enter = keep): " "${#ress[@]}" phf || return
+    pick_number "  Resolution number (Enter = keep): " "${#ress[@]}" phf || return 1
     case "$PICK" in
-        p) PICKED_MODE="preferred"; return ;;
-        h) PICKED_MODE="highres"; return ;;
-        f) PICKED_MODE="highrr"; return ;;
+        p) PICKED_MODE="preferred"; return 0 ;;
+        h) PICKED_MODE="highres"; return 0 ;;
+        f) PICKED_MODE="highrr"; return 0 ;;
         "") res="$cur" ;;
         *) res="${ress[$((PICK - 1))]}" ;;
     esac
 
     mapfile -t GRID < <(live_rates "$name" "$res")
-    ((${#GRID[@]})) || return
+    # Tryb bez listy odświeżania (preferred/highres/highrr, rozdzielczość spoza listy
+    # Hyprlanda) zostaje. Kod MUSI być 0: gołe `return` oddawało 1 z nieudanego testu
+    # i cały dialog kończył się bez słowa, zanim padło pytanie o skalę i pozycję.
+    ((${#GRID[@]})) || return 0
     if ((${#GRID[@]} == 1)); then
         [[ "$res" == "$cur" ]] || PICKED_MODE="$res@${GRID[0]}"
-        return
+        return 0
     fi
     local -a rates=("${GRID[@]}")
     echo ""
     echo -e "  Refresh rate for ${CYAN}${res}${NC}, Hz:"
     [[ -t 0 ]] || print_grid
     if [[ "$res" == "$cur" ]]; then
-        pick_number "  Rate number (Enter = keep): " "${#rates[@]}" || return
+        pick_number "  Rate number (Enter = keep): " "${#rates[@]}" || return 1
         [[ -n "$PICK" ]] && PICKED_MODE="$res@${rates[$((PICK - 1))]}"
     else
         pick_number "  Rate number (Enter = ${rates[0]}): " "${#rates[@]}" || return 1
@@ -943,7 +996,7 @@ edit_monitor() {
     if [[ -z "$live" ]]; then
         echo -e "  ${RED}✗ ${name} is not connected, so a change could not be checked.${NC}"
         forget_monitor "$dat"
-        return
+        return "$?"
     fi
     res="$(monitor_dat_get "$dat" RESOLUTION)"; rate="$(monitor_dat_get "$dat" RATE)"
     pos="$(monitor_dat_get "$dat" POSITION)"; scale="$(monitor_dat_get "$dat" SCALE)"

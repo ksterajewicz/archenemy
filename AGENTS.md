@@ -291,7 +291,13 @@ Rules that follow directly from the table:
   `enable`. ASUS packages come from pacman (`install/asus-installation.sh`), never the AUR.
 - **Monitor positions are logical pixels** (after scale and rotation), and Hyprland does
   not register overlapping monitors, so `scripts/hypr/monitor-settings.sh` asks mode,
-  scale, then position and refuses overlaps.
+  scale, then position and refuses overlaps. `hyprctl monitors` prints the scale with two
+  decimals, so `logical_size` snaps it to Hyprland's 1/120 grid: a 2560 panel at `1.33` is
+  1920 wide, not 1925, and an exact fit must not be refused as an overlap. Functions in that
+  script return explicit codes: a bare `return` after a failed test returned 1 and ended the
+  dialog silently before the position question (2026-11-13). Renumbering (`r`) never moves a
+  screen. Every position form has a test that compares the choice with the `.dat`, the
+  generated Lua and `hyprctl monitors` (`placed` in `tests/monitor-settings.sh`).
 
 More architectural context (the full file tree, workspaces, keyboard
 shortcuts) is in `README.md` — that's the source of truth for the repo's
