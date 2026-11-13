@@ -329,6 +329,8 @@ archenemy/
 │                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language.
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
+│                                     #   tui-effects.sh + tui-effects.list — guard: every Super+A entry that changes state names
+│                                     #   the test of its effect; every monitor position form is read back.
 │                                     #   autostart-picker.sh, terminal-settings.sh — app checklist and copy on select.
 │                                     #   font-settings.sh — [f] fonts on a fake HOME/fc-list/rofi: writes only outside the repo.
 │                                     #   monitor-settings.sh — monitor trials and rollback, every position form read back from the mock; audio-devices.sh /

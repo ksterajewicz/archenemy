@@ -406,3 +406,5 @@ Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the
 Shared menus collect multi-digit choices through Enter when there are more than nine items and scroll to fit the terminal. Confirmations reject digits. Autostart labels use global app numbers and no numbers on action rows. Removing a bind requires confirmation with default No.
 
 Managed shell plugin/CLI files use a checksum independent of the current template; unsigned v1 CLI files are recognized with the frozen `config/shell/cli-tools-v1.tsv` catalog. Keep that catalog and `shell_plugins_v1_text` unchanged for migration. Plugin package prompts default to No, CLI package prompts to Yes; both require a separate confirmation.
+
+A new Super+A main-menu entry needs a row in `tests/tui-effects.list` naming the check that reads the resulting state (a `.dat`, a generated file, the mock's answer). `bash tests/tui-effects.sh` fails without it, and also when a monitor position form loses its read-back test or `monitor-settings.sh` gains a bare `return`. A test that only sees the menu open or a command being called does not count as a test of the effect.
