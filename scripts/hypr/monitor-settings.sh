@@ -20,7 +20,9 @@
 #
 #   Układ w przestrzeni: pozycja to lewy górny róg w pikselach LOGICZNYCH, czyli
 #   po skali i obrocie (wiki Hyprlanda, „Positioning”). Monitory nie mogą na siebie
-#   nachodzić, bo Hyprland takiego nie zarejestruje, więc odmawiamy już przy pytaniu.
+#   nachodzić: Hyprland takiego układu nie odrzuca, tylko ostrzega, że sprawi kłopoty
+#   (v0.57.1, src/state/MonitorLayoutController.cpp: checkOverlapsAndNotify), więc
+#   odmawiamy już przy pytaniu.
 #   Stąd kolejność pytań: tryb, skala, dopiero pozycja.
 #
 #   Plik .dat nosi nazwę złącza z dnia zapisu, a ta bywa zajęta przez odpięty
@@ -99,11 +101,13 @@ live_transform() {
 }
 
 # Rozmiar logiczny "szer wys": piksele przez skalę, obrót o 90° zamienia boki.
-# `hyprctl monitors` drukuje skalę z dwiema cyframi ("\tscale: {:.2f}"), a Hyprland
-# trzyma wielokrotność 1/120, która dzieli rozdzielczość bez reszty (Monitor.cpp,
-# applyMonitorRule: od round(skala * 120) w górę i w dół). Liczymy tak samo, inaczej
-# panel 2560 przy 1.33 wychodzi na 1925 zamiast 1920 i styk 1920x0 uchodzi za
-# nakładanie, a `r N` zostawia szczelinę (zgłoszenie 2026-11-13).
+# Skala zapisana albo pokazana jako 1.33 to w Hyprlandzie 160/120: skalę, która nie
+# dzieli rozdzielczości bez reszty, dopasowuje on do siatki 1/120 (v0.57.1,
+# src/output/Monitor.cpp, applyMonitorRule: najpierw round(skala * 120), potem po
+# kroku w górę i w dół, do 89 kroków). Liczymy tak samo. Dwie cyfry bierzemy z .dat
+# (instalator, wpis użytkownika) i ze starszego hyprctl; v0.57.1 drukuje "scale: {}".
+# Bez tego panel 2560 przy 1.33 wychodził na 1925 zamiast 1920: styk uchodził za
+# nakładanie, a formy l/r/a/b zostawiały szczelinę (zgłoszenie 2026-11-13).
 logical_size() {
     awk -v m="$1" -v s="$2" -v t="${3:-0}" '
         function whole(v) { v -= int(v + 0.5); return v > -0.000001 && v < 0.000001 }
@@ -678,7 +682,7 @@ ask_position() {
         [[ -n "$hit" ]] || return 0
         # Sama odmowa zostawiała bez wyjścia kogoś, kto chce zamienić ekrany stronami:
         # miejsce docelowe zawsze zajmuje ten drugi. Mówimy, którą formą to zrobić.
-        echo -e "  ${RED}✗ That overlaps ${hit} (${ROW_W[$i]}x${ROW_H[$i]} at ${ROW_X[$i]}x${ROW_Y[$i]}), and Hyprland would not register it.${NC}"
+        echo -e "  ${RED}✗ That overlaps ${hit} (${ROW_W[$i]}x${ROW_H[$i]} at ${ROW_X[$i]}x${ROW_Y[$i]}). Hyprland warns that such a layout causes issues.${NC}"
         echo -e "  ${YELLOW}  To change sides put this monitor beside it: l ${n}, r ${n}, a ${n} or b ${n}. Or move ${hit} first.${NC}"
         MOVES=()
         load_layout

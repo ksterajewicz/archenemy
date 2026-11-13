@@ -60,8 +60,11 @@ show() {
   # preferred/highres/highrr: Hyprland pokazuje tryb, który sam wybrał.
   [[ "\$mode" == [0-9]* ]] || mode=1920x1080@60.00000
   [[ "\$mode" == *@* ]] || mode="\$mode@60"
-  # Skala jak w Hyprlandzie: "\tscale: {:.2f}", czyli 1.333333 widać jako 1.33.
-  [[ ! "\$scale" =~ ^[0-9.]+\$ ]] || scale="\$(LC_ALL=C printf '%.2f' "\$scale")"
+  # Skala jak w Hyprlandzie v0.57.1: "\tscale: {}" po dopasowaniu do siatki 1/120,
+  # czyli reguła 1.33 to 1.3333334. Starsze wersje drukowały dwie cyfry (zrzut
+  # 2026-09-21 w tests/mock/hyprctl: 1.33 i 1.00): plik twodec.
+  case "\$scale" in 1.33|1.333333) scale=1.3333334 ;; 1.67) scale=1.6666666 ;; esac
+  [[ ! -f "$T/twodec" || ! "\$scale" =~ ^[0-9.]+\$ ]] || scale="\$(LC_ALL=C printf '%.2f' "\$scale")"
   tr=0; [[ -f "$T/rotated" && "\$1" == HDMI-A-1 ]] && tr=1
   printf 'Monitor %s (ID %s):\n\t%s at %s\n\tdescription: %s\n\tscale: %s\n\ttransform: %s\n\tavailableModes: 2560x1440@165.00Hz 2560x1440@60.00Hz 1920x1080@60.00Hz 1920x1080@60.00Hz\n\n' "\$1" "\$2" "\$mode" "\$pos" "\$4" "\$scale" "\$tr"
 }
@@ -92,7 +95,7 @@ reset() {
     gen_all
     cp "$D/eDP-2.dat" "$T/dat.orig"; cp "$LUA" "$T/lua.orig"; cp "$WS" "$T/ws.orig"
     : > "$T/log"; : > "$T/errors"; : > "$T/after"; : > "$T/notified"
-    rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen" "$T/pinned" "$T/rotated"
+    rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen" "$T/pinned" "$T/rotated" "$T/twodec"
     rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"
 }
 gen_all() {
@@ -112,8 +115,10 @@ lua_pos() { sed -n "s|^hl.monitor({ output = \"$1\", mode = \"[^\"]*\", position
 placed() { [[ "$(get "$1" POSITION)" == "$4" && "$(lua_pos "$2")" == "$4" && "$(live_pos "$3")" == "$4" ]]; }
 E='desc:Maker Panel 123'; W='desc:Acme Wide 99'
 # Panel ze skalą ułamkową (argument 1) i HDMI-A-1 na pozycji z argumentu 2.
+# FORM=old: hyprctl drukuje skalę z dwiema cyframi, jak starsze wersje Hyprlanda.
+FORM=new
 frac() {
-    reset
+    reset; [[ "$FORM" == new ]] || touch "$T/twodec"
     sed -i "s/^RESOLUTION=.*/RESOLUTION=2560x1600/; s/^SCALE=.*/SCALE=$1/" "$D/eDP-2.dat"
     sed -i "s/^POSITION=.*/POSITION=$2/" "$D/HDMI-A-1.dat"; gen_all
 }
@@ -295,9 +300,10 @@ done
 reset; sed -i 's/^RESOLUTION=.*/RESOLUTION=3440x1440/' "$D/HDMI-A-1.dat"; gen_all; run '2\n\n\nb 1\ny\n' >/dev/null
 check "rozdzielczość spoza listy: też"         'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 0x1080'
 
-# Hyprland drukuje skalę z dwiema cyframi (1.33 zamiast 1.333333). Rozmiar logiczny
-# liczony z 1.33 wychodził 1925 zamiast 1920, więc styk 1920x0 był „nakładaniem”.
-echo "== pozycja: skala ułamkowa"
+# W .dat (i w starszym hyprctl) skala ma dwie cyfry: 1.33 zamiast 160/120. Rozmiar
+# logiczny liczony z 1.33 wychodził 1925 zamiast 1920, więc styk był „nakładaniem”.
+for FORM in new old; do
+echo "== pozycja: skala ułamkowa, hyprctl $FORM"
 frac 1.33 1925x0; out="$(run '2\n\n\n1920x0\ny\n')"
 check "styk z panelem 1.33 nie jest nakładaniem" 'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1920x0 && [[ "$out" != *"overlaps"* ]]'
 frac 1.33 1925x0; run '2\n\n\nr 1\ny\n' >/dev/null
@@ -312,6 +318,7 @@ frac 1.67 3000x0; run '2\n\n\nr 1\ny\n' >/dev/null
 check "skala 1.67 (5/3): 1536"                 'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1536x0'
 frac 1.33 1925x0; out="$(run '2\n\n\n1919x0\n\n\n')"
 check "prawdziwe nakładanie dalej odrzucone"   '[[ "$out" == *"overlaps eDP-1"* && "$(get HDMI-A-1 POSITION)" == 1925x0 && "$(live_pos HDMI-A-1)" == 1925x0 ]]'
+done; FORM=new
 
 # Miejsce zajęte przez inny monitor: odmowa mówi, jak zamienić strony.
 echo "== pozycja: zajęte miejsce"

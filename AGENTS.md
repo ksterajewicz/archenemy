@@ -289,10 +289,10 @@ Rules that follow directly from the table:
 - **`asusctl` 6.3.8+ has subcommands only:** `asusctl profile next`, `asusctl profile get`.
   `asusd` starts from a udev rule and its unit has no `[Install]`: `systemctl start`, not
   `enable`. ASUS packages come from pacman (`install/asus-installation.sh`), never the AUR.
-- **Monitor positions are logical pixels** (after scale and rotation), and Hyprland does
-  not register overlapping monitors, so `scripts/hypr/monitor-settings.sh` asks mode,
-  scale, then position and refuses overlaps. `hyprctl monitors` prints the scale with two
-  decimals, so `logical_size` snaps it to Hyprland's 1/120 grid: a 2560 panel at `1.33` is
+- **Monitor positions are logical pixels** (after scale and rotation), and Hyprland only
+  warns about overlapping monitors ("this will cause issues"), so `scripts/hypr/monitor-settings.sh` asks mode,
+  scale, then position and refuses overlaps. A scale saved as `1.33` (the `.dat`, older
+  `hyprctl` output) is 160/120 inside Hyprland, so `logical_size` snaps it to the 1/120 grid: a 2560 panel at `1.33` is
   1920 wide, not 1925, and an exact fit must not be refused as an overlap. Functions in that
   script return explicit codes: a bare `return` after a failed test returned 1 and ended the
   dialog silently before the position question (2026-11-13). Renumbering (`r`) never moves a
