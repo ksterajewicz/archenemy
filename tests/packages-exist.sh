@@ -19,6 +19,7 @@
 #   Uruchom: bash tests/packages-exist.sh   (kod 0 = brak ✗; skip ≠ ✓)
 # =============================================
 
+# shellcheck disable=SC1111  # „” w komunikatach to tekst
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

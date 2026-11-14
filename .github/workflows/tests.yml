@@ -1,0 +1,37 @@
+# archenemy — testy powłoki w kontenerze Arch Linux (K16 z audytu
+# bezpieczeństwa 2026-11-14). CI tylko UZUPEŁNIA testy lokalne: prawdziwym
+# sprawdzianem jest laptop właściciela (Hyprland, sudo, sprzęt).
+# Bez akcji zewnętrznych: kod pobiera zwykły git, więc nie ma czego przypinać
+# do SHA ani komu ufać poza obrazem archlinux. Uprawnienia tylko do odczytu.
+name: tests
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-tests:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    timeout-minutes: 20
+    steps:
+      - name: Install test tools
+        run: |
+          pacman -Syu --noconfirm --needed git bash coreutils util-linux procps-ng \
+            python lua socat shellcheck curl diffutils findutils grep sed gawk which
+      - name: Check out the tested commit
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          git init -q src
+          git -C src remote add origin "$REPO_URL"
+          git -C src fetch -q --depth 1 origin "$SHA"
+          git -C src checkout -q --detach FETCH_HEAD
+          test "$(git -C src rev-parse HEAD)" = "$SHA"
+      - name: Run all suites
+        run: bash src/tests/run-all.sh

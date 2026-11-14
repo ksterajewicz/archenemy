@@ -9,7 +9,7 @@
 #   Uruchom: bash tests/install-aur.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
-# shellcheck disable=SC2034  # kolory czyta biblioteka
+# shellcheck disable=SC2034,SC2016,SC1111  # kolory czyta biblioteka; check() robi eval na cytowanym wyrażeniu; „” w etykietach to tekst
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh

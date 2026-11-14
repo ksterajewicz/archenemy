@@ -10,7 +10,7 @@
 #   Uruchom: bash tests/install-guards.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
-# shellcheck disable=SC2016  # check() robi eval na cytowanym wyrażeniu
+# shellcheck disable=SC2016,SC2034  # check() robi eval na cytowanym wyrażeniu (zmienne żyją w eval)
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INST="$REPO/install/install.sh"
