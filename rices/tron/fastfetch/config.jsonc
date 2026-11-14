@@ -41,7 +41,12 @@
     { "type": "cpu",          "key": "CPU  " },
     { "type": "gpu",          "key": "GPU  " },
     { "type": "memory",       "key": "MEM  " },
-    { "type": "disk",         "key": "DISK ", "folders": "/" },
+    // Pojemność każdego fizycznego dysku, potem każdy zamontowany system plików:
+    // zwykłe partycje i dyski zewnętrzne; bez pseudo-FS (tmpfs, proc…), ukrytych
+    // i podwoluminów btrfs. Tylko opcje modułów — zero nazw urządzeń i ścieżek.
+    { "type": "physicaldisk", "key": "DRIVE", "format": "{name}  {size}" },
+    { "type": "disk",         "key": "DISK ", "format": "{mountpoint}  {size-used} / {size-total} ({size-percentage})",
+      "showRegular": true, "showExternal": true, "showHidden": false, "showSubvolumes": false, "showUnknown": false },
     { "type": "battery",      "key": "BAT  " },
     "break",
     { "type": "colors", "symbol": "circle" }
