@@ -721,6 +721,58 @@ timer_menu() {
 
 # ─── KEYBOARD LAYOUTS ────────────────────────────────────────────────────────
 
+# Nowa kolejność układów ekranem wyboru: dla każdego miejsca lista pozostałych
+# układów (strzałki, j/k, Enter, cyfra; Esc anuluje całość), ostatni układ
+# wchodzi sam. Skrót z czasów wpisywania zostaje: na pierwszym ekranie można
+# wpisać całą permutację cyframi i Enter (np. `2 1`); jeden numer wybiera układ
+# na pierwsze miejsce. $1 = keyboard-layouts.sh (nazwy), reszta = kody w obecnej
+# kolejności. Wynik w LAYOUT_ORDER (kody po przecinku). Kod 1 = anulowane,
+# 2 = błędne numery (komunikat wypisany).
+LAYOUT_ORDER=""
+pick_layout_order() {
+    local script="$1"; shift
+    local -a remaining=("$@") all=("$@") chosen=() labels=() picks=() TUI_MENU_KEYS=()
+    local total=$# code n seen=" "
+    local TUI_MENU_CAPTURE_DIGITS=1 TUI_MENU_INPUT="" TUI_MENU_CHECKLIST=0 TUI_MENU_NO_DIGITS=0
+    echo -e "  Pick the layout for each place, or type the whole order as numbers and"
+    echo -e "  press Enter, e.g. ${CYAN}$(seq -s ' ' "$total" -1 1)${NC}."
+    while (( ${#remaining[@]} > 1 )); do
+        echo "  Layout #$(( ${#chosen[@]} + 1 )):"
+        labels=()
+        for code in "${remaining[@]}"; do
+            tui_fit "$code" 4
+            labels+=("$FIT $(bash "$script" name "$code")")
+        done
+        TUI_MENU_INPUT=""
+        tui_menu 0 "${labels[@]}" || return 1
+        if (( TUI_MENU_INDEX < 0 )); then
+            # Wpisane cyfry (tylko pierwszy ekran, numery jak na liście wyżej).
+            read -ra picks <<< "${TUI_MENU_INPUT//,/ }"
+            for n in "${picks[@]}"; do
+                if [[ ! "$n" =~ ^[0-9]+$ ]] || (( 10#$n < 1 || 10#$n > total )) || [[ "$seen" == *" $((10#$n)) "* ]]; then
+                    echo -e "  ${RED}✗ Use each number 1–${total} exactly once.${NC}"; return 2
+                fi
+                seen+="$((10#$n)) "
+            done
+            if (( ${#picks[@]} == total )); then
+                for n in "${picks[@]}"; do chosen+=("${all[$((10#$n - 1))]}"); done
+                remaining=()
+                break
+            elif (( ${#picks[@]} != 1 )); then
+                echo -e "  ${RED}✗ Use each number 1–${total} exactly once.${NC}"; return 2
+            fi
+            TUI_MENU_INDEX=$(( 10#${picks[0]} - 1 ))
+        fi
+        chosen+=("${remaining[$TUI_MENU_INDEX]}")
+        unset 'remaining[TUI_MENU_INDEX]'
+        remaining=("${remaining[@]}")
+        TUI_MENU_CAPTURE_DIGITS=0
+    done
+    chosen+=("${remaining[@]}")
+    LAYOUT_ORDER="$(IFS=','; printf '%s' "${chosen[*]}")"
+    return 0
+}
+
 # Lista 1–4 układów klawiatury i ich kolejność. Zapis, reload i sprawdzenie
 # robi scripts/hypr/keyboard-layouts.sh (jedna droga — te same skrypty wołają
 # bindy Super+Ctrl+1…4); to menu tylko zbiera wybór. Super+K = następny układ.
@@ -789,20 +841,16 @@ keyboard_layouts_menu() {
             if (( ${#L[@]} < 2 )); then
                 echo -e "  ${YELLOW}Only one layout — nothing to reorder.${NC}"; return
             fi
-            local order n
-            read -rp "  New order as numbers, e.g. $(seq -s ' ' ${#L[@]} -1 1) (Enter = cancel): " order
-            order=$(trim "${order//,/ }")
-            [[ -n "$order" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
-            local -a O; read -ra O <<< "$order"
-            local -a out=(); local seen=" "
-            for n in "${O[@]}"; do
-                if [[ ! "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#L[@]} )) || [[ "$seen" == *" $n "* ]]; then
-                    echo -e "  ${RED}✗ Use each number 1–${#L[@]} exactly once.${NC}"; return
-                fi
-                seen+="$n "; out+=("${L[$((n-1))]}")
-            done
-            (( ${#out[@]} == ${#L[@]} )) || { echo -e "  ${RED}✗ Use each number 1–${#L[@]} exactly once.${NC}"; return; }
-            new="$(IFS=','; printf '%s' "${out[*]}")"
+            pick_layout_order "$script" "${L[@]}"
+            case $? in
+                0) ;;
+                1) echo -e "  ${YELLOW}Cancelled.${NC}"; return 0 ;;
+                *) return 0 ;;
+            esac
+            new="$LAYOUT_ORDER"
+            if [[ "$new" == "$cur" ]]; then
+                echo -e "  ${YELLOW}Order unchanged.${NC}"; return 0
+            fi
             ;;
         3) new="reset" ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;

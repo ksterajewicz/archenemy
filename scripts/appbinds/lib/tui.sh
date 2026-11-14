@@ -206,8 +206,16 @@ tui_menu() {
                 if [[ "${TUI_MENU_CAPTURE_DIGITS:-0}" == 1 ]]; then
                     # Stary picker przyjmuje także wiele numerów i numery >9.
                     rest=""
-                    IFS= read -r rest || return 1
-                    TUI_MENU_INPUT="$key$rest"
+                    if [[ -t 0 && -t 1 ]]; then
+                        # Pierwsza cyfra przyszła bez echa. Readline pokazuje ją
+                        # jako początek wiersza, więc widać całość, także przy
+                        # wklejeniu, i da się ją poprawić przed Enterem.
+                        IFS= read -r -e -i "$key" -p "    " rest || return 1
+                        TUI_MENU_INPUT="$rest"
+                    else
+                        IFS= read -r rest || return 1
+                        TUI_MENU_INPUT="$key$rest"
+                    fi
                     TUI_MENU_INDEX=-1
                     return 0
                 fi

@@ -12,7 +12,8 @@
 #   przełączenia; gotowe układy istnieją w evdev.lst; wygenerowany Lua
 #   ustawia WYŁĄCZNIE input.kb_layout; rice'y parytetu mają require i bindy
 #   Super+Ctrl+1…4 (beta nie); menu [k] w TUI — wybór 2 układów z listy
-#   i zmiana kolejności — prowadzone z wejścia standardowego.
+#   i zmiana kolejności — prowadzone z wejścia standardowego oraz z pty
+#   (strzałki, Enter, Esc, j/k i wpisana permutacja).
 #   Uruchom: bash tests/keyboard-layouts.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -162,6 +163,79 @@ printf 'k2\n2 2\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
 ok "TUI [k] → 2 → zła kolejność '2 2' nic nie zmienia" "$([[ "$(cat "$DAT")" == de,pl ]] && echo 1)"
 printf 'k3\nq' | bash "$REPO/scripts/appbinds/appbinds.sh" >/dev/null 2>&1
 ok "TUI [k] → 3 → reset pl,us" "$([[ "$(cat "$DAT")" == pl,us ]] && echo 1)"
+
+# --- TUI [k] → 2: kolejność ekranem wyboru (strzałki, Enter, Esc, j/k) ------
+# Zasada TUI: każdy ekran wyboru działa strzałkami i Enterem; wpisana
+# permutacja (np. `2 1`) zostaje jako skrót na pierwszym ekranie.
+app() { printf "$1" | bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1; }
+bash "$KL" reset >/dev/null
+out="$(app 'k2\n\e[B\n\nq')"
+ok "TUI [k] → 2 → strzałka w dół + Enter → us,pl" "$([[ "$(cat "$DAT")" == us,pl ]] && echo 1)" "$(cat "$DAT")"
+bash "$KL" set pl,us,de >/dev/null
+out="$(app 'k2\n\e[B\e[B\nj\n\nq')"
+ok "TUI [k] → 2 → trzy układy strzałkami i j → de,us,pl" "$([[ "$(cat "$DAT")" == de,us,pl ]] && echo 1)" "$(cat "$DAT")"
+bash "$KL" set pl,us,de >/dev/null
+out="$(app 'k2\n\e\nq')"
+ok "TUI [k] → 2 → Esc na pierwszym ekranie: bez zmian" "$([[ "$(cat "$DAT")" == pl,us,de && "$out" == *Cancelled* ]] && echo 1)" "$(cat "$DAT")"
+out="$(app 'k2\n\n\e\nq')"
+ok "TUI [k] → 2 → Esc na drugim ekranie: bez zmian" "$([[ "$(cat "$DAT")" == pl,us,de && "$out" == *Cancelled* ]] && echo 1)" "$(cat "$DAT")"
+out="$(app 'k2\n3\n\n\nq')"
+ok "TUI [k] → 2 → jeden numer + Enter = układ na pierwsze miejsce → de,pl,us" "$([[ "$(cat "$DAT")" == de,pl,us ]] && echo 1)" "$(cat "$DAT")"
+bash "$KL" set pl,us,de >/dev/null
+out="$(app 'k2\n3 1 2\n\nq')"
+ok "TUI [k] → 2 → wpisana permutacja '3 1 2' → de,pl,us" "$([[ "$(cat "$DAT")" == de,pl,us ]] && echo 1)" "$(cat "$DAT")"
+out="$(app 'k2\n1 2 3\n\nq')"
+ok "TUI [k] → 2 → ta sama kolejność: bez zapisu" "$([[ "$(cat "$DAT")" == de,pl,us && "$out" == *"Order unchanged"* ]] && echo 1)"
+
+# Prawdziwy terminal (pty): tę drogę widzi użytkownik w oknie Super+A. Wejście
+# zostaje otwarte do końca procesu; klawisze idą porcjami, gdy ekran ucichnie.
+cat > "$T/term-driver.py" <<'EOF'
+import os, pty, select, subprocess, sys, time
+script = sys.argv[1]
+chunks = [c.encode().decode('unicode_escape').encode() for c in sys.argv[2:]]
+master, slave = pty.openpty()
+proc = subprocess.Popen(['bash', script], stdin=slave, stdout=slave, stderr=slave,
+                        env={**os.environ, 'TERM': 'xterm'}, start_new_session=True)
+os.close(slave)
+out = b''
+last = time.monotonic()
+deadline = last + 40
+while time.monotonic() < deadline:
+    if select.select([master], [], [], 0.1)[0]:
+        try:
+            data = os.read(master, 65536)
+        except OSError:
+            break
+        if not data:
+            break
+        out += data
+        last = time.monotonic()
+    elif proc.poll() is not None:
+        break
+    elif chunks and time.monotonic() - last > 0.4:
+        os.write(master, chunks.pop(0))
+        last = time.monotonic()
+if proc.poll() is None:
+    proc.kill()
+proc.wait()
+os.close(master)
+sys.stdout.write(out.decode(errors='replace'))
+sys.exit(1 if chunks else 0)
+EOF
+if command -v python3 >/dev/null 2>&1; then
+    term() { python3 "$T/term-driver.py" "$REPO/scripts/appbinds/appbinds.sh" "$@" 2>&1; }
+    bash "$KL" reset >/dev/null
+    out="$(term k 2 '\x1b[B' '\r' '\r' q)"
+    ok "terminal: [k] → 2 → ↓ Enter → us,pl" "$([[ "$(cat "$DAT")" == us,pl ]] && echo 1)" "$(cat "$DAT")"
+    ok "terminal: ekran wyboru z podpowiedzią klawiszy" "$([[ "$out" == *"Layout #1"* && "$out" == *"↑/↓ or j/k: move"* ]] && echo 1)"
+    out="$(term k 2 '\x1b' '\r' q)"
+    ok "terminal: Esc anuluje bez zmian" "$([[ "$(cat "$DAT")" == us,pl && "$out" == *Cancelled* ]] && echo 1)" "$(cat "$DAT")"
+    out="$(term k 2 '2 1\r' '\r' q)"
+    ok "terminal: wpisana permutacja '2 1' → pl,us" "$([[ "$(cat "$DAT")" == pl,us ]] && echo 1)" "$(cat "$DAT")"
+    ok "terminal: wpisany wiersz widać w całości" "$([[ "$(sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' <<<"$out")" == *"    2 1"* ]] && echo 1)"
+else
+    echo "POMINIĘTE: brak python3, bez testu pty"
+fi
 
 echo ""
 echo "WYNIK keyboard-layouts: $PASS ok, $FAIL fail"
