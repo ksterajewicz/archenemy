@@ -47,7 +47,31 @@ case "\$1" in
   configerrors) cat "$T/errors" 2>/dev/null; echo ;;
 esac
 EOS
+# Atrapy procesów: guard „żyje”, gdy setsid go wystartował (plik guard-alive),
+# chyba że guard-broken; waybar żyje, gdy jest plik waybar-alive.
+cat > "$T/bin/pgrep" <<EOS
+#!/bin/bash
+case "\$*" in
+  *workspace-orphan-guard*) [[ -f "$T/guard-alive" ]] ;;
+  *waybar*) [[ -f "$T/waybar-alive" ]] ;;
+  *) exit 1 ;;
+esac
+EOS
+cat > "$T/bin/setsid" <<EOS
+#!/bin/bash
+[[ "\$*" == *workspace-orphan-guard* && ! -f "$T/guard-broken" ]] && touch "$T/guard-alive"
+exit 0
+EOS
+# mv, które nie umie zapisać trybu (pełny dysk), gdy jest plik mv-fails.
+REAL_MV="$(command -v mv)"
+cat > "$T/bin/mv" <<EOS
+#!/bin/bash
+if [[ -f "$T/mv-fails" && "\${!#}" == */workspace-mode.dat ]]; then echo "mv: cannot move" >&2; exit 1; fi
+exec "$REAL_MV" "\$@"
+EOS
 chmod +x "$T/bin/"*
+# Krótsze czekanie na start guarda niż domyślna sekunda (atrapa setsid działa w tle).
+export ARCHENEMY_GUARD_SETTLE=0.3
 export HOME="$H" PATH="$T/bin:$PATH" ARCHENEMY_XKB_KEYSYMS="$T/keysyms.h" HYPRLAND_INSTANCE_SIGNATURE=test
 
 tui() { printf "$1" | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
@@ -177,6 +201,27 @@ check "tryb zmieniony i plik wygenerowany"     '[[ "$(<"$A/data/workspace-mode.d
 check "sukces po odczycie configerrors (F3)"   '[[ "$out" == *"no config errors"* ]] && grep -q "hyprctl configerrors" "$T/log"'
 touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
 check "martwy Hyprland bez sukcesu (F3)"       '[[ "$out" == *"did not respond"* && "$out" != *"no config errors"* ]]'
+
+echo "== [w] zielone ✓ dopiero po odczycie trybu, reloadu i guarda"
+WSL="$A/config/hypr/workspaces-monitors.lua"
+ws_from() { echo "$1" > "$A/data/workspace-mode.dat"; reset; cp "$WSL" "$T/ws.before"; rm -f "$T/guard-alive"; }
+ws_from decades; out="$(tui 'wy\n\nq')"
+check "[w] ✓ Workspace mode dopiero po wyniku reloadu"  '[[ "$out" == *"no config errors"*"✓ Workspace mode: decades → shared"* ]]'
+ws_from decades; touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
+check "[w] martwy Hyprland: Saved, bez ✓ trybu"         '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Saved: workspace mode decades → shared"* ]]'
+ws_from decades; touch "$T/failreload"; out="$(tui 'wy\n\nq')"; rm "$T/failreload"
+check "[w] błąd configu: bez ✓ trybu"                   '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"config error"* && "$out" == *"saved as"* ]]'
+ws_from decades; touch "$T/mv-fails"; out="$(tui 'wy\n\nq')"; rm "$T/mv-fails"
+check "[w] nieudany zapis trybu: bez ✓, komunikat"      '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Could not save"* ]]'
+check "[w] nieudany zapis trybu: tryb i reguły jak przedtem" '[[ "$(<"$A/data/workspace-mode.dat")" == decades ]] && cmp -s "$T/ws.before" "$WSL" && ! compgen -G "$A/data/workspace-mode.dat.*" >/dev/null && ! compgen -G "$WSL.*" >/dev/null'
+check "[w] nieudany zapis trybu: bez reloadu"           '! grep -q "hyprctl reload" "$T/log"'
+ws_from shared; out="$(tui 'wy\n\nq')"
+check "[w] guard wystartowany i odczytany"              '[[ "$out" == *"✓ Orphan guard started"* && -f "$T/guard-alive" ]]'
+ws_from shared; touch "$T/guard-broken"; out="$(tui 'wy\n\nq')"; rm "$T/guard-broken"
+check "[w] guard nie wstał: bez ✓ guarda"               '[[ "$out" != *"✓ Orphan guard"* && "$out" == *"Orphan guard did not start"* ]]'
+ws_from shared; touch "$T/guard-alive"; out="$(tui 'wy\n\nq')"
+check "[w] guard już działa: bez drugiego startu"       '[[ "$out" == *"Orphan guard already running"* && "$out" != *"Orphan guard started"* ]]'
+echo decades > "$A/data/workspace-mode.dat"
 
 echo "== menu główne"
 cp "$REPO"/scripts/hypr/{keyboard-layouts,mouse-settings}.sh "$A/scripts/hypr/"

@@ -10,12 +10,17 @@
 #     1. odtwarza kolejność monitorów L->P z data/monitors/*.dat (ORDER=k),
 #     2. regeneruje config/hypr/workspaces-monitors.lua przez wspólną
 #        bibliotekę lib/gen-workspaces.sh (JEDNO źródło prawdy z install.sh),
-#     3. zapisuje nowy tryb do data/workspace-mode.dat (atomowo),
+#     3. zapisuje nowy tryb do data/workspace-mode.dat (atomowo) i odczytuje
+#        go; gdy zapis się nie udał, stare reguły wracają i nie ma reloadu,
 #     4. hyprctl reload — bindy Super+1..0 i reguły workspace'ów wchodzą od razu,
 #     5. guard sierot: przy ->decades startuje go, jeśli nie działa (w shared
-#        sesja go nie odpala); przy ->shared guard sam robi się bierny.
+#        sesja go nie odpala), i sprawdza, czy proces żyje; przy ->shared guard
+#        sam robi się bierny.
+#   Zielone „✓” pada dopiero po odczycie skutku (plik trybu, configerrors, pgrep).
 #
 #   Użycie: workspace-mode-switch.sh <shared|decades|toggle>
+#   Kody: 0 = przełączone i odczytane, 1 = nic się nie zmieniło, 2 = tryb
+#   zapisany, ale Hyprland albo guard go nie potwierdził.
 # =============================================
 
 set -uo pipefail
@@ -86,22 +91,50 @@ if ! generate_workspaces_monitors "$tmp" "$TARGET" "${ORDERED_LR[@]}"; then
     echo -e "  ${RED}✗ Generation failed — mode unchanged.${NC}" >&2
     exit 1
 fi
-mv "$tmp" "$WS_CONF"
+# Kopia starych reguł: gdy zapis trybu się nie uda, reguły i bindy muszą wrócić,
+# bo guard, ws-scroll i waybar czytają tryb z workspace-mode.dat.
+ws_backup=""
+if [[ -f "$WS_CONF" ]]; then
+    if ! ws_backup="$(mktemp "${WS_CONF}.XXXXXX")" || ! cp -p "$WS_CONF" "$ws_backup"; then
+        rm -f "$tmp" "$ws_backup"
+        echo -e "  ${RED}✗ Could not back up ${WS_CONF} — mode unchanged.${NC}" >&2
+        exit 1
+    fi
+fi
+if ! mv "$tmp" "$WS_CONF"; then
+    rm -f "$tmp" "$ws_backup"
+    echo -e "  ${RED}✗ Could not write ${WS_CONF} — mode unchanged.${NC}" >&2
+    exit 1
+fi
 
-# ─── Zapis trybu (atomowo) ───
+# ─── Zapis trybu (atomowo) z odczytem ───
+# Dowodem jest zawartość pliku, nie kod wyjścia mv.
 tmp_mode="$(mktemp "${MODE_DAT}.XXXXXX")" && printf '%s\n' "$TARGET" > "$tmp_mode" && mv "$tmp_mode" "$MODE_DAT"
+if [[ ! -f "$MODE_DAT" || "$(<"$MODE_DAT")" != "$TARGET" ]]; then
+    [[ -n "${tmp_mode:-}" ]] && rm -f "$tmp_mode"
+    if [[ -n "$ws_backup" ]]; then mv "$ws_backup" "$WS_CONF"; else rm -f "$WS_CONF"; fi
+    echo -e "  ${RED}✗ Could not save the mode to ${MODE_DAT} — still '${CURRENT}', workspace rules put back, Hyprland not reloaded.${NC}" >&2
+    exit 1
+fi
+[[ -n "$ws_backup" ]] && rm -f "$ws_backup"
 
-echo -e "  ${GREEN}✓ Workspace mode: ${CYAN}${CURRENT}${NC} → ${CYAN}${TARGET}${NC}  (${#ORDERED_LR[@]} monitors, L→R: ${NAMES_LR[*]})"
+SUMMARY="${CYAN}${CURRENT}${NC} → ${CYAN}${TARGET}${NC}  (${#ORDERED_LR[@]} monitors, L→R: ${NAMES_LR[*]})"
+RESULT=0   # 0 = wszystko odczytane, 2 = zapisane, ale nie potwierdzone
 
 # ─── Reload Hyprlanda ───
+# Zielony komunikat o trybie pada dopiero po przeładowaniu bez błędów.
 # shellcheck source=/dev/null
 source "$ARCHENEMY_DIR/scripts/hypr/lib/hypr-apply.sh"
 reload_errors="$(hypr_reload_checked)"
 case $? in
-    0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}" ;;
-    1) echo -e "  ${YELLOW}⚠ Hyprland did not respond — reload it manually.${NC}" ;;
-    2) echo -e "  ${RED}✗ Hyprland reports a config error:${NC}"; printf '    %s\n' "$reload_errors" | head -5 ;;
-    3) echo -e "  ${YELLOW}⚠ No Hyprland session — the mode applies when Hyprland starts.${NC}" ;;
+    0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}"
+       echo -e "  ${GREEN}✓ Workspace mode: ${SUMMARY}" ;;
+    1) echo -e "  ${YELLOW}⚠ Hyprland did not respond — reload it manually.${NC}"
+       echo -e "  ${YELLOW}Saved: workspace mode ${SUMMARY}"; RESULT=2 ;;
+    2) echo -e "  ${RED}✗ Hyprland reports a config error:${NC}"; printf '    %s\n' "$reload_errors" | head -5
+       echo -e "  ${YELLOW}⚠ Workspace mode saved as '${TARGET}', but Hyprland did not take the config cleanly — fix the error above or switch back (Super+A → [w]).${NC}"; RESULT=2 ;;
+    3) echo -e "  ${YELLOW}⚠ No Hyprland session — the mode applies when Hyprland starts.${NC}"
+       echo -e "  ${YELLOW}Saved: workspace mode ${SUMMARY}"; RESULT=2 ;;
 esac
 
 # ─── Guard sierot ───
@@ -109,13 +142,22 @@ esac
 # (guard kończy na starcie w trybie shared). Startujemy, jeśli nie działa.
 # shared: nic nie robimy — merge_orphans w guardzie jest no-op w shared,
 # a przy następnym starcie sesji guard i tak sam się wyłączy.
+guard_running() { pgrep -f "workspace-orphan-guard.sh" &>/dev/null; }
 if [[ "$TARGET" == "decades" ]]; then
-    if pgrep -f "workspace-orphan-guard.sh" &>/dev/null; then
+    if guard_running; then
         echo -e "  ${GREEN}✓ Orphan guard already running.${NC}"
     elif command -v hyprctl &>/dev/null; then
         setsid bash "$GUARD" &>/dev/null &
-        echo -e "  ${GREEN}✓ Orphan guard started.${NC}"
-        command -v socat &>/dev/null || echo -e "  ${YELLOW}⚠ socat missing — guard runs in 2 s polling mode (install socat + relogin for event mode).${NC}"
+        # Sukces to proces odczytany po starcie: guard, który od razu wyszedł
+        # (zajęty lock, brak pliku), nie może dostać zielonego komunikatu.
+        sleep "${ARCHENEMY_GUARD_SETTLE:-1}"
+        if guard_running; then
+            echo -e "  ${GREEN}✓ Orphan guard started.${NC}"
+            command -v socat &>/dev/null || echo -e "  ${YELLOW}⚠ socat missing — guard runs in 2 s polling mode (install socat + relogin for event mode).${NC}"
+        else
+            echo -e "  ${RED}✗ Orphan guard did not start — workspaces of an unplugged monitor will not be merged. Log out and back in, or run: bash ${GUARD} &${NC}"
+            RESULT=2
+        fi
     else
         echo -e "  ${YELLOW}⚠ No hyprctl — orphan guard not started (will start on next login).${NC}"
     fi
@@ -124,4 +166,5 @@ fi
 # ─── Podpowiedź: reload nie przenosi istniejących okien ───
 echo -e "  ${YELLOW}Note:${NC} open windows keep their current workspace numbers; for a clean"
 echo -e "        re-sort (esp. decade defaultName) relog or move windows manually."
-notify "Workspace mode → ${TARGET}"
+if (( RESULT == 0 )); then notify "Workspace mode → ${TARGET}"; else notify "Workspace mode → ${TARGET} saved, not confirmed — see Super+A → [w]"; fi
+exit "$RESULT"
