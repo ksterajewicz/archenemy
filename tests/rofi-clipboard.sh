@@ -133,7 +133,7 @@ for missing in cliphist wl-copy rofi; do
     done
     reset_case
     PATH="$T/limited" /bin/bash "$GATE" > "$T/stdout" 2> "$T/stderr"; RC=$?
-    case "$missing" in cliphist) package=cliphist;; wl-copy) package=wl-clipboard;; rofi) package=rofi-wayland;; esac
+    case "$missing" in cliphist) package=cliphist;; wl-copy) package=wl-clipboard;; rofi) package=rofi;; esac
     check "missing $missing reports package $package" grep -q "Install package: $package" "$T/stderr"
 done
 for rice in white-blue tron asia-n-rice dither-flux crt; do

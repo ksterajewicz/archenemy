@@ -5,7 +5,8 @@ hyprpaper
 hyprlock
 hyprpolkitagent
 waybar
-rofi-wayland
+# rofi: od 2.0 z obsługą Waylanda; dawny "rofi-wayland" pacman zastępuje (Replaces)
+rofi
 alacritty
 fastfetch
 neovim
@@ -25,6 +26,11 @@ wireplumber
 pavucontrol
 playerctl
 brightnessctl
+# swayosd: OSD jasności — pasek u dołu WSZYSTKICH monitorów przy zmianie
+# jasności (klawisze XF86MonBrightness → swayosd-client). swayosd-server
+# autostartuje każdy rice; motyw per rice w rices/*/swayosd/style.css.
+# Wydanie z repo extra (0.3.x), nie swayosd-git z niesprawdzonego HEAD (audyt 2026-11-14)
+swayosd
 # power profiles (universal profile switcher)
 power-profiles-daemon
 # libnotify: notify-send — powiadomienia z 7 skryptów (zmiana rice'a,
@@ -46,6 +52,8 @@ util-linux
 xdg-desktop-portal-hyprland
 # network + firewall
 networkmanager
+# networkmanager-dmenu: menu Wi-Fi Super+N (rofi); jest w repo extra (dawniej z AUR)
+networkmanager-dmenu
 ufw
 # pciutils: lspci — wykrywanie GPU w install/gpudrivers-installation.sh;
 # minimalny Arch potrafi go nie mieć (skrypt też sam go dociąga w razie braku)

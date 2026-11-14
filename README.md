@@ -524,7 +524,7 @@ Why not the AUR: it has several packages that all claim to be `asusctl` and excl
 
 Graphics switching needs nothing extra: the asus-linux guide says `supergfxctl` is not needed with current drivers. Users who added the `[ogc]` repo get the packages from there. `asusd` is started by a udev rule at boot and is not meant to be enabled, so the script starts it once and checks that it runs; if it does not, restart the computer. The power profile scripts use the `asusctl profile next` / `profile get` subcommands (asusctl 6.3.8+).
 
-Screen brightness: the `XF86MonBrightness*` keys call `swayosd-client` — they change brightness and show an OSD bar at the bottom of every monitor (the `swayosd-server` starts with each rice and is restarted when switching rice, since it only reads the theme at startup). Per-rice OSD theme: `rices/*/swayosd/style.css` (beta inherits from white-blue via symlink). Package: `swayosd-git` (AUR).
+Screen brightness: the `XF86MonBrightness*` keys call `swayosd-client` — they change brightness and show an OSD bar at the bottom of every monitor (the `swayosd-server` starts with each rice and is restarted when switching rice, since it only reads the theme at startup). Per-rice OSD theme: `rices/*/swayosd/style.css` (beta inherits from white-blue via symlink). Package: `swayosd` (official `extra` repo, a tagged 0.3.x release). If you still have `swayosd-git` installed, pacman asks to remove it when the installer pulls in `swayosd` — answer `y`.
 
 ## Music stack (optional — a recommendation, not a requirement)
 
