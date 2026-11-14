@@ -185,6 +185,28 @@ fresh_clone dev
 out=$(run_upd '1\e[A\e[B\n\n')   # domyślnie N (K4): ↑ na Yes, ↓ z powrotem na No
 check "strzałki: odmowa instalatora" '[[ "$out" != *INSTALL-RAN* ]]'
 
+echo "== K5: lista zmian przed pull, ostrzeżenie dla install/ i packages/, droga powrotu"
+fresh_clone dev
+old7=$(git -C "$A" rev-parse --short=7 HEAD)
+upstream_commit dev install/extra.sh k5-instalator
+out=$(run_upd '1n\n')
+check "lista nowych commitów przed pull"            '[[ "$out" == *"up-k5-instalator"* && "$out" == *"New commits"* ]]'
+check "ostrzeżenie o zmianach w install/"            '[[ "$out" == *"⚠ This update changes the installer or package lists"* && "$out" == *"install/extra.sh"* ]]'
+check "droga powrotu z poprzednim HEAD"              '[[ "$out" == *"To go back: git switch --detach $old7"* ]]'
+fresh_clone dev
+upstream_commit dev f.txt k5-zwykly
+out=$(run_upd '1n\n')
+check "zmiana poza install/ i packages/ — bez ostrzeżenia" '[[ "$out" == *"up-k5-zwykly"* && "$out" != *"changes the installer"* ]]'
+fresh_clone dev
+out=$(run_upd '1n\n')
+check "brak nowych commitów — komunikat zamiast pustej listy" '[[ "$out" == *"No new commits"* && "$out" != *"To go back"* ]]'
+w="$T/w30"; rm -rf "$w"; git clone -q -b dev "$T/origin.git" "$w"
+for i in $(seq 1 32); do echo "$i" > "$w/f.txt"; g "$w" commit -am "seria-$i"; done; g "$w" push origin dev
+fresh_clone dev
+git -C "$A" fetch -q origin dev; git -C "$A" reset -q --hard "$(git -C "$A" rev-parse 'origin/dev~32')"
+out=$(run_upd '1n\n'); NL=$'\n'
+check "limit 30 commitów + licznik reszty"          '[[ "$out" == *"seria-32"* && "$out" == *"seria-3"* && "$out" != *"seria-2$NL"* && "$out" == *"2 more"* ]]'
+
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev
 check "install.sh w klonie jest 100644"        '[[ ! -x "$A/install/install.sh" ]]'

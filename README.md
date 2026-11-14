@@ -753,6 +753,7 @@ Hyprland. No new settings-menu entry is added.
 
 The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetches the chosen branch, pulls it with `--ff-only` and reports success only when `HEAD` equals `origin/<branch>`.
 
+- **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`.
 - **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: the tree contains conflict markers, so resolve them (`git stash list`, `git stash pop`) and start `install.sh` yourself.
 - **Installer prompt:** "Run install.sh now?" defaults to **No** and says that the installer will ask for sudo — the installer comes from code fetched a moment earlier, so a single Enter must not run it as root. The machine-layer check reminds you when the installed version is behind the code.
 

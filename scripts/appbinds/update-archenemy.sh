@@ -70,6 +70,28 @@ if [[ "$target" != "$cur_branch" ]] \
     fi
 fi
 
+# Co przyjdzie z pull — pokazujemy PRZED czymkolwiek, co zmienia drzewo
+# (K5, audyt bezpieczeństwa 2026-11-14: „nie wiem, co uruchamiam”). Lista
+# nowych commitów (limit 30) i osobne ostrzeżenie, gdy zmienia się kod
+# instalatora albo listy pakietów — to one pójdą potem przez sudo/yay.
+# Krótki HEAD sprzed aktualizacji = droga powrotu wypisywana na końcu.
+old_head="$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)"
+new_count="$(git -C "$ARCHENEMY_DIR" rev-list --count "HEAD..origin/$target" 2>/dev/null)"
+if [[ "${new_count:-0}" -eq 0 ]]; then
+    echo -e "  No new commits on origin/${target}."
+else
+    echo -e "  New commits on origin/${target} (${new_count}):"
+    new_log="$(git -C "$ARCHENEMY_DIR" log --oneline --no-decorate -n 30 "HEAD..origin/$target" 2>/dev/null)"
+    sed 's/^/    /' <<< "$new_log"
+    (( new_count > 30 )) && echo "    … and $((new_count - 30)) more"
+    risky="$(git -C "$ARCHENEMY_DIR" diff --name-only "HEAD...origin/$target" -- install/ packages/ 2>/dev/null)"
+    if [[ -n "$risky" ]]; then
+        echo -e "  ${YELLOW}⚠ This update changes the installer or package lists — review before running install.sh:${NC}"
+        head -n 20 <<< "$risky" | sed 's/^/    /'
+    fi
+fi
+echo ""
+
 # Lokalne zmiany w plikach śledzonych przez git → schowaj (git stash), żeby
 # pull ich nie zgubił ani nie odmówił z powodu konfliktu. --untracked-files=no,
 # bo pliki nieśledzone (warstwa maszynowa/osobista) i tak nie kolidują z pull.
@@ -146,6 +168,9 @@ else
     echo -e "  ${RED}✗ After the update HEAD does not match origin/${target} — check: git -C ~/archenemy status${NC}"
     pause
     exit 0
+fi
+if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)" != "$old_head" ]]; then
+    echo -e "  To go back: git switch --detach ${old_head}   (run in ~/archenemy)"
 fi
 echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
