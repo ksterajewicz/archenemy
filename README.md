@@ -351,6 +351,9 @@ archenemy/
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
 │                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
+│                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
+│                                     #   installed from (pacman sync DB / AUR RPC v5), no -git in requirements;
+│                                     #   offline or without [multilib] → "skip", never ✓.
 │                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
@@ -749,6 +752,8 @@ Hyprland. No new settings-menu entry is added.
 ## Verification
 
 There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+
+`bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the synced repos (one read-only `pacman -Slq`), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network, without pacman or without a synced `[multilib]` database the affected names are reported as `skip`, never as passed.
 
 **Live-only — a real Arch + Hyprland session is required:**
 
