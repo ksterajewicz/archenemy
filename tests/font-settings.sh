@@ -360,6 +360,22 @@ mkdir -p "$NH"
 out="$(HOME="$NH" sh -c "$text" 2>/dev/null)"
 check "bez skryptu i plików fontu: wiersz nadal widoczny" '[[ "$out" == "unknown ("* ]]'
 
+# Skrypt jest, ale bez .current_rice wypisuje niepuste „unknown (archenemy choice; …)”;
+# zapas z plików alacritty ma zadziałać tak samo jak przy pustym wyniku.
+echo "== fastfetch: wiersz fontu, gdy skrypt wypisze „unknown…”"
+for rice in asia-n-rice white-blue tron crt dither-flux; do
+    NH="$T/home-unknown-$rice"
+    mkdir -p "$NH/archenemy" "$NH/.config"
+    ln -s "$REPO/scripts" "$NH/archenemy/scripts"
+    ln -s "$REPO/rices" "$NH/archenemy/rices"
+    ln -s "$REPO/rices/$rice/alacritty" "$NH/.config/alacritty"
+    text="$(python3 "$T/jsonc.py" "$REPO/rices/$rice/fastfetch/config.jsonc" list)"
+    want="$(sed -n 's/^family = "\(.*\)"$/\1/p' "$REPO/rices/$rice/alacritty/font.toml")"
+    raw="$(HOME="$NH" bash "$NH/archenemy/scripts/appbinds/font-settings.sh" current 2>/dev/null)"
+    out="$(HOME="$NH" sh -c "$text" 2>/dev/null)"
+    check "$rice: skrypt bez .current_rice daje „unknown…”, wiersz pokazuje font rice'a ($want)" '[[ "$raw" == unknown* && -n "$want" && "$out" == "$want (alacritty config)" ]]'
+done
+
 check "repozytorium nadal bez zmian" '[[ "$(repo_state)" == "$before_repo" ]]'
 echo ""
 echo "PASS: $PASS  FAIL: $FAIL"
