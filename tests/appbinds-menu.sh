@@ -62,11 +62,19 @@ cat > "$T/bin/setsid" <<EOS
 [[ "\$*" == *workspace-orphan-guard* && ! -f "$T/guard-broken" ]] && touch "$T/guard-alive"
 exit 0
 EOS
-# mv, które nie umie zapisać trybu (pełny dysk), gdy jest plik mv-fails.
+# pkill trafia tylko w żywego waybara (jak prawdziwy: kod 1 bez procesu);
+# plik pkill-fails = waybar jest, ale sygnał nie dochodzi.
+cat > "$T/bin/pkill" <<EOS
+#!/bin/bash
+echo "pkill \$*" >> "$T/log"
+[[ -f "$T/waybar-alive" && ! -f "$T/pkill-fails" ]]
+EOS
+touch "$T/waybar-alive"
+# mv, które nie umie zapisać pliku o nazwie z mv-fails (pełny dysk).
 REAL_MV="$(command -v mv)"
 cat > "$T/bin/mv" <<EOS
 #!/bin/bash
-if [[ -f "$T/mv-fails" && "\${!#}" == */workspace-mode.dat ]]; then echo "mv: cannot move" >&2; exit 1; fi
+if [[ -f "$T/mv-fails" && "\${!#}" == */"\$(<"$T/mv-fails")" ]]; then echo "mv: cannot move" >&2; exit 1; fi
 exec "$REAL_MV" "\$@"
 EOS
 chmod +x "$T/bin/"*
@@ -184,6 +192,35 @@ check "kolor dostaje #"                        '[[ "$(<"$A/data/timer-color.dat"
 out="$(tui 't3\nzielony\nq')"
 check "zły kolor odrzucony"                    '[[ "$(<"$A/data/timer-color.dat")" == "#00ff00" && "$out" == *"not a #rrggbb"* ]]'
 
+echo "== [v]/[t] zielone ✓ tylko gdy waybar działa i przyjął sygnał"
+VB="$A/data/volume-bar-style.dat"; TE="$A/data/timer-enabled.dat"
+rm "$T/waybar-alive"; : > "$T/log"
+out="$(tui 'v3\n\nq')"
+check "[v] bez waybara: zapisane, bez ✓"       '[[ "$(<"$VB")" == solid && "$out" != *"✓ Volume bar style"* && "$out" == *"Saved: volume bar style solid"*"Waybar is not running"* ]]'
+echo 0 > "$TE"; out="$(tui 't1\n\nq')"
+check "[t] bez waybara: zapisane, bez ✓ shown" '[[ "$(<"$TE")" == 1 && "$out" != *"✓ Timer shown"* && "$out" == *"Saved: timer on"*"Waybar is not running"* ]]'
+out="$(tui 't1\n\nq')"
+check "[t] wyłączenie bez waybara: bez ✓"      '[[ "$(<"$TE")" == 0 && "$out" != *"✓ Timer hidden"* && "$out" == *"Saved: timer off"* ]]'
+out="$(tui 't3\n112233\nq')"
+check "[t] kolor bez waybara: bez ✓"           '[[ "$(<"$A/data/timer-color.dat")" == "#112233" && "$out" != *"✓ Timer colour"* && "$out" == *"Saved: timer colour #112233"* ]]'
+check "bez waybara żadnego sygnału w ciemno"   '! grep -q "^pkill" "$T/log"'
+touch "$T/waybar-alive" "$T/pkill-fails"
+out="$(tui 'v1\n\nq')"
+check "[v] sygnał nie doszedł: bez ✓"          '[[ "$(<"$VB")" == line && "$out" != *"✓ Volume bar style"* && "$out" == *"did not take the refresh signal"* ]]'
+out="$(tui 't1\n\nq')"
+check "[t] sygnał nie doszedł: bez ✓ shown"    '[[ "$(<"$TE")" == 1 && "$out" != *"✓ Timer shown"* && "$out" == *"did not take the refresh signal"* ]]'
+rm "$T/pkill-fails"; : > "$T/log"
+out="$(tui 'v2\n\nq')"
+check "[v] waybar działa: ✓ po sygnale 10"     '[[ "$(<"$VB")" == ticks && "$out" == *"✓ Volume bar style: ticks"* ]] && grep -q "^pkill -RTMIN+10 waybar" "$T/log"'
+echo 0 > "$TE"; out="$(tui 't1\n\nq')"
+check "[t] waybar działa: ✓ po sygnale 11"     '[[ "$(<"$TE")" == 1 && "$out" == *"✓ Timer shown on the bar"* ]] && grep -q "^pkill -RTMIN+11 waybar" "$T/log"'
+echo volume-bar-style.dat > "$T/mv-fails"; out="$(tui 'v3\n\nq')"; rm "$T/mv-fails"
+check "[v] nieudany zapis: bez ✓, plik bez zmian" '[[ "$(<"$VB")" == ticks && "$out" != *"✓"* && "$out" != *"Saved"* && "$out" == *"Could not write"* ]] && ! compgen -G "$VB.*" >/dev/null'
+echo white-blue_beta > "$A/.current_rice"
+out="$(tui 't1\n\nq')"
+check "[t] beta bez modułu: zapisane, bez ✓"   '[[ "$(<"$TE")" == 0 && "$out" != *"✓ Timer"* && "$out" == *"Saved: timer off"*"white-blue_beta"* ]]'
+rm "$A/.current_rice"
+
 echo "== ostrzeżenie dla bety"
 echo white-blue_beta > "$A/.current_rice"
 out="$(tui 'v\n\nq')"
@@ -211,7 +248,7 @@ ws_from decades; touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
 check "[w] martwy Hyprland: Saved, bez ✓ trybu"         '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Saved: workspace mode decades → shared"* ]]'
 ws_from decades; touch "$T/failreload"; out="$(tui 'wy\n\nq')"; rm "$T/failreload"
 check "[w] błąd configu: bez ✓ trybu"                   '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"config error"* && "$out" == *"saved as"* ]]'
-ws_from decades; touch "$T/mv-fails"; out="$(tui 'wy\n\nq')"; rm "$T/mv-fails"
+ws_from decades; echo workspace-mode.dat > "$T/mv-fails"; out="$(tui 'wy\n\nq')"; rm "$T/mv-fails"
 check "[w] nieudany zapis trybu: bez ✓, komunikat"      '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Could not save"* ]]'
 check "[w] nieudany zapis trybu: tryb i reguły jak przedtem" '[[ "$(<"$A/data/workspace-mode.dat")" == decades ]] && cmp -s "$T/ws.before" "$WSL" && ! compgen -G "$A/data/workspace-mode.dat.*" >/dev/null && ! compgen -G "$WSL.*" >/dev/null'
 check "[w] nieudany zapis trybu: bez reloadu"           '! grep -q "hyprctl reload" "$T/log"'

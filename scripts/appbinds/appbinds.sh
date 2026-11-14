@@ -428,6 +428,26 @@ warn_if_beta() {
     echo -e "  ${YELLOW}⚠ white-blue_beta has no ${1} — switch rice (Super+T) to use this.${NC}"
 }
 
+# Koniec zmiany ustawienia paska. Plik jest już zapisany i odczytany (write_dat),
+# ale zielony komunikat pada tylko wtedy, gdy pasek może pokazać zmianę: rice ma
+# moduł, waybar działa i przyjął sygnał (pkill oddaje 1, gdy nie trafił w żaden
+# proces). Inaczej mówimy, co jest zapisane i kiedy będzie to widać.
+#   $1 numer sygnału, $2 tekst sukcesu, $3 co zapisano, $4 nazwa modułu
+bar_change_report() {
+    local signal="$1" shown_msg="$2" saved_msg="$3" module="$4" rice=""
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    if [[ "$rice" == "white-blue_beta" ]]; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. white-blue_beta has no ${module} — it shows after you switch rice (Super+T).${NC}"
+    elif ! pgrep -x waybar >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar is not running — the bar shows it once waybar starts.${NC}"
+    elif ! pkill -RTMIN+"$signal" waybar 2>/dev/null; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar did not take the refresh signal — the bar shows it on its next refresh or after waybar restarts.${NC}"
+    else
+        echo -e "  ${GREEN}✓ ${shown_msg}${NC}"
+    fi
+    return 0
+}
+
 # ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
 
 # Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
@@ -443,7 +463,8 @@ volume_style_current() {
 
 # Wybór stylu paska custom/volumebar (line/ticks/solid). Zapis do
 # data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
-# sygnał 10 do waybara = pasek przerysowuje się od razu.
+# sygnał 10 do waybara = pasek przerysowuje się od razu. Wynik sygnału jest
+# sprawdzany (bar_change_report).
 volume_style_menu() {
     local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
     local cur; cur="$(volume_style_current)"
@@ -465,9 +486,8 @@ volume_style_menu() {
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    write_dat "$style_dat" "$target" || return
-    pkill -RTMIN+10 waybar 2>/dev/null
-    echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
+    write_dat "$style_dat" "$target" || return 1
+    bar_change_report 10 "Volume bar style: ${target}" "volume bar style ${target}" "volume bar module"
 }
 
 # ─── WYJŚCIE AUDIO mpd (pipewire / alsa) ─────────────────────────────────────
@@ -621,7 +641,8 @@ audio_menu() {
 
 # Ustawienia modułu custom/timer: włączenie na pasku, domyślny czas odliczania
 # i kolor tekstu. Pliki data/timer-*.dat czyta scripts/waybar/timer.sh; po
-# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu.
+# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu. Zielony
+# komunikat pada dopiero po wyniku sygnału (bar_change_report).
 # Sam bieg timera (start/pauza/reset) obsługuje pasek, nie to menu.
 timer_menu() {
     local lib="$ARCHENEMY_DIR/scripts/waybar/lib/timer-state.sh"
@@ -648,16 +669,17 @@ timer_menu() {
     echo -e "    ${BLUE}3${NC}) text colour (hex)"
     echo ""
     local ans; tui_menu_lines 0 "$( [[ "$enabled_label" == on ]] && echo 'turn off' || echo 'turn on' )" "default duration (minutes)" "text colour (hex)" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    local shown_msg saved_msg
 
     case "$ans" in
         1)
             local target="1"
             [[ "$enabled_label" == "on" ]] && target="0"
-            write_dat "$TIMER_ENABLED_DAT" "$target" || return
+            write_dat "$TIMER_ENABLED_DAT" "$target" || return 1
             if [[ "$target" == "1" ]]; then
-                echo -e "  ${GREEN}✓ Timer shown on the bar.${NC}"
+                shown_msg="Timer shown on the bar."; saved_msg="timer on"
             else
-                echo -e "  ${GREEN}✓ Timer hidden (the clock goes back to the exact centre).${NC}"
+                shown_msg="Timer hidden (the clock goes back to the exact centre)."; saved_msg="timer off"
             fi
             ;;
         2)
@@ -668,7 +690,7 @@ timer_menu() {
                 echo -e "  ${RED}✗ '${mins}' is not a number between 1 and ${TIMER_MAX_MINUTES}.${NC}"
                 return
             fi
-            write_dat "$TIMER_DURATION_DAT" "$mins" || return
+            write_dat "$TIMER_DURATION_DAT" "$mins" || return 1
             # Nowy czas ma być widoczny od razu — ale tylko wtedy, gdy nie
             # przerwie trwającego odliczania (reset zabiłby bieg w połowie).
             if [[ "$TIMER_STATUS" == "running" ]]; then
@@ -676,7 +698,7 @@ timer_menu() {
             else
                 bash "$ARCHENEMY_DIR/scripts/waybar/timer-ctl.sh" reset
             fi
-            echo -e "  ${GREEN}✓ Default duration: ${mins} min${NC}"
+            shown_msg="Default duration: ${mins} min"; saved_msg="default duration ${mins} min"
             ;;
         3)
             local hex
@@ -687,14 +709,14 @@ timer_menu() {
                 echo -e "  ${RED}✗ '${hex}' is not a #rrggbb colour.${NC}"
                 return
             fi
-            write_dat "$TIMER_COLOR_DAT" "$hex" || return
-            echo -e "  ${GREEN}✓ Timer colour: ${hex}${NC}"
+            write_dat "$TIMER_COLOR_DAT" "$hex" || return 1
+            shown_msg="Timer colour: ${hex}"; saved_msg="timer colour ${hex}"
             ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    pkill -RTMIN+11 waybar 2>/dev/null
+    bar_change_report 11 "$shown_msg" "$saved_msg" "timer module"
 }
 
 # ─── KEYBOARD LAYOUTS ────────────────────────────────────────────────────────
