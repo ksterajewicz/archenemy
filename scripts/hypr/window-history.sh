@@ -26,9 +26,12 @@
 #     * proces we flatpaku (/proc/<pid>/root/.flatpak-info) →
 #       `flatpak run <id>` — ścieżka z wnętrza piaskownicy nie istnieje
 #       na hoście,
-#     * inaczej dosłowne argv procesu.
+#     * inaczej dosłowne argv procesu — tylko gdy proces dzieli z demonem
+#       przestrzeń montowania i katalog główny (host_namespace_of).
 #   Pomijane: własne okna narzędzi archenemy (klasa archenemy-*, np. TUI
-#   Super+A) i okna bez PID.
+#   Super+A), okna bez PID i okna z innej piaskownicy niż Flatpak (bwrap,
+#   firejail, chroot) albo z nieczytelnym /proc/PID — ich argv to dane
+#   programu, który nie powinien wyjść z piaskownicy (H11/S6, 2026-11-14).
 #
 #   Stan żyje tylko w sesji: $XDG_RUNTIME_DIR/archenemy-window-history/
 #   (tmpfs, 0700, znika po wylogowaniu). Komendy mogą zawierać ścieżki
@@ -97,6 +100,18 @@ decode_args() {
 }
 declare -a DECODED=()
 
+# host_namespace_of <pid> — 0, gdy proces dzieli z nami przestrzeń montowania
+# i katalog główny (dev:inode); każdy błąd odczytu = 1 (nie ufamy).
+host_namespace_of() {
+    local mine theirs
+    mine=$(readlink /proc/self/ns/mnt 2>/dev/null) || return 1
+    theirs=$(readlink "/proc/$1/ns/mnt" 2>/dev/null) || return 1
+    [[ -n "$mine" && "$mine" == "$theirs" ]] || return 1
+    mine=$(stat -Lc '%d:%i' / 2>/dev/null) || return 1
+    theirs=$(stat -Lc '%d:%i' "/proc/$1/root/" 2>/dev/null) || return 1
+    [[ -n "$mine" && "$mine" == "$theirs" ]]
+}
+
 # Komenda do ponownego uruchomienia, zakodowana jak wyżej.
 capture_cmd() {
     local pid="$1" class="$2" name="" line
@@ -113,6 +128,13 @@ capture_cmd() {
             return
         fi
     fi
+    # H11 (S6, audyt bezpieczeństwa 2026-11-14): program w piaskownicy (bwrap,
+    # firejail, chroot) sam ustawia sobie argv, a Super+Tab uruchomiłby je
+    # POZA piaskownicą. Zapisujemy komendę tylko procesu z naszą przestrzenią
+    # montowania i naszym katalogiem głównym; nieczytelny /proc/PID/root albo
+    # ns/mnt (inny użytkownik, odmowa ptrace) = brak wpisu. Sama ścieżka
+    # `readlink /proc/PID/root` nie wystarcza: po pivot_root bwrap pokazuje "/".
+    host_namespace_of "$pid" || return 0
     local -a argv=()
     mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 0
     ((${#argv[@]})) || return 0

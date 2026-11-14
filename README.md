@@ -658,7 +658,7 @@ These tables describe the five non-beta rices. `white-blue_beta` retains its leg
 
 - **An app that is still running is skipped** (a window closed to the tray — Steam, Discord — or a dialog of a portal / polkit agent): relaunching it would start a second copy of a background process. Closing one of several windows of the same app (e.g. one of two browser windows) is not recorded either — the app is still open; use the app's own "reopen closed window".
 - It restarts the program, it does not restore its contents (unsaved text, open tabs — unless the app restores its own session). The window lands where Hyprland puts new windows, not at its old position. The process environment is not replayed.
-- Steam games (`steam_app_<id>`) come back through `steam steam://rungameid/<id>`, Flatpak apps through `flatpak run <id>`; archenemy's own tool windows (`archenemy-*`, e.g. the Super+A manager) are not recorded.
+- Steam games (`steam_app_<id>`) come back through `steam steam://rungameid/<id>`, Flatpak apps through `flatpak run <id>`; archenemy's own tool windows (`archenemy-*`, e.g. the Super+A manager) are not recorded. Windows of any other sandbox (bubblewrap, firejail, chroot — a different mount namespace or root directory than the session) and windows whose `/proc/<pid>` cannot be read are not recorded either: a sandboxed program chooses its own command line, and `Super + Tab` would otherwise run it outside the sandbox.
 - The history lives in `$XDG_RUNTIME_DIR` (memory, private to your user) and disappears on logout — command lines can contain file paths, so nothing is written to disk. `window-history.sh list` shows the stack.
 
 ### Workspaces — two modes to choose from
