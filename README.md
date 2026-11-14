@@ -455,7 +455,7 @@ JetBrainsMono Nerd Font and Iosevka Nerd Font come from `ttf-jetbrains-mono-nerd
 |---|---|---|
 | Alacritty and terminal apps (nvim, ncmpcpp, btop) | conditional | open a new terminal using the rice config and its imports; a personal config may omit the import or override family/size |
 | rofi: launcher, power, rice and wallpaper menus | yes | next time a menu opens (`-theme-str` from `scripts/appbinds/lib/fonts.sh`) |
-| fastfetch | yes | `FONT` / `Terminal Font` row labels the archenemy choice as unverified, next run; it does not measure the font in the terminal |
+| fastfetch | yes | `FONT` / `Terminal Font` row labels the archenemy choice as unverified, next run; it does not measure the font in the terminal. fastfetch silently drops a `command` row that prints nothing, so if `font-settings.sh` cannot run the row falls back to the family in the Alacritty font files (`… (alacritty config)`) and never disappears |
 | waybar | no | a GTK CSS import of a missing file stops the bar from loading its style |
 | mako | no | a missing `include=` aborts its whole config |
 | hyprlock | no | labels can't be overridden from outside; the lock screen stays as the rice ships it |
