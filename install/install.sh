@@ -10,6 +10,14 @@
 # checked explicitly instead.
 set -uo pipefail
 
+# Nigdy jako root (K8, audyt bezpieczeństwa 2026-11-14): instalator sam woła
+# sudo tam, gdzie trzeba; jako root makepkg/yay budowałyby AUR z uprawnieniami
+# roota, a $HOME wskazywałby /root zamiast domu użytkownika.
+if [[ $EUID -eq 0 ]]; then
+    echo "Error: do not run install.sh as root or with sudo — run it as your user; it asks for sudo when needed."
+    exit 1
+fi
+
 ARCHENEMY_DIR="$HOME/archenemy"
 RICES_DIR="$ARCHENEMY_DIR/rices"
 CONFIG_DIR="$HOME/.config"
@@ -1424,6 +1432,10 @@ echo "  │   leave a star on GitHub :)         │"
 echo "  │   github.com/ksterajewicz/archenemy │"
 echo "  └─────────────────────────────────────┘"
 echo -e "${NC}"
+
+# Koniec pracy z sudo (K18): unieważnij zapamiętane hasło, żeby przez
+# następne minuty żaden inny proces użytkownika nie dostał roota bez pytania.
+sudo -k 2>/dev/null
 
 read -rp "Reload Hyprland now? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then

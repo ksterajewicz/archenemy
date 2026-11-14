@@ -81,7 +81,7 @@ setup() {   # setup <kernele z modułem…> -- <kernele bez modułu…>
         echo "${k%-*}" > "$T/modules/$k/pkgbase"   # linux-lts-6.12 → linux-lts
         [[ "$with" -eq 1 ]] && : > "$T/modules/$k/nvidia.ko"
     done
-    export ARCHENEMY_ETC_DIR="$T/etc" ARCHENEMY_MODULES_DIR="$T/modules"
+    export ARCHENEMY_TEST=1 ARCHENEMY_ETC_DIR="$T/etc" ARCHENEMY_MODULES_DIR="$T/modules"
 }
 # stdin: wariant (1 = open-dkms), potwierdzenie instalacji, odpowiedź lib32
 run_gpu() { printf '%b' "$1" | bash "$GPU" 2>&1; }

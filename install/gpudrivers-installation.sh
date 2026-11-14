@@ -10,9 +10,15 @@ set -uo pipefail
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 # Haki testowe (tests/gpudrivers.sh): katalog /etc i katalog modułów jądra
-# podmieniane na atrapę w mktemp. W normalnym biegu nieustawione = system.
-ETC_DIR="${ARCHENEMY_ETC_DIR:-/etc}"
-KMOD_DIR="${ARCHENEMY_MODULES_DIR:-/usr/lib/modules}"
+# podmieniane na atrapę w mktemp — TYLKO przy ARCHENEMY_TEST=1 (K10, audyt
+# bezpieczeństwa 2026-11-14): zmienna odziedziczona przypadkiem ze
+# środowiska nie może przekierować zapisów `sudo` w inne miejsce.
+ETC_DIR=/etc
+KMOD_DIR=/usr/lib/modules
+if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
+    ETC_DIR="${ARCHENEMY_ETC_DIR:-/etc}"
+    KMOD_DIR="${ARCHENEMY_MODULES_DIR:-/usr/lib/modules}"
+fi
 
 # ─── WYKRYWANIE GPU ───────────────────────────────────────────────────────────
 
@@ -146,17 +152,17 @@ fi
 # Włącza repo [multilib] w $ETC_DIR/pacman.conf: odkomentowuje standardowy blok,
 # a gdy go w ogóle nie ma — dopisuje na końcu. Backup: .bak-archenemy.
 ensure_multilib() {
-    if grep -qE '^\[multilib\]' $ETC_DIR/pacman.conf; then
+    if grep -qE '^\[multilib\]' "$ETC_DIR/pacman.conf"; then
         echo -e "  ${GREEN}✓ Repository [multilib] already enabled.${NC}"
         return 0
     fi
-    sudo cp $ETC_DIR/pacman.conf $ETC_DIR/pacman.conf.bak-archenemy
-    if grep -qE '^#\[multilib\]' $ETC_DIR/pacman.conf; then
-        sudo sed -i '/^#\[multilib\]$/,/^#Include = \/etc\/pacman.d\/mirrorlist$/ s/^#//' $ETC_DIR/pacman.conf
+    sudo cp "$ETC_DIR/pacman.conf" "$ETC_DIR/pacman.conf.bak-archenemy"
+    if grep -qE '^#\[multilib\]' "$ETC_DIR/pacman.conf"; then
+        sudo sed -i '/^#\[multilib\]$/,/^#Include = \/etc\/pacman.d\/mirrorlist$/ s/^#//' "$ETC_DIR/pacman.conf"
     else
-        printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' | sudo tee -a $ETC_DIR/pacman.conf >/dev/null
+        printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' | sudo tee -a "$ETC_DIR/pacman.conf" >/dev/null
     fi
-    if grep -qE '^\[multilib\]' $ETC_DIR/pacman.conf; then
+    if grep -qE '^\[multilib\]' "$ETC_DIR/pacman.conf"; then
         echo -e "  ${GREEN}✓ Enabled [multilib] (backup: $ETC_DIR/pacman.conf.bak-archenemy).${NC}"
         # Bez `pacman -Sy` tutaj: samo odświeżenie baz + instalacja to
         # częściowa aktualizacja (niewspierana na Archu). Instalacja lib32
