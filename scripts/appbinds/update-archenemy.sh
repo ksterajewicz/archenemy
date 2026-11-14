@@ -96,6 +96,8 @@ fi
 
 # Przywrócenie schowka z RZETELNYM wynikiem: przy konflikcie git zostawia
 # wpis w `git stash list`, więc zmiany nie giną — mówimy, gdzie są.
+# Kod 1 = konflikt: drzewo ma znaczniki konfliktu, więc wołający nie melduje
+# „✓” i nie proponuje install.sh (audyt bezpieczeństwa 2026-11-14, K3).
 restore_stash() {
     [[ $stashed -eq 1 ]] || return 0
     echo -e "  ${CYAN}→ Restoring your local changes...${NC}"
@@ -103,6 +105,7 @@ restore_stash() {
         echo -e "  ${GREEN}✓ Local changes restored.${NC}"
     else
         echo -e "  ${RED}✗ Could not restore automatically — your changes are in the stash (git stash list); resolve the conflict and run git stash pop.${NC}"
+        return 1
     fi
 }
 
@@ -122,7 +125,12 @@ if ! git -C "$ARCHENEMY_DIR" pull --ff-only origin "$target" 2>&1 | sed 's/^/   
     exit 0
 fi
 
-restore_stash
+if ! restore_stash; then
+    echo -e "  ${YELLOW}⚠ The code is at origin/${target}, but the update is not finished: resolve the conflict first.${NC}"
+    echo -e "  ${YELLOW}  Afterwards start the installer yourself: bash ~/archenemy/install/install.sh${NC}"
+    pause
+    exit 0
+fi
 
 # Sukces = zaobserwowany stan, nie kod wyjścia: HEAD musi równać się
 # origin/<gałąź>. Lokalne commity ponad origin (pull --ff-only mówi wtedy
@@ -143,7 +151,10 @@ echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
 echo -e "  git — ${GREEN}they stay unchanged${NC}."
 echo ""
-if confirm "Run install.sh now to regenerate machine files?" Y; then
+# Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
+# z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go
+# uruchomić. Przypomnienie o zaległym biegu daje machine-layer-check.sh.
+if confirm "Run install.sh now to regenerate machine files? It will ask for sudo." N; then
     # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
     # (brak bitu w indeksie gita blokował tu instalację — audyt 2026-09-23).
     if [[ -f "$ARCHENEMY_DIR/install/install.sh" ]]; then

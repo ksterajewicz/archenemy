@@ -749,6 +749,13 @@ Hyprland running, run both report modes, check the Super+A status against the
 actual shortcut, inspect link/package results, and repeat from a TTY without
 Hyprland. No new settings-menu entry is added.
 
+## Updating and supply chain
+
+The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetches the chosen branch, pulls it with `--ff-only` and reports success only when `HEAD` equals `origin/<branch>`.
+
+- **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: the tree contains conflict markers, so resolve them (`git stash list`, `git stash pop`) and start `install.sh` yourself.
+- **Installer prompt:** "Run install.sh now?" defaults to **No** and says that the installer will ask for sudo — the installer comes from code fetched a moment earlier, so a single Enter must not run it as root. The machine-layer check reminds you when the installed version is behind the code.
+
 ## Verification
 
 There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
