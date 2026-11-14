@@ -204,6 +204,22 @@ Rules that follow directly from the table:
   `white-blue`. New screens start with `tui_header`, and `tui_fit` sizes columns,
   because bash `printf %-Ns` counts bytes. A new rice must pass
   `tests/tui-contrast.sh`.
+- **A green `✓` in the TUI comes after the effect was read, never before.**
+  `[a]`/`[e]`/`[d]` read `appbinds.lua` back and only then reload
+  (`finish_bind_change` in `appbinds.sh`): `✓ Added / Changed / Removed` needs a
+  reload without new errors, a config error restores the file, no answer from
+  Hyprland gives `Saved: …`, and a failed write is reported without a reload.
+  `workspace-mode-switch.sh` reads `data/workspace-mode.dat` back (a failed save
+  puts the old `workspaces-monitors.lua` back and exits 1, because the guard,
+  `ws-scroll.sh` and waybar read the mode from that file), prints the mode line
+  after the reload result and `✓ Orphan guard started` only when `pgrep` sees
+  the process after the start (`ARCHENEMY_GUARD_SETTLE`, default 1 s); exit 2 =
+  saved but not confirmed. `[v]`/`[t]` end in `bar_change_report`: `✓` only when
+  the rice has the module, waybar runs and `pkill` delivered the signal,
+  otherwise `Saved: …` with when the bar will show it. `write_dat`
+  (`lib/tui.sh`) returns 0 only after reading the value back. The tests force
+  failures without root tricks: `ulimit -f` with `SIGXFSZ` ignored, and `mv`,
+  `pgrep`, `pkill`, `setsid` mocks in `tests/appbinds-menu.sh`.
 - **After changing a Hyprland config from a script, use
   `scripts/hypr/lib/hypr-apply.sh`** (`hypr_reload_checked`): success means no
   new `hyprctl configerrors`, not the exit code of `hyprctl reload`.
@@ -402,6 +418,8 @@ Say "I don't know" and ask, or check the source. Don't fill the gap with
 plausible-sounding code or a flag name.
 
 Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the shared `tui_menu` function in `scripts/appbinds/lib/tui.sh`, preserving existing letter and number shortcuts.
+
+The keyboard layout order (`Super+A → [k] → 2`) is one `tui_menu` screen per place (`pick_layout_order` in `appbinds.sh`); the whole order typed as numbers on the first screen (`2 1`, Enter) stays as a shortcut. With `TUI_MENU_CAPTURE_DIGITS=1` on a terminal `tui_menu` reads the typed line through readline, pre-filled with the first digit, so the whole line is visible; a pipe gets the plain `read`. A helper script written by a test must not be named after a Python standard module (`pty.py` shadows `pty`).
 
 Shared menus collect multi-digit choices through Enter when there are more than nine items and scroll to fit the terminal. Confirmations reject digits. Autostart labels use global app numbers and no numbers on action rows. Removing a bind requires confirmation with default No.
 
