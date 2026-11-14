@@ -167,7 +167,8 @@ ok "TUI [k] → 3 → reset pl,us" "$([[ "$(cat "$DAT")" == pl,us ]] && echo 1)"
 # --- TUI [k] → 2: kolejność ekranem wyboru (strzałki, Enter, Esc, j/k) ------
 # Zasada TUI: każdy ekran wyboru działa strzałkami i Enterem; wpisana
 # permutacja (np. `2 1`) zostaje jako skrót na pierwszym ekranie.
-app() { printf "$1" | bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1; }
+# %b: rozwija \n i \e w argumencie jak dotąd, bez zmiennej w formacie (SC2059).
+app() { printf '%b' "$1" | bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1; }
 bash "$KL" reset >/dev/null
 out="$(app 'k2\n\e[B\n\nq')"
 ok "TUI [k] → 2 → strzałka w dół + Enter → us,pl" "$([[ "$(cat "$DAT")" == us,pl ]] && echo 1)" "$(cat "$DAT")"
