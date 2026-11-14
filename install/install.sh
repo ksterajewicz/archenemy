@@ -378,6 +378,9 @@ echo ""
 
 # ─── 4. CHECK YAY ─────────────────────────────────────────────────────────────
 
+# shellcheck source=install/lib/aur.sh
+source "$ARCHENEMY_DIR/install/lib/aur.sh"
+
 echo -e "${CYAN}[4] Checking yay...${NC}"
 
 if ! command -v yay &>/dev/null; then
@@ -385,13 +388,8 @@ if ! command -v yay &>/dev/null; then
     read -rp "Install yay? [y/N]: " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
         sudo pacman -S --needed git base-devel
-        rm -rf /tmp/yay
-        if git clone https://aur.archlinux.org/yay.git /tmp/yay \
-           && ( cd /tmp/yay && makepkg -si ); then
-            echo -e "${GREEN}✓ yay installed.${NC}"
-        else
-            echo -e "${RED}✗ yay build failed — AUR packages will be skipped.${NC}"
-        fi
+        # Budowa w mktemp -d z przeglądem PKGBUILD (install/lib/aur.sh, K6+K7).
+        aur_bootstrap_yay
     else
         echo -e "${YELLOW}⚠ AUR packages will be skipped without yay.${NC}"
     fi
@@ -459,7 +457,7 @@ if [[ ${#MISSING_AUR[@]} -gt 0 ]]; then
     read -rp "Install missing AUR packages with yay? [Y/n]: " ans
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
         if command -v yay &>/dev/null; then
-            if ! yay -S --needed "${MISSING_AUR[@]}"; then
+            if ! aur_install "${MISSING_AUR[@]}"; then
                 echo -e "${RED}✗ yay failed to install required packages.${NC}"
                 SUMMARY_SKIPPED+=("REQUIRED AUR packages — installation FAILED: ${MISSING_AUR[*]}")
             fi
@@ -538,7 +536,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         fi
         if [[ ${#sel_aur[@]} -gt 0 ]]; then
             if command -v yay &>/dev/null; then
-                yay -S --needed "${sel_aur[@]}"
+                aur_install "${sel_aur[@]}"
             else
                 echo -e "  ${YELLOW}⚠ yay unavailable — skipping AUR packages: ${sel_aur[*]}${NC}"
             fi

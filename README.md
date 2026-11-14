@@ -91,6 +91,8 @@ archenemy/
 │   ├── asus-installation.sh          # ASUS laptops: asusctl + rog-control-center from the official repo,
 │   │                                 #   replaces AUR variants, starts asusd (exit codes are a contract with step [6]).
 │   ├── bluetooth-installation.sh     # Optional Bluetooth + bluetui: verified service and bar visibility flag.
+│   ├── lib/aur.sh                    # Library (sourced by install.sh): builds yay in a fresh mktemp dir with an
+│   │                                 #   optional PKGBUILD review; AUR installs with an opt-in `--answerdiff All`.
 │   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
 │                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
@@ -351,6 +353,8 @@ archenemy/
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
 │                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
+│                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
+│                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
 │                                     #   installed from (pacman sync DB / AUR RPC v5), no -git in requirements;
 │                                     #   offline or without [multilib] → "skip", never ✓.
@@ -753,6 +757,7 @@ Hyprland. No new settings-menu entry is added.
 
 The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetches the chosen branch, pulls it with `--ff-only` and reports success only when `HEAD` equals `origin/<branch>`.
 
+- **AUR:** when yay is missing, the installer builds it in a fresh `mktemp -d` directory (removed afterwards, never a fixed `/tmp/yay` that another user could plant), offers to show its PKGBUILD first and reports ✓ only when `yay` is actually on `PATH`. Before every `yay -S` it says that AUR packages are user-submitted and offers `--answerdiff All` (yay shows each PKGBUILD diff before building); the default is a plain `yay -S --needed`.
 - **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`.
 - **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: the tree contains conflict markers, so resolve them (`git stash list`, `git stash pop`) and start `install.sh` yourself.
 - **Installer prompt:** "Run install.sh now?" defaults to **No** and says that the installer will ask for sudo — the installer comes from code fetched a moment earlier, so a single Enter must not run it as root. The machine-layer check reminds you when the installed version is behind the code.
