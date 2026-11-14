@@ -123,6 +123,47 @@ reload_hyprland() {
     return "$rc"
 }
 
+# Plik bindów ma być taki jak przed zmianą. Kod 0 tylko wtedy, gdy odczyt równa
+# się kopii: sam zapis bez odczytu nie jest dowodem.
+restore_binds() {
+    [[ "$(cat "$BINDS_CONF" 2>/dev/null)" == "$1" ]] && return 0
+    printf '%s\n' "$1" > "$BINDS_CONF"
+    [[ "$(cat "$BINDS_CONF" 2>/dev/null)" == "$1" ]]
+}
+
+# Zapis się nie udał (pełny dysk, plik tylko do odczytu): bez przeładowania
+# i bez zielonego komunikatu. $1 = zawartość sprzed zmiany.
+report_write_failed() {
+    if restore_binds "$1"; then
+        echo -e "  ${RED}✗ Could not write ${BINDS_CONF} — nothing was changed.${NC}"
+    else
+        echo -e "  ${RED}✗ Could not write ${BINDS_CONF} and it no longer matches the old content — check it by hand.${NC}"
+    fi
+    return 0
+}
+
+# Wspólny koniec [a]/[e]/[d], wołany po zapisie potwierdzonym odczytem pliku.
+# Zielony komunikat pada dopiero po przeładowaniu bez błędów; przy błędzie
+# configu plik wraca do kopii, a wynik cofnięcia też jest odczytany.
+#   $1 zawartość sprzed zmiany, $2 tekst sukcesu, $3 co zostało zapisane,
+#   $4 tekst cofnięcia
+finish_bind_change() {
+    local backup="$1" done_msg="$2" saved_msg="$3" undone_msg="$4" rc
+    reload_hyprland; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}✓ ${done_msg}${NC}" ;;
+        2) if ! restore_binds "$backup"; then
+               echo -e "  ${RED}✗ Could not restore ${BINDS_CONF} — remove the line named above by hand.${NC}"
+           elif hypr_reload_checked >/dev/null; then
+               echo -e "  ${YELLOW}↩ ${undone_msg}${NC}"
+           else
+               echo -e "  ${YELLOW}↩ ${undone_msg} Hyprland did not confirm the reload — reload it manually.${NC}"
+           fi ;;
+        *) echo -e "  ${YELLOW}${saved_msg}${NC}" ;;
+    esac
+    return 0
+}
+
 # ─── PODGLĄD WSZYSTKICH SKRÓTÓW ──────────────────────────────────────────────
 
 # Ładna nazwa klawisza (mysz, scroll) — reszta zostaje jak w configu
@@ -268,16 +309,17 @@ add_bind() {
         confirm "Add anyway?" N || return
     fi
 
-    local backup
+    local backup line
     backup="$(cat "$BINDS_CONF")"
-    { format_bind_line "$combo" "$cmd"; echo; } >> "$BINDS_CONF"
-    echo -e "  ${GREEN}✓ Added: Super + ${combo} → ${cmd}${NC}"
-    reload_hyprland
-    if (( $? == 2 )); then
-        printf '%s\n' "$backup" > "$BINDS_CONF"
-        hypr_reload_checked >/dev/null
-        echo -e "  ${YELLOW}↩ Bind removed again.${NC}"
+    line="$(format_bind_line "$combo" "$cmd")"
+    # Dowodem zapisu jest ostatnia linia pliku, nie kod wyjścia dopisania.
+    printf '%s\n' "$line" >> "$BINDS_CONF"
+    if [[ "$(tail -n 1 "$BINDS_CONF" 2>/dev/null)" != "$line" ]]; then
+        report_write_failed "$backup"
+        return 0
     fi
+    finish_bind_change "$backup" "Added: Super + ${combo} → ${cmd}" \
+        "Saved: Super + ${combo} → ${cmd}" "Bind removed again — nothing was added."
 }
 
 edit_bind() {
@@ -300,17 +342,19 @@ edit_bind() {
     cmd=$(trim "$cmd")
     [[ -n "$cmd" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
     backup="$(cat "$BINDS_CONF")"
-    replace_bind_command "$BINDS_CONF" "$num" "$cmd" || {
-        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
-        return
-    }
-    echo -e "  ${GREEN}✓ Changed: bind ${num} → ${cmd}${NC}"
-    reload_hyprland
-    if (( $? == 2 )); then
-        printf '%s\n' "$backup" > "$BINDS_CONF"
-        hypr_reload_checked >/dev/null
-        echo -e "  ${YELLOW}↩ Change undone.${NC}"
+    replace_bind_command "$BINDS_CONF" "$num" "$cmd"
+    case $? in
+        0) ;;
+        1) echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"; return 0 ;;
+        *) report_write_failed "$backup"; return 0 ;;
+    esac
+    # Dowodem zapisu jest komenda odczytana z tej samej pozycji listy.
+    if [[ "$(user_bind_lines "$BINDS_CONF" | sed -n "${num}p" | cut -f3-)" != "$cmd" ]]; then
+        report_write_failed "$backup"
+        return 0
     fi
+    finish_bind_change "$backup" "Changed: bind ${num} → ${cmd}" \
+        "Saved: bind ${num} → ${cmd}" "Change undone — the bind runs the old command."
 }
 
 remove_bind() {
@@ -334,12 +378,16 @@ remove_bind() {
     # Ten sam wybór linii co lista wyżej — numer N kasuje dokładnie linię
     # pokazaną jako N, niezależnie od innych `hl.bind(` w pliku.
     confirm "Remove ${choices[$((num - 1))]}?" N || { echo "Cancelled."; return; }
-    remove_bind_by_index "$BINDS_CONF" "$num" || {
-        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
-        return
-    }
-    echo -e "  ${GREEN}✓ Removed.${NC}"
-    reload_hyprland
+    local backup
+    backup="$(cat "$BINDS_CONF")"
+    # Numer sprawdzony wyżej, więc porażka tutaj to nieudany zapis. Dowodem
+    # usunięcia jest lista krótsza o jeden bind.
+    if ! remove_bind_by_index "$BINDS_CONF" "$num" || [[ "$(bind_count "$BINDS_CONF")" -ne $((total - 1)) ]]; then
+        report_write_failed "$backup"
+        return 0
+    fi
+    finish_bind_change "$backup" "Removed: ${choices[$((num - 1))]}" \
+        "Saved: ${choices[$((num - 1))]} is off the list." "Bind restored — nothing was removed."
 }
 
 # ─── TRYB WORKSPACE'ÓW (shared/decades) ──────────────────────────────────────

@@ -36,13 +36,14 @@ printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' 
 printf 'hl.bind(mainMod .. " + Q", hl.dsp.window.close())\nhl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }))\n' > "$H/.config/hypr/hyprland.lua"
 printf '#define XKB_KEY_F5 0xffc2\n#define XKB_KEY_semicolon 0x3b\n#define XKB_KEY_Return 0xff0d\n' > "$T/keysyms.h"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
-# Atrapa hyprctl: reload ocenia appbinds.lua; klawisz `badkey` = błąd configu.
+# Atrapa hyprctl: reload ocenia appbinds.lua; klawisz `badkey` albo plik
+# $T/failreload = błąd configu.
 cat > "$T/bin/hyprctl" <<EOS
 #!/bin/bash
 echo "hyprctl \$*" >> "$T/log"
 [[ -f "$T/dead" ]] && exit 1
 case "\$1" in
-  reload) if grep -q badkey "$BINDS" 2>/dev/null; then echo 'hl.bind: Unknown key: badkey' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
+  reload) if grep -q badkey "$BINDS" 2>/dev/null || [[ -f "$T/failreload" ]]; then echo 'hl.bind: Unknown key: badkey' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
   configerrors) cat "$T/errors" 2>/dev/null; echo ;;
 esac
 EOS
@@ -100,6 +101,38 @@ out="$(tui 'd1\n\nq')"
 check "[d] Enter nie usuwa" '[[ "$(cat "$BINDS")" == "$before" ]]'
 out="$(tui 'd1\ny\nq')"
 check "[d] usuwa i sprawdza reload"       '! grep -Fq "\"ls\"" "$BINDS" && [[ "$out" == *"no config errors"* ]]'
+
+echo "== [a]/[e]/[d] zielone ✓ dopiero po odczycie skutku"
+# Zapis, który nie udaje się także rootowi: limit rozmiaru pliku 1 KiB przy pliku
+# bindów większym niż 1 KiB. SIGXFSZ jest ignorowany, więc zapis oddaje EFBIG.
+tui_nowrite() { ( trap '' XFSZ; ulimit -f 1; tui "$1" ); }
+big() {
+    local i
+    reset; printf 'hl.bind(mainMod .. " + g", hl.dsp.exec_cmd("ls"))\n' >> "$BINDS"
+    for i in $(seq 30); do echo "-- padding $i ................................................"; done >> "$BINDS"
+    before="$(cat "$BINDS")"
+}
+reset; out="$(tui 'ag\nls\n\nq')"
+check "[a] ✓ Added dopiero po wyniku reloadu"     '[[ "$out" == *"no config errors"*"✓ Added: Super + g"* ]]'
+rm -f "$T/keysyms.h"; reset; out="$(tui 'abadkey\nls\n\nq')"; printf '#define XKB_KEY_F5 0xffc2\n' > "$T/keysyms.h"
+check "[a] błąd configu: bez ✓ Added"             '[[ "$out" != *"✓ Added"* && "$out" == *"removed again"* ]]'
+reset; touch "$T/dead"; out="$(tui 'ag\nls\n\nq')"; rm "$T/dead"
+check "[a] martwy Hyprland: Saved, bez ✓ Added"   '[[ "$out" != *"✓ Added"* && "$out" == *"Saved: Super + g"* ]]'
+big; out="$(tui_nowrite 'ah\npwd\n\nq')"
+check "[a] nieudany zapis: bez ✓, plik bez zmian" '[[ "$out" != *"✓ Added"* && "$out" == *"Could not write"* && "$(cat "$BINDS")" == "$before" ]]'
+check "[a] nieudany zapis: bez reloadu"           '! grep -q "hyprctl reload" "$T/log"'
+big; out="$(tui 'e1\ndate\n\nq')"
+check "[e] ✓ Changed dopiero po wyniku reloadu"   '[[ "$out" == *"no config errors"*"✓ Changed"* ]]'
+big; out="$(tui 'e1\nbadkey\n\nq')"
+check "[e] błąd configu: bez ✓ Changed, cofnięte" '[[ "$out" != *"✓ Changed"* && "$out" == *"Change undone"* && "$(cat "$BINDS")" == "$before" ]]'
+big; out="$(tui_nowrite 'e1\ndate\n\nq')"
+check "[e] nieudany zapis: bez ✓, plik bez zmian" '[[ "$out" != *"✓ Changed"* && "$out" == *"Could not write"* && "$(cat "$BINDS")" == "$before" ]]'
+big; out="$(tui 'd1\ny\nq')"
+check "[d] ✓ Removed dopiero po wyniku reloadu"   '[[ "$out" == *"no config errors"*"✓ Removed"* ]]'
+big; touch "$T/failreload"; out="$(tui 'd1\ny\nq')"; rm "$T/failreload"
+check "[d] błąd configu: bez ✓ Removed, bind wraca" '[[ "$out" != *"✓ Removed"* && "$out" == *"Bind restored"* && "$(cat "$BINDS")" == "$before" ]]'
+big; out="$(tui_nowrite 'd1\ny\nq')"
+check "[d] nieudany zapis: bez ✓, plik bez zmian" '[[ "$out" != *"✓ Removed"* && "$out" == *"Could not write"* && "$(cat "$BINDS")" == "$before" ]]'
 
 echo "== bindy pisane ręcznie"
 reset; printf 'hl.bind("SUPER + x", hl.dsp.exec("xterm"))\n' >> "$BINDS"
