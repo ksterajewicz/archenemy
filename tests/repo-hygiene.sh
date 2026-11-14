@@ -58,7 +58,7 @@ polish_text() {
         -e Ą -e Ć -e Ę -e Ł -e Ń -e Ó -e Ś -e Ź -e Ż
 }
 mapfile -t generators < <(git -C "$REPO" ls-files 'scripts/**/gen-*.sh')
-files=("$REPO"/install/*.sh "$REPO/scripts/archenemy-doctor.sh")
+files=("$REPO"/install/*.sh "$REPO"/install/lib/*.sh "$REPO/scripts/archenemy-doctor.sh")
 for f in "${generators[@]}"; do files+=("$REPO/$f"); done
 bad=$(user_message_lines "${files[@]}" | polish_text || true)
 if [[ -z "$bad" ]]; then ok "brak polskich liter w komunikatach instalatorów i generatorów"; else fail "polski tekst użytkownika: $bad"; fi
@@ -71,6 +71,31 @@ if printf '%s\n' 'echo "Zażółć"' | LC_ALL=C polish_text >/dev/null; then
     ok "strażnik rozpoznaje polski tekst także przy LC_ALL=C"
 else
     fail "strażnik przepuszcza polski tekst"
+fi
+
+echo "== dane maszynowe w plikach śledzonych"
+# K14 (audyt bezpieczeństwa 2026-11-14): repo jest publiczne, a nazwa
+# interfejsu (MangoHud `network=wlo1` we wszystkich rice'ach) albo ścieżka
+# /home/<login> zdradzają maszynę i nie działają u innych. Ogólne
+# przykłady (/home/x, /home/user) są dozwolone; "$T/home/…" w testach nie
+# pasuje, bo przed /home stoi nazwa zmiennej.
+machine_data() {
+    grep -E -e '^[^#]*\bnetwork=[[:alnum:]]' -e '(^|[^[:alnum:]_}$])/home/[a-z_][a-z0-9_-]*' \
+        | grep -vE '/home/(x|user|username|you)([^a-z0-9_-]|$)'
+}
+bad=$(git -C "$REPO" grep -nI -e 'network=' -e '/home/' -- . ':!tests/repo-hygiene.sh' ':!wallpapers' | machine_data || true)
+if [[ -z "$bad" ]]; then ok "brak nazw interfejsów i /home/<login> w plikach śledzonych"; else fail "dane maszynowe: $bad"; fi
+if printf '%s\n' 'network=wlo1' 'x="/home/kst/archenemy"' | machine_data >/dev/null \
+   && [[ $(printf '%s\n' 'network=wlo1' 'x="/home/kst/archenemy"' | machine_data | grep -c .) -eq 2 ]]; then
+    ok "strażnik łapie network=wlo1 i /home/<login>"
+else
+    fail "strażnik przepuszcza network=wlo1 albo /home/<login>"
+fi
+# shellcheck disable=SC2016  # dosłowny "$T" to właśnie badany przykład
+if printf '%s\n' 'network' '# np. network=wlo1 w komentarzu' 'HOME="$T/home/archenemy"' 'echo x:x:1:1::/home/x:/bin/zsh' | machine_data >/dev/null; then
+    fail "strażnik myli ogólne przykłady z danymi maszyny"
+else
+    ok "ogólne przykłady (network, \$T/home, /home/x, komentarz) dozwolone"
 fi
 
 echo ""

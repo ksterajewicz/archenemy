@@ -87,6 +87,24 @@ out=$(run_upd '1yn\n\n')
 check "brak fałszywego „przywrócone”"          '[[ "$out" != *"✓ Local changes restored"* ]]'
 check "jawny błąd przywracania"                '[[ "$out" == *"✗ Could not restore"* ]]'
 check "zmiany dalej w schowku (nic nie ginie)" '[[ -n "$(git -C "$A" stash list)" ]]'
+# K3 (audyt bezpieczeństwa 2026-11-14): po konflikcie schowka drzewo ma
+# znaczniki konfliktu — żadnego „✓”, żadnego pytania o instalator; nawet
+# wpisane „y” nie może uruchomić install.sh (z sudo) na takim drzewie.
+check "konflikt schowka: brak „✓ Updated”"      '[[ "$out" != *"✓ Updated"* ]]'
+check "konflikt schowka: brak pytania o install.sh" '[[ "$out" != *"Run install.sh"* ]]'
+fresh_clone dev
+echo lokalna-wersja > "$A/f.txt"
+upstream_commit dev f.txt upstream-wersja-k3
+out=$(run_upd '1yy\n\n')
+check "konflikt schowka + „y”: install.sh się nie uruchamia" '[[ "$out" != *INSTALL-RAN* ]]'
+
+echo "== K4: pytanie o install.sh domyślnie N i z ostrzeżeniem o sudo"
+fresh_clone dev
+upstream_commit dev f.txt v4-k4
+out=$(run_upd '1\n\n')
+check "Enter przy pytaniu → install.sh się NIE uruchamia" '[[ "$out" != *INSTALL-RAN* ]]'
+check "pytanie mówi, że instalator poprosi o sudo"      '[[ "$out" == *"will ask for sudo"* && "$out" == *"[y/N]"* ]]'
+check "aktualizacja i tak udana"                        '[[ "$out" == *"✓ Updated"* ]]'
 
 echo "== N1: fetch nieudany (origin nieosiągalny)"
 fresh_clone dev
@@ -164,8 +182,30 @@ echo local > "$A/f.txt"
 out=$(run_upd '1\e[B\n\n')
 check "strzałki: odmowa schowka zachowuje plik" '[[ "$(<"$A/f.txt")" == local && -z "$(git -C "$A" stash list)" ]]'
 fresh_clone dev
-out=$(run_upd '1\e[B\n\n')
+out=$(run_upd '1\e[A\e[B\n\n')   # domyślnie N (K4): ↑ na Yes, ↓ z powrotem na No
 check "strzałki: odmowa instalatora" '[[ "$out" != *INSTALL-RAN* ]]'
+
+echo "== K5: lista zmian przed pull, ostrzeżenie dla install/ i packages/, droga powrotu"
+fresh_clone dev
+old7=$(git -C "$A" rev-parse --short=7 HEAD)
+upstream_commit dev install/extra.sh k5-instalator
+out=$(run_upd '1n\n')
+check "lista nowych commitów przed pull"            '[[ "$out" == *"up-k5-instalator"* && "$out" == *"New commits"* ]]'
+check "ostrzeżenie o zmianach w install/"            '[[ "$out" == *"⚠ This update changes the installer or package lists"* && "$out" == *"install/extra.sh"* ]]'
+check "droga powrotu z poprzednim HEAD"              '[[ "$out" == *"To go back: git switch --detach $old7"* ]]'
+fresh_clone dev
+upstream_commit dev f.txt k5-zwykly
+out=$(run_upd '1n\n')
+check "zmiana poza install/ i packages/ — bez ostrzeżenia" '[[ "$out" == *"up-k5-zwykly"* && "$out" != *"changes the installer"* ]]'
+fresh_clone dev
+out=$(run_upd '1n\n')
+check "brak nowych commitów — komunikat zamiast pustej listy" '[[ "$out" == *"No new commits"* && "$out" != *"To go back"* ]]'
+w="$T/w30"; rm -rf "$w"; git clone -q -b dev "$T/origin.git" "$w"
+for i in $(seq 1 32); do echo "$i" > "$w/f.txt"; g "$w" commit -am "seria-$i"; done; g "$w" push origin dev
+fresh_clone dev
+git -C "$A" fetch -q origin dev; git -C "$A" reset -q --hard "$(git -C "$A" rev-parse 'origin/dev~32')"
+out=$(run_upd '1n\n'); NL=$'\n'
+check "limit 30 commitów + licznik reszty"          '[[ "$out" == *"seria-32"* && "$out" == *"seria-3"* && "$out" != *"seria-2$NL"* && "$out" == *"2 more"* ]]'
 
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev

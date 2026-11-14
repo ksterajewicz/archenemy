@@ -199,6 +199,32 @@ close_win ggg1
 bash "$WH" refresh
 check "okno bez PID nie trafia na stos" '[[ $(closed_count) -eq 0 ]]'
 
+echo "== H11: ucieczka z piaskownicy (S6) — okno z innym katalogiem głównym nie trafia na stos =="
+# Atak: program w piaskownicy (bwrap, nowy root na tmpfs) ustawia sobie argv,
+# które Super+Tab uruchomiłby POZA piaskownicą. Z zewnątrz readlink
+# /proc/PID/root pokazuje wtedy "/", a przy --ro-bind / / nawet dev:inode jest
+# ten sam — rozpoznajemy po przestrzeni montowania (ns/mnt). Bez bwrap (np. kontener CI) scenariusz jest pomijany — nie ✓.
+: > "$STATE/closed.tsv"; : > "$APP_LOG"
+if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --dev /dev true 2>/dev/null; then
+    ( cd "$T" && exec bwrap --ro-bind / / --bind "$T" "$T" --dev /dev --proc /proc \
+        "$T/bin/fakeapp" sandbox-escape ) >/dev/null 2>&1 7>&- &
+    BW=$!; PIDS+=("$BW"); sleep 0.5
+    SB=$(pgrep -P "$BW" | head -1)   # bwrap bez --unshare-pid: dziecko = aplikacja
+    check "atrapa w piaskownicy działa i ma własną przestrzeń montowania" \
+        '[[ -n "$SB" && "$(readlink "/proc/$SB/ns/mnt")" != "$(readlink /proc/self/ns/mnt)" ]]'
+    open_win sbx1 "${SB:-0}" fakeapp
+    bash "$WH" refresh
+    check "okno z piaskownicy w migawce bez komendy" 'grep -q "^sbx1	.*	-$" "$STATE/open.tsv"'
+    close_win sbx1; kill "$BW" 2>/dev/null; [[ -n "$SB" ]] && kill "$SB" 2>/dev/null; wait_dead "${SB:-0}"
+    bash "$WH" refresh
+    check "okno z piaskownicy nie trafia na stos" '[[ $(closed_count) -eq 0 ]]'
+    : > "$APP_LOG"   # start atrapy W piaskownicy też dopisał linię — liczy się tylko ponowne uruchomienie
+    bash "$WH" restore >/dev/null 2>&1; sleep 0.3
+    check "Super+Tab nie uruchamia argv z piaskownicy na hoście" '! grep -q "sandbox-escape" "$APP_LOG"'
+else
+    echo "  ? skip: brak działającego bwrap — scenariusz ataku tylko na maszynie z bubblewrap"
+fi
+
 echo "== brakująca binarka =="
 spawn "$T" gone
 X=$SPAWNED

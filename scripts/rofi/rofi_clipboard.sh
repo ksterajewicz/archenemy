@@ -19,7 +19,7 @@ message() {
 }
 for dependency in rofi cliphist wl-copy; do
     case "$dependency" in
-        rofi) package=rofi-wayland ;;
+        rofi) package=rofi ;;
         cliphist) package=cliphist ;;
         wl-copy) package=wl-clipboard ;;
     esac

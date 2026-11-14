@@ -1,6 +1,6 @@
 megasync
-protonvpn
 protonup-qt
 rustdesk-bin
-# omen-fan: sterowanie wentylatorami laptopów HP Omen (opcjonalne)
-omen-fan
+# vscodium-bin: gotowe binarki VSCodium (w repo Archa nie ma "vscodium");
+# wersja bez -bin buduje się ze źródeł godzinami — decyzja właściciela 2026-11-14
+vscodium-bin

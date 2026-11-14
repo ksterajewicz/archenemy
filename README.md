@@ -91,6 +91,8 @@ archenemy/
 │   ├── asus-installation.sh          # ASUS laptops: asusctl + rog-control-center from the official repo,
 │   │                                 #   replaces AUR variants, starts asusd (exit codes are a contract with step [6]).
 │   ├── bluetooth-installation.sh     # Optional Bluetooth + bluetui: verified service and bar visibility flag.
+│   ├── lib/aur.sh                    # Library (sourced by install.sh): builds yay in a fresh mktemp dir with an
+│   │                                 #   optional PKGBUILD review; AUR installs with an opt-in `--answerdiff All`.
 │   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
 │                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
@@ -326,7 +328,8 @@ archenemy/
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
-│                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language.
+│                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language;
+│                                     #   no machine data (interface names such as network=wlo1, /home/<login>).
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
 │                                     #   appbinds-menu.sh also forces a failed write, a dead Hyprland, a dead waybar
@@ -353,6 +356,17 @@ archenemy/
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
 │                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
+│                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
+│                                     #   sudo, GPU installer test hooks only with ARCHENEMY_TEST=1.
+│                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
+│                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
+│                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
+│                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip".
+│                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
+│                                     #   over the whole history (when installed; otherwise "skip").
+│                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
+│                                     #   installed from (pacman sync DB / AUR RPC v5), no -git in requirements;
+│                                     #   offline or without [multilib] → "skip", never ✓.
 │                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
@@ -526,7 +540,7 @@ Why not the AUR: it has several packages that all claim to be `asusctl` and excl
 
 Graphics switching needs nothing extra: the asus-linux guide says `supergfxctl` is not needed with current drivers. Users who added the `[ogc]` repo get the packages from there. `asusd` is started by a udev rule at boot and is not meant to be enabled, so the script starts it once and checks that it runs; if it does not, restart the computer. The power profile scripts use the `asusctl profile next` / `profile get` subcommands (asusctl 6.3.8+).
 
-Screen brightness: the `XF86MonBrightness*` keys call `swayosd-client` — they change brightness and show an OSD bar at the bottom of every monitor (the `swayosd-server` starts with each rice and is restarted when switching rice, since it only reads the theme at startup). Per-rice OSD theme: `rices/*/swayosd/style.css` (beta inherits from white-blue via symlink). Package: `swayosd-git` (AUR).
+Screen brightness: the `XF86MonBrightness*` keys call `swayosd-client` — they change brightness and show an OSD bar at the bottom of every monitor (the `swayosd-server` starts with each rice and is restarted when switching rice, since it only reads the theme at startup). Per-rice OSD theme: `rices/*/swayosd/style.css` (beta inherits from white-blue via symlink). Package: `swayosd` (official `extra` repo, a tagged 0.3.x release). If you still have `swayosd-git` installed, pacman asks to remove it when the installer pulls in `swayosd` — answer `y`.
 
 ## Music stack (optional — a recommendation, not a requirement)
 
@@ -651,7 +665,7 @@ These tables describe the five non-beta rices. `white-blue_beta` retains its leg
 
 - **An app that is still running is skipped** (a window closed to the tray — Steam, Discord — or a dialog of a portal / polkit agent): relaunching it would start a second copy of a background process. Closing one of several windows of the same app (e.g. one of two browser windows) is not recorded either — the app is still open; use the app's own "reopen closed window".
 - It restarts the program, it does not restore its contents (unsaved text, open tabs — unless the app restores its own session). The window lands where Hyprland puts new windows, not at its old position. The process environment is not replayed.
-- Steam games (`steam_app_<id>`) come back through `steam steam://rungameid/<id>`, Flatpak apps through `flatpak run <id>`; archenemy's own tool windows (`archenemy-*`, e.g. the Super+A manager) are not recorded.
+- Steam games (`steam_app_<id>`) come back through `steam steam://rungameid/<id>`, Flatpak apps through `flatpak run <id>`; archenemy's own tool windows (`archenemy-*`, e.g. the Super+A manager) are not recorded. Windows of any other sandbox (bubblewrap, firejail, chroot — a different mount namespace or root directory than the session) and windows whose `/proc/<pid>` cannot be read are not recorded either: a sandboxed program chooses its own command line, and `Super + Tab` would otherwise run it outside the sandbox.
 - The history lives in `$XDG_RUNTIME_DIR` (memory, private to your user) and disappears on logout — command lines can contain file paths, so nothing is written to disk. `window-history.sh list` shows the stack.
 
 ### Workspaces — two modes to choose from
@@ -748,9 +762,23 @@ Hyprland running, run both report modes, check the Super+A status against the
 actual shortcut, inspect link/package results, and repeat from a TTY without
 Hyprland. No new settings-menu entry is added.
 
+## Updating and supply chain
+
+The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetches the chosen branch, pulls it with `--ff-only` and reports success only when `HEAD` equals `origin/<branch>`.
+
+- **AUR:** when yay is missing, the installer builds it in a fresh `mktemp -d` directory (removed afterwards, never a fixed `/tmp/yay` that another user could plant), offers to show its PKGBUILD first and reports ✓ only when `yay` is actually on `PATH`. Before every `yay -S` it says that AUR packages are user-submitted and offers `--answerdiff All` (yay shows each PKGBUILD diff before building); the default is a plain `yay -S --needed`.
+- **Root and sudo:** `install.sh` refuses to run as root or under `sudo` (it asks for sudo itself where needed, and AUR packages must never be built as root) and ends with `sudo -k`, so the cached sudo password does not outlive the installer. The GPU installer's test hooks (`ARCHENEMY_ETC_DIR`, `ARCHENEMY_MODULES_DIR`) work only together with `ARCHENEMY_TEST=1`; a variable left in your environment cannot redirect its `sudo` writes.
+- **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`.
+- **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: the tree contains conflict markers, so resolve them (`git stash list`, `git stash pop`) and start `install.sh` yourself.
+- **Installer prompt:** "Run install.sh now?" defaults to **No** and says that the installer will ask for sudo — the installer comes from code fetched a moment earlier, so a single Enter must not run it as root. The machine-layer check reminds you when the installed version is behind the code.
+
 ## Verification
 
-There is no CI pipeline. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+
+`bash tests/secrets.sh` looks for private keys and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
+
+`bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the synced repos (one read-only `pacman -Slq`), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network, without pacman or without a synced `[multilib]` database the affected names are reported as `skip`, never as passed.
 
 **Live-only — a real Arch + Hyprland session is required:**
 

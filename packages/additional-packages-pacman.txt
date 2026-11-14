@@ -1,9 +1,11 @@
 veracrypt
 discord
-vscodium
 btop
 signal-desktop
 keepassxc
+# proton-vpn-gtk-app: oficjalny klient Proton VPN z repo extra (dawna nazwa AUR
+# "protonvpn" nie istnieje — ktoś mógłby ją zarejestrować, audyt 2026-11-14)
+proton-vpn-gtk-app
 libreoffice-fresh
 qbittorrent
 vlc

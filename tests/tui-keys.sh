@@ -73,7 +73,7 @@ check "koniec wejścia kończy pętlę (K3)"  '[[ $rc -eq 0 ]]'
 out="$(tui 'v\e[A\n\nq')"; rc=$?
 check "strzałka w podmenu nie blokuje"    '[[ $rc -eq 0 ]]'
 
-echo "== aktualizator: Esc nie uruchamia instalatora (K2)"
+echo "== aktualizator: Esc i Enter nie uruchamiają instalatora (K2, K4)"
 g() { git -C "$1" -c user.email=t@t -c user.name=t "${@:2}" >/dev/null; }
 git init -q --bare "$T/origin.git"
 A="$H/archenemy"; rm -rf "$A"; git init -q -b dev "$A"
@@ -81,10 +81,14 @@ mkdir -p "$A/install"; printf '#!/bin/bash\necho INSTALL-RAN\n' > "$A/install/in
 g "$A" add -A; g "$A" commit -m v1
 git -C "$A" remote add origin "$T/origin.git"; git -C "$A" push -q origin dev
 upd() { printf '%b' "$1" | HOME="$H" bash "$REPO/scripts/appbinds/update-archenemy.sh" 2>&1; }
+# Pytanie o install.sh ma domyślne N (audyt bezpieczeństwa 2026-11-14, K4):
+# Enter i Esc nie uruchamiają instalatora, dopiero jawne „y”.
 out="$(upd '1\e\n')"
-check "Esc na [Y/n] → bez instalatora"    '[[ "$out" != *INSTALL-RAN* && "$out" == *"Updated"* ]]'
+check "Esc na [y/N] → bez instalatora"    '[[ "$out" != *INSTALL-RAN* && "$out" == *"Updated"* ]]'
 out="$(upd '1\n\n')"
-check "Enter na [Y/n] → instalator"       '[[ "$out" == *INSTALL-RAN* ]]'
+check "Enter na [y/N] → bez instalatora"  '[[ "$out" != *INSTALL-RAN* && "$out" == *"Updated"* ]]'
+out="$(upd '1y\n')"
+check "y na [y/N] → instalator"           '[[ "$out" == *INSTALL-RAN* ]]'
 echo zmiana > "$A/f"
 out="$(upd '1\e\n')"
 check "Esc na stash → anulowane"          '[[ "$out" == *Cancelled* && "$(<"$A/f")" == zmiana && -z "$(git -C "$A" stash list)" ]]'

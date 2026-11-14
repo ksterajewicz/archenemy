@@ -70,6 +70,28 @@ if [[ "$target" != "$cur_branch" ]] \
     fi
 fi
 
+# Co przyjdzie z pull — pokazujemy PRZED czymkolwiek, co zmienia drzewo
+# (K5, audyt bezpieczeństwa 2026-11-14: „nie wiem, co uruchamiam”). Lista
+# nowych commitów (limit 30) i osobne ostrzeżenie, gdy zmienia się kod
+# instalatora albo listy pakietów — to one pójdą potem przez sudo/yay.
+# Krótki HEAD sprzed aktualizacji = droga powrotu wypisywana na końcu.
+old_head="$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)"
+new_count="$(git -C "$ARCHENEMY_DIR" rev-list --count "HEAD..origin/$target" 2>/dev/null)"
+if [[ "${new_count:-0}" -eq 0 ]]; then
+    echo -e "  No new commits on origin/${target}."
+else
+    echo -e "  New commits on origin/${target} (${new_count}):"
+    new_log="$(git -C "$ARCHENEMY_DIR" log --oneline --no-decorate -n 30 "HEAD..origin/$target" 2>/dev/null)"
+    sed 's/^/    /' <<< "$new_log"
+    (( new_count > 30 )) && echo "    … and $((new_count - 30)) more"
+    risky="$(git -C "$ARCHENEMY_DIR" diff --name-only "HEAD...origin/$target" -- install/ packages/ 2>/dev/null)"
+    if [[ -n "$risky" ]]; then
+        echo -e "  ${YELLOW}⚠ This update changes the installer or package lists — review before running install.sh:${NC}"
+        head -n 20 <<< "$risky" | sed 's/^/    /'
+    fi
+fi
+echo ""
+
 # Lokalne zmiany w plikach śledzonych przez git → schowaj (git stash), żeby
 # pull ich nie zgubił ani nie odmówił z powodu konfliktu. --untracked-files=no,
 # bo pliki nieśledzone (warstwa maszynowa/osobista) i tak nie kolidują z pull.
@@ -96,6 +118,8 @@ fi
 
 # Przywrócenie schowka z RZETELNYM wynikiem: przy konflikcie git zostawia
 # wpis w `git stash list`, więc zmiany nie giną — mówimy, gdzie są.
+# Kod 1 = konflikt: drzewo ma znaczniki konfliktu, więc wołający nie melduje
+# „✓” i nie proponuje install.sh (audyt bezpieczeństwa 2026-11-14, K3).
 restore_stash() {
     [[ $stashed -eq 1 ]] || return 0
     echo -e "  ${CYAN}→ Restoring your local changes...${NC}"
@@ -103,6 +127,7 @@ restore_stash() {
         echo -e "  ${GREEN}✓ Local changes restored.${NC}"
     else
         echo -e "  ${RED}✗ Could not restore automatically — your changes are in the stash (git stash list); resolve the conflict and run git stash pop.${NC}"
+        return 1
     fi
 }
 
@@ -122,7 +147,12 @@ if ! git -C "$ARCHENEMY_DIR" pull --ff-only origin "$target" 2>&1 | sed 's/^/   
     exit 0
 fi
 
-restore_stash
+if ! restore_stash; then
+    echo -e "  ${YELLOW}⚠ The code is at origin/${target}, but the update is not finished: resolve the conflict first.${NC}"
+    echo -e "  ${YELLOW}  Afterwards start the installer yourself: bash ~/archenemy/install/install.sh${NC}"
+    pause
+    exit 0
+fi
 
 # Sukces = zaobserwowany stan, nie kod wyjścia: HEAD musi równać się
 # origin/<gałąź>. Lokalne commity ponad origin (pull --ff-only mówi wtedy
@@ -139,11 +169,17 @@ else
     pause
     exit 0
 fi
+if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)" != "$old_head" ]]; then
+    echo -e "  To go back: git switch --detach ${old_head}   (run in ~/archenemy)"
+fi
 echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
 echo -e "  git — ${GREEN}they stay unchanged${NC}."
 echo ""
-if confirm "Run install.sh now to regenerate machine files?" Y; then
+# Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
+# z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go
+# uruchomić. Przypomnienie o zaległym biegu daje machine-layer-check.sh.
+if confirm "Run install.sh now to regenerate machine files? It will ask for sudo." N; then
     # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
     # (brak bitu w indeksie gita blokował tu instalację — audyt 2026-09-23).
     if [[ -f "$ARCHENEMY_DIR/install/install.sh" ]]; then
