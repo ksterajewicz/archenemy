@@ -337,7 +337,7 @@ python3 "$T/jsonc.py" "$REPO/rices/white-blue_beta/fastfetch/config.jsonc" beta 
 check "white-blue_beta: zostaje terminalfont (rice zamrożony)" '(( $? == 0 ))'
 
 # Skutek na atrapie bez fastfetcha: fastfetch po cichu pomija moduł command,
-# gdy polecenie nic nie wypisze (brak pliku = kod 127, brak bitu wykonania).
+# gdy polecenie nic nie wypisze albo skończy się kodem 127 (np. brak pliku).
 # Wiersz fontu nie może wtedy zniknąć: font bierze z plików, które czyta alacritty.
 echo "== fastfetch: wiersz fontu bez skryptu archenemy"
 for rice in asia-n-rice white-blue tron crt dither-flux; do
