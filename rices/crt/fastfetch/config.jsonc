@@ -32,7 +32,9 @@
     { "type": "wm",           "key": "WM   " },
     { "type": "terminal",     "key": "TERM " },
     // Font terminala z uwzględnieniem wyboru Super+A → [f] (rodzina jest w importach alacritty).
-    { "type": "command",      "key": "FONT ", "text": "\"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current" },
+    // fastfetch po cichu pomija wiersz, gdy polecenie nic nie wypisze (np. skrypt
+    // niedostępny), więc zapasowo czytamy te same pliki co alacritty; wynik nigdy nie jest pusty.
+    { "type": "command",      "key": "FONT ", "text": "f=$(bash \"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current 2>/dev/null); [ -n \"$f\" ] || f=$(sed -n 's/^[[:space:]]*family[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1 (alacritty config)/p' \"$HOME/.config/archenemy/fonts/alacritty.toml\" \"$HOME/.config/alacritty/font.toml\" 2>/dev/null | head -n 1); echo \"${f:-unknown (font-settings.sh and alacritty font files unavailable)}\"" },
     { "type": "custom", "format": "────────────────────────────────" },
     { "type": "cpu",          "key": "CPU  " },
     { "type": "gpu",          "key": "GPU  " },

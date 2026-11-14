@@ -336,6 +336,30 @@ done
 python3 "$T/jsonc.py" "$REPO/rices/white-blue_beta/fastfetch/config.jsonc" beta >/dev/null
 check "white-blue_beta: zostaje terminalfont (rice zamrożony)" '(( $? == 0 ))'
 
+# Skutek na atrapie bez fastfetcha: fastfetch po cichu pomija moduł command,
+# gdy polecenie nic nie wypisze (brak pliku = kod 127, brak bitu wykonania).
+# Wiersz fontu nie może wtedy zniknąć: font bierze z plików, które czyta alacritty.
+echo "== fastfetch: wiersz fontu bez skryptu archenemy"
+for rice in asia-n-rice white-blue tron crt dither-flux; do
+    NH="$T/home-bez-repo-$rice"
+    mkdir -p "$NH/.config"
+    ln -s "$REPO/rices/$rice/alacritty" "$NH/.config/alacritty"
+    text="$(python3 "$T/jsonc.py" "$REPO/rices/$rice/fastfetch/config.jsonc" list)"
+    want="$(sed -n 's/^family = "\(.*\)"$/\1/p' "$REPO/rices/$rice/alacritty/font.toml")"
+    out="$(HOME="$NH" sh -c "$text" 2>/dev/null)"
+    check "$rice: wiersz zostaje i pokazuje font rice'a ($want)" '[[ -n "$want" && "$out" == "$want (alacritty config)" ]]'
+done
+NH="$T/home-bez-repo-wybor"
+mkdir -p "$NH/.config/archenemy/fonts"
+ln -s "$REPO/rices/tron/alacritty" "$NH/.config/alacritty"
+printf '[font.normal]\nfamily = "Iosevka Term"\n' > "$NH/.config/archenemy/fonts/alacritty.toml"
+out="$(HOME="$NH" sh -c "$text" 2>/dev/null)"
+check "bez skryptu: wybór z Super+A wygrywa z fontem rice'a" '[[ "$out" == "Iosevka Term (alacritty config)" ]]'
+NH="$T/home-pusty"
+mkdir -p "$NH"
+out="$(HOME="$NH" sh -c "$text" 2>/dev/null)"
+check "bez skryptu i plików fontu: wiersz nadal widoczny" '[[ "$out" == "unknown ("* ]]'
+
 check "repozytorium nadal bez zmian" '[[ "$(repo_state)" == "$before_repo" ]]'
 echo ""
 echo "PASS: $PASS  FAIL: $FAIL"
