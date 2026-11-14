@@ -729,6 +729,7 @@ timer_menu() {
 # kolejności. Wynik w LAYOUT_ORDER (kody po przecinku). Kod 1 = anulowane,
 # 2 = błędne numery (komunikat wypisany).
 LAYOUT_ORDER=""
+# shellcheck disable=SC2034  # zmienne TUI_MENU_* czyta tui_menu z lib/tui.sh
 pick_layout_order() {
     local script="$1"; shift
     local -a remaining=("$@") all=("$@") chosen=() labels=() picks=() TUI_MENU_KEYS=()
