@@ -328,7 +328,8 @@ archenemy/
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
-│                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language.
+│                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language;
+│                                     #   no machine data (interface names such as network=wlo1, /home/<login>).
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
 │                                     #   tui-effects.sh + tui-effects.list — guard: every Super+A entry that changes state names
@@ -359,6 +360,8 @@ archenemy/
 │                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
 │                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip".
+│                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
+│                                     #   over the whole history (when installed; otherwise "skip").
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
 │                                     #   installed from (pacman sync DB / AUR RPC v5), no -git in requirements;
 │                                     #   offline or without [multilib] → "skip", never ✓.
@@ -770,6 +773,8 @@ The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetche
 ## Verification
 
 CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+
+`bash tests/secrets.sh` looks for private keys and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
 
 `bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the synced repos (one read-only `pacman -Slq`), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network, without pacman or without a synced `[multilib]` database the affected names are reported as `skip`, never as passed.
 
