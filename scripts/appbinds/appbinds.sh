@@ -123,6 +123,47 @@ reload_hyprland() {
     return "$rc"
 }
 
+# Plik bindów ma być taki jak przed zmianą. Kod 0 tylko wtedy, gdy odczyt równa
+# się kopii: sam zapis bez odczytu nie jest dowodem.
+restore_binds() {
+    [[ "$(cat "$BINDS_CONF" 2>/dev/null)" == "$1" ]] && return 0
+    printf '%s\n' "$1" > "$BINDS_CONF"
+    [[ "$(cat "$BINDS_CONF" 2>/dev/null)" == "$1" ]]
+}
+
+# Zapis się nie udał (pełny dysk, plik tylko do odczytu): bez przeładowania
+# i bez zielonego komunikatu. $1 = zawartość sprzed zmiany.
+report_write_failed() {
+    if restore_binds "$1"; then
+        echo -e "  ${RED}✗ Could not write ${BINDS_CONF} — nothing was changed.${NC}"
+    else
+        echo -e "  ${RED}✗ Could not write ${BINDS_CONF} and it no longer matches the old content — check it by hand.${NC}"
+    fi
+    return 0
+}
+
+# Wspólny koniec [a]/[e]/[d], wołany po zapisie potwierdzonym odczytem pliku.
+# Zielony komunikat pada dopiero po przeładowaniu bez błędów; przy błędzie
+# configu plik wraca do kopii, a wynik cofnięcia też jest odczytany.
+#   $1 zawartość sprzed zmiany, $2 tekst sukcesu, $3 co zostało zapisane,
+#   $4 tekst cofnięcia
+finish_bind_change() {
+    local backup="$1" done_msg="$2" saved_msg="$3" undone_msg="$4" rc
+    reload_hyprland; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}✓ ${done_msg}${NC}" ;;
+        2) if ! restore_binds "$backup"; then
+               echo -e "  ${RED}✗ Could not restore ${BINDS_CONF} — remove the line named above by hand.${NC}"
+           elif hypr_reload_checked >/dev/null; then
+               echo -e "  ${YELLOW}↩ ${undone_msg}${NC}"
+           else
+               echo -e "  ${YELLOW}↩ ${undone_msg} Hyprland did not confirm the reload — reload it manually.${NC}"
+           fi ;;
+        *) echo -e "  ${YELLOW}${saved_msg}${NC}" ;;
+    esac
+    return 0
+}
+
 # ─── PODGLĄD WSZYSTKICH SKRÓTÓW ──────────────────────────────────────────────
 
 # Ładna nazwa klawisza (mysz, scroll) — reszta zostaje jak w configu
@@ -268,16 +309,17 @@ add_bind() {
         confirm "Add anyway?" N || return
     fi
 
-    local backup
+    local backup line
     backup="$(cat "$BINDS_CONF")"
-    { format_bind_line "$combo" "$cmd"; echo; } >> "$BINDS_CONF"
-    echo -e "  ${GREEN}✓ Added: Super + ${combo} → ${cmd}${NC}"
-    reload_hyprland
-    if (( $? == 2 )); then
-        printf '%s\n' "$backup" > "$BINDS_CONF"
-        hypr_reload_checked >/dev/null
-        echo -e "  ${YELLOW}↩ Bind removed again.${NC}"
+    line="$(format_bind_line "$combo" "$cmd")"
+    # Dowodem zapisu jest ostatnia linia pliku, nie kod wyjścia dopisania.
+    printf '%s\n' "$line" >> "$BINDS_CONF"
+    if [[ "$(tail -n 1 "$BINDS_CONF" 2>/dev/null)" != "$line" ]]; then
+        report_write_failed "$backup"
+        return 0
     fi
+    finish_bind_change "$backup" "Added: Super + ${combo} → ${cmd}" \
+        "Saved: Super + ${combo} → ${cmd}" "Bind removed again — nothing was added."
 }
 
 edit_bind() {
@@ -300,17 +342,19 @@ edit_bind() {
     cmd=$(trim "$cmd")
     [[ -n "$cmd" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
     backup="$(cat "$BINDS_CONF")"
-    replace_bind_command "$BINDS_CONF" "$num" "$cmd" || {
-        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
-        return
-    }
-    echo -e "  ${GREEN}✓ Changed: bind ${num} → ${cmd}${NC}"
-    reload_hyprland
-    if (( $? == 2 )); then
-        printf '%s\n' "$backup" > "$BINDS_CONF"
-        hypr_reload_checked >/dev/null
-        echo -e "  ${YELLOW}↩ Change undone.${NC}"
+    replace_bind_command "$BINDS_CONF" "$num" "$cmd"
+    case $? in
+        0) ;;
+        1) echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"; return 0 ;;
+        *) report_write_failed "$backup"; return 0 ;;
+    esac
+    # Dowodem zapisu jest komenda odczytana z tej samej pozycji listy.
+    if [[ "$(user_bind_lines "$BINDS_CONF" | sed -n "${num}p" | cut -f3-)" != "$cmd" ]]; then
+        report_write_failed "$backup"
+        return 0
     fi
+    finish_bind_change "$backup" "Changed: bind ${num} → ${cmd}" \
+        "Saved: bind ${num} → ${cmd}" "Change undone — the bind runs the old command."
 }
 
 remove_bind() {
@@ -334,12 +378,16 @@ remove_bind() {
     # Ten sam wybór linii co lista wyżej — numer N kasuje dokładnie linię
     # pokazaną jako N, niezależnie od innych `hl.bind(` w pliku.
     confirm "Remove ${choices[$((num - 1))]}?" N || { echo "Cancelled."; return; }
-    remove_bind_by_index "$BINDS_CONF" "$num" || {
-        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
-        return
-    }
-    echo -e "  ${GREEN}✓ Removed.${NC}"
-    reload_hyprland
+    local backup
+    backup="$(cat "$BINDS_CONF")"
+    # Numer sprawdzony wyżej, więc porażka tutaj to nieudany zapis. Dowodem
+    # usunięcia jest lista krótsza o jeden bind.
+    if ! remove_bind_by_index "$BINDS_CONF" "$num" || [[ "$(bind_count "$BINDS_CONF")" -ne $((total - 1)) ]]; then
+        report_write_failed "$backup"
+        return 0
+    fi
+    finish_bind_change "$backup" "Removed: ${choices[$((num - 1))]}" \
+        "Saved: ${choices[$((num - 1))]} is off the list." "Bind restored — nothing was removed."
 }
 
 # ─── TRYB WORKSPACE'ÓW (shared/decades) ──────────────────────────────────────
@@ -380,6 +428,26 @@ warn_if_beta() {
     echo -e "  ${YELLOW}⚠ white-blue_beta has no ${1} — switch rice (Super+T) to use this.${NC}"
 }
 
+# Koniec zmiany ustawienia paska. Plik jest już zapisany i odczytany (write_dat),
+# ale zielony komunikat pada tylko wtedy, gdy pasek może pokazać zmianę: rice ma
+# moduł, waybar działa i przyjął sygnał (pkill oddaje 1, gdy nie trafił w żaden
+# proces). Inaczej mówimy, co jest zapisane i kiedy będzie to widać.
+#   $1 numer sygnału, $2 tekst sukcesu, $3 co zapisano, $4 nazwa modułu
+bar_change_report() {
+    local signal="$1" shown_msg="$2" saved_msg="$3" module="$4" rice=""
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    if [[ "$rice" == "white-blue_beta" ]]; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. white-blue_beta has no ${module} — it shows after you switch rice (Super+T).${NC}"
+    elif ! pgrep -x waybar >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar is not running — the bar shows it once waybar starts.${NC}"
+    elif ! pkill -RTMIN+"$signal" waybar 2>/dev/null; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar did not take the refresh signal — the bar shows it on its next refresh or after waybar restarts.${NC}"
+    else
+        echo -e "  ${GREEN}✓ ${shown_msg}${NC}"
+    fi
+    return 0
+}
+
 # ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
 
 # Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
@@ -395,7 +463,8 @@ volume_style_current() {
 
 # Wybór stylu paska custom/volumebar (line/ticks/solid). Zapis do
 # data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
-# sygnał 10 do waybara = pasek przerysowuje się od razu.
+# sygnał 10 do waybara = pasek przerysowuje się od razu. Wynik sygnału jest
+# sprawdzany (bar_change_report).
 volume_style_menu() {
     local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
     local cur; cur="$(volume_style_current)"
@@ -417,9 +486,8 @@ volume_style_menu() {
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    write_dat "$style_dat" "$target" || return
-    pkill -RTMIN+10 waybar 2>/dev/null
-    echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
+    write_dat "$style_dat" "$target" || return 1
+    bar_change_report 10 "Volume bar style: ${target}" "volume bar style ${target}" "volume bar module"
 }
 
 # ─── WYJŚCIE AUDIO mpd (pipewire / alsa) ─────────────────────────────────────
@@ -573,7 +641,8 @@ audio_menu() {
 
 # Ustawienia modułu custom/timer: włączenie na pasku, domyślny czas odliczania
 # i kolor tekstu. Pliki data/timer-*.dat czyta scripts/waybar/timer.sh; po
-# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu.
+# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu. Zielony
+# komunikat pada dopiero po wyniku sygnału (bar_change_report).
 # Sam bieg timera (start/pauza/reset) obsługuje pasek, nie to menu.
 timer_menu() {
     local lib="$ARCHENEMY_DIR/scripts/waybar/lib/timer-state.sh"
@@ -600,16 +669,17 @@ timer_menu() {
     echo -e "    ${BLUE}3${NC}) text colour (hex)"
     echo ""
     local ans; tui_menu_lines 0 "$( [[ "$enabled_label" == on ]] && echo 'turn off' || echo 'turn on' )" "default duration (minutes)" "text colour (hex)" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    local shown_msg saved_msg
 
     case "$ans" in
         1)
             local target="1"
             [[ "$enabled_label" == "on" ]] && target="0"
-            write_dat "$TIMER_ENABLED_DAT" "$target" || return
+            write_dat "$TIMER_ENABLED_DAT" "$target" || return 1
             if [[ "$target" == "1" ]]; then
-                echo -e "  ${GREEN}✓ Timer shown on the bar.${NC}"
+                shown_msg="Timer shown on the bar."; saved_msg="timer on"
             else
-                echo -e "  ${GREEN}✓ Timer hidden (the clock goes back to the exact centre).${NC}"
+                shown_msg="Timer hidden (the clock goes back to the exact centre)."; saved_msg="timer off"
             fi
             ;;
         2)
@@ -620,7 +690,7 @@ timer_menu() {
                 echo -e "  ${RED}✗ '${mins}' is not a number between 1 and ${TIMER_MAX_MINUTES}.${NC}"
                 return
             fi
-            write_dat "$TIMER_DURATION_DAT" "$mins" || return
+            write_dat "$TIMER_DURATION_DAT" "$mins" || return 1
             # Nowy czas ma być widoczny od razu — ale tylko wtedy, gdy nie
             # przerwie trwającego odliczania (reset zabiłby bieg w połowie).
             if [[ "$TIMER_STATUS" == "running" ]]; then
@@ -628,7 +698,7 @@ timer_menu() {
             else
                 bash "$ARCHENEMY_DIR/scripts/waybar/timer-ctl.sh" reset
             fi
-            echo -e "  ${GREEN}✓ Default duration: ${mins} min${NC}"
+            shown_msg="Default duration: ${mins} min"; saved_msg="default duration ${mins} min"
             ;;
         3)
             local hex
@@ -639,17 +709,70 @@ timer_menu() {
                 echo -e "  ${RED}✗ '${hex}' is not a #rrggbb colour.${NC}"
                 return
             fi
-            write_dat "$TIMER_COLOR_DAT" "$hex" || return
-            echo -e "  ${GREEN}✓ Timer colour: ${hex}${NC}"
+            write_dat "$TIMER_COLOR_DAT" "$hex" || return 1
+            shown_msg="Timer colour: ${hex}"; saved_msg="timer colour ${hex}"
             ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    pkill -RTMIN+11 waybar 2>/dev/null
+    bar_change_report 11 "$shown_msg" "$saved_msg" "timer module"
 }
 
 # ─── KEYBOARD LAYOUTS ────────────────────────────────────────────────────────
+
+# Nowa kolejność układów ekranem wyboru: dla każdego miejsca lista pozostałych
+# układów (strzałki, j/k, Enter, cyfra; Esc anuluje całość), ostatni układ
+# wchodzi sam. Skrót z czasów wpisywania zostaje: na pierwszym ekranie można
+# wpisać całą permutację cyframi i Enter (np. `2 1`); jeden numer wybiera układ
+# na pierwsze miejsce. $1 = keyboard-layouts.sh (nazwy), reszta = kody w obecnej
+# kolejności. Wynik w LAYOUT_ORDER (kody po przecinku). Kod 1 = anulowane,
+# 2 = błędne numery (komunikat wypisany).
+LAYOUT_ORDER=""
+# shellcheck disable=SC2034  # zmienne TUI_MENU_* czyta tui_menu z lib/tui.sh
+pick_layout_order() {
+    local script="$1"; shift
+    local -a remaining=("$@") all=("$@") chosen=() labels=() picks=() TUI_MENU_KEYS=()
+    local total=$# code n seen=" "
+    local TUI_MENU_CAPTURE_DIGITS=1 TUI_MENU_INPUT="" TUI_MENU_CHECKLIST=0 TUI_MENU_NO_DIGITS=0
+    echo -e "  Pick the layout for each place, or type the whole order as numbers and"
+    echo -e "  press Enter, e.g. ${CYAN}$(seq -s ' ' "$total" -1 1)${NC}."
+    while (( ${#remaining[@]} > 1 )); do
+        echo "  Layout #$(( ${#chosen[@]} + 1 )):"
+        labels=()
+        for code in "${remaining[@]}"; do
+            tui_fit "$code" 4
+            labels+=("$FIT $(bash "$script" name "$code")")
+        done
+        TUI_MENU_INPUT=""
+        tui_menu 0 "${labels[@]}" || return 1
+        if (( TUI_MENU_INDEX < 0 )); then
+            # Wpisane cyfry (tylko pierwszy ekran, numery jak na liście wyżej).
+            read -ra picks <<< "${TUI_MENU_INPUT//,/ }"
+            for n in "${picks[@]}"; do
+                if [[ ! "$n" =~ ^[0-9]+$ ]] || (( 10#$n < 1 || 10#$n > total )) || [[ "$seen" == *" $((10#$n)) "* ]]; then
+                    echo -e "  ${RED}✗ Use each number 1–${total} exactly once.${NC}"; return 2
+                fi
+                seen+="$((10#$n)) "
+            done
+            if (( ${#picks[@]} == total )); then
+                for n in "${picks[@]}"; do chosen+=("${all[$((10#$n - 1))]}"); done
+                remaining=()
+                break
+            elif (( ${#picks[@]} != 1 )); then
+                echo -e "  ${RED}✗ Use each number 1–${total} exactly once.${NC}"; return 2
+            fi
+            TUI_MENU_INDEX=$(( 10#${picks[0]} - 1 ))
+        fi
+        chosen+=("${remaining[$TUI_MENU_INDEX]}")
+        unset 'remaining[TUI_MENU_INDEX]'
+        remaining=("${remaining[@]}")
+        TUI_MENU_CAPTURE_DIGITS=0
+    done
+    chosen+=("${remaining[@]}")
+    LAYOUT_ORDER="$(IFS=','; printf '%s' "${chosen[*]}")"
+    return 0
+}
 
 # Lista 1–4 układów klawiatury i ich kolejność. Zapis, reload i sprawdzenie
 # robi scripts/hypr/keyboard-layouts.sh (jedna droga — te same skrypty wołają
@@ -719,20 +842,16 @@ keyboard_layouts_menu() {
             if (( ${#L[@]} < 2 )); then
                 echo -e "  ${YELLOW}Only one layout — nothing to reorder.${NC}"; return
             fi
-            local order n
-            read -rp "  New order as numbers, e.g. $(seq -s ' ' ${#L[@]} -1 1) (Enter = cancel): " order
-            order=$(trim "${order//,/ }")
-            [[ -n "$order" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
-            local -a O; read -ra O <<< "$order"
-            local -a out=(); local seen=" "
-            for n in "${O[@]}"; do
-                if [[ ! "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#L[@]} )) || [[ "$seen" == *" $n "* ]]; then
-                    echo -e "  ${RED}✗ Use each number 1–${#L[@]} exactly once.${NC}"; return
-                fi
-                seen+="$n "; out+=("${L[$((n-1))]}")
-            done
-            (( ${#out[@]} == ${#L[@]} )) || { echo -e "  ${RED}✗ Use each number 1–${#L[@]} exactly once.${NC}"; return; }
-            new="$(IFS=','; printf '%s' "${out[*]}")"
+            pick_layout_order "$script" "${L[@]}"
+            case $? in
+                0) ;;
+                1) echo -e "  ${YELLOW}Cancelled.${NC}"; return 0 ;;
+                *) return 0 ;;
+            esac
+            new="$LAYOUT_ORDER"
+            if [[ "$new" == "$cur" ]]; then
+                echo -e "  ${YELLOW}Order unchanged.${NC}"; return 0
+            fi
             ;;
         3) new="reset" ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;

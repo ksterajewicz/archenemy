@@ -206,8 +206,16 @@ tui_menu() {
                 if [[ "${TUI_MENU_CAPTURE_DIGITS:-0}" == 1 ]]; then
                     # Stary picker przyjmuje także wiele numerów i numery >9.
                     rest=""
-                    IFS= read -r rest || return 1
-                    TUI_MENU_INPUT="$key$rest"
+                    if [[ -t 0 && -t 1 ]]; then
+                        # Pierwsza cyfra przyszła bez echa. Readline pokazuje ją
+                        # jako początek wiersza, więc widać całość, także przy
+                        # wklejeniu, i da się ją poprawić przed Enterem.
+                        IFS= read -r -e -i "$key" -p "    " rest || return 1
+                        TUI_MENU_INPUT="$rest"
+                    else
+                        IFS= read -r rest || return 1
+                        TUI_MENU_INPUT="$key$rest"
+                    fi
                     TUI_MENU_INDEX=-1
                     return 0
                 fi
@@ -290,12 +298,19 @@ confirm() {
 
 # Zapis jednowartościowego pliku warstwy maszynowej (data/*.dat) — atomowo
 # (tmp + mv), bo moduły waybara czytają te pliki co sekundę i nie mogą trafić
-# na zapis w połowie. Jedno miejsce dla wszystkich menu TUI.
+# na zapis w połowie. Jedno miejsce dla wszystkich menu TUI. Kod 0 dopiero po
+# odczycie: plik ma dokładnie zapisaną wartość (pusty plik po pełnym dysku albo
+# nieudane mv to porażka z komunikatem, a stary plik zostaje).
 write_dat() {
     local file="$1" value="$2" tmp
     mkdir -p "$(dirname "$file")"
     tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
     printf '%s\n' "$value" > "$tmp"
     chmod 644 "$tmp"   # mktemp daje 600 — zachowaj zwykłe prawa (jak inne data/*.dat)
-    mv "$tmp" "$file"
+    if [[ "$(<"$tmp")" == "$value" ]] && mv "$tmp" "$file" && [[ "$(<"$file")" == "$value" ]]; then
+        return 0
+    fi
+    rm -f "$tmp"
+    echo -e "  ${RED}✗ Could not write ${file} — nothing was changed.${NC}"
+    return 1
 }

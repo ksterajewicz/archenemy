@@ -85,19 +85,22 @@ remove_bind_by_index() {
 }
 
 # replace_bind_command <plik> <N> <komenda> — zmienia komendę N-tego bindu,
-# bez ruszania klawisza i pozostałych linii. Kod 1 = nie ma takiego numeru.
+# bez ruszania klawisza i pozostałych linii. Kod 1 = nie ma takiego numeru,
+# kod 2 = zapis się nie udał (plik zostaje nietknięty).
 replace_bind_command() {
-    local file="$1" idx="$2" cmd="$3" entry lineno key tmp n=0 line
+    local file="$1" idx="$2" cmd="$3" entry lineno key tmp n=0 line written=1
     [[ "$idx" =~ ^[1-9][0-9]*$ ]] || return 1
     entry="$(user_bind_lines "$file" | sed -n "${idx}p")"
     [[ -n "$entry" ]] || return 1
     lineno="$(cut -f1 <<<"$entry")"
     key="$(cut -f2 <<<"$entry")"
-    tmp="$(mktemp "${file}.XXXXXX")" || return 1
+    tmp="$(mktemp "${file}.XXXXXX")" || return 2
     while IFS= read -r line || [[ -n "$line" ]]; do
         n=$((n + 1))
-        if ((n == lineno)); then format_bind_line "$key" "$cmd"; echo; else printf '%s\n' "$line"; fi
+        if ((n == lineno)); then format_bind_line "$key" "$cmd" && echo; else printf '%s\n' "$line"; fi || written=0
     done < "$file" > "$tmp"
+    # Ucięty plik tymczasowy (pełny dysk) nie może zastąpić bindów użytkownika.
+    ((written)) || { rm -f "$tmp"; return 2; }
     chmod --reference="$file" "$tmp" 2>/dev/null
-    mv "$tmp" "$file"
+    mv "$tmp" "$file" || { rm -f "$tmp"; return 2; }
 }

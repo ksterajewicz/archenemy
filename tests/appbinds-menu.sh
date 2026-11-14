@@ -36,17 +36,50 @@ printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' 
 printf 'hl.bind(mainMod .. " + Q", hl.dsp.window.close())\nhl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }))\n' > "$H/.config/hypr/hyprland.lua"
 printf '#define XKB_KEY_F5 0xffc2\n#define XKB_KEY_semicolon 0x3b\n#define XKB_KEY_Return 0xff0d\n' > "$T/keysyms.h"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
-# Atrapa hyprctl: reload ocenia appbinds.lua; klawisz `badkey` = błąd configu.
+# Atrapa hyprctl: reload ocenia appbinds.lua; klawisz `badkey` albo plik
+# $T/failreload = błąd configu.
 cat > "$T/bin/hyprctl" <<EOS
 #!/bin/bash
 echo "hyprctl \$*" >> "$T/log"
 [[ -f "$T/dead" ]] && exit 1
 case "\$1" in
-  reload) if grep -q badkey "$BINDS" 2>/dev/null; then echo 'hl.bind: Unknown key: badkey' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
+  reload) if grep -q badkey "$BINDS" 2>/dev/null || [[ -f "$T/failreload" ]]; then echo 'hl.bind: Unknown key: badkey' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
   configerrors) cat "$T/errors" 2>/dev/null; echo ;;
 esac
 EOS
+# Atrapy procesów: guard „żyje”, gdy setsid go wystartował (plik guard-alive),
+# chyba że guard-broken; waybar żyje, gdy jest plik waybar-alive.
+cat > "$T/bin/pgrep" <<EOS
+#!/bin/bash
+case "\$*" in
+  *workspace-orphan-guard*) [[ -f "$T/guard-alive" ]] ;;
+  *waybar*) [[ -f "$T/waybar-alive" ]] ;;
+  *) exit 1 ;;
+esac
+EOS
+cat > "$T/bin/setsid" <<EOS
+#!/bin/bash
+[[ "\$*" == *workspace-orphan-guard* && ! -f "$T/guard-broken" ]] && touch "$T/guard-alive"
+exit 0
+EOS
+# pkill trafia tylko w żywego waybara (jak prawdziwy: kod 1 bez procesu);
+# plik pkill-fails = waybar jest, ale sygnał nie dochodzi.
+cat > "$T/bin/pkill" <<EOS
+#!/bin/bash
+echo "pkill \$*" >> "$T/log"
+[[ -f "$T/waybar-alive" && ! -f "$T/pkill-fails" ]]
+EOS
+touch "$T/waybar-alive"
+# mv, które nie umie zapisać pliku o nazwie z mv-fails (pełny dysk).
+REAL_MV="$(command -v mv)"
+cat > "$T/bin/mv" <<EOS
+#!/bin/bash
+if [[ -f "$T/mv-fails" && "\${!#}" == */"\$(<"$T/mv-fails")" ]]; then echo "mv: cannot move" >&2; exit 1; fi
+exec "$REAL_MV" "\$@"
+EOS
 chmod +x "$T/bin/"*
+# Krótsze czekanie na start guarda niż domyślna sekunda (atrapa setsid działa w tle).
+export ARCHENEMY_GUARD_SETTLE=0.3
 export HOME="$H" PATH="$T/bin:$PATH" ARCHENEMY_XKB_KEYSYMS="$T/keysyms.h" HYPRLAND_INSTANCE_SIGNATURE=test
 
 tui() { printf "$1" | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
@@ -101,6 +134,38 @@ check "[d] Enter nie usuwa" '[[ "$(cat "$BINDS")" == "$before" ]]'
 out="$(tui 'd1\ny\nq')"
 check "[d] usuwa i sprawdza reload"       '! grep -Fq "\"ls\"" "$BINDS" && [[ "$out" == *"no config errors"* ]]'
 
+echo "== [a]/[e]/[d] zielone ✓ dopiero po odczycie skutku"
+# Zapis, który nie udaje się także rootowi: limit rozmiaru pliku 1 KiB przy pliku
+# bindów większym niż 1 KiB. SIGXFSZ jest ignorowany, więc zapis oddaje EFBIG.
+tui_nowrite() { ( trap '' XFSZ; ulimit -f 1; tui "$1" ); }
+big() {
+    local i
+    reset; printf 'hl.bind(mainMod .. " + g", hl.dsp.exec_cmd("ls"))\n' >> "$BINDS"
+    for i in $(seq 30); do echo "-- padding $i ................................................"; done >> "$BINDS"
+    before="$(cat "$BINDS")"
+}
+reset; out="$(tui 'ag\nls\n\nq')"
+check "[a] ✓ Added dopiero po wyniku reloadu"     '[[ "$out" == *"no config errors"*"✓ Added: Super + g"* ]]'
+rm -f "$T/keysyms.h"; reset; out="$(tui 'abadkey\nls\n\nq')"; printf '#define XKB_KEY_F5 0xffc2\n' > "$T/keysyms.h"
+check "[a] błąd configu: bez ✓ Added"             '[[ "$out" != *"✓ Added"* && "$out" == *"removed again"* ]]'
+reset; touch "$T/dead"; out="$(tui 'ag\nls\n\nq')"; rm "$T/dead"
+check "[a] martwy Hyprland: Saved, bez ✓ Added"   '[[ "$out" != *"✓ Added"* && "$out" == *"Saved: Super + g"* ]]'
+big; out="$(tui_nowrite 'ah\npwd\n\nq')"
+check "[a] nieudany zapis: bez ✓, plik bez zmian" '[[ "$out" != *"✓ Added"* && "$out" == *"Could not write"* && "$(cat "$BINDS")" == "$before" ]]'
+check "[a] nieudany zapis: bez reloadu"           '! grep -q "hyprctl reload" "$T/log"'
+big; out="$(tui 'e1\ndate\n\nq')"
+check "[e] ✓ Changed dopiero po wyniku reloadu"   '[[ "$out" == *"no config errors"*"✓ Changed"* ]]'
+big; out="$(tui 'e1\nbadkey\n\nq')"
+check "[e] błąd configu: bez ✓ Changed, cofnięte" '[[ "$out" != *"✓ Changed"* && "$out" == *"Change undone"* && "$(cat "$BINDS")" == "$before" ]]'
+big; out="$(tui_nowrite 'e1\ndate\n\nq')"
+check "[e] nieudany zapis: bez ✓, plik bez zmian" '[[ "$out" != *"✓ Changed"* && "$out" == *"Could not write"* && "$(cat "$BINDS")" == "$before" ]]'
+big; out="$(tui 'd1\ny\nq')"
+check "[d] ✓ Removed dopiero po wyniku reloadu"   '[[ "$out" == *"no config errors"*"✓ Removed"* ]]'
+big; touch "$T/failreload"; out="$(tui 'd1\ny\nq')"; rm "$T/failreload"
+check "[d] błąd configu: bez ✓ Removed, bind wraca" '[[ "$out" != *"✓ Removed"* && "$out" == *"Bind restored"* && "$(cat "$BINDS")" == "$before" ]]'
+big; out="$(tui_nowrite 'd1\ny\nq')"
+check "[d] nieudany zapis: bez ✓, plik bez zmian" '[[ "$out" != *"✓ Removed"* && "$out" == *"Could not write"* && "$(cat "$BINDS")" == "$before" ]]'
+
 echo "== bindy pisane ręcznie"
 reset; printf 'hl.bind("SUPER + x", hl.dsp.exec("xterm"))\n' >> "$BINDS"
 out="$(tui 'q')"
@@ -127,6 +192,35 @@ check "kolor dostaje #"                        '[[ "$(<"$A/data/timer-color.dat"
 out="$(tui 't3\nzielony\nq')"
 check "zły kolor odrzucony"                    '[[ "$(<"$A/data/timer-color.dat")" == "#00ff00" && "$out" == *"not a #rrggbb"* ]]'
 
+echo "== [v]/[t] zielone ✓ tylko gdy waybar działa i przyjął sygnał"
+VB="$A/data/volume-bar-style.dat"; TE="$A/data/timer-enabled.dat"
+rm "$T/waybar-alive"; : > "$T/log"
+out="$(tui 'v3\n\nq')"
+check "[v] bez waybara: zapisane, bez ✓"       '[[ "$(<"$VB")" == solid && "$out" != *"✓ Volume bar style"* && "$out" == *"Saved: volume bar style solid"*"Waybar is not running"* ]]'
+echo 0 > "$TE"; out="$(tui 't1\n\nq')"
+check "[t] bez waybara: zapisane, bez ✓ shown" '[[ "$(<"$TE")" == 1 && "$out" != *"✓ Timer shown"* && "$out" == *"Saved: timer on"*"Waybar is not running"* ]]'
+out="$(tui 't1\n\nq')"
+check "[t] wyłączenie bez waybara: bez ✓"      '[[ "$(<"$TE")" == 0 && "$out" != *"✓ Timer hidden"* && "$out" == *"Saved: timer off"* ]]'
+out="$(tui 't3\n112233\nq')"
+check "[t] kolor bez waybara: bez ✓"           '[[ "$(<"$A/data/timer-color.dat")" == "#112233" && "$out" != *"✓ Timer colour"* && "$out" == *"Saved: timer colour #112233"* ]]'
+check "bez waybara żadnego sygnału w ciemno"   '! grep -q "^pkill" "$T/log"'
+touch "$T/waybar-alive" "$T/pkill-fails"
+out="$(tui 'v1\n\nq')"
+check "[v] sygnał nie doszedł: bez ✓"          '[[ "$(<"$VB")" == line && "$out" != *"✓ Volume bar style"* && "$out" == *"did not take the refresh signal"* ]]'
+out="$(tui 't1\n\nq')"
+check "[t] sygnał nie doszedł: bez ✓ shown"    '[[ "$(<"$TE")" == 1 && "$out" != *"✓ Timer shown"* && "$out" == *"did not take the refresh signal"* ]]'
+rm "$T/pkill-fails"; : > "$T/log"
+out="$(tui 'v2\n\nq')"
+check "[v] waybar działa: ✓ po sygnale 10"     '[[ "$(<"$VB")" == ticks && "$out" == *"✓ Volume bar style: ticks"* ]] && grep -q "^pkill -RTMIN+10 waybar" "$T/log"'
+echo 0 > "$TE"; out="$(tui 't1\n\nq')"
+check "[t] waybar działa: ✓ po sygnale 11"     '[[ "$(<"$TE")" == 1 && "$out" == *"✓ Timer shown on the bar"* ]] && grep -q "^pkill -RTMIN+11 waybar" "$T/log"'
+echo volume-bar-style.dat > "$T/mv-fails"; out="$(tui 'v3\n\nq')"; rm "$T/mv-fails"
+check "[v] nieudany zapis: bez ✓, plik bez zmian" '[[ "$(<"$VB")" == ticks && "$out" != *"✓"* && "$out" != *"Saved"* && "$out" == *"Could not write"* ]] && ! compgen -G "$VB.*" >/dev/null'
+echo white-blue_beta > "$A/.current_rice"
+out="$(tui 't1\n\nq')"
+check "[t] beta bez modułu: zapisane, bez ✓"   '[[ "$(<"$TE")" == 0 && "$out" != *"✓ Timer"* && "$out" == *"Saved: timer off"*"white-blue_beta"* ]]'
+rm "$A/.current_rice"
+
 echo "== ostrzeżenie dla bety"
 echo white-blue_beta > "$A/.current_rice"
 out="$(tui 'v\n\nq')"
@@ -144,6 +238,27 @@ check "tryb zmieniony i plik wygenerowany"     '[[ "$(<"$A/data/workspace-mode.d
 check "sukces po odczycie configerrors (F3)"   '[[ "$out" == *"no config errors"* ]] && grep -q "hyprctl configerrors" "$T/log"'
 touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
 check "martwy Hyprland bez sukcesu (F3)"       '[[ "$out" == *"did not respond"* && "$out" != *"no config errors"* ]]'
+
+echo "== [w] zielone ✓ dopiero po odczycie trybu, reloadu i guarda"
+WSL="$A/config/hypr/workspaces-monitors.lua"
+ws_from() { echo "$1" > "$A/data/workspace-mode.dat"; reset; cp "$WSL" "$T/ws.before"; rm -f "$T/guard-alive"; }
+ws_from decades; out="$(tui 'wy\n\nq')"
+check "[w] ✓ Workspace mode dopiero po wyniku reloadu"  '[[ "$out" == *"no config errors"*"✓ Workspace mode: decades → shared"* ]]'
+ws_from decades; touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
+check "[w] martwy Hyprland: Saved, bez ✓ trybu"         '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Saved: workspace mode decades → shared"* ]]'
+ws_from decades; touch "$T/failreload"; out="$(tui 'wy\n\nq')"; rm "$T/failreload"
+check "[w] błąd configu: bez ✓ trybu"                   '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"config error"* && "$out" == *"saved as"* ]]'
+ws_from decades; echo workspace-mode.dat > "$T/mv-fails"; out="$(tui 'wy\n\nq')"; rm "$T/mv-fails"
+check "[w] nieudany zapis trybu: bez ✓, komunikat"      '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Could not save"* ]]'
+check "[w] nieudany zapis trybu: tryb i reguły jak przedtem" '[[ "$(<"$A/data/workspace-mode.dat")" == decades ]] && cmp -s "$T/ws.before" "$WSL" && ! compgen -G "$A/data/workspace-mode.dat.*" >/dev/null && ! compgen -G "$WSL.*" >/dev/null'
+check "[w] nieudany zapis trybu: bez reloadu"           '! grep -q "hyprctl reload" "$T/log"'
+ws_from shared; out="$(tui 'wy\n\nq')"
+check "[w] guard wystartowany i odczytany"              '[[ "$out" == *"✓ Orphan guard started"* && -f "$T/guard-alive" ]]'
+ws_from shared; touch "$T/guard-broken"; out="$(tui 'wy\n\nq')"; rm "$T/guard-broken"
+check "[w] guard nie wstał: bez ✓ guarda"               '[[ "$out" != *"✓ Orphan guard"* && "$out" == *"Orphan guard did not start"* ]]'
+ws_from shared; touch "$T/guard-alive"; out="$(tui 'wy\n\nq')"
+check "[w] guard już działa: bez drugiego startu"       '[[ "$out" == *"Orphan guard already running"* && "$out" != *"Orphan guard started"* ]]'
+echo decades > "$A/data/workspace-mode.dat"
 
 echo "== menu główne"
 cp "$REPO"/scripts/hypr/{keyboard-layouts,mouse-settings}.sh "$A/scripts/hypr/"
