@@ -162,12 +162,22 @@ sed -n "${S},$((E-1))p" "$REPO/install/install.sh" > "$T/step3-37.sh"
 I="$T/inst3"; mkdir -p "$I/monitors"
 printf 'MONITOR=DP-OLD\nRESOLUTION=1x1\nROLE=primary\nORDER=1\n' > "$I/monitors/DP-OLD.dat"
 # Odpowiedzi: [3.5] 5×Enter na monitor (2 monitory), [3.6] Enter — potem stdin
-# WISI na pytaniu [3.7] i po 2 s przychodzi SIGINT (= Ctrl-C użytkownika).
-exec 3< <(printf '\n\n\n\n\n\n\n\n\n\n\n'; sleep 30)
+# WISI na pytaniu [3.7] i przychodzi SIGINT (= Ctrl-C użytkownika).
+# SIGINT idzie dopiero, gdy skrypt wypisał nagłówek [3.7] (trap już ustawiony).
+# Dawniej `timeout -s INT 2` strzelał po stałych 2 s: pod obciążeniem (pełny
+# run-all, 1 rdzeń) sygnał trafiał przed `trap … EXIT` i katalog zostawał —
+# niestabilne także na dev d96ead8 (2026-11-14). timeout 30 = siatka.
+rm -f "$T/step3-37.pid" "$T/step3-37.out"
+exec 3< <(printf '\n\n\n\n\n\n\n\n\n\n\n'
+          for _ in $(seq 300); do grep -qF '[3.7]' "$T/step3-37.out" 2>/dev/null && break; sleep 0.1; done
+          kill -INT "$(cat "$T/step3-37.pid" 2>/dev/null)" 2>/dev/null
+          sleep 30)
 feeder=$!
 MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I" GREEN= NC= YELLOW= BLUE= CYAN= RED= \
-    timeout -s INT 2 bash "$T/step3-37.sh" <&3 >/dev/null 2>&1
+    timeout -s INT 30 bash -c 'echo $$ > "$1"; exec bash "$2"' _ "$T/step3-37.pid" "$T/step3-37.sh" \
+    <&3 >"$T/step3-37.out" 2>&1
 exec 3<&-; kill "$feeder" 2>/dev/null
+check "przerwany bieg: SIGINT na pytaniu [3.7]" '[[ "$(<"$T/step3-37.out")" == *"[3.7]"* && "$(<"$T/step3-37.out")" != *"Workspace mode: "* && ! -e "$I/workspace-mode.dat" ]]'
 check "przerwany bieg: stary .dat zostaje"     '[[ -f "$I/monitors/DP-OLD.dat" ]]'
 check "przerwany bieg: nowe .dat NIE na miejscu" '[[ ! -e "$I/monitors/eDP-1.dat" && ! -e "$I/monitors/HDMI-A-3.dat" ]]'
 check "przerwany bieg: katalog tymczasowy sprzątnięty (trap)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
