@@ -31,10 +31,11 @@
     "gpu",
     "memory",
     "swap",
-    // Pojemność każdego fizycznego dysku, potem każdy zamontowany system plików:
-    // zwykłe partycje i dyski zewnętrzne; bez pseudo-FS (tmpfs, proc…), ukrytych
-    // i podwoluminów btrfs. Tylko opcje modułów — zero nazw urządzeń i ścieżek.
-    "physicaldisk",
+    // Pojemność każdego fizycznego dysku (hideVirtual: bez zram, dm-* i loop*),
+    // potem każdy zamontowany system plików: zwykłe partycje i dyski zewnętrzne;
+    // bez pseudo-FS (tmpfs, proc…), ukrytych i podwoluminów btrfs. Tylko opcje
+    // modułów — zero nazw urządzeń i ścieżek.
+    { "type": "physicaldisk", "hideVirtual": true },
     { "type": "disk", "showRegular": true, "showExternal": true, "showHidden": false, "showSubvolumes": false, "showUnknown": false },
     "battery",
     "poweradapter",
