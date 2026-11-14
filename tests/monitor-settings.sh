@@ -54,8 +54,19 @@ rule() { sed -n "s|^hl.monitor({ output = \"\$1\", mode = \"\([^\"]*\)\", positi
 show() {
   read -r mode pos scale <<<"\$3"
   [[ -f "$T/stubborn" ]] && scale=1
+  # pinned = Hyprland zostawia HDMI-A-1 na starej pozycji; auto = pozycję wybiera Hyprland.
+  [[ -f "$T/pinned" && "\$1" == HDMI-A-1 ]] && pos=1920x0
+  [[ "\$pos" != auto ]] || pos=7000x0
+  # preferred/highres/highrr: Hyprland pokazuje tryb, który sam wybrał.
+  [[ "\$mode" == [0-9]* ]] || mode=1920x1080@60.00000
   [[ "\$mode" == *@* ]] || mode="\$mode@60"
-  printf 'Monitor %s (ID %s):\n\t%s at %s\n\tdescription: %s\n\tscale: %s\n\tavailableModes: 2560x1440@165.00Hz 2560x1440@60.00Hz 1920x1080@60.00Hz 1920x1080@60.00Hz\n\n' "\$1" "\$2" "\$mode" "\$pos" "\$4" "\$scale"
+  # Skala jak w Hyprlandzie v0.57.1: "\tscale: {}" po dopasowaniu do siatki 1/120,
+  # czyli reguła 1.33 to 1.3333334. Starsze wersje drukowały dwie cyfry (zrzut
+  # 2026-09-21 w tests/mock/hyprctl: 1.33 i 1.00): plik twodec.
+  case "\$scale" in 1.33|1.333333) scale=1.3333334 ;; 1.67) scale=1.6666666 ;; esac
+  [[ ! -f "$T/twodec" || ! "\$scale" =~ ^[0-9.]+\$ ]] || scale="\$(LC_ALL=C printf '%.2f' "\$scale")"
+  tr=0; [[ -f "$T/rotated" && "\$1" == HDMI-A-1 ]] && tr=1
+  printf 'Monitor %s (ID %s):\n\t%s at %s\n\tdescription: %s\n\tscale: %s\n\ttransform: %s\n\tavailableModes: 2560x1440@165.00Hz 2560x1440@60.00Hz 1920x1080@60.00Hz 1920x1080@60.00Hz\n\n' "\$1" "\$2" "\$mode" "\$pos" "\$4" "\$scale" "\$tr"
 }
 case "\$1" in
   reload) [[ -f "$T/vanish" ]] && rm -f "$T/third"
@@ -84,7 +95,7 @@ reset() {
     gen_all
     cp "$D/eDP-2.dat" "$T/dat.orig"; cp "$LUA" "$T/lua.orig"; cp "$WS" "$T/ws.orig"
     : > "$T/log"; : > "$T/errors"; : > "$T/after"; : > "$T/notified"
-    rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen"
+    rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen" "$T/pinned" "$T/rotated" "$T/twodec"
     rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"
 }
 gen_all() {
@@ -97,6 +108,25 @@ run() { printf "$1" | timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" 2>&1
 get() { grep -m1 "^$2=" "$D/$1.dat" | cut -d= -f2-; }
 unchanged() { cmp -s "$D/eDP-2.dat" "$T/dat.orig" && cmp -s "$LUA" "$T/lua.orig" && cmp -s "$WS" "$T/ws.orig" && [[ "$(ls "$D" | wc -l)" == 2 ]]; }
 summary() { bash "$A/scripts/hypr/monitor-settings.sh" summary; }
+# Skutek zmiany pozycji: wybór użytkownika = .dat = wygenerowany Lua = `hyprctl monitors`.
+# Argumenty: plik .dat (bez rozszerzenia), selektor w Lua, żywa nazwa, pozycja.
+live_pos() { hyprctl monitors | awk -v m="Monitor $1 (ID " 'index($0, m) == 1 { on = 1; next } /^Monitor / { on = 0 } on && $2 == "at" { print $3; exit }'; }
+lua_pos() { sed -n "s|^hl.monitor({ output = \"$1\", mode = \"[^\"]*\", position = \"\([^\"]*\)\".*|\1|p" "$LUA"; }
+placed() { [[ "$(get "$1" POSITION)" == "$4" && "$(lua_pos "$2")" == "$4" && "$(live_pos "$3")" == "$4" ]]; }
+E='desc:Maker Panel 123'; W='desc:Acme Wide 99'
+# Panel ze skalą ułamkową (argument 1) i HDMI-A-1 na pozycji z argumentu 2.
+# FORM=old: hyprctl drukuje skalę z dwiema cyframi, jak starsze wersje Hyprlanda.
+FORM=new
+frac() {
+    reset; [[ "$FORM" == new ]] || touch "$T/twodec"
+    sed -i "s/^RESOLUTION=.*/RESOLUTION=2560x1600/; s/^SCALE=.*/SCALE=$1/" "$D/eDP-2.dat"
+    sed -i "s/^POSITION=.*/POSITION=$2/" "$D/HDMI-A-1.dat"; gen_all
+}
+# Trzy monitory w rzędzie: eDP-2 0..1920, HDMI-A-1 1920..3840, DP-2 3840..6400.
+three() {
+    reset; touch "$T/third"
+    printf 'MONITOR=DP-2\nRESOLUTION=2560x1440\nRATE=60\nPOSITION=3840x0\nSCALE=1\nROLE=other\nDESCRIPTION=Acme Wide 99\nORDER=3\n' > "$D/DP-2.dat"; gen_all
+}
 
 echo "== generator"
 reset
@@ -227,6 +257,95 @@ reset; out="$(run '1\n\n\n100x0\n\n\n')"
 check "nakładanie odrzucone"                   '[[ "$out" == *"overlaps HDMI-A-1"* ]] && unchanged'
 reset; out="$(run '1\n\n\n10000x0\ny\n')"
 check "daleko od reszty przechodzi"            '[[ "$(get eDP-2 POSITION)" == 10000x0 ]]'
+
+# Zgłoszenie właściciela 2026-11-13: „nie działa zmienianie pozycji monitora (który
+# jest po której stronie)”. Każda droga zmiany pozycji ma tu test SKUTKU: placed
+# porównuje wybór z plikiem .dat, z wygenerowanym Lua i z odczytem `hyprctl monitors`.
+echo "== pozycja: każda droga, skutek odczytany z Hyprlanda"
+reset; run '2\n\n\n1920x500\ny\n' >/dev/null
+check "XxY: wolne miejsce"                     'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1920x500'
+reset; out="$(run '2\n\n\nl 1\ny\n')"
+check "l 1: zewnętrzny na lewą stronę"         'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 -1920x0 && [[ "$out" == *"✓ Monitor HDMI-A-1: 1920x1080 60.00 -1920x0"* ]]'
+reset; run '1\n\n\nr 2\ny\n' >/dev/null
+check "r 2: panel na prawą stronę"             'placed eDP-2 "$E" eDP-1 3840x0'
+reset; run '2\n\n\nb 1\ny\n' >/dev/null
+check "b 1: pod panelem"                       'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 0x1080'
+reset; run '2\n\n\na 1\ny\n' >/dev/null
+check "a 1: nad panelem"                       'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 0x-1080'
+reset; out="$(run '2\n\n\nauto\ny\n')"
+check "auto: pozycję wybiera Hyprland"         '[[ "$(get HDMI-A-1 POSITION)" == auto && "$(lua_pos HDMI-A-1)" == auto && "$out" == *"✓ Monitor HDMI-A-1: 1920x1080 60.00 7000x0"* ]]'
+reset; out="$(run '2\n\n\nl 1\nn\n')"
+check "odmowa: pliki i Hyprland jak przedtem"  'unchanged && [[ "$(live_pos HDMI-A-1)" == 1920x0 && "$out" == *"Back to the previous"* ]]'
+reset; run '2\n\n\nl 1\n' >/dev/null
+check "brak potwierdzenia: jak przedtem"       'unchanged && [[ "$(live_pos HDMI-A-1)" == 1920x0 ]]'
+three; run '3\n\n\n\nl 1\ny\n' >/dev/null
+check "trzy monitory: trzeci na lewy koniec"   'placed DP-2 "$W" DP-2 -2560x0'
+three; run '2\n\n\nr 3\ny\n' >/dev/null
+check "trzy monitory: środkowy na prawy koniec" 'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 6400x0'
+reset; touch "$T/rotated"; run '1\n\n\nr 2\ny\n' >/dev/null
+check "obrót: szerokość po obrocie"            'placed eDP-2 "$E" eDP-1 3000x0'
+reset; touch "$T/rotated"; run '1\n\n\nb 2\ny\n' >/dev/null
+check "obrót: wysokość po obrocie"             'placed eDP-2 "$E" eDP-1 1920x1920'
+
+# Tryb bez listy odświeżania (preferred/highres/highrr albo rozdzielczość spoza listy
+# Hyprlanda): Enter przy rozdzielczości kończył cały dialog bez słowa, więc skali
+# i pozycji takiego monitora nie dało się zmienić.
+echo "== pozycja: monitor zapisany jako preferred"
+for word in preferred highres highrr; do
+    reset; sed -i "s/^RESOLUTION=.*/RESOLUTION=$word/; s/^RATE=.*/RATE=/" "$D/HDMI-A-1.dat"; gen_all
+    out="$(run '2\n\n\nl 1\ny\n')"
+    check "$word: Enter przechodzi do pytania o pozycję" '[[ "$out" == *"Position: "*"→ -1920x0"* ]]'
+    check "$word: pozycja zapisana i odczytana"     'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 -1920x0 && [[ "$(get HDMI-A-1 RESOLUTION)" == "$word" ]]'
+done
+reset; sed -i 's/^RESOLUTION=.*/RESOLUTION=3440x1440/' "$D/HDMI-A-1.dat"; gen_all; run '2\n\n\nb 1\ny\n' >/dev/null
+check "rozdzielczość spoza listy: też"         'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 0x1080'
+
+# W .dat (i w starszym hyprctl) skala ma dwie cyfry: 1.33 zamiast 160/120. Rozmiar
+# logiczny liczony z 1.33 wychodził 1925 zamiast 1920, więc styk był „nakładaniem”.
+for FORM in new old; do
+echo "== pozycja: skala ułamkowa, hyprctl $FORM"
+frac 1.33 1925x0; out="$(run '2\n\n\n1920x0\ny\n')"
+check "styk z panelem 1.33 nie jest nakładaniem" 'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1920x0 && [[ "$out" != *"overlaps"* ]]'
+frac 1.33 1925x0; run '2\n\n\nr 1\ny\n' >/dev/null
+check "r 1 przy 1.33: bez szczeliny"           'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1920x0'
+frac 1.33 1925x0; run '2\n\n\nb 1\ny\n' >/dev/null
+check "b 1 przy 1.33: bez szczeliny"           'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 0x1200'
+frac 1.33 1925x0; run '1\n\n\nl 2\ny\n' >/dev/null
+check "l 2 panelu 1.33: własna szerokość 1920" 'placed eDP-2 "$E" eDP-1 5x0'
+frac 1.333333 1925x0; run '2\n\n\nr 1\ny\n' >/dev/null
+check "skala 1.333333 w .dat: to samo"         'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1920x0'
+frac 1.67 3000x0; run '2\n\n\nr 1\ny\n' >/dev/null
+check "skala 1.67 (5/3): 1536"                 'placed HDMI-A-1 HDMI-A-1 HDMI-A-1 1536x0'
+frac 1.33 1925x0; out="$(run '2\n\n\n1919x0\n\n\n')"
+check "prawdziwe nakładanie dalej odrzucone"   '[[ "$out" == *"overlaps eDP-1"* && "$(get HDMI-A-1 POSITION)" == 1925x0 && "$(live_pos HDMI-A-1)" == 1925x0 ]]'
+done; FORM=new
+
+# Miejsce zajęte przez inny monitor: odmowa mówi, jak zamienić strony.
+echo "== pozycja: zajęte miejsce"
+reset; out="$(run '2\n\n\n0x0\n\n\n')"
+check "odmowa podaje numer i drogę"            '[[ "$out" == *"overlaps eDP-1"*"l 1"*"r 1"* ]] && unchanged'
+three; out="$(run '3\n\n\n\nr 1\n\n\n')"
+check "trzy monitory: zajęte miejsce obok 1"   '[[ "$out" == *"overlaps HDMI-A-1"*"l 2"*"r 2"* ]] && [[ "$(get DP-2 POSITION)" == 3840x0 ]]'
+
+# Hyprland nie zastosował pozycji: żadnego zielonego ✓, także po klawiszu y.
+echo "== pozycja: Hyprland pokazuje co innego"
+reset; touch "$T/pinned"; out="$(run '2\n\n\nl 1\ny\n')"
+check "ostrzeżenie przed potwierdzeniem"       '[[ "$out" == *"Hyprland shows something else"* ]]'
+check "po y bez zielonego sukcesu"             '[[ "$out" != *"✓ Monitor HDMI-A-1"* && "$out" == *"Saved, but Hyprland shows"*"1920x0"* ]]'
+reset; touch "$T/pinned"; out="$(run '1\n1\n\n\n\ny\n')"
+check "sąsiad, który nie poszedł za krawędzią" '[[ "$out" == *"HDMI-A-1 did not move"* ]]'
+
+# Numeracja to nie układ w przestrzeni: menu `r` mówi o numerach i wskazuje pozycję.
+echo "== numeracja a pozycja"
+reset; out="$(run 'r\nc\n2\n1\n\n')"
+check "c z potoku wybiera kolejność"           '[[ "$(get HDMI-A-1 ORDER)" == 1 && "$(get eDP-2 ORDER)" == 2 ]]'
+check "etykieta mówi o numerach"               '[[ "$out" == *"Choose each number"* && "$out" != *"Choose each position"* ]]'
+check "numery bez ruszania ekranów"            '[[ "$(get eDP-2 POSITION)" == 0x0 && "$(live_pos HDMI-A-1)" == 1920x0 ]]'
+check "uwaga: ekrany stoją, droga do pozycji"  '[[ "$out" == *"screens did not move"*"Position"* ]]'
+reset; out="$(run 'r\n2 1\n\n')"
+check "wpisana kolejność: ta sama uwaga"       '[[ "$out" == *"screens did not move"* ]]'
+reset; sed -i 's/^POSITION=.*/POSITION=4000x0/' "$D/eDP-2.dat"; out="$(run 'r\na\n\n')"
+check "a z potoku przyjmuje propozycję"        '[[ "$(get HDMI-A-1 ORDER)" == 1 && "$out" != *"screens did not move"* ]]'
 
 echo "== skale"
 reset; out="$(run '1\n1\n\n\n\n\n')"

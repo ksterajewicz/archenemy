@@ -289,9 +289,15 @@ Rules that follow directly from the table:
 - **`asusctl` 6.3.8+ has subcommands only:** `asusctl profile next`, `asusctl profile get`.
   `asusd` starts from a udev rule and its unit has no `[Install]`: `systemctl start`, not
   `enable`. ASUS packages come from pacman (`install/asus-installation.sh`), never the AUR.
-- **Monitor positions are logical pixels** (after scale and rotation), and Hyprland does
-  not register overlapping monitors, so `scripts/hypr/monitor-settings.sh` asks mode,
-  scale, then position and refuses overlaps.
+- **Monitor positions are logical pixels** (after scale and rotation), and Hyprland only
+  warns about overlapping monitors ("this will cause issues"), so `scripts/hypr/monitor-settings.sh` asks mode,
+  scale, then position and refuses overlaps. A scale saved as `1.33` (the `.dat`, older
+  `hyprctl` output) is 160/120 inside Hyprland, so `logical_size` snaps it to the 1/120 grid: a 2560 panel at `1.33` is
+  1920 wide, not 1925, and an exact fit must not be refused as an overlap. Functions in that
+  script return explicit codes: a bare `return` after a failed test returned 1 and ended the
+  dialog silently before the position question (2026-11-13). Renumbering (`r`) never moves a
+  screen. Every position form has a test that compares the choice with the `.dat`, the
+  generated Lua and `hyprctl monitors` (`placed` in `tests/monitor-settings.sh`).
 
 More architectural context (the full file tree, workspaces, keyboard
 shortcuts) is in `README.md` — that's the source of truth for the repo's
@@ -400,3 +406,5 @@ Every new TUI choice screen must support ↑/↓, j/k, Enter and Esc through the
 Shared menus collect multi-digit choices through Enter when there are more than nine items and scroll to fit the terminal. Confirmations reject digits. Autostart labels use global app numbers and no numbers on action rows. Removing a bind requires confirmation with default No.
 
 Managed shell plugin/CLI files use a checksum independent of the current template; unsigned v1 CLI files are recognized with the frozen `config/shell/cli-tools-v1.tsv` catalog. Keep that catalog and `shell_plugins_v1_text` unchanged for migration. Plugin package prompts default to No, CLI package prompts to Yes; both require a separate confirmation.
+
+A new Super+A main-menu entry needs a row in `tests/tui-effects.list` naming the check that reads the resulting state (a `.dat`, a generated file, the mock's answer). `bash tests/tui-effects.sh` fails without it, and also when a monitor position form loses its read-back test or `monitor-settings.sh` gains a bare `return`. A test that only sees the menu open or a command being called does not count as a test of the effect.

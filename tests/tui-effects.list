@@ -1,0 +1,39 @@
+# Manifest for tests/tui-effects.sh: every entry of the Super+A main menu
+# (MENU_KEYS in scripts/appbinds/appbinds.sh) and the test that proves its EFFECT.
+#
+#   key|kind|suite|marker
+#
+# kind   state = the entry changes something (a file, Hyprland, a daemon)
+#        read  = the entry only shows information (suite and marker stay empty)
+# suite  file in tests/ that runs in tests/run-all.sh
+# marker exact text from that suite: the check that READS the resulting state
+#        (a .dat file, a generated config, the mock's answer), not one that only
+#        sees the command being called or the menu being opened
+#
+# A new menu entry without a row here fails the suite. So does a row whose
+# marker no longer exists, because someone removed or renamed the effect check.
+a|state|appbinds-menu.sh|check "bind zapisany"
+a|state|appbinds-menu.sh|check "bind cofnięty"
+e|state|appbinds-menu.sh|check "[e] zmienia komendę wybranego"
+d|state|appbinds-menu.sh|check "[d] usuwa i sprawdza reload"
+s|read||
+w|state|appbinds-menu.sh|check "tryb zmieniony i plik wygenerowany"
+w|state|machine-layer.sh|echo "== workspace-mode-switch.sh"
+n|state|monitor-settings.sh|check "l 1: zewnętrzny na lewą stronę"
+n|state|monitor-settings.sh|check "odmowa: pliki i Hyprland jak przedtem"
+n|state|monitor-settings.sh|check "po y bez zielonego sukcesu"
+n|state|monitor-settings.sh|check "numery bez ruszania ekranów"
+n|state|monitor-settings.sh|check "plik .dat z odczytu Hyprlanda"
+n|state|monitor-settings.sh|check "wpis usunięty"
+k|state|keyboard-layouts.sh|ok "Hyprland: kod 0 i ✓"
+m|state|mouse-settings.sh|ok "Hyprland: kod 0 i komunikat ✓"
+v|state|appbinds-menu.sh|check "wybór zapisany"
+t|state|appbinds-menu.sh|check "włączenie zapisane"
+c|state|terminal-settings.sh|check "switches on to off"
+f|state|font-settings.sh|check "family zapisane"
+p|state|autostart-picker.sh|check "brak pliku Lua → nie ma sukcesu"
+o|state|audio-devices.sh|check "wyjście zmienione, kod 0"
+o|state|mpd-output.sh|check "nazwa wyjścia w .dat i conf zgodna"
+h|state|shell-settings.sh|check "passwd: zsh"
+i|read||
+u|state|update-archenemy.sh|check "HEAD = origin/dev po aktualizacji"
