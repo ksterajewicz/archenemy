@@ -359,6 +359,7 @@ archenemy/
 │                                     #   syntax, verified change, fallback to power-profiles-daemon; ppd
 │                                     #   without `performance` still cycles (only listed profiles, failed step skipped).
 │                                     #   volume-bar.sh — waybar volume module on fake pactl/wpctl: headphones in any locale.
+│                                     #   timer.sh — waybar timer: running → finished, one notification with two bars at once.
 │                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
 │                                     #   fake /sys/module: success only with vboxdrv loaded, reboot code 2.
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
@@ -626,7 +627,9 @@ Bar controls: **left-click** start / pause / resume (and on a timer that's
 reached zero — dismiss the alert), **right-click** reset to the default
 duration, **scroll** ±1 minute (only works while the timer is stopped or
 paused — scroll doesn't touch a running countdown). One notification fires
-(`notify-send`) when it reaches zero. The countdown is computed from the
+(`notify-send`) when it reaches zero, also with a bar on every monitor: the
+bars take turns under a lock on `data/`, and only the one that records the
+finish sends it. The countdown is computed from the
 wall clock, so reloading waybar or switching rice doesn't shift it.
 Disabling the timer in the TUI hides the module entirely — the clock then
 returns to exactly the center of the bar.

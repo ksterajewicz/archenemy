@@ -50,16 +50,30 @@ timer_load_state
 # Dlatego render wyjątkowo ZAPISUJE stan: przejście running → finished plus
 # jednorazowe powiadomienie (flaga notified w pliku stanu; bez niej mako
 # dostawałoby popup co sekundę).
+# Każdy monitor ma własny pasek, a więc własny timer.sh. Przejście idzie pod
+# blokadą z ponownym odczytem stanu: powiadamia tylko ten bieg, który sam
+# zapisał finished (dawniej oba paski widziały „running” i były dwa
+# powiadomienia — A11). notify-send dopiero po zapisie i po zwolnieniu
+# blokady, bo potrafi czekać na demona powiadomień.
 if [[ "$TIMER_STATUS" == "running" ]] && (( $(timer_remaining_now) <= 0 )); then
-    TIMER_STATUS="finished"
-    TIMER_REMAINING=0
-    TIMER_END=0
-    if (( TIMER_NOTIFIED == 0 )); then
-        TIMER_NOTIFIED=1
-        command -v notify-send &>/dev/null && \
-            notify-send -u critical "archenemy" "Timer finished."
+    notify=0
+    if timer_lock; then
+        timer_load_state
+        if [[ "$TIMER_STATUS" == "running" ]] && (( $(timer_remaining_now) <= 0 )); then
+            TIMER_STATUS="finished"
+            TIMER_REMAINING=0
+            TIMER_END=0
+            if (( TIMER_NOTIFIED == 0 )); then
+                TIMER_NOTIFIED=1
+                notify=1
+            fi
+            timer_save_state
+        fi
+        timer_unlock
     fi
-    timer_save_state
+    if (( notify )) && command -v notify-send &>/dev/null; then
+        notify-send -u critical "archenemy" "Timer finished."
+    fi
 fi
 
 remaining="$(timer_remaining_now)"
