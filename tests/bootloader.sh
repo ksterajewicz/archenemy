@@ -138,7 +138,10 @@ check "nieznany: nic nie zmienione, ostrzeżenie, kod 2" 'untouched && [[ "$out"
 echo "== C: kernel-install.sh"
 boot grub
 out="$(run_ki '\n')"; rc=$?
-check "Enter: pominięte, kod 0, bez pacmana"            '[[ $rc -eq 0 && "$out" == *"No kernel selected"* ]] && no_install'
+check "Enter przy wyborze jądra: pominięte, kod 0, bez pacmana" '[[ $rc -eq 0 && "$out" == *"No kernel selected"* ]] && no_install'
+boot grub
+out="$(run_ki '2\n\n')"; rc=$?
+check "linux-zen, Enter przy [y/N]: domyślne nie, kod 0" '[[ $rc -eq 0 && "$out" != *"installed."* ]] && no_install && ! regenerated'
 boot grub
 out="$(run_ki '2\nn\n')"; rc=$?
 check "linux-zen, odpowiedź n: bez instalacji, kod 0"   '[[ $rc -eq 0 ]] && no_install && ! regenerated'
