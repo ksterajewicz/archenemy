@@ -29,16 +29,20 @@ selftest() (
     T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
     test_environment_init "$T" || exit 1
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-    M="$T/repo"; mkdir -p "$M/tests" "$T/bin" "$T/fx/ok" "$T/fx/new"
+    M="$T/repo"; mkdir -p "$M/tests" "$T/bin" "$T/fx/ok" "$T/fx/new" "$T/fx/upd"
     cp "${BASH_SOURCE[0]}" "$M/tests/shellcheck.sh"
     for f in a b c; do printf '#!/bin/bash\necho %s\n' "$f" > "$M/$f.sh"; done
-    printf '%s\n' 'a.sh SC2034' 'a.sh SC2034' 'b.sh SC2012' > "$M/tests/shellcheck.baseline"
+    # Baza z komentarzami: linia „#…” i komentarz po dwóch polach (nie zmieniają limitu).
+    printf '%s\n' '# known findings' 'a.sh SC2034  # read by eval' 'a.sh SC2034' 'b.sh SC2012' > "$T/base"
+    cp "$T/base" "$M/tests/shellcheck.baseline"
     git -C "$M" init -q && git -C "$M" add a.sh b.sh c.sh tests || exit 1
     w='warning: x appears unused. Verify use (or export if used externally). [SC2034]'
     printf 'a.sh:2:1: %s\na.sh:3:1: %s\n' "$w" "$w" > "$T/fx/ok/a.sh"
     echo 'b.sh:2:6: note: Use find instead of ls to better handle non-alphanumeric filenames. [SC2012]' > "$T/fx/ok/b.sh"
     cp "$T/fx/ok/"* "$T/fx/new/"
     echo 'c.sh:2:6: note: Double quote to prevent globbing and word splitting. [SC2086]' > "$T/fx/new/c.sh"
+    # upd: jedno SC2034 i SC2012 naprawione, nowe SC2086 w c.sh.
+    printf 'a.sh:2:1: %s\n' "$w" > "$T/fx/upd/a.sh"; cp "$T/fx/new/c.sh" "$T/fx/upd/"
     cat > "$T/bin/shellcheck" <<'MOCK'
 #!/bin/bash
 case "${MOCK_SC:-}" in
@@ -68,6 +72,15 @@ MOCK
     expect "shellcheck without its libraries (rc 127) → ✗, never ✓" 1 "error while loading shared libraries" "" MOCK_SC=broken MOCK_SC_DIR="$T/fx/ok"
     expect "silent rc 127 → ✗" 1 "shellcheck did not finish cleanly" "" MOCK_SC=silent MOCK_SC_DIR="$T/fx/ok"
     expect "shellcheck killed (SIGKILL, xargs 125) → ✗" 1 "xargs exit 125" "" MOCK_SC=killed MOCK_SC_DIR="$T/fx/ok"
+    # --update-baseline tylko usuwa (R1 C5): naprawione wypadają, nowe nie wchodzą.
+    expect "broken shellcheck with --update-baseline → ✗" 1 "did not finish cleanly" --update-baseline MOCK_SC=broken MOCK_SC_DIR="$T/fx/ok"
+    if cmp -s "$T/base" "$M/tests/shellcheck.baseline"; then echo "  ✓ autotest: broken shellcheck leaves the baseline untouched"
+    else fails=$((fails + 1)); echo "  ✗ autotest: broken shellcheck changed the baseline"; fi
+    expect "--update-baseline with a new finding → ✗, not added" 1 "not added to the baseline" --update-baseline MOCK_SC_DIR="$T/fx/upd"
+    want=$'# known findings\na.sh SC2034  # read by eval'
+    if [[ "$(cat "$M/tests/shellcheck.baseline")" == "$want" ]]; then echo "  ✓ autotest: --update-baseline removed only fixed entries, kept comments"
+    else fails=$((fails + 1)); echo "  ✗ autotest: baseline after --update-baseline:"; sed 's/^/      | /' "$M/tests/shellcheck.baseline"; fi
+    expect "new finding still ✗ after --update-baseline" 1 "✗ c.sh:2:6: note:" "" MOCK_SC_DIR="$T/fx/upd"
     exit "$fails"
 )
 SELF_FAIL=0
@@ -113,17 +126,46 @@ if ((${#bad[@]})) || [[ $xrc != 0 && $xrc != 123 ]] || [[ $xrc == 123 && $valid 
 fi
 
 # Baza znanych znalezisk (tests/shellcheck.baseline: „plik SCxxxx”, jedno na
-# linię, bez numerów linii — te się przesuwają). Stan z 2026-11-14 to 35
-# dawnych znalezisk (głównie SC2016/SC2034 w testach z eval); test pada tylko
-# na NOWYCH — każde ponad liczbę z bazy dla pary plik+kod. Naprawione
-# usuwaj z bazy: `bash tests/shellcheck.sh --update-baseline`.
+# linię, bez numerów linii — te się przesuwają; linie „#…” i puste są pomijane,
+# a po dwóch polach może stać komentarz). Stan z 2026-11-14 to 35 dawnych
+# znalezisk (głównie SC2016/SC2034 w testach z eval); test pada tylko na
+# NOWYCH — każde ponad liczbę z bazy dla pary plik+kod.
+# Baza tylko maleje (R1 C5): `bash tests/shellcheck.sh --update-baseline` usuwa
+# naprawione wpisy (część wspólna starej bazy i bieżących znalezisk, krotności
+# i komentarze zostają), a nowych NIGDY nie dopisuje — te naprawiaj w kodzie;
+# świadomy wyjątek dopisuje się do bazy ręcznie, z komentarzem. Bieg z zepsutym
+# narzędziem kończy się wyżej (✗), więc nie wyczyści bazy.
 BASE="$REPO/tests/shellcheck.baseline"
 keys() { sed -nE 's/^([^:]+):[0-9]+:[0-9]+: .*\[(SC[0-9]+)\]$/\1 \2/p' | sort; }
+update=0
 if [[ "${1:-}" == --update-baseline ]]; then
-    keys <<< "$out" | sed '/^$/d' > "$BASE"; echo "baseline: $(grep -c . "$BASE") findings"; exit 0
+    update=1
+    declare -A cur=()
+    while read -r f c; do
+        [[ -n "${f:-}" ]] && cur["$f $c"]=$(( ${cur["$f $c"]:-0} + 1 ))
+    done < <(keys <<< "$out")
+    kept=() removed=0
+    if [[ -f "$BASE" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            read -r f c _ <<< "$line"
+            if [[ -z "${f:-}" || "$f" == \#* ]]; then kept+=("$line"); continue; fi
+            if (( ${cur["$f $c"]:-0} > 0 )); then
+                cur["$f $c"]=$(( ${cur["$f $c"]} - 1 )); kept+=("$line")
+            else
+                removed=$((removed + 1))
+            fi
+        done < "$BASE"
+    fi
+    if ((${#kept[@]})); then printf '%s\n' "${kept[@]}" > "$BASE"; else : > "$BASE"; fi
+    echo "baseline: $removed fixed finding(s) removed; new findings are never added"
 fi
 declare -A allowed=()
-while read -r n k; do allowed[$k]=$n; done < <(sort "$BASE" 2>/dev/null | uniq -c | awk '{print $1, $2" "$3}')
+if [[ -f "$BASE" ]]; then
+    while read -r f c _; do
+        [[ -z "${f:-}" || "$f" == \#* ]] && continue
+        allowed["$f $c"]=$(( ${allowed["$f $c"]:-0} + 1 ))
+    done < "$BASE"
+fi
 new=0 known=0
 while read -r n f c; do
     [[ -n "${f:-}" ]] || continue
@@ -139,5 +181,8 @@ if (( new == 0 )); then
     echo "Result: ${#files[@]} files / 0 new / $known known"
     exit 0
 fi
+((update)) && echo "  $new new finding(s) not added to the baseline."
+echo "  Fix new findings in the code. A deliberate exception goes into"
+echo "  tests/shellcheck.baseline by hand (one 'file SCxxxx' line, with a # comment)."
 echo "Result: ${#files[@]} files / $new new findings / $known known"
 exit 1

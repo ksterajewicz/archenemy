@@ -368,7 +368,9 @@ archenemy/
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
 │                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip";
 │                                     #   a broken or killed shellcheck (output not in gcc format, xargs exit
-│                                     #   other than 0/123) → ✗; `--selftest` runs only its fake-shellcheck autotest.
+│                                     #   other than 0/123) → ✗; `--selftest` runs only its fake-shellcheck autotest;
+│                                     #   `--update-baseline` only removes fixed entries — new findings are fixed in
+│                                     #   code (a deliberate exception is added to the baseline by hand, with a comment).
 │                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
 │                                     #   over the whole history (when installed; otherwise "skip").
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
