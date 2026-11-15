@@ -5,7 +5,8 @@
 #   bezpieczeństwa 2026-11-14) na atrapach git/makepkg/yay/pagera w mktemp:
 #   yay budowany w świeżym katalogu mktemp (nie /tmp/yay) i sprzątany,
 #   przegląd PKGBUILD na żądanie, ✓ tylko gdy yay naprawdę jest w PATH,
-#   `--answerdiff All` wyłącznie po „y”. Bez sieci, bez roota.
+#   `--answerdiff All` wyłącznie po „y”; przegląd działa bez less (pager
+#   z zapasem i GIT_PAGER dla yay, I1 z przeglądu 2026-11-15). Bez sieci, bez roota.
 #   Uruchom: bash tests/install-aur.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -36,7 +37,7 @@ EOF
 cat > "$T/bin/makepkg" <<'EOF'
 #!/bin/bash
 pwd > "$LOG/makepkg-cwd"
-[[ -n "${MOCK_MAKEPKG_INSTALLS:-}" ]] && printf '#!/bin/bash\necho "$*" > "$LOG/yay-args"\n' > "$MOCK_BIN/yay" && chmod +x "$MOCK_BIN/yay"
+[[ -n "${MOCK_MAKEPKG_INSTALLS:-}" ]] && printf '#!/bin/bash\necho "$*" > "$LOG/yay-args"\necho "${GIT_PAGER-<unset>}" > "$LOG/yay-git-pager"\n' > "$MOCK_BIN/yay" && chmod +x "$MOCK_BIN/yay"
 exit "${MOCK_MAKEPKG_RC:-0}"
 EOF
 cat > "$T/bin/pager" <<'EOF'
@@ -46,8 +47,10 @@ EOF
 chmod +x "$T/bin"/*
 # PATH tylko z atrap i potrzebnych narzędzi: prawdziwy yay w systemie
 # (np. na maszynie dewelopera) zafałszowałby test „✓ tylko gdy yay jest w PATH”.
-mkdir -p "$T/sys"
-for c in bash mktemp rm cat mkdir dirname chmod find; do ln -s "$(command -v "$c")" "$T/sys/$c"; done
+# Bez less (świeży Arch go nie ma — I1); more osobno, żeby sprawdzić też cat.
+mkdir -p "$T/sys" "$T/sys-more"
+for c in bash sh env mktemp rm cat mkdir dirname chmod find; do ln -s "$(command -v "$c")" "$T/sys/$c"; done
+ln -s "$(command -v more)" "$T/sys-more/more"
 export PATH="$T/bin:$T/sys" MOCK_BIN="$T/bin" PAGER="$T/bin/pager"
 RED='' GREEN='' YELLOW='' NC=''
 
@@ -77,6 +80,23 @@ reset_case; export MOCK_MAKEPKG_INSTALLS=1
 run_boot 'y\ny\n'
 check "przegląd + „y” → budowa"                       '[[ -f "$LOG/makepkg-cwd" && $RC -eq 0 ]]'
 
+echo "== przegląd bez less (I1): pager z zapasem, \$PAGER przez sh -c"
+# Dawniej "${PAGER:-less}": bez less „less: command not found” zamiast PKGBUILD.
+boot_paged() {   # boot_paged <PATH> <PAGER> — „y” przy przeglądzie, potem odmowa budowy
+    reset_case
+    out="$(printf 'y\nn\n' | PATH="$1" PAGER="$2" bash -c 'source "$0"; aur_bootstrap_yay' "$REPO/install/lib/aur.sh" 2>&1)"; RC=$?
+}
+TAB=$'\t'
+boot_paged "$T/bin:$T/sys:$T/sys-more" ''
+check "bez PAGER i less → more pokazuje PKGBUILD"     '[[ "$out" == *"pkgname=yay"* && "$out" != *"not found"* ]]'
+check "po przeglądzie dalej pytanie o budowę"         '[[ "$out" == *"not built at your request"* && ! -f "$LOG/makepkg-cwd" ]]'
+boot_paged "$T/bin:$T/sys" ''
+check "bez less i more → cat pokazuje PKGBUILD"       '[[ "$out" == *"pkgname=yay"* && "$out" != *"not found"* ]]'
+boot_paged "$T/bin:$T/sys" 'cat -n'
+check "PAGER z argumentami („cat -n”) działa"         '[[ "$out" == *"1${TAB}pkgname=yay"* ]]'
+boot_paged "$T/bin:$T/sys:$T/sys-more" 'no-such-pager -R'
+check "PAGER bez programu → zapas, PKGBUILD widać"    '[[ "$out" == *"pkgname=yay"* && "$out" == *"using a fallback pager"* ]]'
+
 echo "== porażki bez fałszywego ✓"
 reset_case
 run_boot '\n'
@@ -93,6 +113,22 @@ check "domyślnie bez --answerdiff"                    '[[ "$(cat "$LOG/yay-args
 check "zdanie o AUR przed yay -S"                     '[[ "$out" == *"user-submitted PKGBUILDs"* ]]'
 out="$(printf 'y\n' | bash -c 'source "$0"; aur_install brave-bin' "$REPO/install/lib/aur.sh" 2>&1)"
 check "„y” → --answerdiff All"                        '[[ "$(cat "$LOG/yay-args")" == "-S --needed --answerdiff All brave-bin" ]]'
+
+echo "== yay -S z przeglądem bez less (I1): GIT_PAGER, który istnieje"
+# yay pokazuje diffy przez `git diff`; bez less git kończy się „unable to
+# execute pager 'less'”. Atrapa yay zapisuje GIT_PAGER, który dostała.
+inst_paged() {   # inst_paged <odpowiedź> <PATH> [zmienna=wartość…] — aur_install brave-bin
+    local ans="$1" path="$2"; shift 2
+    out="$(printf '%b' "$ans" | env -u GIT_PAGER PATH="$path" PAGER='' "$@" bash -c 'source "$0"; aur_install brave-bin' "$REPO/install/lib/aur.sh" 2>&1)"
+}
+inst_paged 'y\n' "$T/bin:$T/sys:$T/sys-more"
+check "„y”, bez less → GIT_PAGER=more"                '[[ "$(cat "$LOG/yay-git-pager")" == more ]]'
+inst_paged 'y\n' "$T/bin:$T/sys"
+check "„y”, bez less i more → GIT_PAGER=cat"          '[[ "$(cat "$LOG/yay-git-pager")" == cat ]]'
+inst_paged 'y\n' "$T/bin:$T/sys" GIT_PAGER=my-pager
+check "GIT_PAGER użytkownika zostaje"                 '[[ "$(cat "$LOG/yay-git-pager")" == my-pager ]]'
+inst_paged '\n' "$T/bin:$T/sys"
+check "bez przeglądu GIT_PAGER nieustawiony"          '[[ "$(cat "$LOG/yay-git-pager")" == "<unset>" ]]'
 
 echo "== install.sh używa biblioteki"
 INST="$(cat "$REPO/install/install.sh")"

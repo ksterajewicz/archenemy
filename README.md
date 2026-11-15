@@ -92,7 +92,8 @@ archenemy/
 │   │                                 #   replaces AUR variants, starts asusd (exit codes are a contract with step [6]).
 │   ├── bluetooth-installation.sh     # Optional Bluetooth + bluetui: verified service and bar visibility flag.
 │   ├── lib/aur.sh                    # Library (sourced by install.sh): builds yay in a fresh mktemp dir with an
-│   │                                 #   optional PKGBUILD review; AUR installs with an opt-in `--answerdiff All`.
+│   │                                 #   optional PKGBUILD review; AUR installs with an opt-in `--answerdiff All`;
+│   │                                 #   reviews fall back to more/cat when `less` is missing.
 │   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
 │                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
@@ -359,7 +360,8 @@ archenemy/
 │                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
 │                                     #   sudo, GPU installer test hooks only with ARCHENEMY_TEST=1.
 │                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
-│                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
+│                                     #   mktemp build dir, cleanup, review on request (also without `less`),
+│                                     #   ✓ only with yay in PATH.
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
 │                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip".
 │                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
@@ -766,7 +768,7 @@ Hyprland. No new settings-menu entry is added.
 
 The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetches the chosen branch, pulls it with `--ff-only` and reports success only when `HEAD` equals `origin/<branch>`.
 
-- **AUR:** when yay is missing, the installer builds it in a fresh `mktemp -d` directory (removed afterwards, never a fixed `/tmp/yay` that another user could plant), offers to show its PKGBUILD first and reports ✓ only when `yay` is actually on `PATH`. Before every `yay -S` it says that AUR packages are user-submitted and offers `--answerdiff All` (yay shows each PKGBUILD diff before building); the default is a plain `yay -S --needed`.
+- **AUR:** when yay is missing, the installer builds it in a fresh `mktemp -d` directory (removed afterwards, never a fixed `/tmp/yay` that another user could plant), offers to show its PKGBUILD first and reports ✓ only when `yay` is actually on `PATH`. Before every `yay -S` it says that AUR packages are user-submitted and offers `--answerdiff All` (yay shows each PKGBUILD diff before building); the default is a plain `yay -S --needed`. A fresh Arch has no `less`, so both reviews use the first pager that exists: `$PAGER` (arguments allowed, e.g. `less -R`), `less`, `more` (util-linux, part of `base`), `cat`; yay gets the same pager as `GIT_PAGER` unless you set `GIT_PAGER` or git's `core.pager` yourself. No pager package is installed for this.
 - **Root and sudo:** `install.sh` refuses to run as root or under `sudo` (it asks for sudo itself where needed, and AUR packages must never be built as root) and ends with `sudo -k`, so the cached sudo password does not outlive the installer. The GPU installer's test hooks (`ARCHENEMY_ETC_DIR`, `ARCHENEMY_MODULES_DIR`) work only together with `ARCHENEMY_TEST=1`; a variable left in your environment cannot redirect its `sudo` writes.
 - **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`.
 - **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: the tree contains conflict markers, so resolve them (`git stash list`, `git stash pop`) and start `install.sh` yourself.
