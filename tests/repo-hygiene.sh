@@ -3,7 +3,8 @@
 #   archenemy - tests/repo-hygiene.sh
 #   Higiena repozytorium: rzeczy, które same z siebie brudzą working tree
 #   użytkownika i blokują `git pull` (update-archenemy.sh, Super+A → [u]).
-#   Bez roota, bez zapisu poza mktemp — czyta tylko indeks gita.
+#   Bez roota, bez zapisu poza mktemp — czyta indeks gita i pliki śledzone;
+#   jedynie bloki lua5.4 testów wykonuje (w mktemp, z PATH bez lua5.4).
 #
 #   Powód powstania (audyt 2026-09-23): install.sh stracił bit wykonywania
 #   w indeksie (commit 7f54012), a trzy biblioteki w scripts/ nigdy go nie
@@ -103,13 +104,57 @@ echo "== testy wykonania Lua: brak lua5.4 = widoczny skip, nie OK ani cisza"
 # OK, keyboard-layouts.sh i machine-layer.sh pomijały wykonanie wygenerowanego Lua
 # bez śladu. Pakiet, który sprawdza `command -v lua5.4`, ma w gałęzi bez
 # interpretera wywołać skip z tym tekstem i liczyć go w wierszu wyniku.
+# Sam tekst skip w pliku nie wystarcza (przegląd P3-4: `false && skip …`
+# przechodził), więc strażnik WYKONUJE blok `if command -v lua5.4 … fi` każdego
+# takiego pakietu z PATH bez lua5.4 (dowiązania w mktemp) razem z jego skip()
+# i ostatnim echo (wiersz wyniku — jedyny, który pokazuje run-all): blok ma
+# wywołać skip, a wiersz wyniku pokazać 1 pominięcie. Całych pakietów nie
+# uruchamia (trzy to ok. 4 min na 1 rdzeniu pod obciążeniem). Gałąź z lua5.4
+# nie biegnie; gdyby warunek się zepsuł, `bash -u` przerywa ją na pierwszej
+# nieustawionej zmiennej, a HOME leży w mktemp.
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
+NOLUA="$T/nolua"; mkdir -p "$NOLUA"
+declare -A seen=(); links=()
+IFS=: read -ra path_dirs <<< "$PATH"
+for d in "${path_dirs[@]}"; do
+    [[ -n "$d" && -d "$d" ]] || continue
+    for p in "$d"/*; do
+        n="${p##*/}"
+        [[ -n "${seen[$n]:-}" || "$n" == lua5.4 || -d "$p" || ! -x "$p" ]] && continue
+        seen[$n]=1; links+=("$p")
+    done
+done
+((${#links[@]})) && ln -s -t "$NOLUA" -- "${links[@]}"
+# lua_skip_ok <plik> — blok lua5.4 wykonany bez lua5.4 woła skip, a ostatnie echo
+# pliku (wiersz wyniku) pokazuje 1 pominięcie.
+lua_skip_ok() {
+    local blk def res out
+    blk="$(awk '/^if command -v lua5\.4 >\/dev\/null/ {on = 1} on {print} on && /^fi$/ {exit}' "$1")"
+    def="$(grep -m1 -E '^skip\(\) *\{' "$1")"
+    res="$(grep -E '^echo ' "$1" | tail -n 1)"
+    [[ -n "$blk" && -n "$def" && -n "$res" ]] || return 1
+    out="$(cd "$T" && env -i HOME="$HOME" PATH="$NOLUA" LC_ALL=C.UTF-8 \
+        bash -u -c "PASS=0 FAIL=0 SKIP=0"$'\n'"$def"$'\n'"$blk"$'\n'"$res" 2>&1)"
+    [[ "$out" == *'skip: lua5.4 is not installed'* && "$(tail -n 1 <<< "$out")" =~ (skipped:\ 1|\ 1\ skip)$ ]]
+}
 mapfile -t lua_tests < <(git -C "$REPO" grep -lF 'command -v lua5.4 >/dev/null' -- 'tests/*.sh' ':!tests/repo-hygiene.sh')
 bad=""
 for f in "${lua_tests[@]}"; do
-    grep -qF 'skip "lua5.4 is not installed' "$REPO/$f" || bad+=" $f"
+    lua_skip_ok "$REPO/$f" || bad+=" $f"
 done
-if [[ -z "$bad" ]]; then ok "${#lua_tests[@]} pakiety z lua5.4 mają skip zamiast OK lub ciszy"
-else fail "bez skip przy braku lua5.4:$bad"; fi
+if [[ -z "$bad" ]]; then ok "${#lua_tests[@]} pakiety z lua5.4: bez lua5.4 blok woła skip, wiersz wyniku liczy pominięcie"
+else fail "bez skip przy braku lua5.4 (blok wykonany z PATH bez lua5.4):$bad"; fi
+# Kontrola strażnika: gałąź bez lua5.4, która nie woła skip (mutacja z przeglądu).
+sed 's/^\( *\)skip "lua5.4 is not installed/\1false \&\& skip "lua5.4 is not installed/' \
+    "$REPO/tests/machine-layer.sh" > "$T/mutant.sh"
+if ! cmp -s "$REPO/tests/machine-layer.sh" "$T/mutant.sh" && ! lua_skip_ok "$T/mutant.sh"; then
+    ok "strażnik łapie gałąź bez lua5.4, która nie woła skip (false && skip)"
+else
+    fail "strażnik przepuszcza gałąź bez lua5.4 bez skip (albo machine-layer.sh nie ma już skip lua5.4)"
+fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

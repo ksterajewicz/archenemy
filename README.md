@@ -331,7 +331,8 @@ archenemy/
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
 │                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language;
 │                                     #   no machine data (interface names such as network=wlo1, /home/<login>);
-│                                     #   suites that execute generated Lua in lua5.4 report "? skip" without it.
+│                                     #   suites that execute generated Lua in lua5.4 report "? skip" without it
+│                                     #   (their lua5.4 block is run with lua5.4 hidden from PATH).
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
 │                                     #   appbinds-menu.sh also forces a failed write, a dead Hyprland, a dead waybar
