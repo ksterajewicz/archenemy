@@ -392,7 +392,7 @@ The `Super+W` menu is two-level: under two checkboxes are the **`Wallpapers/`** 
 
 At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked by default):
 
-- **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and every other monitor gets `v2`; without a pair, the same image goes everywhere.
+- **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and every other monitor gets `v2`; without a pair, the same image goes everywhere. The counterpart is found from the chosen file's own name: same part before the tag, so `dither-flux-atraktor-v1-1920x1080.png` pairs with `dither-flux-atraktor-v2-…`, never with another form from the same folder; among several such files the one with the monitor's resolution (from `data/monitors/*.dat`) wins.
 - **Unchecked** (click the entry to toggle) — the wallpaper goes only to the monitor you have focus on; the others stay unchanged.
 
 The per-monitor choice is remembered in `data/wallpaper.dat` and restored when you switch rice or re-run `install.sh` (a fresh install, or a choice pointing at deleted files, falls back to the first wallpaper). Set wallpaper roles in the installer or `Super+A → [n]`; the installer proposes the first monitor as primary and the rest as secondary. A monitor without a saved wallpaper uses the secondary wallpaper on restore.

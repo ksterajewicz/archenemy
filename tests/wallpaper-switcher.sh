@@ -336,6 +336,36 @@ boot_daemon_with ""
 out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
 check "--init ze stanem na skasowany plik → initial" '[[ "$out" == *initial* && "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]]'
 
+echo "== K: wszystkie monitory, tapeta dither-flux — para z nazwy wybranego pliku (A7)"
+# generated/ trzyma kilka form i rozdzielczości w jednym katalogu; dawne
+# `find -iname "*v2*" | head -n1` dawało drugiemu monitorowi tę samą, przypadkową
+# formę dla każdego wyboru (kolejność katalogu, różna między maszynami).
+setup_dat a
+sed -i '$a RESOLUTION=2560x1600' "$A/data/monitors/eDP-1.dat"
+G="$A/wallpapers/dither-flux/generated"; mkdir -p "$G"
+for f in atraktor-v1-1920x1080 atraktor-v2-1920x1200 atraktor-v2-2560x1600 \
+         przeplyw-v1-1920x1080 przeplyw-v2-2560x1600 przeplyw2-v1-1920x1080 przeplyw2-v2-2560x1600; do
+    : > "$G/dither-flux-$f.png"
+done
+boot_daemon_with ""
+pair_ok=1
+for form in atraktor przeplyw przeplyw2; do
+    MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-$form-v1-1920x1080.png" >/dev/null 2>&1
+    p="$(MOCK_MONS=both active_of HDMI-A-3)"; s2="$(MOCK_MONS=both active_of eDP-1)"
+    if [[ "$p" != "$G/dither-flux-$form-v1-1920x1080.png" || "$s2" != "$G/dither-flux-$form-v2-2560x1600.png" ]]; then
+        pair_ok=0; echo "    $form: primary ${p##*/}, secondary ${s2##*/}"
+    fi
+done
+check "v1 wybranej formy na primary, v2 TEJ SAMEJ formy na secondary" '(( pair_ok == 1 ))'
+MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-atraktor-v1-1920x1080.png" >/dev/null 2>&1
+check "z dwóch v2 tej formy: rozdzielczość monitora z .dat" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-atraktor-v2-2560x1600.png" ]]'
+MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-przeplyw-v2-2560x1600.png" >/dev/null 2>&1
+check "wybór v2: primary dostaje v1 tej samej formy" '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$G/dither-flux-przeplyw-v1-1920x1080.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-przeplyw-v2-2560x1600.png" ]]'
+: > "$G/dither-flux-samotna-v1-1920x1080.png"
+MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-samotna-v1-1920x1080.png" >/dev/null 2>&1
+check "forma bez pary: ten sam plik na obu"     '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-samotna-v1-1920x1080.png" ]]'
+rm -rf "$A/wallpapers/dither-flux"
+
 # ─── H–J: podglądy w menu (atrapa rofi) ─────────────────────────────────────
 export MOCK_ROFI_DIR="$T/rofi" MOCK_ROFI_ANSWERS="$T/rofi.answers"
 THUMBS="$A/data/thumbs"

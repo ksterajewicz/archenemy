@@ -19,8 +19,10 @@
 #
 #   Menu ma na górze przełącznik "[x] Upload to all monitors" (domyślnie
 #   zaznaczony). Zaznaczony: tapeta idzie na wszystkie monitory — a gdy obok
-#   wybranego pliku *v1*/*v2* leży druga połowa pary, primary dostaje v1,
-#   secondary v2. Odznaczony: tapeta trafia tylko na monitor z fokusem.
+#   wybranego pliku *v1*/*v2* leży druga połowa pary (ta sama nazwa przed
+#   tagiem, np. dither-flux-atraktor-v1-… → dither-flux-atraktor-v2-…),
+#   primary dostaje v1, pozostałe v2. Odznaczony: tapeta trafia tylko na
+#   monitor z fokusem.
 #
 #   Drugi przełącznik "[ ] Set as hyprlock background (no blur)" (domyślnie
 #   odznaczony): zaznaczony — wybrana tapeta idzie też jako `path` w
@@ -108,12 +110,15 @@ MONITORS_EXTRA=()   # trzeci i kolejne -> jak secondary (v2)
 
 declare -A SELECTOR_KNOWN   # selektor z .dat -> 1 (dzisiejszy format klucza)
 declare -A SEL_OF_LIVE      # żywa nazwa złącza -> selektor tego samego monitora
+declare -A RES_OF           # selektor -> RESOLUTION z .dat (tylko WxH; do wyboru pary v1/v2)
 
 if [[ -d "$DATA_DIR/monitors" ]]; then
     for dat in "$DATA_DIR/monitors"/*.dat; do
         [[ -f "$dat" ]] || continue
         mon=$(monitor_selector_from_dat "$dat")
         role=$(grep '^ROLE='    "$dat" | cut -d= -f2)
+        res=$(grep '^RESOLUTION=' "$dat" | cut -d= -f2)
+        [[ "$res" =~ ^[0-9]+x[0-9]+$ ]] && RES_OF[$mon]="$res"
         SELECTOR_KNOWN[$mon]=1
         live=$(monitor_live_name "$mon")
         [[ -n "$live" ]] && SEL_OF_LIVE[$live]="$mon"
@@ -207,11 +212,55 @@ load_state() {
     done
 }
 
+# Druga połowa pary v1/v2 dla pliku $1 — liczona z JEGO nazwy, tag docelowy $2
+# (v1|v2), rozdzielczość monitora docelowego $3 (może być pusta). Kandydaci: pliki
+# z tego samego katalogu z tym samym przedrostkiem przed tagiem i separatorem po
+# nim (dither-flux-atraktor-v1-1920x1080.png → dither-flux-atraktor-v2-*), z tym
+# samym rozszerzeniem. Wygrywa: rozdzielczość monitora w nazwie (tapety dither-flux
+# są liczone pod ekran), potem ta sama nazwa z podmienionym tagiem, potem pierwszy
+# alfabetycznie. Wielkość liter bez znaczenia (jak dawne -iname). Brak pary = pusto.
+# Dawniej `find -iname "*v2*" | head -n1` brał pierwszy plik w kolejności systemu
+# plików: generated/ ma kilka form i rozdzielczości w jednym katalogu, więc drugi
+# monitor dostawał inną formę niż wybrana (audyt 2026-11-05, A7).
+wallpaper_pair() {
+    local f="$1" to="$2" want="${3,,}" from=v2 lbase pre post c lc rest exact="" first=""
+    [[ "$to" == v1 ]] || from=v1
+    lbase="$(basename "$f")"; lbase="${lbase,,}"
+    [[ "$lbase" == *"$from"* ]] || return 0
+    pre="${lbase%%"$from"*}"
+    post="${lbase:$(( ${#pre} + ${#from} ))}"
+    for c in "$(dirname "$f")"/*; do
+        [[ -f "$c" ]] || continue
+        lc="$(basename "$c")"; lc="${lc,,}"
+        [[ "$lc" == "$pre$to"* ]] || continue
+        rest="${lc:$(( ${#pre} + ${#to} ))}"
+        [[ -z "$rest" || "$rest" == [!a-z0-9]* ]] || continue     # v2 tak, v20 nie
+        [[ "${rest##*.}" == "${post##*.}" ]] || continue
+        if [[ -n "$want" && "$rest" == *[!0-9]"$want"[!0-9]* ]]; then printf '%s\n' "$c"; return 0; fi
+        [[ "$rest" == "$post" ]] && exact="$c"
+        [[ -n "$first" ]] || first="$c"
+    done
+    [[ -n "${exact:-$first}" ]] && printf '%s\n' "${exact:-$first}"
+    return 0
+}
+
+# Pierwszy alfabetycznie plik katalogu $1 z tagiem $2 w nazwie (bez względu na wielkość liter).
+first_tagged() {
+    local c lc
+    for c in "$1"/*; do
+        lc="$(basename "$c")"
+        [[ -f "$c" && "${lc,,}" == *"$2"* ]] && { printf '%s\n' "$c"; return 0; }
+    done
+    return 0
+}
+
 # Zestaw folderowy (stary model): v1 → primary, v2 → secondary.
 apply_set_folder() {
     local dir="$1" v1 v2
-    v1=$(find "$dir" -maxdepth 1 -iname "*v1*" | head -n1)
-    v2=$(find "$dir" -maxdepth 1 -iname "*v2*" | head -n1)
+    v1=$(first_tagged "$dir" v1)
+    v2=""
+    [[ -n "$v1" ]] && v2=$(wallpaper_pair "$v1" v2 "${RES_OF[${MONITOR2:-_}]:-}")
+    [[ -n "$v2" ]] || v2=$(first_tagged "$dir" v2)
     if [[ -z "$v1" ]]; then
         notify-send "archenemy" "Missing v1 wallpaper in folder '$(basename "$dir")'."
         return 1
@@ -223,25 +272,27 @@ apply_set_folder() {
     return 0
 }
 
-# Plik na wszystkie monitory; jeśli obok leży druga połowa pary v1/v2,
-# primary dostaje v1, secondary v2 — inaczej ten sam plik wszędzie.
+# Plik na wszystkie monitory; jeśli obok leży druga połowa pary v1/v2 (ta sama
+# nazwa przed tagiem — wallpaper_pair), primary dostaje v1, reszta v2 — każdy
+# monitor pod swoją rozdzielczość, gdy jest taki plik. Inaczej ten sam plik wszędzie.
 apply_file_allmon() {
-    local f="$1" p="$1" s="$1" base dir pair
-    base=$(basename "$f")
-    dir=$(dirname "$f")
-    shopt -s nocasematch
-    if [[ "$base" == *v1* ]]; then
-        pair=$(find "$dir" -maxdepth 1 -iname "*v2*" | head -n1)
-        [[ -n "$pair" ]] && s="$pair"
-    elif [[ "$base" == *v2* ]]; then
-        pair=$(find "$dir" -maxdepth 1 -iname "*v1*" | head -n1)
-        [[ -n "$pair" ]] && p="$pair"
+    local f="$1" lbase m pair
+    lbase=$(basename "$f"); lbase="${lbase,,}"
+    if [[ "$lbase" == *v1* ]]; then
+        STATE[$MONITOR1]="$f"
+        for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
+            [[ -n "$m" ]] || continue
+            pair=$(wallpaper_pair "$f" v2 "${RES_OF[$m]:-}")
+            STATE[$m]="${pair:-$f}"
+        done
+    elif [[ "$lbase" == *v2* ]]; then
+        pair=$(wallpaper_pair "$f" v1 "${RES_OF[$MONITOR1]:-}")
+        STATE[$MONITOR1]="${pair:-$f}"
+        for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do [[ -n "$m" ]] && STATE[$m]="$f"; done
+    else
+        for m in "$MONITOR1" "$MONITOR2" "${MONITORS_EXTRA[@]}"; do [[ -n "$m" ]] && STATE[$m]="$f"; done
     fi
-    shopt -u nocasematch
-    STATE[$MONITOR1]="$p"
-    [[ -n "$MONITOR2" ]] && STATE[$MONITOR2]="$s"
-    local m
-    for m in "${MONITORS_EXTRA[@]}"; do STATE[$m]="$s"; done
+    return 0
 }
 
 # Monitor bez zapisanej tapety (właśnie dodany w Super+A → [n]) dostaje to, co
