@@ -85,10 +85,13 @@ bar="$(repeat "$filled" "$CH_FILL")$(repeat "$empty" "$CH_EMPTY")"
 # Active Port domyślnego sinka z pactl (pipewire-pulse) — nazwy portów
 # słuchawkowych zawierają "headphone"/"headset" (analog i USB); reszta
 # (speaker, hdmi, line-out...) to głośniki.
+# `LC_ALL=C`: pactl tłumaczy etykiety („Nazwa:”, „Aktywny port:” w pl_PL),
+# a awk szuka angielskich — bez tego w polskim locale słuchawek nie było
+# nigdy (audyt 2026-11-05, A9). Przy locale C gettext pomija też LANGUAGE.
 headphones=0
 default_sink="$(pactl get-default-sink 2>/dev/null)"
 if [[ -n "$default_sink" ]]; then
-    active_port="$(pactl list sinks 2>/dev/null | awk -v target="$default_sink" '
+    active_port="$(LC_ALL=C pactl list sinks 2>/dev/null | awk -v target="$default_sink" '
         /^Sink #/            { name="" }
         /^\tName: /           { name=$2 }
         name==target && /^\tActive Port: / { print $3 }
