@@ -42,6 +42,9 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         # Mikrokod ładuje bootloader wczesnym initrd — sam pakiet nic nie robi,
         # dopóki config bootloadera się do niego nie odwoła.
         regenerate_bootloader "microcode $UCODE"
+        # Kod regeneracji = kod skryptu, kontrakt z install.sh [6.5]: 0 gotowe,
+        # 1 grub-mkconfig padł, 2 wpisy bootowania do poprawienia ręcznie.
+        exit $?
     else
         echo -e "${RED}✗ $UCODE was not installed — check pacman output above; bootloader unchanged.${NC}"
         # Skrypt jest wołany przez install.sh jako osobny proces (bash …),

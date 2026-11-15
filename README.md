@@ -45,7 +45,7 @@ The installer covers these steps:
 - **[7]–[8k]**: offer a backup and generate machine configuration, personal-file stubs, autostart app rules and default bar settings.
 - **[8l]–[8m]**: configure the optional music stack when installed (see "Music stack"), add the rofi settings entry and shared shell rc block, and offer the `archenemy` alias. Shell selection stays in `Super+A → [h]`.
 - **[9]–[9.7]**: link `white-blue` on a fresh install or the saved rice on a repeat run, initialize or restore the wallpaper, optionally build flux-wall, and generate dither-flux wallpapers in the background.
-- **[10]–[11]**: configure NetworkManager and pipewire-pulse, offer UFW, Bluetooth and VirtualBox, reload Hyprland and show the summary. VirtualBox uses `install/virtualbox-installation.sh` for DKMS, installed-kernel headers, module checks and optional `vboxusers` membership; a reboot requirement is reported separately.
+- **[10]–[11]**: configure NetworkManager and pipewire-pulse, offer UFW, Bluetooth and VirtualBox, reload Hyprland and show the summary. The closing banner says "Everything is set up" only when nothing was skipped or failed; otherwise it gives the number of items marked ⚠ in the summary. VirtualBox uses `install/virtualbox-installation.sh` for DKMS, installed-kernel headers, module checks and optional `vboxusers` membership; a reboot requirement is reported separately.
 
 Installer prompts, status messages, summaries and descriptions emitted directly by `install/*.sh` into generated files use English. `tests/repo-hygiene.sh` checks installer message lines for Polish letters while allowing code comments.
 
@@ -83,10 +83,13 @@ archenemy/
 │   ├── install.sh                    # Main installer. Walks you through the whole setup.
 │   ├── bootloader.sh                 # Library: detects the bootloader and regenerates its config (GRUB
 │   │                                 #   auto, systemd-boot = manual instructions). Sourced by cpu/kernel.
+│   │                                 #   CPU/kernel/GPU installer exit codes are a contract with step [6.5]:
+│   │                                 #   0 done or declined, 1 failed, 2 boot entries need manual steps.
 │   ├── cpudrivers-installation.sh    # CPU microcode (Intel/AMD) — detects the CPU, installs it, regenerates the bootloader.
 │   ├── gpudrivers-installation.sh    # GPU drivers — detects the card; NVIDIA: open/proprietary, modeset,
 │   │                                 #   initramfs; if a driver is already installed: update (-Syu) / switch variant.
 │   │                                 #   For gaming: enables the [multilib] repo and installs lib32 (Steam/Proton/Wine).
+│   │                                 #   Exits 1 when any step printed ✗ (pacman, lib32, initramfs).
 │   ├── kernel-install.sh             # Installs an alternative kernel (zen/lts) + regenerates the bootloader.
 │   ├── asus-installation.sh          # ASUS laptops: asusctl + rog-control-center from the official repo,
 │   │                                 #   replaces AUR variants, starts asusd (exit codes are a contract with step [6]).
@@ -359,7 +362,8 @@ archenemy/
 │                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
 │                                     #   sudo, GPU installer test hooks only with ARCHENEMY_TEST=1.
 │                                     #   install-summary.sh — installer steps cut out of install.sh on fake
-│                                     #   sudo/pacman/yay: failed optional packages land in the summary.
+│                                     #   sudo/pacman/yay: failed optional packages and [6.5] installer exit codes
+│                                     #   land in the summary; the banner claims full success only without them.
 │                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
 │                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;

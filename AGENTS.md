@@ -255,6 +255,10 @@ Rules that follow directly from the table:
   through `sed`/`tee` needs `pipefail` (the updater used to print "✓
   updated" after a failed pull); success is an observed state (`HEAD ==
   origin/<branch>`, `hyprctl hyprpaper listactive`, `modinfo nvidia`).
+  Installer steps that fail go to `SUMMARY_SKIPPED`; helper installers
+  report through exit codes (`install.sh` [6.5]: 0 done or declined, 1
+  failed, 2 manual boot entries), and the closing banner claims full
+  success only with an empty skip list (`bash tests/install-summary.sh`).
 - **`white-blue` / `tron` parity:** every NON-visual change (functionality,
   binds, sources, window rules, script hooks) goes to BOTH at once, never
   to just one. `white-blue_beta` is legacy — bug fixes ONLY for what it

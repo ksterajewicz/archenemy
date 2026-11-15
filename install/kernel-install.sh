@@ -42,6 +42,9 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}✓ $KERNEL + $KERNEL-headers installed.${NC}"
         # Nowy kernel bez wpisu w bootloaderze jest niebootowalny.
         regenerate_bootloader "kernel $KERNEL"
+        # Kod regeneracji = kod skryptu, kontrakt z install.sh [6.5]: 0 gotowe,
+        # 1 grub-mkconfig padł, 2 wpisy bootowania do poprawienia ręcznie.
+        exit $?
     else
         echo -e "${RED}✗ Not installed: ${MISSING[*]} — check pacman output above; bootloader unchanged.${NC}"
         # Skrypt jest wołany przez install.sh jako osobny proces (bash …),

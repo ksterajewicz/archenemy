@@ -653,14 +653,28 @@ echo ""
 
 echo -e "${CYAN}[6.5] Optional drivers & kernel...${NC}"
 
+# Kod wyjścia każdego instalatora trafia do podsumowania (audyt 2026-11-05,
+# Z8: dotąd nieczytany, a baner ogłaszał pełny sukces). Kontrakt: 0 = gotowe
+# albo pominięte z wyboru, 2 = zainstalowane, ale wpisy bootowania trzeba
+# poprawić ręcznie (regenerate_bootloader: systemd-boot/nieznany), inny = porażka.
+run_driver_installer() {   # run_driver_installer <etykieta> <skrypt w install/>
+    local rc
+    bash "$ARCHENEMY_DIR/install/$2"; rc=$?
+    case "$rc" in
+        0) ;;
+        2) SUMMARY_SKIPPED+=("$1 — installed, but the boot entries need the manual steps printed above") ;;
+        *) SUMMARY_SKIPPED+=("$1 — installation FAILED (details above; retry: bash ~/archenemy/install/$2)") ;;
+    esac
+}
+
 read -rp "  Run CPU microcode installer? [y/N]: " ans
-[[ "$ans" =~ ^[Yy]$ ]] && bash "$ARCHENEMY_DIR/install/cpudrivers-installation.sh"
+[[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "CPU microcode" cpudrivers-installation.sh
 
 read -rp "  Run GPU drivers installer? [y/N]: " ans
-[[ "$ans" =~ ^[Yy]$ ]] && bash "$ARCHENEMY_DIR/install/gpudrivers-installation.sh"
+[[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "GPU drivers" gpudrivers-installation.sh
 
 read -rp "  Run kernel installer? [y/N]: " ans
-[[ "$ans" =~ ^[Yy]$ ]] && bash "$ARCHENEMY_DIR/install/kernel-install.sh"
+[[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "Kernel" kernel-install.sh
 
 echo ""
 
@@ -1440,9 +1454,21 @@ if [[ ${#SUMMARY_SKIPPED[@]} -gt 0 ]]; then
 fi
 echo ""
 
-echo -e "${BLUE}"
-echo "  ┌─────────────────────────────────────┐"
-echo "  │   Everything is set up. Have fun!   │"
+# Baner zależy od listy pominięć (audyt 2026-11-05, Z8): „Everything is set
+# up” tylko wtedy, gdy nic nie trafiło do SUMMARY_SKIPPED — dotąd leciał
+# także po nieudanym pacmanie, sterowniku czy jądrze. Tekst w ramce tylko
+# ASCII: printf wyrównuje bajtami.
+if [[ ${#SUMMARY_SKIPPED[@]} -eq 0 ]]; then
+    echo -e "${BLUE}"
+    echo "  ┌─────────────────────────────────────┐"
+    echo "  │   Everything is set up. Have fun!   │"
+else
+    echo -e "${YELLOW}"
+    echo "  ┌─────────────────────────────────────┐"
+    echo "  │   Setup finished with warnings:     │"
+    printf '  │   %-34s│\n' "${#SUMMARY_SKIPPED[@]} item(s) skipped or failed," \
+        "see the summary above."
+fi
 echo "  │                                     │"
 echo "  │   If everything is working,         │"
 echo "  │   leave a star on GitHub :)         │"

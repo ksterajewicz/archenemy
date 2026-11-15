@@ -44,6 +44,10 @@ echo ""
 PKGS=()
 HAS_NVIDIA=0
 PKG_FAILED=0
+# Każdy krok zakończony „✗” ustawia STEP_FAILED; kod wyjścia skryptu to
+# kontrakt z install.sh [6.5]: 0 = gotowe albo pominięte z wyboru,
+# 1 = coś się nie udało (dotąd zawsze 0 — podsumowanie milczało, Z8).
+STEP_FAILED=0
 MULTILIB_ENABLED_NOW=0
 
 # NVIDIA: sterownik open kontra własnościowy zależy od generacji karty, a tego
@@ -106,6 +110,7 @@ if grep -qi 'nvidia' <<<"$GPU_INFO"; then
                     echo -e "  ${GREEN}✓ System and NVIDIA driver updated.${NC}"
                 else
                     echo -e "  ${RED}✗ Upgrade failed — run manually: sudo pacman -Syu${NC}"
+                    STEP_FAILED=1
                 fi
                 ;;
             2)
@@ -143,6 +148,7 @@ if [[ ${#PKGS[@]} -gt 0 ]]; then
         echo -e "${GREEN}✓ GPU drivers installed.${NC}"
     else
         PKG_FAILED=1
+        STEP_FAILED=1
         echo -e "${RED}✗ Package installation failed — leaving initramfs unchanged. Fix the pacman error and run this script again.${NC}"
     fi
 fi
@@ -170,6 +176,7 @@ ensure_multilib() {
         MULTILIB_ENABLED_NOW=1
     else
         echo -e "  ${RED}✗ Could not enable [multilib] — enable it manually in $ETC_DIR/pacman.conf.${NC}"
+        STEP_FAILED=1
         return 1
     fi
 }
@@ -202,6 +209,7 @@ if [[ ${#MISSING32[@]} -gt 0 ]]; then
                 echo -e "${GREEN}✓ lib32 packages installed.${NC}"
             else
                 echo -e "${RED}✗ lib32 installation failed — Steam/Proton may not start.${NC}"
+                STEP_FAILED=1
             fi
         fi
     else
@@ -240,6 +248,7 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
         echo -e "  ${RED}✗ The nvidia module is not built for kernel: $(tr '\n' ' ' <<<"$NV_MISSING")${NC}"
         echo -e "  ${RED}  Leaving $MKINIT unchanged. Check: dkms status; missing headers: sudo pacman -S <kernel>-headers;${NC}"
         echo -e "  ${RED}  then run this script again.${NC}"
+        STEP_FAILED=1
     elif [[ -f "$MKINIT" ]]; then
         if grep -qE '^MODULES=.*nvidia_drm' "$MKINIT"; then
             echo -e "  ${GREEN}✓ mkinitcpio already has NVIDIA modules.${NC}"
@@ -257,11 +266,13 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
                     echo -e "  ${GREEN}✓ initramfs rebuilt.${NC}"
                 else
                     echo -e "  ${RED}✗ mkinitcpio -P failed — check $MKINIT (backup alongside).${NC}"
+                    STEP_FAILED=1
                 fi
             else
                 echo -e "  ${RED}✗ No active MODULES=(...) line found in $MKINIT — add manually:${NC}"
                 echo -e "      MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)"
                 echo -e "      and rebuild initramfs: sudo mkinitcpio -P"
+                STEP_FAILED=1
             fi
         fi
     else
@@ -274,3 +285,5 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     echo -e "  ${YELLOW}install.sh sets NVIDIA Wayland variables (config/hypr/gpu-env.lua).${NC}"
     echo -e "  ${YELLOW}Reboot to apply modeset and module changes.${NC}"
 fi
+
+exit "$STEP_FAILED"

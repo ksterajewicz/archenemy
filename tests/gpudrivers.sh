@@ -54,6 +54,7 @@ if [[ "$1" == "-Qi" ]]; then
     [[ " ${MOCK_INSTALLED:-} " == *" $2 "* ]]; exit
 fi
 [[ "${MOCK_PACMAN_FAIL:-0}" == 1 && "$*" == *nvidia-open-dkms* ]] && exit 1
+[[ "${MOCK_PACMAN_FAIL_LIB32:-0}" == 1 && "$*" == *lib32-* ]] && exit 1
 exit 0
 EOF
 # modinfo -k <kver> nvidia: moduł „jest”, gdy w atrapie leży <kver>/nvidia.ko
@@ -88,7 +89,8 @@ run_gpu() { printf '%b' "$1" | bash "$GPU" 2>&1; }
 
 echo "== A: instalacja udana, moduł zbudowany"
 setup "linux-6.16"
-out=$(MOCK_INSTALLED="" run_gpu '1\ny\nn\n')
+out=$(MOCK_INSTALLED="" run_gpu '1\ny\nn\n'); rc=$?
+check "kod wyjścia 0"                          '[[ $rc -eq 0 ]]'
 check "nagłówki jądra w transakcji"            'grep -q "pacman -S --needed.*nvidia-open-dkms.*linux-headers" "$MOCK_LOG"'
 check "moduły NVIDIA w MODULES"                'grep -q "^MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm" "$T/etc/mkinitcpio.conf"'
 check "initramfs przebudowany"                 'grep -q "mkinitcpio -P" "$MOCK_LOG"'
@@ -96,7 +98,8 @@ check "modeset przez modprobe.d"               'grep -q "modeset=1" "$T/etc/modp
 
 echo "== B: instalacja nieudana"
 setup "linux-6.16"
-out=$(MOCK_INSTALLED="" MOCK_PACMAN_FAIL=1 run_gpu '1\ny\nn\n')
+out=$(MOCK_INSTALLED="" MOCK_PACMAN_FAIL=1 run_gpu '1\ny\nn\n'); rc=$?
+check "kod wyjścia ≠ 0 (install.sh [6.5] wpisuje porażkę do podsumowania)" '[[ $rc -ne 0 ]]'
 check "brak fałszywego „✓ zainstalowane”"      '[[ "$out" != *"✓ GPU drivers installed"* ]]'
 check "jawny błąd"                             '[[ "$out" == *"✗ Package installation failed"* ]]'
 check "MODULES nietknięte"                     'grep -q "^MODULES=()$" "$T/etc/mkinitcpio.conf"'
@@ -104,7 +107,8 @@ check "initramfs NIE przebudowany"             '! grep -q mkinitcpio "$MOCK_LOG"
 
 echo "== C: moduł nie powstał dla jednego z jąder"
 setup "linux-6.16" -- "linux-lts-6.12"
-out=$(MOCK_INSTALLED="" run_gpu '1\ny\nn\n')
+out=$(MOCK_INSTALLED="" run_gpu '1\ny\nn\n'); rc=$?
+check "kod wyjścia ≠ 0 (initramfs nie skończony)" '[[ $rc -ne 0 ]]'
 check "nagłówki obu jąder"                     'grep -q "linux-headers" "$MOCK_LOG" && grep -q "linux-lts-headers" "$MOCK_LOG"'
 check "ostrzeżenie wskazuje jądro"             '[[ "$out" == *"linux-lts-6.12"* ]]'
 check "MODULES nietknięte"                     'grep -q "^MODULES=()$" "$T/etc/mkinitcpio.conf"'
@@ -112,10 +116,22 @@ check "initramfs NIE przebudowany"             '! grep -q mkinitcpio "$MOCK_LOG"
 
 echo "== D: włączenie [multilib] bez częściowej aktualizacji"
 setup "linux-6.16"
-out=$(MOCK_INSTALLED="nvidia-open-dkms nvidia-utils" run_gpu '3\ny\n')
+out=$(MOCK_INSTALLED="nvidia-open-dkms nvidia-utils" run_gpu '3\ny\n'); rc=$?
+check "kod wyjścia 0"                          '[[ $rc -eq 0 ]]'
 check "multilib odkomentowany"                 'grep -q "^\[multilib\]" "$T/etc/pacman.conf"'
 check "brak gołego pacman -Sy"                 '! grep -qx "pacman -Sy" "$MOCK_LOG"'
 check "lib32 w pełnym -Syu"                    'grep -q "pacman -Syu --needed lib32-nvidia-utils" "$MOCK_LOG"'
+
+echo "== E: lib32 nie zainstalowane"
+setup "linux-6.16"
+out=$(MOCK_INSTALLED="nvidia-open-dkms nvidia-utils" MOCK_PACMAN_FAIL_LIB32=1 run_gpu '3\ny\n'); rc=$?
+check "jawny błąd lib32"                       '[[ "$out" == *"✗ lib32 installation failed"* ]]'
+check "kod wyjścia ≠ 0"                        '[[ $rc -ne 0 ]]'
+
+echo "== F: odmowa instalacji = nie porażka"
+setup "linux-6.16"
+out=$(MOCK_INSTALLED="" run_gpu '1\nn\n'); rc=$?
+check "Skipped, kod wyjścia 0"                 '[[ "$out" == *"Skipped."* && $rc -eq 0 ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

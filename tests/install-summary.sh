@@ -26,28 +26,31 @@ ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
-# cut_step <wzorzec początku> <wzorzec końca> <plik> — wycinek [początek, koniec)
+# cut_step <wzorzec początku> <wzorzec końca|EOF> <plik> — wycinek [początek, koniec)
 cut_step() {
     local s e
     s=$(grep -n -m1 -- "$1" "$INST" | cut -d: -f1)
-    e=$(grep -n -m1 -- "$2" "$INST" | cut -d: -f1)
+    if [[ "$2" == EOF ]]; then e=$(( $(wc -l < "$INST") + 1 ))
+    else e=$(grep -n -m1 -- "$2" "$INST" | cut -d: -f1); fi
     [[ -n "$s" && -n "$e" && "$e" -gt "$s" ]] || return 1
     sed -n "${s},$((e-1))p" "$INST" > "$3"
 }
 
-# run_step <wycinek> <stdin> → stdout+stderr; SUMMARY_* do $T/summary.
-# Kolory puste, ARCHENEMY_DIR = atrapa repo; install/lib/aur.sh jak w install.sh.
+# run_step <wycinek> <stdin> [kod przed wycinkiem] → stdout+stderr; SUMMARY_*
+# do $T/summary. Kolory puste, ARCHENEMY_DIR = atrapa repo; install/lib/aur.sh
+# jak w install.sh.
 run_step() {
     ARCHENEMY_DIR="$A" GREEN='' NC='' YELLOW='' RED='' CYAN='' BLUE='' \
-    bash -c 'declare -a SUMMARY_DONE=() SUMMARY_SKIPPED=(); source "$3"; source "$1"
+    bash -c 'declare -a SUMMARY_DONE=() SUMMARY_SKIPPED=(); source "$3"; eval "$4"; source "$1"
              printf "DONE=%s\n" "${SUMMARY_DONE[@]}" > "$2"; printf "SKIPPED=%s\n" "${SUMMARY_SKIPPED[@]}" >> "$2"' \
-        _ "$1" "$T/summary" "$REPO/install/lib/aur.sh" <<<"$2" 2>&1
+        _ "$1" "$T/summary" "$REPO/install/lib/aur.sh" "${3:-}" <<<"$2" 2>&1
 }
 
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
 cat > "$T/bin/sudo" <<'EOF'
 #!/bin/bash
+[[ "$1" == -k ]] && exit 0
 exec "$@"
 EOF
 # pacman: -Qi <pkg> = zainstalowany, jeśli jest w MOCK_INSTALLED; -S logowane,
@@ -107,6 +110,51 @@ for b in sudo pacman; do ln -sf "$T/bin/$b" "$T/bin-noyay/$b"; done
 ln -sf "$(command -v bash)" "$T/bin-noyay/bash"
 out=$(PATH="$T/bin-noyay" run_step "$T/step5.sh" $'y\n4\n')
 check "AUR bez yay: pominięcie w podsumowaniu"   'grep -q "^SKIPPED=.*megasync" "$T/summary"'
+
+# ─── [6.5] sterowniki i jądro: kody wyjścia instalatorów (Z8) ────────────────
+echo "== [6.5] sterowniki i jądro"
+cut_step '^# ─── 6\.5 DRIVERS' '^# ─── 7\. BACKUP' "$T/step65.sh"
+check "wycinek [6.5] znaleziony"                 '[[ -s "$T/step65.sh" ]]'
+# Atrapy instalatorów: kod wyjścia z MOCK_<CPUDRIVERS|GPUDRIVERS|KERNEL>_RC.
+for n in cpudrivers-installation gpudrivers-installation kernel-install; do
+    v="MOCK_$(tr 'a-z-' 'A-Z_' <<< "${n%%-*}")_RC"
+    printf '#!/bin/bash\necho "RUN %s" >> "$MOCK_LOG"\nexit "${%s:-0}"\n' "$n" "$v" > "$A/install/$n.sh"
+done
+: > "$MOCK_LOG"
+out=$(run_step "$T/step65.sh" $'y\ny\ny\n')
+check "wszystkie kody 0: podsumowanie czyste"    '[[ $(grep -c "^RUN" "$MOCK_LOG") -eq 3 ]] && ! grep -q "^SKIPPED=." "$T/summary"'
+out=$(MOCK_CPUDRIVERS_RC=1 MOCK_GPUDRIVERS_RC=1 MOCK_KERNEL_RC=1 run_step "$T/step65.sh" $'y\ny\ny\n')
+check "mikrokod: porażka w podsumowaniu"         'grep -q "^SKIPPED=CPU microcode.*FAILED.*cpudrivers-installation.sh" "$T/summary"'
+check "GPU: porażka w podsumowaniu"              'grep -q "^SKIPPED=GPU drivers.*FAILED.*gpudrivers-installation.sh" "$T/summary"'
+check "jądro: porażka w podsumowaniu"            'grep -q "^SKIPPED=Kernel.*FAILED.*kernel-install.sh" "$T/summary"'
+out=$(MOCK_CPUDRIVERS_RC=2 MOCK_KERNEL_RC=2 run_step "$T/step65.sh" $'y\nn\ny\n')
+check "kod 2: wpisy bootowania do ręcznej poprawy" '[[ $(grep -c "^SKIPPED=.*boot entries" "$T/summary") -eq 2 ]] && ! grep -q "^SKIPPED=.*FAILED" "$T/summary"'
+: > "$MOCK_LOG"
+out=$(MOCK_CPUDRIVERS_RC=1 run_step "$T/step65.sh" $'n\nn\nn\n')
+check "odmowa: instalatory nie wołane"           '[[ ! -s "$MOCK_LOG" ]] && ! grep -q "^SKIPPED=." "$T/summary"'
+
+# ─── [11] baner zależny od pominięć (Z8) ─────────────────────────────────────
+echo "== [11] podsumowanie i baner"
+cut_step '^# ─── 11\. DONE' EOF "$T/step11.sh"
+check "wycinek [11] znaleziony"                  '[[ -s "$T/step11.sh" ]]'
+box_even() {   # każda linia ramki banera ma tę samą szerokość (w znakach)
+    local w="" l
+    while IFS= read -r l; do
+        [[ "$l" == "  "[┌│└]* ]] || continue
+        [[ -z "$w" ]] && w=${#l}
+        [[ ${#l} -eq $w ]] || return 1
+    done <<< "$1"
+    [[ -n "$w" ]]
+}
+out=$(run_step "$T/step11.sh" $'n\n' 'SUMMARY_DONE=("a")')
+check "bez pominięć: pełny sukces"               '[[ "$out" == *"Everything is set up. Have fun!"* ]]'
+check "bez pominięć: ramka równa"                'box_even "$out"'
+out=$(run_step "$T/step11.sh" $'n\n' 'SUMMARY_SKIPPED=("GPU drivers — installation FAILED")')
+check "z pominięciem: bez pełnego sukcesu"       '[[ "$out" != *"Everything is set up"* ]]'
+check "z pominięciem: baner podaje liczbę"       '[[ "$out" == *"1 item(s)"* ]]'
+check "z pominięciem: ramka równa"               'box_even "$out"'
+out=$(run_step "$T/step11.sh" $'n\n' 'for i in $(seq 12); do SUMMARY_SKIPPED+=("x$i"); done')
+check "12 pominięć: liczba i równa ramka"        '[[ "$out" == *"12 item(s)"* ]] && box_even "$out"'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
