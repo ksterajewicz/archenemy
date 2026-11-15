@@ -328,8 +328,11 @@ else
         _ok=1
         _seen=""
         for n in "${picks[@]}"; do
-            if [[ ! "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#ORDER_PROPOSED[@]} )) \
-               || [[ " $_seen " == *" $n "* ]]; then
+            [[ "$n" =~ ^[0-9]+$ ]] || { _ok=0; break; }
+            # 10#: „08” to dla basha zła liczba ósemkowa — błąd rozwinięcia
+            # kończył cały instalator (audyt 2026-11-05, Z12).
+            n=$((10#$n))
+            if (( n < 1 || n > ${#ORDER_PROPOSED[@]} )) || [[ " $_seen " == *" $n "* ]]; then
                 _ok=0
                 break
             fi
@@ -340,7 +343,7 @@ else
             continue
         fi
         _reordered=()
-        for n in "${picks[@]}"; do
+        for n in $_seen; do
             _reordered+=("${ORDER_PROPOSED[$((n - 1))]}")
         done
         ORDER_PROPOSED=("${_reordered[@]}")
@@ -518,7 +521,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         sel_aur=()
         for n in "${picks[@]}"; do
             [[ "$n" =~ ^[0-9]+$ ]] || continue
-            idx=$((n - 1))
+            idx=$((10#$n - 1))   # 10#: „08” nie jest liczbą ósemkową (Z12)
             (( idx >= 0 && idx < ${#ADD_NAMES[@]} )) || continue
             if [[ "${ADD_SRC[$idx]}" == "aur" ]]; then
                 sel_aur+=("${ADD_NAMES[$idx]}")

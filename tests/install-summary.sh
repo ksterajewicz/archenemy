@@ -111,6 +111,15 @@ ln -sf "$(command -v bash)" "$T/bin-noyay/bash"
 out=$(PATH="$T/bin-noyay" run_step "$T/step5.sh" $'y\n4\n')
 check "AUR bez yay: pominięcie w podsumowaniu"   'grep -q "^SKIPPED=.*megasync" "$T/summary"'
 
+# Audyt 2026-11-05, Z12: „08” w $((n - 1)) to zła liczba ósemkowa — błąd
+# rozwinięcia kończył cały instalator, wybór dodatków przepadał.
+cp "$A/packages/additional-packages-pacman.txt" "$T/add-pacman.bak"
+printf 'btop\nkeepassxc\nbadname\np4\np5\np6\np7\np8\n' > "$A/packages/additional-packages-pacman.txt"
+: > "$MOCK_LOG"
+out=$(run_step "$T/step5.sh" $'y\n08 02\n'); rc=$?
+check "liczba z zerem (08): wybór dociera do pacmana" '[[ $rc -eq 0 ]] && grep -q "pacman -S --needed p8 keepassxc$" "$MOCK_LOG"'
+cp "$T/add-pacman.bak" "$A/packages/additional-packages-pacman.txt"
+
 # ─── [6.5] sterowniki i jądro: kody wyjścia instalatorów (Z8) ────────────────
 echo "== [6.5] sterowniki i jądro"
 cut_step '^# ─── 6\.5 DRIVERS' '^# ─── 7\. BACKUP' "$T/step65.sh"

@@ -72,6 +72,10 @@ out="$(pick 'p\nq\n')"
 check "p na pierwszej stronie zostaje"    '[[ "$out" != *"page 0/"* ]]'
 : > "$DAT"; out="$(pick '20\ns\n\n')"
 check "numer z innej strony działa"       '[[ -s "$DAT" && "$(wc -l < "$DAT")" == 1 ]]'
+# Audyt 2026-11-05, Z12: „08” w arytmetyce basha = zła liczba ósemkowa, picker
+# wychodził z kodem 1 bez zapisu.
+: > "$DAT"; out="$(pick '08 3\ns\n\n')"
+check "liczba z zerem (08) zaznacza app08"  '[[ "$(sort "$DAT" | tr "\n" " ")" == "app03 app08 " ]]'
 
 echo "== zapis i wyjście"
 : > "$DAT"; out="$(pick '1\ns\n\n')"

@@ -295,14 +295,16 @@ picker_loop() {
                 ;;
         esac
 
-        # Liczby oddzielone spacją — indeksy w AKTUALNIE wyświetlanej liście
+        # Liczby oddzielone spacją — indeksy w AKTUALNIE wyświetlanej liście.
+        # 10#: „08” to dla basha zła liczba ósemkowa — picker wychodził z kodem 1
+        # bez zapisu (audyt 2026-11-05, Z12).
         bad=0
         for token in $input; do
-            if [[ ! "$token" =~ ^[0-9]+$ ]] || (( token < 1 || token > ${#VIEW[@]} )); then
+            if [[ ! "$token" =~ ^[0-9]+$ ]] || (( 10#$token < 1 || 10#$token > ${#VIEW[@]} )); then
                 bad=1
                 continue
             fi
-            id="${VIEW[$((token - 1))]}"
+            id="${VIEW[$((10#$token - 1))]}"
             DIRTY=1
             if [[ -n "${SELECTED[$id]:-}" ]]; then
                 unset "SELECTED[$id]"

@@ -191,6 +191,14 @@ check "pełny bieg: bez katalogów tymczasowych (także resztki)" '! ls -d "$I"/
 check "pełny bieg: workspace-mode.dat = shared" '[[ "$(<"$I/workspace-mode.dat")" == shared ]]'
 check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat saved (2 monitors)"* ]]'
 
+# Audyt 2026-11-05, Z12: numer z zerem na początku w [3.6] („08”) to zła liczba
+# ósemkowa w $((n - 1)) — błąd rozwinięcia kończył instalator w pół kroku.
+# „08 1” ma być odrzucone jak każdy numer spoza listy, „02 01” = „2 1”.
+I4="$T/inst4"; mkdir -p "$I4/monitors"
+out=$(printf '\n\n\n\n\n\n\n\n\n\n08 1\n02 01\n1\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I4" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" 2>&1)
+check '[3.6] 08 1 odrzucone, bieg trwa'      '[[ "$out" == *"Use each number from 1..2 exactly once"* && "$(<"$I4/workspace-mode.dat")" == shared ]]'
+check '[3.6] 02 01 = odwrócona numeracja'    'grep -qx "ORDER=1" "$I4/monitors/HDMI-A-3.dat" && grep -qx "ORDER=2" "$I4/monitors/eDP-1.dat"'
+
 echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
 # Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie
 # mówiło. Alarm tylko przy zmianach w katalogach przetwarzanych przez
