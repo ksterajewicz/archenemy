@@ -43,10 +43,13 @@ except Exception:
         # Tag z NAZWY monitora, nie z licznika: numeracja zależałaby od kolejności
         # plików .dat i nowy monitor przesuwałby numery już wygenerowanych plików
         # (przeliczanie gotowych tapet — złapane testem na atrapie 2026-09-07).
+        # Generator przyjmuje w tagu litery, cyfry i myślnik; inny znak (nazwa
+        # złącza spoza DRM) zamieniamy na myślnik, bo nierozpoznany tag generator
+        # bierze za filtr form i nie rysuje wtedy niczego.
         case "$role" in
             primary)   tag="v1" ;;
             secondary) tag="v2" ;;
-            *)         tag="m-$mon" ;;
+            *)         tag="m-${mon//[^A-Za-z0-9-]/-}" ;;
         esac
         # gotowe? (pierwsza forma jako wskaźnik kompletu tej rozdzielczości)
         if [[ -f "$out_dir/dither-flux-przeplyw-$tag-$res.png" ]]; then

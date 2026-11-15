@@ -22,8 +22,9 @@ Użycie:
     ziarno   liczba całkowita (domyślnie 2026)
     TAG:WxH  rozdzielczość docelowa, np. v1:1920x1080 v2:2560x1600 — podane
              zastępują domyślne SIZES. install.sh podaje tu REALNE tryby
-             monitorów z data/monitors/*.dat (primary → v1, secondary → v2),
-             żeby raster był liczony natywnie, bez skalowania.
+             monitorów z data/monitors/*.dat (primary → v1, secondary → v2,
+             pozostałe → m-<złącze>, np. m-HDMI-A-1), żeby raster był liczony
+             natywnie, bez skalowania. TAG: litery, cyfry i myślnik.
     filtr    fragment nazwy formy (przeplyw, atraktor…) — generuj tylko pasujące
 """
 import math, os, struct, sys, time, zlib
@@ -382,10 +383,14 @@ if __name__ == '__main__':
     base_seed = int(sys.argv[3]) if len(sys.argv) > 3 else 2026
     rest = sys.argv[4:]
     # Argumenty w formie TAG:WxH to rozdzielczości; reszta to filtry nazw form.
+    # TAG z wielkimi literami i myślnikiem (m-HDMI-A-1, monitor z rolą other):
+    # dawny wzorzec [a-z0-9]+ brał go za filtr nazw, a filtr nie pasował do
+    # żadnej formy, więc bieg kończył się kodem 0 bez ANI JEDNEGO pliku — także
+    # bez v1/v2 (audyt 2026-11-05, A5).
     sizes = []
     only = []
     for arg in rest:
-        m = re.fullmatch(r'([a-z0-9]+):(\d+)x(\d+)', arg)
+        m = re.fullmatch(r'([A-Za-z0-9][A-Za-z0-9-]*):(\d+)x(\d+)', arg)
         if m:
             w, h = int(m.group(2)), int(m.group(3))
             if w < 64 or h < 64 or w > 16384 or h > 16384:

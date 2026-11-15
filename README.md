@@ -291,6 +291,8 @@ archenemy/
 │                                     #   flux-wall-dither.sh — flux-wall.sh passes --dither only for the active
 │                                     #   dither-flux rice (fake binary); offscreen: --dither = palette colors only,
 │                                     #   --no-dither = smooth gradient, with spectrogram unchanged by the flag (render part skips without tools).
+│                                     #   dither-flux-sizes.sh — the plan from data/monitors/*.dat plus the REAL
+│                                     #   generator at ~64 px: every role (other = m-<connector>) gets every form.
 │                                     #   wallpaper-switcher.sh — Super+W against a fake hyprpaper daemon
 │                                     #   (settings list + first-match rule): the picked wallpaper must end up
 │                                     #   ON SCREEN in all three .dat scenarios; plus the menu previews on a
