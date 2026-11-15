@@ -7,8 +7,10 @@
 #     - yay budowany w świeżym `mktemp -d` (trap sprząta), nie w stałym
 #       /tmp/yay, który inny użytkownik mógł podstawić przed nami;
 #     - przed makepkg pytanie „Review PKGBUILD?” (domyślnie N), przed
-#       `yay -S` zdanie, czym jest AUR, i opt-in `--answerdiff All`
-#       (yay pokaże diff każdego PKGBUILD przed budową).
+#       `yay -S` zdanie, czym jest AUR, i opt-in `--diffmenu --answerdiff All`
+#       (yay pokaże diff każdego PKGBUILD przed budową; `--diffmenu`, bo samo
+#       --answerdiff nic nie daje, gdy użytkownik wyłączył menu diffów —
+#       I3 z przeglądu 2026-11-15).
 #   Przegląd 2026-11-15 (I1): świeży Arch nie ma less (base, base-devel ani
 #   git go nie ciągną), więc pager idzie z zapasem: $PAGER → less → more
 #   (util-linux, w base) → cat; yay dostaje ten sam pager jako GIT_PAGER.
@@ -92,9 +94,11 @@ aur_install() {
     local ans pager
     local -a review=() pager_env=()
     echo -e "  AUR packages are built from user-submitted PKGBUILDs (not checked by Arch): $*"
-    read -rp "Review each PKGBUILD diff before building (yay --answerdiff All)? [y/N]: " ans
+    read -rp "Review each PKGBUILD diff before building (yay --diffmenu --answerdiff All)? [y/N]: " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
-        review=(--answerdiff All)
+        # --diffmenu: `yay --diffmenu=false --save` wyłącza menu diffów na stałe
+        # i wtedy samo --answerdiff All budowało bez przeglądu (yay 13.0.1).
+        review=(--diffmenu --answerdiff All)
         # yay pokazuje diffy przez `git diff`, a git bez less kończy się
         # „unable to execute pager 'less'” i przeglądu nie ma (I1). Pager
         # wybrany przez użytkownika (GIT_PAGER, core.pager) zostaje.

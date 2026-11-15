@@ -5,7 +5,7 @@
 #   bezpieczeństwa 2026-11-14) na atrapach git/makepkg/yay/pagera w mktemp:
 #   yay budowany w świeżym katalogu mktemp (nie /tmp/yay) i sprzątany,
 #   przegląd PKGBUILD na żądanie, ✓ tylko gdy yay naprawdę jest w PATH,
-#   `--answerdiff All` wyłącznie po „y”; przegląd działa bez less (pager
+#   `--diffmenu --answerdiff All` wyłącznie po „y” (I3); przegląd działa bez less (pager
 #   z zapasem i GIT_PAGER dla yay, I1 z przeglądu 2026-11-15); Ctrl+C w [4]
 #   zatrzymuje install.sh (I2, wycinek [4]–[5]). Bez sieci, bez roota.
 #   Uruchom: bash tests/install-aur.sh   (kod 0 = wszystko przeszło)
@@ -108,13 +108,13 @@ run_boot '\n'
 check "nieudany clone → ✗, makepkg nie rusza"         '[[ $RC -ne 0 && ! -f "$LOG/makepkg-cwd" ]]'
 check "nieudany clone → bez śmieci w \$TMPDIR"         '[[ -z "$(find "$T/tmp" -maxdepth 1 -name "archenemy-yay.*")" ]]'
 
-echo "== yay -S: zdanie o AUR i --answerdiff All tylko po „y”"
+echo "== yay -S: zdanie o AUR i --diffmenu --answerdiff All tylko po „y”"
 reset_case; export MOCK_MAKEPKG_INSTALLS=1; run_boot '\n'
 out="$(printf '\n' | bash -c 'source "$0"; aur_install brave-bin' "$REPO/install/lib/aur.sh" 2>&1)"
 check "domyślnie bez --answerdiff"                    '[[ "$(cat "$LOG/yay-args")" == "-S --needed brave-bin" ]]'
 check "zdanie o AUR przed yay -S"                     '[[ "$out" == *"user-submitted PKGBUILDs"* ]]'
 out="$(printf 'y\n' | bash -c 'source "$0"; aur_install brave-bin' "$REPO/install/lib/aur.sh" 2>&1)"
-check "„y” → --answerdiff All"                        '[[ "$(cat "$LOG/yay-args")" == "-S --needed --answerdiff All brave-bin" ]]'
+check "„y” → --diffmenu --answerdiff All (I3)"        '[[ "$(cat "$LOG/yay-args")" == "-S --needed --diffmenu --answerdiff All brave-bin" ]]'
 
 echo "== yay -S z przeglądem bez less (I1): GIT_PAGER, który istnieje"
 # yay pokazuje diffy przez `git diff`; bez less git kończy się „unable to
