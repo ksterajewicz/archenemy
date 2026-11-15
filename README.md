@@ -49,7 +49,7 @@ The installer covers these steps:
 
 Installer prompts, status messages, summaries and descriptions emitted directly by `install/*.sh` into generated files use English. `tests/repo-hygiene.sh` checks installer message lines for Polish letters while allowing code comments.
 
-**Updating an existing machine after `git pull`?** Run `install.sh` again — it will generate any missing machine files. The monitor survey ([3]–[3.7]) writes the new `data/monitors/*.dat` into a temporary `data/monitors.new.*` folder and swaps them in only after the last question, so Ctrl-C mid-survey leaves the previous set intact. Every step reports what actually happened: package installs, `ufw`, `systemctl enable`, the bootloader regeneration in the CPU/kernel installers and the final `hyprctl reload` print ✓ only after checking the result, otherwise the step lands in the summary with the command to finish by hand.
+**Updating an existing machine after `git pull`?** Run `install.sh` again — it will generate any missing machine files. The monitor survey ([3]–[3.7]) writes the new `data/monitors/*.dat` into a temporary `data/monitors.new.*` folder and swaps them in only after the last question, so Ctrl-C mid-survey leaves the previous set intact; so does closed input (Ctrl-D, or a pipe that runs out) at the workspace-mode question [3.7], which has no default — the installer stops with code 1 instead of asking forever. Every step reports what actually happened: package installs, `ufw`, `systemctl enable`, the bootloader regeneration in the CPU/kernel installers and the final `hyprctl reload` print ✓ only after checking the result, otherwise the step lands in the summary with the command to finish by hand.
 
 ## How this is organized — four layers
 

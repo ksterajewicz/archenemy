@@ -372,7 +372,14 @@ echo -e "     decades). Super+1..0 works on the focused monitor. A daemon"
 echo -e "     merges workspaces when a monitor is unplugged."
 echo ""
 while :; do
-    read -rp "  Choose mode [1/2]: " ws_choice
+    # Koniec wejścia (Ctrl-D, potok bez odpowiedzi) — to pytanie nie ma
+    # domyślnej, więc pętla kręciła się bez końca (audyt 2026-11-05, Z13).
+    # Kończymy jak Ctrl-C: trap sprząta nowe .dat, stare zostają na miejscu.
+    if ! read -rp "  Choose mode [1/2]: " ws_choice && [[ -z "$ws_choice" ]]; then
+        echo ""
+        echo -e "  ${RED}✗ No answer (input closed) — stopping, data/monitors/ left unchanged.${NC}"
+        exit 1
+    fi
     case "$ws_choice" in
         1) WS_MODE="shared";  break ;;
         2) WS_MODE="decades"; break ;;
