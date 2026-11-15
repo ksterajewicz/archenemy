@@ -374,7 +374,8 @@ archenemy/
 │                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
 │                                     #   over the whole history (when installed; otherwise "skip").
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
-│                                     #   installed from (pacman sync DB / AUR RPC v5), no -git in requirements;
+│                                     #   installed from (official repos core/extra/multilib in the pacman sync DB /
+│                                     #   AUR RPC v5), no -git in requirements;
 │                                     #   offline → "skip", never ✓; without a synced [multilib] only steam and
 │                                     #   lib32-* skip, any other unknown name → ✗.
 │                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
@@ -789,7 +790,7 @@ CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux
 
 `bash tests/secrets.sh` looks for private keys and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
 
-`bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the synced repos (one read-only `pacman -Slq`), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network or without pacman the affected names are reported as `skip`, never as passed. Without a synced `[multilib]` database (CI, servers) only the multilib names — `steam` and `lib32-*`, the same pattern step [5] of `install.sh` warns about — are skipped; any other name that is not in the repos fails, so a typo cannot pass as a skip.
+`bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the official repos (read-only `pacman -Slq core extra` and `pacman -Slq multilib`; third-party repos in `pacman.conf` do not count), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network or without pacman the affected names are reported as `skip`, never as passed. Without a synced `[multilib]` database (CI, servers) only the multilib names — `steam` and `lib32-*`, the same pattern step [5] of `install.sh` warns about — are skipped; any other name that is not in the repos fails, so a typo cannot pass as a skip.
 
 **Live-only — a real Arch + Hyprland session is required:**
 

@@ -2,8 +2,9 @@
 # =============================================
 #   archenemy - tests/packages-exist.sh
 #   Czy każda nazwa z packages/*.txt naprawdę istnieje tam, skąd ją
-#   instalujemy: listy *-pacman.txt → `pacman -Slq` (lokalna baza sync,
-#   tylko odczyt, jedno wywołanie), listy *-aur.txt → AUR RPC v5 (jedno zapytanie `info`).
+#   instalujemy: listy *-pacman.txt → oficjalne repo `pacman -Slq core extra`
+#   i `-Slq multilib` (lokalna baza sync, tylko odczyt; obce repo z pacman.conf
+#   się nie liczą), listy *-aur.txt → AUR RPC v5 (jedno zapytanie `info`).
 #   Powód (audyt bezpieczeństwa 2026-11-14, S3/S8): `protonvpn` i `omen-fan`
 #   zniknęły z AUR — porzuconą nazwę może zarejestrować ktokolwiek i
 #   `yay -S` zbudowałby jego PKGBUILD; `swayosd-git` budował niesprawdzony HEAD.
@@ -71,20 +72,27 @@ check_lists() {
     for f in "$dir"/*-pacman.txt; do [[ -f "$f" ]] && mapfile -t -O "${#pac[@]}" pac < <(list_names "$f"); done
     for f in "$dir"/*-aur.txt;    do [[ -f "$f" ]] && mapfile -t -O "${#aur[@]}" aur < <(list_names "$f"); done
 
-    # Jedno `pacman -Slq` (wszystkie zsynchronizowane repo, tylko odczyt) zamiast
-    # `pacman -Si` na nazwę — każde wywołanie pacmana to ~1 s czytania baz.
-    local repo_names="" multi
-    command -v pacman >/dev/null 2>&1 && repo_names="$(pacman -Slq 2>/dev/null)"
+    # Tylko oficjalne repo Archa (R1 P2): `pacman -Slq core extra` i osobno
+    # multilib (tylko odczyt lokalnej bazy sync) zamiast `pacman -Si` na nazwę —
+    # każde wywołanie pacmana to ~1 s czytania baz. Obce repo z pacman.conf (np.
+    # z paczkami zbudowanymi z AUR) nie liczą się jako oficjalne: dawały fałszywe ✓
+    # nazwom tylko z AUR na listach pacmana i fałszywe ✗ listom AUR. multilib
+    # osobno, bo wyłączone repo w tym samym wywołaniu to błąd i rc 1.
+    local repo_names="" multi=""
+    if command -v pacman >/dev/null 2>&1; then
+        repo_names="$(pacman -Slq core extra 2>/dev/null)"
+        multi="$(pacman -Slq multilib 2>/dev/null)"
+    fi
     [[ -n "$repo_names" ]] || have_pacman=0
-    multi="$(pacman -Slq multilib 2>/dev/null)"; [[ -n "$multi" ]] || have_multilib=0
-    repo_names=$'\n'"$repo_names"$'\n'
+    [[ -n "$multi" ]] || have_multilib=0
+    repo_names=$'\n'"$repo_names"$'\n'"$multi"$'\n'
     in_repo() { [[ "$repo_names" == *$'\n'"$1"$'\n'* ]]; }
     # Jedno zapytanie RPC dla list AUR i dla nazw pacmana (wykrycie „tylko w AUR”).
     if json="$(aur_json "${aur[@]}" "${pac[@]}")" && [[ "$json" == *'"resultcount"'* ]]; then :; else aur_ok=0; json=""; fi
     in_aur() { [[ "$json" == *"\"Name\":\"$1\""* ]]; }
 
     for n in "${pac[@]}"; do
-        if ((!have_pacman)); then skip "$n — brak pacmana albo bazy sync (pacman -Sy robi właściciel)"; continue; fi
+        if ((!have_pacman)); then skip "$n — brak pacmana albo bazy sync core/extra (pacman -Sy robi właściciel)"; continue; fi
         if in_repo "$n"; then ok "pacman: $n"; continue; fi
         if ((aur_ok)) && in_aur "$n"; then fail "pacman: $n jest tylko w AUR — przenieś na listę *-aur.txt"
         elif ((!have_multilib)) && is_multilib_name "$n"; then skip "$n — pakiet z [multilib], a baza [multilib] nie jest zsynchronizowana"
@@ -109,11 +117,20 @@ test_environment_init "$T" || exit 1
 mkdir -p "$T/bin" "$T/pkg"
 cat > "$T/bin/pacman" <<'EOF'
 #!/bin/bash
-case "$*" in
-    "-Slq") printf 'hyprland\nswayosd\n'; [[ -n "${MOCK_MULTILIB_MISSING:-}" ]] || printf 'steam\nlib32-gamemode\n' ;;
-    "-Slq multilib") [[ -n "${MOCK_MULTILIB_MISSING:-}" ]] || printf 'steam\nlib32-gamemode\n' ;;
-    *) exit 1 ;;
-esac
+# Atrapa `pacman -Slq [repo…]`: core, extra, multilib (MOCK_MULTILIB_MISSING=1 =
+# wyłączone) i obce repo „third” (MOCK_THIRD=1 — jak repo z paczkami z AUR).
+# Bez nazw repo: wszystkie włączone; nazwa wyłączonego repo → błąd, rc 1, reszta wypisana.
+[[ "${1:-}" == -Slq ]] || exit 1
+shift
+declare -A pk=([core]=hyprland [extra]=swayosd [multilib]=$'steam\nlib32-gamemode' [third]=$'brave-bin\nvscodium')
+on() { case "$1" in core|extra) return 0 ;; multilib) [[ -z "${MOCK_MULTILIB_MISSING:-}" ]] ;; third) [[ -n "${MOCK_THIRD:-}" ]] ;; *) return 1 ;; esac; }
+all=0; (($#)) || { all=1; set -- core extra multilib third; }
+rc=0
+for r in "$@"; do
+    if on "$r"; then printf '%s\n' "${pk[$r]}"
+    elif ((!all)); then echo "error: repository \"$r\" was not found." >&2; rc=1; fi
+done
+exit "$rc"
 EOF
 chmod +x "$T/bin/pacman"
 printf 'hyprland\n# komentarz\nswayosd-git\n' > "$T/pkg/requirements-pacman.txt"
@@ -146,6 +163,8 @@ selftest "z [multilib]: literówka → ✗" "✗ pacman: hyprlandd" ARCHENEMY_AU
 # shellcheck disable=SC2016  # dosłowny tekst z install.sh, nie rozwinięcie zmiennej
 if grep -qF 'case "$p" in steam|lib32-*)' "$REPO/install/install.sh"; then ok "autotest: wzorzec nazw [multilib] taki sam jak w install.sh [5]"
 else fail "autotest: install.sh [5] zmienił wzorzec nazw [multilib] — zsynchronizuj is_multilib_name"; fi
+selftest "obce repo w pacman.conf to nie oficjalne: lista AUR → ✓" "✓ AUR: brave-bin" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_THIRD=1
+selftest "obce repo: nazwa tylko z AUR na liście pacmana → ✗" "✗ pacman: vscodium jest tylko w AUR" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_THIRD=1
 selftest "brak sieci → skip dla AUR" "? skip: brave-bin — AUR RPC niedostępne" ARCHENEMY_AUR_RPC_JSON=offline
 out="$(env PATH="$T/bin:$PATH" ARCHENEMY_AUR_RPC_JSON=offline bash "${BASH_SOURCE[0]}" --lists-only "$T/pkg" 2>&1)"
 if [[ "$out" == *"✓ AUR:"* ]]; then fail "autotest: bez sieci pojawił się ✓ dla AUR"; else ok "autotest: bez sieci żadnego ✓ dla AUR"; fi
