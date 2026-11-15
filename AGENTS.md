@@ -129,6 +129,15 @@ Rules that follow directly from the table:
   new shader, and don't encode the look in the name (`dither-*` names stay
   only because renaming would break saved `Super+W` choices).
   `bash tests/flux-wall-dither.sh` checks both the wrapper and every shader.
+- **flux-wall: "running" means the first frame reached the screen.** A
+  live process proves nothing: the shader compiles and the EGL surface is
+  created only at the first configure, so exit code 3 arrives after the
+  wrapper's old 0.5 s check (audit 2026-11-05, F7). `flux-wall.sh start`
+  passes `--ready-file` and waits for the PID file the binary writes after
+  its first successful swap (`FLUX_WALL_READY_TIMEOUT`, default 10 s);
+  keep that call after `eglSwapBuffers` in `render_output`.
+  `bash tests/flux-wall-wrapper.sh` checks start/stop/off/status/doctor
+  effects on a fake binary whose PIDs are the only ones pgrep/pkill see.
 - **flux-wall: every shader declares `precision highp sampler2D;`** — each
   `.frag` and every GLSL source built into `engine.c` that uses a sampler
   (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00

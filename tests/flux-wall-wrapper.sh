@@ -49,20 +49,36 @@ printf '%s\n' 'FLUX_WALL_PALETTE="000000,777777,FFFFFF"' 'FLUX_WALL_SHADER="src/
 echo test-rice > "$A/.current_rice"
 : > "$FW_STATE/pids"
 
-# Fałszywa binarka. FW_MOCK: ok (żyje do sygnału) | fail-fast (kod 3 po 0,1 s);
-# FW_MOCK_IGNORE_TERM=1 — ignoruje SIGTERM (do_stop musi dobić -9).
+# Fałszywa binarka. FW_MOCK: ok (żyje do sygnału; po FW_MOCK_READY_DELAY s
+# „pierwsza klatka” = PID w pliku z --ready-file) | fail-fast (kod 3 po 0,1 s) |
+# fail-late (kod 3 po 0,8 s — jak błąd EGL/shadera przy pierwszej powierzchni)
+# | hang (żyje, klatki nigdy nie ma) | bad-pid (żyje, w pliku gotowości cudzy
+# PID — nie może się liczyć); FW_MOCK_IGNORE_TERM=1 — ignoruje SIGTERM
+# (do_stop musi dobić -9); FW_MOCK_OLD=1 — binarka sprzed --ready-file.
 cat > "$BIN" <<'EOF'
 #!/bin/bash
 if [[ "${1:-}" == --help ]]; then
-    echo "Użycie: flux-wall -s shader.frag [--no-audio] [--dither | --no-dither]" >&2
+    if [[ "${FW_MOCK_OLD:-0}" == 1 ]]; then
+        echo "Użycie: flux-wall -s shader.frag [--no-audio] [--dither | --no-dither]" >&2
+    else
+        echo "Użycie: flux-wall -s shader.frag [--no-audio] [--dither | --no-dither] [--ready-file plik]" >&2
+    fi
     exit 0
 fi
 echo $$ >> "$FW_STATE/pids"
 printf '%s\n' "$*" > "$FW_STATE/args.$$"
-if [[ "${FW_MOCK:-ok}" == fail-fast ]]; then
-    sleep 0.1; echo "flux-wall: shader: błąd kompilacji (atrapa)" >&2; exit 3
-fi
+ready=""; prev=""
+for a in "$@"; do [[ "$prev" == --ready-file ]] && ready="$a"; prev="$a"; done
+case "${FW_MOCK:-ok}" in
+    fail-fast) sleep 0.1; echo "flux-wall: shader: błąd kompilacji (atrapa)" >&2; exit 3 ;;
+    fail-late) sleep 0.8; echo "flux-wall: eglCreateWindowSurface (atrapa)" >&2; exit 3 ;;
+esac
 if [[ "${FW_MOCK_IGNORE_TERM:-0}" == 1 ]]; then trap '' TERM; else trap 'exit 0' TERM; fi
+if [[ "${FW_MOCK:-ok}" == ok && -n "$ready" ]]; then
+    sleep "${FW_MOCK_READY_DELAY:-0.05}"; echo $$ > "$ready"
+elif [[ "${FW_MOCK:-ok}" == bad-pid && -n "$ready" ]]; then
+    echo 1 > "$ready"
+fi
 while :; do sleep 0.1; done
 EOF
 
@@ -180,6 +196,43 @@ if [[ $RC -eq 0 && "$OUT" == *"flux-wall nie działa"* && "$OUT" != *"flux-wall 
     ok "doctor po stop: „nie działa”, ostrzeżenie o nieistniejącym wyborze"
 else fail "doctor po stop: rc=$RC, wyjście: $OUT"; fi
 rm -f "$A/data/flux-wall.dat"
+
+# „działa” tylko po potwierdzonej PIERWSZEJ klatce (audyt 2026-11-05, F7):
+# dawniej wrapper patrzył na żywy proces po 0,5 s, a błąd EGL/shadera przy
+# pierwszej powierzchni przychodzi później (prawdziwy bad.frag na llvmpipe:
+# ok. 0,9 s) — Super+W meldował „applied”, a animacji nie było.
+echo "start: potwierdzenie pierwszej klatki"
+READY="$XDG_RUNTIME_DIR/flux-wall.ready"
+FW_MOCK=fail-late wrap start
+if [[ $RC -eq 3 && "$OUT" != *"flux-wall działa"* && "$OUT" == *"eglCreateWindowSurface (atrapa)"* && $(n_alive) -eq 0 ]]; then
+    ok "binarka pada po 0,8 s (kod 3): wrapper kod 3 i ogon logu, bez „działa”"
+else fail "fail-late: rc=$RC, żywych $(n_alive), wyjście: $OUT"; fi
+FW_MOCK_READY_DELAY=1.2 wrap start
+pid6="$(alive)"
+if [[ $RC -eq 0 && "$OUT" == *"flux-wall działa: alpha"* && -n "$pid6" && -s "$READY" && "$(<"$READY")" == "$pid6" ]]; then
+    ok "wolny start (klatka po 1,2 s): „działa” dopiero po pierwszej klatce"
+else fail "wolny start: rc=$RC, żywe: $(alive | tr '\n' ' '), plik gotowości: $(cat "$READY" 2>/dev/null), wyjście: $OUT"; fi
+if [[ -n "$pid6" && "$(<"$FW_STATE/args.$pid6")" == *"--ready-file $READY"* ]]; then ok "binarka dostała --ready-file \$XDG_RUNTIME_DIR/flux-wall.ready"
+else fail "brak --ready-file w argumentach: $(cat "$FW_STATE/args.$pid6" 2>/dev/null)"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+# plik gotowości z poprzedniej instancji (pid6, już martwy) nie może się liczyć
+FLUX_WALL_READY_TIMEOUT=1 FW_MOCK=hang wrap start
+if [[ $RC -eq 3 && "$OUT" == *"nie potwierdził pierwszej klatki"* && "$OUT" != *"flux-wall działa:"* && $(n_alive) -eq 1 ]]; then
+    ok "brak klatki w limicie (1 s): kod 3, stary plik gotowości się nie liczy, proces zostaje"
+else fail "hang: rc=$RC, żywych $(n_alive), wyjście: $OUT"; fi
+if [[ ! -e "$READY" ]]; then ok "start kasuje plik gotowości poprzedniej instancji"
+else fail "stary plik gotowości został: $(cat "$READY")"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+FLUX_WALL_READY_TIMEOUT=1 FW_MOCK=bad-pid wrap start
+if [[ $RC -eq 3 && "$OUT" == *"nie potwierdził pierwszej klatki"* ]]; then ok "plik gotowości z PID-em, który nie jest flux-wallem → nie liczy się"
+else fail "bad-pid: rc=$RC, wyjście: $OUT"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+FW_MOCK_OLD=1 wrap start
+pid8="$(alive)"
+if [[ $RC -eq 0 && "$OUT" == *"flux-wall działa: alpha"* && -n "$pid8" && "$(<"$FW_STATE/args.$pid8")" != *--ready-file* ]]; then
+    ok "binarka sprzed --ready-file: bez flagi, jak dawniej (żywy proces po 0,5 s)"
+else fail "stara binarka: rc=$RC, argumenty: $(cat "$FW_STATE/args.$pid8" 2>/dev/null), wyjście: $OUT"; fi
+bash "$WRAP" stop >/dev/null 2>&1
 
 echo "start nieudany i brak binarki"
 FW_MOCK=fail-fast wrap start

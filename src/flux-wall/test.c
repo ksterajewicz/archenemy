@@ -26,6 +26,7 @@
 bool  parse_hex_color(const char *hex, float out[3]);
 bool  parse_palette(const char *spec, struct palette *p);
 float battery_detail(const char *power_supply_dir);
+bool  flux_ready_mark(const char *path);
 int   flux_wall_main(int argc, char **argv);   /* main() z main.c (-Dmain=flux_wall_main) */
 
 static int failures = 0;
@@ -575,6 +576,45 @@ int main(void) {
         CHECK(rc == 1, "--dither=1 (flaga bez wartości) → kod 1");
         rc = run_cli(dir, a_help, log, sizeof log);
         CHECK(rc == 0 && strstr(log, "--dither") && strstr(log, "--no-dither"), "--help zna --dither/--no-dither (wrapper po tym rozpoznaje binarkę)");
+        remove(shader);
+    }
+
+    /* --ready-file: flux-wall.sh melduje „działa” dopiero po pierwszej klatce
+     * (audyt 2026-11-05, F7). Plik powstaje z PID-em procesu i nigdy nie
+     * nadpisuje istniejącego pliku ani nie idzie za dowiązaniem. */
+    printf("flux_ready_mark (--ready-file)\n");
+    {
+        char rp[600], victim[600], link_path[600], got[64] = "", want[32];
+        snprintf(rp, sizeof rp, "%s/flux-wall.ready", dir);
+        snprintf(want, sizeof want, "%ld\n", (long)getpid());
+        CHECK(flux_ready_mark(rp), "nowy plik → utworzony");
+        FILE *f = fopen(rp, "r");
+        if (f) { if (!fgets(got, sizeof got, f)) got[0] = 0; fclose(f); }
+        CHECK(strcmp(got, want) == 0, "w pliku PID procesu");
+        struct stat st;
+        CHECK(stat(rp, &st) == 0 && (st.st_mode & 077) == 0, "prawa 0600 (bez dostępu dla innych)");
+        CHECK(!flux_ready_mark(rp), "plik już jest → odmowa, bez nadpisania");
+        remove(rp);
+        snprintf(victim, sizeof victim, "%s/victim", dir);
+        snprintf(link_path, sizeof link_path, "%s/flux-wall.ready.lnk", dir);
+        write_file(victim, "cudzy\n");
+        CHECK(symlink(victim, link_path) == 0 && !flux_ready_mark(link_path), "dowiązanie (np. podstawione w /tmp) → odmowa");
+        got[0] = 0;
+        f = fopen(victim, "r");
+        if (f) { if (!fgets(got, sizeof got, f)) got[0] = 0; fclose(f); }
+        CHECK(strcmp(got, "cudzy\n") == 0, "cel dowiązania nietknięty");
+        remove(link_path); remove(victim);
+
+        char shader[600], log[4096];
+        snprintf(shader, sizeof shader, "%s/cli.frag", dir);
+        write_file(shader, "#version 300 es\nvoid main(){}\n");
+        char *a_ready[] = { "flux-wall", "-s", shader, "--ready-file", rp, NULL };
+        char *a_help[]  = { "flux-wall", "--help", NULL };
+        int rc = run_cli(dir, a_ready, log, sizeof log);
+        struct stat st2;
+        CHECK(rc == 2 && stat(rp, &st2) != 0, "--ready-file przyjęte (kod 2 = brak Waylanda), bez klatki brak pliku");
+        rc = run_cli(dir, a_help, log, sizeof log);
+        CHECK(rc == 0 && strstr(log, "--ready-file"), "--help wymienia --ready-file (wrapper wykrywa po nim nową binarkę)");
         remove(shader);
     }
 

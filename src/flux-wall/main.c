@@ -28,7 +28,7 @@
  *
  *   Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]
  *                     [-f fps] [-o output] [-l background|bottom] [--once] [-v]
- *                     [--dither | --no-dither]
+ *                     [--dither | --no-dither] [--ready-file plik]
  *                     [--audio-device=monitor] [--no-audio] [--audio-file plik]
  *   Dźwięk (audio.c): tylko animacje z `#pragma flux audio 1` (wizualizacje
  *   muzyki) — pasma z monitora WYJŚCIA → uniformy audio_* i reakcje silnika.
@@ -37,6 +37,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <math.h>
 #include <poll.h>
@@ -80,6 +81,7 @@ struct config {
     bool  no_audio;              /* --no-audio: nie startuj wątku nawet dla wizualizacji */
     const char *audio_device;    /* --audio-device: jawna nazwa monitora (fallback po @DEFAULT_MONITOR@) */
     const char *audio_file;      /* --audio-file: surowy f32 mono 48 kHz zamiast serwera (debug; wymusza audio) */
+    const char *ready_file;      /* --ready-file: plik z PID-em po pierwszej klatce na ekranie (flux-wall.sh) */
 };
 
 /* ── stan ─────────────────────────────────────────────────────────────────── */
@@ -134,6 +136,7 @@ struct state {
     float  detail_current;       /* interpolowana wartość uniformu */
     float  detail_target;
     double last_battery_poll;
+    bool ready_marked;           /* --ready-file już obsłużone (raz na proces) */
     bool running;
 };
 
@@ -208,6 +211,24 @@ float battery_detail(const char *power_supply_dir) {
         return (float)cap / 100.0f;
     }
     return 1.0f;
+}
+
+/* --ready-file: po PIERWSZEJ klatce na ekranie (udany eglSwapBuffers, czyli
+ * po kompilacji shadera i utworzeniu powierzchni EGL) plik z PID-em procesu.
+ * flux-wall.sh czeka na niego, zanim zamelduje „działa” — sam żywy proces po
+ * 0,5 s nic nie znaczył, bo błąd EGL/shadera (kod 3) przychodzi dopiero przy
+ * pierwszej powierzchni (audyt 2026-11-05, F7). O_EXCL + O_NOFOLLOW:
+ * istniejący plik albo dowiązanie (np. w /tmp bez XDG_RUNTIME_DIR) nigdy nie
+ * jest nadpisywany ani śledzony — wrapper kasuje plik przed startem.
+ * false = pliku nie udało się utworzyć. */
+bool flux_ready_mark(const char *path) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd < 0) return false;
+    char buf[32];
+    int n = snprintf(buf, sizeof buf, "%ld\n", (long)getpid());
+    bool ok = n > 0 && write(fd, buf, (size_t)n) == (ssize_t)n;
+    if (close(fd) != 0) ok = false;
+    return ok;
 }
 
 /* ── GLES ─────────────────────────────────────────────────────────────────── */
@@ -294,6 +315,12 @@ static void render_output(struct output *o) {
     if (!eglSwapBuffers(s->egl_display, o->egl_surface)) {
         logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
         o->needs_frame = true;               /* bez commitu callback nie przyjdzie — pętla ponowi */
+    } else if (s->cfg.ready_file && !s->ready_marked) {
+        s->ready_marked = true;              /* pierwsza klatka na ekranie — raz na proces */
+        if (!flux_ready_mark(s->cfg.ready_file))
+            fprintf(stderr, "flux-wall: --ready-file: nie mogę utworzyć %s (%s)\n", s->cfg.ready_file, strerror(errno));
+        else
+            logv(s, "%s: pierwsza klatka — %s", o->name, s->cfg.ready_file);
     }
     o->last_render = flux_now_seconds();
 }
@@ -721,9 +748,11 @@ static void usage(void) {
     fputs("Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]\n"
           "                  [-f fps] [-o output] [-l background|bottom] [--once] [-v]\n"
           "                  [--audio-device=monitor] [--no-audio] [--audio-file plik.f32]\n"
-          "                  [--dither | --no-dither]\n"
+          "                  [--dither | --no-dither] [--ready-file plik]\n"
           "  --dither     raster Bayera 8x8 do trzech kolorów palety (rice dither-flux)\n"
           "  --no-dither  gładki gradient palety bez rastra (domyślnie)\n"
+          "  --ready-file po pierwszej klatce na ekranie utwórz plik z PID-em (flux-wall.sh\n"
+          "               czeka na niego, zanim zamelduje start; istniejącego nie nadpisuje)\n"
           "  -l  warstwa: bottom (domyślnie — nad tapetą hyprpapera, pod oknami)\n"
           "      albo background (na równi z hyprpaperem)\n"
           "  Plik <shader>.update.glsl obok .frag włącza silnik cząstkowy (engine.h).\n"
@@ -750,6 +779,7 @@ int main(int argc, char **argv) {
         {"audio-file", required_argument, 0, 'F'},
         {"dither", no_argument, 0, 'D'},        {"no-dither", no_argument, 0, 'n'},
         {"once", no_argument, 0, '1'},          {"verbose", no_argument, 0, 'v'},
+        {"ready-file", required_argument, 0, 'R'},
         {"help", no_argument, 0, 'h'},          {0, 0, 0, 0},
     };
     int c;
@@ -784,6 +814,7 @@ int main(int argc, char **argv) {
         case 'A': s.cfg.audio_device = optarg; break;
         case 'N': s.cfg.no_audio = true; break;
         case 'F': s.cfg.audio_file = optarg; break;
+        case 'R': s.cfg.ready_file = optarg; break;
         case 'D': s.cfg.dither = 1.0f; break;
         case 'n': s.cfg.dither = 0.0f; break;
         case '1': s.cfg.once = true; break;
