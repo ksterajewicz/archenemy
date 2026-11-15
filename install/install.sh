@@ -993,6 +993,7 @@ seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
 #     na NAS-ie i bazę budowaną godzinami;
 #   - usługa użytkownika włączana wyłącznie po pytaniu [y/N]; gdy mpd działa
 #     jako usługa SYSTEMOWA — tylko informacja (dwa mpd = konflikt portu/karty);
+#     włączony przez użytkownika mpd.socket = ostrzeżenie (port 6600 w sieci);
 #   - ~/.local/share/applications/ncmpcpp.desktop (wpis dla rofi drun i dla
 #     [p] autostart) kopiowany tylko gdy go nie ma.
 # Drugi bieg instalatora jest no-op (same „istnieje — nie ruszam").
@@ -1079,7 +1080,18 @@ if command -v mpd >/dev/null 2>&1; then
         echo -e "  ${YELLOW}⚠ mpd runs as a SYSTEM service — skipping the user service${NC}"
         echo -e "    (two mpd instances conflict over port 6600 and the sound card). Left as it is."
         SUMMARY_SKIPPED+=("mpd user service (system-wide mpd is enabled)")
-    elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null || systemctl --user is-enabled --quiet mpd.socket 2>/dev/null; then
+    elif systemctl --user is-enabled --quiet mpd.socket 2>/dev/null || systemctl --user is-active --quiet mpd.socket 2>/dev/null; then
+        # mpd.socket z pakietu ma ListenStream=6600 (wszystkie interfejsy), a mpd
+        # aktywowany gniazdem pomija bind_to_address "localhost" z mpd.conf
+        # (src/Listen.cxx) — mpd bez hasła słucha w całej sieci, a instalator
+        # mówił „already enabled” (audyt 2026-11-05, S13). Wyboru użytkownika
+        # nie zmieniamy: mówimy wprost i podajemy komendę.
+        echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled: socket activation listens on port 6600 on ALL interfaces${NC}"
+        echo -e "    and ignores bind_to_address \"localhost\" from mpd.conf, so mpd (no password) is reachable"
+        echo -e "    from your network unless a firewall blocks the port. To keep it local:"
+        echo -e "    systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"
+        SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
+    elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null; then
         echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
     else
         read -rp "  Enable mpd as your user service now (systemctl --user enable --now mpd)? [y/N]: " ans

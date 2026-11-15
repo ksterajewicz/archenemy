@@ -233,6 +233,9 @@ snapshot > "$T/snap.1"
 # Użytkownik po biegu 1 zaostrzył zaporę (ufw default deny outgoing); lista
 # odpowiedzi nadal ma „y” dla ufw — ponowny bieg nie może ruszyć polityk (S7).
 echo deny > "$MOCK_STATE/ufw.out"
+# …i sam włączył mpd.socket (aktywacja gniazdem: port 6600 na wszystkich
+# interfejsach, bind_to_address pomijany) — ma usłyszeć to wprost (S13).
+: > "$MOCK_STATE/systemd/user/mpd.socket.enabled"
 run_install "$ANS" 2
 snapshot > "$T/snap.2"
 check "kod 0, bez zawieszenia i pytań spoza listy" '[[ $RC -eq 0 ]]'
@@ -242,6 +245,8 @@ check "nie pyta o rzeczy już zrobione (mpd, alias, NetworkManager)" '! asked "E
 check "[9.5] tapeta odtworzona, nie nadpisana"  '[[ "$OUT" == *"Wallpaper kept"* ]]'
 check "[10] aktywny ufw: bez pytania, polityki nietknięte (S7)" '! asked "UFW" && ! grep -q "^ufw default" "$T/log.2" && [[ "$(<"$MOCK_STATE/ufw.out")" == deny ]]'
 check "[10] aktywny ufw: komunikat z obecnymi politykami" '[[ "$OUT" == *"UFW firewall already active"* && "$OUT" == *"deny (incoming), deny (outgoing)"* ]]'
+check "[8l] mpd.socket: ostrzeżenie o porcie 6600 zamiast 'already enabled' (S13)" '[[ "$OUT" == *"mpd.socket (user) is enabled"* && "$OUT" == *"ignores bind_to_address"* && "$OUT" != *"mpd user service already enabled"* ]]'
+check "[8l] mpd.socket: wpis w podsumowaniu z komendą, bez zmiany usług" '[[ "$OUT" == *"skipped: mpd.socket listens on port 6600"*"systemctl --user disable --now mpd.socket"* ]] && ! grep -q "^systemctl --user \(enable\|disable\)" "$T/log.2"'
 check "[5] nic nie doinstalowuje"               '! grep -q "^pacman -S --needed swayosd" "$T/log.2"'
 check "hyprlock-wallpaper.dat (jeśli powstał) = off" '[[ ! -e "$A/data/hyprlock-wallpaper.dat" || "$(<"$A/data/hyprlock-wallpaper.dat")" == off ]]'
 
