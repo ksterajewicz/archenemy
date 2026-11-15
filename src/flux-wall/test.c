@@ -129,6 +129,18 @@ int main(void) {
     write_file(path, "Full\n");
     CHECK(near(battery_detail(dir), 1.0f), "Full → 1.0");
 
+    /* Zasilacz z limitem ładowania (np. 80 % z asusctl albo BIOS-u): bateria
+     * stoi, kernel melduje `Not charging`, czasem `Unknown`. To zasilanie
+     * sieciowe — obniżać wolno tylko przy `Discharging`. */
+    snprintf(path, sizeof path, "%s/BAT0/capacity", dir); write_file(path, "80\n");
+    snprintf(path, sizeof path, "%s/BAT0/status", dir);
+    write_file(path, "Not charging\n");
+    CHECK(near(battery_detail(dir), 1.0f), "80% Not charging (limit ładowania) → 1.0");
+    write_file(path, "Unknown\n");
+    CHECK(near(battery_detail(dir), 1.0f), "80% Unknown → 1.0");
+    unlink(path);
+    CHECK(near(battery_detail(dir), 1.0f), "80% bez pliku status → 1.0");
+
     write_file(path, "Discharging\n");
     snprintf(path, sizeof path, "%s/BAT0/capacity", dir); write_file(path, "117\n");
     CHECK(near(battery_detail(dir), 1.0f), "capacity > 100 → przycięte do 1.0");
@@ -141,6 +153,14 @@ int main(void) {
     snprintf(path, sizeof path, "%s/BAT1/capacity", dir); write_file(path, "7\n");
     snprintf(path, sizeof path, "%s/BAT1/status", dir);   write_file(path, "Discharging\n");
     CHECK(near(battery_detail(dir), 0.07f), "BAT0 uszkodzona, BAT1 7% → 0.07");
+
+    /* Dwie baterie (np. ThinkPad): na baterii jedna się rozładowuje, druga
+     * stoi — liczy się ta rozładowywana, nie pierwsza z listy. */
+    snprintf(path, sizeof path, "%s/BAT0/capacity", dir); write_file(path, "90\n");
+    snprintf(path, sizeof path, "%s/BAT0/status", dir);   write_file(path, "Not charging\n");
+    CHECK(near(battery_detail(dir), 0.07f), "BAT0 90% Not charging, BAT1 7% Discharging → 0.07");
+    snprintf(path, sizeof path, "%s/BAT1/status", dir);   write_file(path, "Not charging\n");
+    CHECK(near(battery_detail(dir), 1.0f), "obie Not charging (zasilacz) → 1.0");
 
     /* #pragma flux — parser parametrów animacji cząstkowej */
     printf("flux_params_parse\n");

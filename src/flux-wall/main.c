@@ -182,9 +182,12 @@ bool parse_palette(const char *spec, struct palette *p) {
     return parse_hex_color(a, p->bg) && parse_hex_color(b, p->ink) && parse_hex_color(c, p->accent);
 }
 
-/* Poziom baterii 0..1 z sysfs; na zasilaniu sieciowym (status Charging/Full)
- * lub bez baterii → 1.0 (pełna szczegółowość). Ścieżka bazowa jako parametr,
- * żeby dało się testować na atrapie katalogu. */
+/* Poziom baterii 0..1 z sysfs, ale TYLKO przy pracy na baterii: obniża
+ * wyłącznie bateria o statusie `Discharging` (pierwsza taka). Każdy inny
+ * status to zasilanie sieciowe → 1.0 (pełna szczegółowość): Charging, Full,
+ * także `Not charging` (zasilacz z limitem ładowania, np. 80 % z asusctl albo
+ * BIOS-u — bateria stoi) i Unknown. Bez baterii też 1.0. Ścieżka bazowa jako
+ * parametr, żeby dało się testować na atrapie katalogu. */
 float battery_detail(const char *power_supply_dir) {
     char path[512];
     for (int i = 0; i < 4; i++) {
@@ -200,8 +203,7 @@ float battery_detail(const char *power_supply_dir) {
         char status[32] = "";
         f = fopen(path, "r");
         if (f) { if (!fgets(status, sizeof status, f)) status[0] = 0; fclose(f); }
-        if (strncmp(status, "Charging", 8) == 0 || strncmp(status, "Full", 4) == 0)
-            return 1.0f;
+        if (strncmp(status, "Discharging", 11) != 0) continue;
         if (cap > 100) cap = 100;
         return (float)cap / 100.0f;
     }
