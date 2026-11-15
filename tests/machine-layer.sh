@@ -24,6 +24,11 @@ trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
 export PATH="$REPO/tests/mock:$PATH"
 export MOCK_LOG="$T/dispatch.log"
+# Pułapki EXIT z install.sh [3] wołają `sudo -k` (K18) — atrapa tylko loguje,
+# żeby wycinki nie ruszały prawdziwego sudo.
+mkdir -p "$T/stub"
+printf '#!/bin/bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/stub/sudo"; chmod +x "$T/stub/sudo"
+export PATH="$T/stub:$PATH"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
@@ -167,7 +172,7 @@ printf 'MONITOR=DP-OLD\nRESOLUTION=1x1\nROLE=primary\nORDER=1\n' > "$I/monitors/
 # Dawniej `timeout -s INT 2` strzelał po stałych 2 s: pod obciążeniem (pełny
 # run-all, 1 rdzeń) sygnał trafiał przed `trap … EXIT` i katalog zostawał —
 # niestabilne także na dev d96ead8 (2026-11-14). timeout 30 = siatka.
-rm -f "$T/step3-37.pid" "$T/step3-37.out"
+rm -f "$T/step3-37.pid" "$T/step3-37.out" "$T/sudo.log"
 exec 3< <(printf '\n\n\n\n\n\n\n\n\n\n\n'
           for _ in $(seq 300); do grep -qF '[3.7]' "$T/step3-37.out" 2>/dev/null && break; sleep 0.1; done
           kill -INT "$(cat "$T/step3-37.pid" 2>/dev/null)" 2>/dev/null
@@ -181,8 +186,10 @@ check "przerwany bieg: SIGINT na pytaniu [3.7]" '[[ "$(<"$T/step3-37.out")" == *
 check "przerwany bieg: stary .dat zostaje"     '[[ -f "$I/monitors/DP-OLD.dat" ]]'
 check "przerwany bieg: nowe .dat NIE na miejscu" '[[ ! -e "$I/monitors/eDP-1.dat" && ! -e "$I/monitors/HDMI-A-3.dat" ]]'
 check "przerwany bieg: katalog tymczasowy sprzątnięty (trap)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
+check "przerwany bieg: pułapka [3] woła też sudo -k (K18)" '[[ "$(cat "$T/sudo.log" 2>/dev/null)" == -k ]]'
 # Pełny bieg: te same odpowiedzi + „1" (shared) w [3.7].
 mkdir -p "$I/monitors.new.STALE"   # resztka po biegu zabitym bez trapa (SIGKILL)
+rm -f "$T/sudo.log"
 out=$(printf '\n\n\n\n\n\n\n\n\n\n\n1\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" 2>&1)
 check "pełny bieg: nowe .dat na miejscu"       '[[ -f "$I/monitors/eDP-1.dat" && -f "$I/monitors/HDMI-A-3.dat" ]]'
 check "pełny bieg: stary .dat (odpięty monitor) usunięty" '[[ ! -e "$I/monitors/DP-OLD.dat" ]]'
@@ -190,6 +197,7 @@ check "pełny bieg: .dat kompletny (opis, rola, ORDER)" 'grep -q "^DESCRIPTION=$
 check "pełny bieg: bez katalogów tymczasowych (także resztki)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
 check "pełny bieg: workspace-mode.dat = shared" '[[ "$(<"$I/workspace-mode.dat")" == shared ]]'
 check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat saved (2 monitors)"* ]]'
+check "pełny bieg: po [3.7] pułapka EXIT dalej z sudo -k (K18)" '[[ "$(cat "$T/sudo.log" 2>/dev/null)" == -k ]]'
 
 echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
 # Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie
