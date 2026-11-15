@@ -18,9 +18,12 @@
  * bez końca — stęchłe wartości gasi audio_features_age() po stronie renderu.
  *
  * Nigdy mikrofon: urządzenie to zawsze MONITOR sinku (`@DEFAULT_MONITOR@`
- * albo `<sink>.monitor` z wrappera). Brak serwera = praca bez audio, backoff.
+ * albo `<sink>.monitor` z wrappera). Brak serwera albo zerwany strumień =
+ * praca bez audio i ponowienie po pauzie (1 s, podwajanej do ~30 s; wraca do
+ * 1 s dopiero po odebranych danych).
  *
- * Funkcje czyste (bez wątku, bez libpulse) są testowane w test.c.
+ * Funkcje czyste (bez wątku, bez libpulse) są testowane w test.c; wątek —
+ * z plikiem (`--audio-file`) i z atrapą libpulse (zerwany strumień).
  */
 #ifndef FLUX_AUDIO_H
 #define FLUX_AUDIO_H
@@ -76,11 +79,14 @@ void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out);
 
 /* Auto-gain: dzieli przez bieżące maksimum (zanik ~2 s), podłoga chroni ciszę
- * przed wzmocnieniem do pełnej reakcji. Zwraca x/peak przycięte do 0..1. */
+ * przed wzmocnieniem do pełnej reakcji. Zwraca x/peak przycięte do 0..1.
+ * x NaN/inf (moc FFT przepełniona olbrzymią próbką) liczy się jak 0,
+ * a szczyt NaN/inf wraca do podłogi — wynik zawsze skończony. */
 struct audio_agc { float peak; };
 float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value);
 
-/* Wygładzanie asymetryczne: szybki atak, wolne opadanie (stałe w sekundach). */
+/* Wygładzanie asymetryczne: szybki atak, wolne opadanie (stałe w sekundach).
+ * x NaN/inf → zostaje prev; prev NaN/inf → liczy od 0 (stan wychodzi z NaN). */
 float audio_smooth(float prev, float x, float dt, float attack, float release);
 
 /* Detektor uderzenia: onset basu względem średniej kroczącej (~1 s), nie
@@ -104,6 +110,14 @@ void audio_spectro_column(const float *raw, float peak, float *out);
 
 /* Zanik stęchłego snapshotu: gdy `now - t` > 0.1 s, cechy gasną z `release`. */
 void audio_features_age(struct audio_features *f, double now, float release);
+
+/* Próbka wejściowa (serwer dźwięku, plik): NaN i ±inf → 0, reszta bez zmian.
+ * Jedna taka próbka w oknie FFT zatruwała auto-gain, wygładzanie i średnią
+ * beatu na stałe (NaN nie wychodzi z rekurencji) — wizualizacja stała do
+ * restartu. Wołają ją wszyscy, którzy dosuwają próbki do okna analizy.
+ * Skończonych olbrzymich próbek nie przycina: moc FFT = inf z nich łapią
+ * audio_agc_step i audio_smooth. */
+float audio_sample_clean(float x);
 
 /* Pełna analiza jednego okna (N próbek) → cechy; stan między wywołaniami w `st`.
  * To jest to, co wątek robi co hop — wystawione, żeby testy szły bez wątku. */

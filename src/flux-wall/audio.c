@@ -130,15 +130,27 @@ void audio_spectro_column(const float *raw, float peak, float *out) {
 
 /* ── auto-gain, wygładzanie, beat, starzenie ────────────────────────────── */
 
+/* Skończona próbka rzędu 1e20 (audio_sample_clean ją przepuszcza) przepełnia
+ * moc FFT do inf: dawniej szczyt stawał się inf, inf/inf = NaN przechodził
+ * przez klamrę (porównania z NaN są fałszywe), a NaN w audio_smooth zostawał
+ * na zawsze — wizualizacja stała do restartu (przegląd 2026-11-15, R1). */
 float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value) {
+    if (!isfinite(x)) x = 0.0f;
+    if (!isfinite(a->peak)) a->peak = floor_value;
     a->peak *= expf(-dt / 2.0f);
     if (a->peak < floor_value) a->peak = floor_value;
     if (x > a->peak) a->peak = x;
     float y = x / a->peak;
-    return y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+    return y > 0.0f ? (y < 1.0f ? y : 1.0f) : 0.0f;     /* NaN → 0 */
+}
+
+float audio_sample_clean(float x) {
+    return isfinite(x) ? x : 0.0f;
 }
 
 float audio_smooth(float prev, float x, float dt, float attack, float release) {
+    if (!isfinite(prev)) prev = 0.0f;
+    if (!isfinite(x)) return prev;
     float tau = x > prev ? attack : release;
     if (tau <= 0.0f) return x;
     float k = 1.0f - expf(-dt / tau);
@@ -293,14 +305,14 @@ static void logv(const struct audio *a, const char *fmt, ...) {
 
 /* Dosuń hop (stereo, przeplatany) do buforów przesuwanych: miks do okna FFT,
  * L/R osobno do przebiegu; przeanalizuj, wytnij okno oscyloskopu po triggerze,
- * opublikuj. */
+ * opublikuj. Próbki NaN/inf → 0 (audio_sample_clean), zanim trafią do okna. */
 static void push_hop(struct audio *a) {
     const size_t keep = (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float);
     memmove(a->ring,   a->ring   + AUDIO_HOP, keep);
     memmove(a->ring_l, a->ring_l + AUDIO_HOP, keep);
     memmove(a->ring_r, a->ring_r + AUDIO_HOP, keep);
     for (int i = 0; i < AUDIO_HOP; i++) {
-        float l = a->hop[2 * i], r = a->hop[2 * i + 1];
+        float l = audio_sample_clean(a->hop[2 * i]), r = audio_sample_clean(a->hop[2 * i + 1]);
         a->ring_l[AUDIO_FFT_N - AUDIO_HOP + i] = l;
         a->ring_r[AUDIO_FFT_N - AUDIO_HOP + i] = r;
         a->ring[AUDIO_FFT_N - AUDIO_HOP + i]   = 0.5f * (l + r);
@@ -359,6 +371,15 @@ static pa_simple *open_stream(struct audio *a, const char **used) {
     return NULL;
 }
 
+/* Pauza przed kolejną próbą: `*backoff` sekund w krokach po 100 ms (audio_stop
+ * czeka na wątek tylko 200 ms), potem podwojenie — do ~30 s. */
+static void retry_pause(struct audio *a, int *backoff) {
+    for (int i = 0; i < *backoff * 10 && a->running; i++) {
+        struct timespec ts = { 0, 100000000L }; nanosleep(&ts, NULL);
+    }
+    if (*backoff < 30) *backoff *= 2;
+}
+
 static void run_pulse(struct audio *a) {
     int backoff = 1;
     bool reported = false;
@@ -368,14 +389,11 @@ static void run_pulse(struct audio *a) {
         if (!s) {
             set_live(a, false);
             if (!reported) { logv(a, "brak serwera dźwięku — ponawiam (backoff do 30 s)"); reported = true; }
-            for (int i = 0; i < backoff * 10 && a->running; i++) {
-                struct timespec ts = { 0, 100000000L }; nanosleep(&ts, NULL);
-            }
-            if (backoff < 30) backoff *= 2;
+            retry_pause(a, &backoff);
             continue;
         }
         logv(a, "strumień z %s", used);
-        reported = false; backoff = 1;
+        reported = false;
         int err = 0;
         while (a->running) {
             /* Blokuje, gdy sink śpi (nic nie gra) — wtedy snapshot się starzeje,
@@ -384,10 +402,16 @@ static void run_pulse(struct audio *a) {
                 logv(a, "strumień zerwany: %s", pa_strerror(err));
                 break;
             }
+            /* Backoff wraca do 1 s dopiero po danych, nie po samym otwarciu:
+             * strumień zrywany zaraz po połączeniu czeka coraz dłużej. */
+            backoff = 1;
             push_hop(a);
         }
         pa_simple_free(s);
         set_live(a, false);
+        /* Po zerwanym strumieniu też pauza — wcześniej pętla od razu otwierała
+         * nowy i biła w serwer bez przerwy (audyt 2026-11-05, F8). */
+        if (a->running) retry_pause(a, &backoff);
     }
 }
 

@@ -129,6 +129,37 @@ Rules that follow directly from the table:
   new shader, and don't encode the look in the name (`dither-*` names stay
   only because renaming would break saved `Super+W` choices).
   `bash tests/flux-wall-dither.sh` checks both the wrapper and every shader.
+- **flux-wall: "running" means the first frame reached the screen.** A
+  live process proves nothing: the shader compiles and the EGL surface is
+  created only at the first configure, so exit code 3 arrives after the
+  wrapper's old 0.5 s check (audit 2026-11-05, F7). `flux-wall.sh start`
+  passes `--ready-file` and waits for the PID file the binary writes after
+  its first successful swap (`FLUX_WALL_READY_TIMEOUT`, default 10 s);
+  keep that call after `eglSwapBuffers` in `render_output`.
+  `bash tests/flux-wall-wrapper.sh` checks start/stop/off/status/doctor
+  effects on a fake binary whose PIDs are the only ones pgrep/pkill see.
+- **flux-wall: exit code 3 only before the first frame.** Until the first
+  frame is on screen (the moment `--ready-file` marks), an EGL error ends
+  the process with 3 (the wrapper reports it, hyprpaper stays). After that, an
+  EGL error on one monitor's surface (e.g. a newly connected monitor)
+  tears down only that surface, and the main loop recreates it after 1 s,
+  doubling up to 30 s; other monitors keep animating (audit 2026-11-05,
+  F4). `EGL_CONTEXT_LOST` is the exception to "skip the frame and try
+  again": it never passes, so skipping froze the picture forever while
+  the process (and `flux-wall.sh status`) looked alive (F5). It creates a
+  new context, engine and all surfaces; more than 3 losses in 60 s = exit
+  3. Check `eglGetError()` right after every failed `eglMakeCurrent` /
+  `eglSwapBuffers` and pass it through `flux_egl_action`. The decisions
+  live in `src/flux-wall/recovery.h` (no Wayland/EGL calls, tested by
+  `make -C src/flux-wall test`); `main.c` only carries them out — don't
+  add a new `die(3, …)` on a path reachable after start.
+- **flux-wall: every shader declares `precision highp sampler2D;`** — each
+  `.frag` and every GLSL source built into `engine.c` that uses a sampler
+  (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00
+  defaults samplers to `lowp`; Mesa honours it and rounds `texelFetch`
+  results (particle positions came back with ~8-bit precision), NVIDIA
+  ignores it, so the bug is invisible on NVIDIA. `*.update.glsl` files get
+  it from `UPDATE_PRELUDE`. `bash tests/flux-wall-shaders.sh` checks it.
 - **Machine generators are a single source of truth**:
   `scripts/hypr/lib/gen-workspaces.sh` and `gen-autostart.sh` are called
   from both `install.sh` and the live switchers (`workspace-mode-switch.sh`).
