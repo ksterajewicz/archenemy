@@ -92,6 +92,18 @@ int flux_step_cap(const struct flux_params *p, float strength);
 char *flux_strip_directives(const char *src, bool keep_version);
 /* Ścieżka `.update.glsl` dla `.frag`; false, gdy nazwa nie kończy się na .frag. */
 bool flux_update_path(const char *frag_path, char *out, size_t outlen);
+/* Spektrogram (uniform audio_spectrogram): ile kolumn dopisać w tej klatce przy
+ * `dt_real` sekund zegara REALNEGO — AUDIO_RATE/AUDIO_HOP = 50 kolumn/s, ułamek
+ * przechodzi w `acc` na następną klatkę; po pauzie (uśpiony ekran) najwyżej
+ * FLUX_SPECTRO_MAX_COLS i bez zaległości (acc = 0). */
+#define FLUX_SPECTRO_MAX_COLS 64
+int flux_spectro_advance(double *acc, double dt_real);
+/* Kolumna spektrogramu 0..255 z audio->spectro × strength (zaokrąglenie,
+ * nasycenie na 0 i 255); bez audio albo strength <= 0 — pusta kolumna. */
+void flux_spectro_bytes(const struct audio_features *audio, float strength, unsigned char col[AUDIO_SPECTRO_BINS]);
+/* Uniformy audio_level, _bass, _lowmid, _mid, _high, _beat (v) i audio_wave_peak
+ * (peak); bez audio albo strength <= 0 — zera. */
+void flux_audio_uniform_values(const struct audio_features *a, float strength, float v[6], float *peak);
 
 struct flux_engine;
 struct flux_target;

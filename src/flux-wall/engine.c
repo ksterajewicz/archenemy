@@ -528,12 +528,8 @@ void flux_target_destroy(struct flux_target *t) {
 /* Uniformy audio dla programu o lokacjach `loc` (NULL audio → zera). */
 static void set_audio_uniforms(const GLint loc[AUDIO_UNIFORMS], const struct audio_features *a, float strength,
                                GLuint spec_tex, GLuint wave_tex, GLuint spectro_tex, int spectro_head) {
-    float v[6] = {0, 0, 0, 0, 0, 0};
-    float peak = 0.0f;
-    if (a && strength > 0.0f) {
-        v[0] = a->level; v[1] = a->bass; v[2] = a->lowmid; v[3] = a->mid; v[4] = a->high; v[5] = a->beat;
-        peak = a->wave_peak;
-    }
+    float v[6], peak;
+    flux_audio_uniform_values(a, strength, v, &peak);
     for (int i = 0; i < 6; i++) if (loc[i] >= 0) glUniform1f(loc[i], v[i]);
     if (loc[8] >= 0) glUniform1f(loc[8], peak);
     if (loc[6] >= 0) {
@@ -562,18 +558,38 @@ static void set_audio_uniforms(const GLint loc[AUDIO_UNIFORMS], const struct aud
  * a w ciszy/bez serwera obraz dalej przewija się pustą kolumną (jak prawdziwy
  * spektrogram, który nie zatrzymuje się, gdy nic nie gra). Po pauzie
  * (uśpiony ekran) nie dopisujemy zaległych sekund — limit kolumn na klatkę. */
-static void spectro_push(struct flux_target *t, double dt_real, const struct audio_features *audio, float strength) {
+int flux_spectro_advance(double *acc, double dt_real) {
     const double cols_per_s = (double)AUDIO_RATE / AUDIO_HOP;
-    t->spectro_acc += dt_real * cols_per_s;
-    int n = (int)floor(t->spectro_acc);
-    if (n <= 0) return;
-    if (n > 64) { n = 64; t->spectro_acc = 0; } else t->spectro_acc -= n;
-    unsigned char col[AUDIO_SPECTRO_BINS] = {0};
+    *acc += dt_real * cols_per_s;
+    int n = (int)floor(*acc);
+    if (n <= 0) return 0;
+    if (n > FLUX_SPECTRO_MAX_COLS) { n = FLUX_SPECTRO_MAX_COLS; *acc = 0; } else *acc -= n;
+    return n;
+}
+
+void flux_spectro_bytes(const struct audio_features *audio, float strength, unsigned char col[AUDIO_SPECTRO_BINS]) {
+    memset(col, 0, AUDIO_SPECTRO_BINS);
     if (audio && strength > 0.0f)
         for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) {
             float v = audio->spectro[i] * strength;
             col[i] = (unsigned char)(v <= 0.0f ? 0 : (v >= 1.0f ? 255 : (int)(v * 255.0f + 0.5f)));
         }
+}
+
+void flux_audio_uniform_values(const struct audio_features *a, float strength, float v[6], float *peak) {
+    for (int i = 0; i < 6; i++) v[i] = 0.0f;
+    *peak = 0.0f;
+    if (a && strength > 0.0f) {
+        v[0] = a->level; v[1] = a->bass; v[2] = a->lowmid; v[3] = a->mid; v[4] = a->high; v[5] = a->beat;
+        *peak = a->wave_peak;
+    }
+}
+
+static void spectro_push(struct flux_target *t, double dt_real, const struct audio_features *audio, float strength) {
+    int n = flux_spectro_advance(&t->spectro_acc, dt_real);
+    if (n <= 0) return;
+    unsigned char col[AUDIO_SPECTRO_BINS];
+    flux_spectro_bytes(audio, strength, col);
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_2D, t->spectro_tex);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);

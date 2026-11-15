@@ -268,7 +268,8 @@ archenemy/
 │       │                             #   audio thread starts), same pattern as recovery.h;
 │       ├── cli.h                     #   command-line options (struct config) and flux_parse_args (in main.c);
 │       ├── test.c                    #   pure-function tests (palette, battery, #pragma flux, warp, step cap,
-│       │                             #   audio DSP, EGL error decisions, logic.h, every option of
+│       │                             #   audio DSP, spectrogram/audio-uniform helpers of engine.c, EGL error
+│       │                             #   decisions, logic.h, every option of
 │       │                             #   flux_parse_args), CLI exit codes 1 and 2,
 │       │                             #   the audio thread on a file and on a libpulse mock (output monitor only,
 │       │                             #   never the microphone; stream format; retry delays)

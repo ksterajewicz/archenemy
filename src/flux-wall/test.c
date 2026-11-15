@@ -451,6 +451,56 @@ int main(void) {
     }
 
     /* ── DSP audio (czyste funkcje) ─────────────────────────────────────── */
+    /* Czyste części rysowania audio z engine.c (bez GL). */
+    printf("flux_spectro_advance / flux_spectro_bytes / flux_audio_uniform_values\n");
+    {
+        double acc = 0.0;
+        CHECK(flux_spectro_advance(&acc, 0.02) == 1 && acc < 1e-9 && acc > -1e-9, "20 ms → 1 kolumna (50/s), bez reszty");
+        acc = 0.0;
+        int n1 = flux_spectro_advance(&acc, 0.01), n2 = flux_spectro_advance(&acc, 0.01);
+        CHECK(n1 == 0 && n2 == 1, "2 × 10 ms → 0, potem 1 kolumna (ułamek przechodzi na następną klatkę)");
+        acc = 0.0;
+        int n3 = flux_spectro_advance(&acc, 1.0 / 144);
+        CHECK(n3 == 0 && acc > 0.34 && acc < 0.35, "144 fps: 0 kolumn, 0.347 kolumny czeka");
+        acc = 0.5;
+        CHECK(flux_spectro_advance(&acc, 600.0) == FLUX_SPECTRO_MAX_COLS && acc == 0.0,
+              "po 10 min uśpienia najwyżej 64 kolumny, bez zaległości");
+        acc = 0.0;
+        CHECK(flux_spectro_advance(&acc, 1.28) == 64 && acc < 1e-9, "dokładnie 64 kolumny → bez obcięcia");
+        CHECK(flux_spectro_advance(&acc, 0.0) == 0, "dt 0 → 0 kolumn");
+
+        struct audio_features af;
+        memset(&af, 0, sizeof af);
+        af.spectro[0] = 0.0f; af.spectro[1] = 0.5f; af.spectro[2] = 1.0f; af.spectro[3] = 2.0f; af.spectro[4] = -1.0f;
+        af.spectro[AUDIO_SPECTRO_BINS - 1] = 0.1f;
+        unsigned char col[AUDIO_SPECTRO_BINS];
+        flux_spectro_bytes(&af, 1.0f, col);
+        CHECK(col[0] == 0 && col[1] == 128 && col[2] == 255 && col[3] == 255 && col[4] == 0 &&
+              col[AUDIO_SPECTRO_BINS - 1] == 26, "kolumna: 0 / 0.5 → 128 / 1 → 255 / nasycenie / ujemne → 0 / ostatni pas");
+        flux_spectro_bytes(&af, 0.5f, col);
+        CHECK(col[2] == 128 && col[3] == 255, "strength 0.5 skaluje przed kwantyzacją");
+        memset(col, 7, sizeof col);
+        flux_spectro_bytes(&af, 0.0f, col);
+        bool empty = true;
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) if (col[i]) empty = false;
+        memset(col, 7, sizeof col);
+        flux_spectro_bytes(NULL, 1.0f, col);
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) if (col[i]) empty = false;
+        CHECK(empty, "bez audio albo strength 0 → pusta kolumna (spektrogram dalej się przewija)");
+
+        af.level = 0.1f; af.bass = 0.2f; af.lowmid = 0.3f; af.mid = 0.4f; af.high = 0.5f; af.beat = 0.6f; af.wave_peak = 0.7f;
+        float v[6], peak;
+        flux_audio_uniform_values(&af, 1.0f, v, &peak);
+        CHECK(v[0] == 0.1f && v[1] == 0.2f && v[2] == 0.3f && v[3] == 0.4f && v[4] == 0.5f && v[5] == 0.6f && peak == 0.7f,
+              "uniformy audio: level, bass, lowmid, mid, high, beat, wave_peak w tej kolejności");
+        flux_audio_uniform_values(&af, 0.0f, v, &peak);
+        bool zero = peak == 0.0f;
+        for (int i = 0; i < 6; i++) if (v[i] != 0.0f) zero = false;
+        flux_audio_uniform_values(NULL, 1.0f, v, &peak);
+        for (int i = 0; i < 6; i++) if (v[i] != 0.0f) zero = false;
+        CHECK(zero && peak == 0.0f, "bez audio albo strength 0 → zera");
+    }
+
     printf("audio_fft_power\n");
     static struct audio_fft fft; audio_fft_init(&fft);
     static float sig[AUDIO_FFT_N]; static float pw[AUDIO_FFT_N / 2 + 1];

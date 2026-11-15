@@ -5,7 +5,7 @@
 #   pakietów wayland-protocols / wlr-protocols.
 #
 #   make            zbuduj build/flux-wall
-#   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio,
+#   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio, spektrogram i uniformy audio silnika,
 #                   wątek audio z pliku i z atrapy libpulse — bez serwera dźwięku,
 #                   kody wyjścia CLI 1 i 2, flux_parse_args, decyzje po błędach EGL, czyste decyzje main.c z logic.h;
 #                   sekcje GL silnika na EGL surfaceless: --once po zmianie rozmiaru, błędny shader — bez EGL pomijane)
