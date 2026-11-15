@@ -539,14 +539,31 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
             echo -e "  ${YELLOW}  (install/gpudrivers-installation.sh) or manually in /etc/pacman.conf.${NC}"
         fi
 
+        # Wynik sprawdzany (audyt 2026-11-05, Z3): jedna nieznana nazwa albo
+        # brak [multilib] anuluje CAŁĄ transakcję pacmana, a podsumowanie
+        # dotąd milczało. Przy porażce wypisujemy to, czego pacman -Qi nie
+        # widzi (wcześniej zainstalowane pakiety nie są porażką).
         if [[ ${#sel_pacman[@]} -gt 0 ]]; then
-            sudo pacman -S --needed "${sel_pacman[@]}"
+            if ! sudo pacman -S --needed "${sel_pacman[@]}"; then
+                add_missing=()
+                for p in "${sel_pacman[@]}"; do
+                    pacman -Qi "$p" &>/dev/null || add_missing+=("$p")
+                done
+                [[ ${#add_missing[@]} -gt 0 ]] || add_missing=("${sel_pacman[@]}")
+                echo -e "  ${RED}✗ pacman failed — not installed: ${add_missing[*]}${NC}"
+                echo -e "  ${RED}  One unknown name cancels the whole transaction; check the pacman output above.${NC}"
+                SUMMARY_SKIPPED+=("Additional pacman packages — installation FAILED: ${add_missing[*]} (retry: sudo pacman -S --needed ${add_missing[*]})")
+            fi
         fi
         if [[ ${#sel_aur[@]} -gt 0 ]]; then
             if command -v yay &>/dev/null; then
-                aur_install "${sel_aur[@]}"
+                if ! aur_install "${sel_aur[@]}"; then
+                    echo -e "  ${RED}✗ yay failed to install: ${sel_aur[*]}${NC}"
+                    SUMMARY_SKIPPED+=("Additional AUR packages — installation FAILED: ${sel_aur[*]} (retry: yay -S --needed ${sel_aur[*]})")
+                fi
             else
                 echo -e "  ${YELLOW}⚠ yay unavailable — skipping AUR packages: ${sel_aur[*]}${NC}"
+                SUMMARY_SKIPPED+=("Additional AUR packages skipped (no yay): ${sel_aur[*]}")
             fi
         fi
     fi

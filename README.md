@@ -41,7 +41,7 @@ cd ~/archenemy/install/
 The installer covers these steps:
 
 - **[2]–[3.7]**: check Hyprland, detect monitors, choose their modes, positions, scale, wallpaper roles, left-to-right numbering and workspace mode.
-- **[4]–[6.5]**: prepare yay, install required and selected optional packages, choose the hardware profile (DMI supplies a hint), and offer the CPU microcode, GPU driver and alternative kernel installers. ASUS setup uses `install/asus-installation.sh`; the universal profile switcher uses `power-profiles-daemon`, also available as an ASUS fallback.
+- **[4]–[6.5]**: prepare yay, install required and selected optional packages (one unknown name cancels the whole pacman transaction, so a failed optional install is listed in the summary with the retry command), choose the hardware profile (DMI supplies a hint), and offer the CPU microcode, GPU driver and alternative kernel installers. ASUS setup uses `install/asus-installation.sh`; the universal profile switcher uses `power-profiles-daemon`, also available as an ASUS fallback.
 - **[7]–[8k]**: offer a backup and generate machine configuration, personal-file stubs, autostart app rules and default bar settings.
 - **[8l]–[8m]**: configure the optional music stack when installed (see "Music stack"), add the rofi settings entry and shared shell rc block, and offer the `archenemy` alias. Shell selection stays in `Super+A → [h]`.
 - **[9]–[9.7]**: link `white-blue` on a fresh install or the saved rice on a repeat run, initialize or restore the wallpaper, optionally build flux-wall, and generate dither-flux wallpapers in the background.
@@ -358,6 +358,8 @@ archenemy/
 │                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
 │                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
 │                                     #   sudo, GPU installer test hooks only with ARCHENEMY_TEST=1.
+│                                     #   install-summary.sh — installer steps cut out of install.sh on fake
+│                                     #   sudo/pacman/yay: failed optional packages land in the summary.
 │                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
 │                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
