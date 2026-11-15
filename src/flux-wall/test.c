@@ -17,6 +17,7 @@
 
 #include "engine.h"
 #include "audio.h"
+#include "recovery.h"
 #define TEST_PI 3.14159265f
 #include <math.h>
 #include <stdatomic.h>
@@ -641,6 +642,37 @@ int main(void) {
         rc = run_cli(dir, a_out, log, sizeof log);
         CHECK(rc == 1, "-d 1.5 → kod 1");
         remove(shader);
+    }
+
+    /* Błąd EGL powierzchni po starcie (np. nowo podpięty monitor) sprząta
+     * tylko ją i ponawia po przerwie; kod 3 wyłącznie przed pierwszą klatką
+     * na ekranie — dawne die(3) gasiło animację na wszystkich monitorach
+     * (audyt 2026-11-05, F4). Glue w main.c (output_surface_failed) wykonuje
+     * te decyzje; sam kompozytor + EGL tylko na żywo. */
+    printf("recovery: błąd EGL powierzchni (flux_egl_action, flux_retry)\n");
+    {
+        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, false) == FLUX_EGL_EXIT,
+              "przed pierwszą klatką: błąd powierzchni → kod 3 (kontrakt, hyprpaper zostaje)");
+        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, true) == FLUX_EGL_RETRY_SURFACE,
+              "po starcie: błąd powierzchni nowego monitora → tylko ona, ponowienie (nie kod 3)");
+        CHECK(flux_egl_action(FLUX_STAGE_FRAME, true) == FLUX_EGL_SKIP_FRAME,
+              "po starcie: pojedyncza odmowa klatki → klatka później");
+        CHECK(flux_egl_action(FLUX_STAGE_FRAME, false) == FLUX_EGL_SKIP_FRAME,
+              "przed pierwszą klatką: odmowa klatki → też klatka później (jak dawniej)");
+
+        struct flux_retry r = {0};
+        CHECK(flux_retry_wait(&r, 100.0) <= 0, "bez błędu → wolno próbować od razu (np. po `closed`)");
+        bool ok = true;
+        const double want[] = { 1, 2, 4, 8, 16, 30, 30 };
+        for (int i = 0; i < 7; i++) {
+            double d = flux_retry_failed(&r, 100.0);
+            if (!near((float)d, (float)want[i]) || !near((float)flux_retry_wait(&r, 100.0), (float)want[i])) ok = false;
+        }
+        CHECK(ok, "kolejne błędy: przerwa 1, 2, 4, 8, 16, 30, 30 s (sufit 30 s)");
+        CHECK(flux_retry_wait(&r, 129.0) > 0 && flux_retry_wait(&r, 130.0) <= 0, "termin = chwila błędu + przerwa");
+        flux_retry_reset(&r);
+        CHECK(flux_retry_wait(&r, 0.0) <= 0 && near((float)flux_retry_failed(&r, 5.0), 1.0f),
+              "po udanej powierzchni → następny błąd znów od 1 s");
     }
 
     /* --once (tapeta statyczna) liczy rozgrzewkę przed jedyną klatką. Zmiana

@@ -138,6 +138,15 @@ Rules that follow directly from the table:
   keep that call after `eglSwapBuffers` in `render_output`.
   `bash tests/flux-wall-wrapper.sh` checks start/stop/off/status/doctor
   effects on a fake binary whose PIDs are the only ones pgrep/pkill see.
+- **flux-wall: exit code 3 only before the first frame.** Until the first
+  frame is on screen (the moment `--ready-file` marks), an EGL error ends
+  the process with 3 (the wrapper reports it, hyprpaper stays). After that, an
+  EGL error on one monitor's surface (e.g. a newly connected monitor)
+  tears down only that surface, and the main loop recreates it after 1 s,
+  doubling up to 30 s; other monitors keep animating (audit 2026-11-05,
+  F4). The decisions live in `src/flux-wall/recovery.h` (no Wayland/EGL
+  calls, tested by `make -C src/flux-wall test`); `main.c` only carries
+  them out — don't add a new `die(3, …)` on a path reachable after start.
 - **flux-wall: every shader declares `precision highp sampler2D;`** — each
   `.frag` and every GLSL source built into `engine.c` that uses a sampler
   (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00

@@ -19,7 +19,9 @@
  *   Kody wyjścia (install.sh i przełącznik używają ich do fallbacku na hyprpaper):
  *     0 ok (także: SIGTERM/SIGINT albo kompozytor zamknął połączenie)
  *     1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
- *     3 błąd EGL/GLES (shader, kontekst)
+ *     3 błąd EGL/GLES (shader, kontekst) — do pierwszej klatki na ekranie; potem
+ *       błąd powierzchni jednego monitora sprząta tylko ją i ponawia po
+ *       przerwie (recovery.h), pozostałe monitory rysują dalej
  *
  *   Skalowanie: przy wp_fractional_scale_v1 + wp_viewporter bufor ma rozmiar
  *   logiczny × skala ułamkowa (np. 1.25) zaokrąglony do pikseli fizycznych,
@@ -63,6 +65,7 @@
 #include "engine.h"
 #include "audio.h"
 #include "util.h"       /* flux_now_seconds, flux_read_file — wspólne z audio.c i tools/offscreen.c */
+#include "recovery.h"   /* decyzje po błędach EGL i przerwy ponowień — testowane w test.c */
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
 
@@ -107,7 +110,8 @@ struct output {
     int32_t width, height;       /* piksele fizyczne */
     bool configured;
     bool needs_frame;            /* klatka czeka na limit fps */
-    bool recreate;               /* po `closed`: pętla ma utworzyć powierzchnię od nowa */
+    bool recreate;               /* po `closed` albo błędzie EGL: pętla ma utworzyć powierzchnię od nowa */
+    struct flux_retry retry;     /* po błędzie EGL: termin ponownej próby (recovery.h) */
     double last_render;          /* do limitu fps — osobno na monitor, inaczej dwa
                                   * monitory z -f N dławiłyby się nawzajem */
     struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
@@ -137,11 +141,21 @@ struct state {
     float  detail_target;
     double last_battery_poll;
     bool ready_marked;           /* --ready-file już obsłużone (raz na proces) */
+    bool started;                /* pierwsza klatka już na ekranie (udany swap, jak --ready-file):
+                                  * od tej chwili błąd EGL jednej powierzchni nie kończy procesu */
     bool running;
 };
 
 static void logv(const struct state *s, const char *fmt, ...) {
     if (!s->cfg.verbose) return;
+    va_list ap; va_start(ap, fmt);
+    fputs("flux-wall: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
+    va_end(ap);
+}
+
+/* Jak logv, ale zawsze (także bez -v) — zdarzenia, które mają zostać w logu
+ * flux-wall.log: błąd EGL, po którym proces działa dalej. */
+static void logw(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     fputs("flux-wall: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
     va_end(ap);
@@ -315,7 +329,11 @@ static void render_output(struct output *o) {
     if (!eglSwapBuffers(s->egl_display, o->egl_surface)) {
         logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
         o->needs_frame = true;               /* bez commitu callback nie przyjdzie — pętla ponowi */
-    } else if (s->cfg.ready_file && !s->ready_marked) {
+        o->last_render = flux_now_seconds();
+        return;
+    }
+    s->started = true;                       /* odtąd błąd EGL jednej powierzchni ≠ kod 3 (recovery.h) */
+    if (s->cfg.ready_file && !s->ready_marked) {
         s->ready_marked = true;              /* pierwsza klatka na ekranie — raz na proces */
         if (!flux_ready_mark(s->cfg.ready_file))
             fprintf(stderr, "flux-wall: --ready-file: nie mogę utworzyć %s (%s)\n", s->cfg.ready_file, strerror(errno));
@@ -354,6 +372,29 @@ static void output_request_frame(struct output *o) {
 
 /* ── layer surface ────────────────────────────────────────────────────────── */
 
+/* Błąd przy zakładaniu powierzchni monitora `o` (okno EGL, powierzchnia EGL,
+ * pierwszy eglMakeCurrent, cel silnika). Do pierwszej klatki na ekranie to
+ * kod 3 jak zawsze — tapety jeszcze nie było, wrapper melduje porażkę, a
+ * proces nie wisi bez obrazu (np. sterownik bez FBO float). Po starcie
+ * sprzątamy TYLKO tę powierzchnię, a pętla ponowi ją po przerwie
+ * (recovery.h: 1 s, podwajane do 30 s); pozostałe monitory rysują dalej —
+ * dawne die(3) przy podpięciu monitora, na którym EGL odmawia, gasiło
+ * animację wszędzie (audyt 2026-11-05, F4). Wołający kończy od razu:
+ * stanu powierzchni już nie ma. */
+static void output_surface_failed(struct output *o, const char *fmt, ...) {
+    struct state *s = o->state;
+    char what[512];
+    va_list ap; va_start(ap, fmt);
+    vsnprintf(what, sizeof what, fmt, ap);
+    va_end(ap);
+    if (flux_egl_action(FLUX_STAGE_SURFACE, s->started) == FLUX_EGL_EXIT) die(3, "%s: %s", o->name, what);
+    double delay = flux_retry_failed(&o->retry, flux_now_seconds());
+    logw("%s: %s — sprzątam tę powierzchnię, ponowię za %.0f s (pozostałe monitory rysują dalej)",
+         o->name, what, delay);
+    output_teardown_surface(o);
+    o->recreate = true;
+}
+
 /* Rozmiar bufora z rozmiaru logicznego i skali. Wołane z `configure`
  * (rozmiar) i z `preferred_scale` (skala) — obie mogą przyjść w dowolnej
  * kolejności, więc liczymy dopiero, gdy znamy oba. */
@@ -382,11 +423,17 @@ static void output_apply_size(struct output *o) {
 
     if (!o->egl_window) {
         o->egl_window = wl_egl_window_create(o->surface, pw, ph);
+        if (!o->egl_window) { output_surface_failed(o, "wl_egl_window_create nie powiodło się"); return; }
         o->egl_surface = eglCreateWindowSurface(s->egl_display, s->egl_config,
                                                 (EGLNativeWindowType)o->egl_window, NULL);
-        if (o->egl_surface == EGL_NO_SURFACE) die(3, "%s: eglCreateWindowSurface", o->name);
-        if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context))
-            die(3, "%s: eglMakeCurrent nie powiodło się (0x%x)", o->name, eglGetError());
+        if (o->egl_surface == EGL_NO_SURFACE) {
+            output_surface_failed(o, "eglCreateWindowSurface nie powiodło się (0x%x)", eglGetError());
+            return;
+        }
+        if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
+            output_surface_failed(o, "eglMakeCurrent nie powiodło się (0x%x)", eglGetError());
+            return;
+        }
         /* Własne frame callbacks sterują tempem — swap nie może blokować. */
         eglSwapInterval(s->egl_display, 0);
         /* Program budujemy przy PIERWSZEJ powierzchni, nie na starcie: kompilacja
@@ -398,20 +445,23 @@ static void output_apply_size(struct output *o) {
         wl_egl_window_resize(o->egl_window, pw, ph, 0, 0);
     }
     if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
-        /* na starcie (jeszcze bez silnika) bez kontekstu nie ma tapety — kod 3;
-         * później pojedyncza odmowa = pomijamy ten configure, przyjdzie następny */
-        if (!s->engine) die(3, "%s: eglMakeCurrent nie powiodło się (0x%x)", o->name, eglGetError());
-        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam configure", o->name, eglGetError());
+        EGLint egl_err = eglGetError();
+        /* nowa powierzchnia (bez celu) bez kontekstu nie narysuje nic, a drugi
+         * configure może nie przyjść — błąd powierzchni; istniejąca: pojedyncza
+         * odmowa = pomijamy ten configure, przyjdzie następny */
+        if (!o->target) { output_surface_failed(o, "eglMakeCurrent nie powiodło się (0x%x)", egl_err); return; }
+        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam configure", o->name, egl_err);
         return;
     }
     char err[256];
     if (!o->target) {
         o->target = flux_target_create(s->engine, pw, ph, err, sizeof err);
-        if (!o->target) die(3, "%s: %s", o->name, err);
+        if (!o->target) { output_surface_failed(o, "%s", err); return; }
     } else if (changed && !flux_target_resize(o->target, pw, ph, err, sizeof err)) {
         logv(s, "%s: zmiana rozmiaru akumulatora nie powiodła się (%s) — rysuję w starym rozmiarze", o->name, err);
     }
     o->configured = true;
+    flux_retry_reset(&o->retry);         /* powierzchnia stoi — następny błąd znów od 1 s */
     render_output(o);
 }
 
@@ -544,8 +594,10 @@ static void out_mode(void *d, struct wl_output *w, uint32_t f, int32_t mw, int32
 static void out_done(void *data, struct wl_output *w) {
     (void)w;
     struct output *o = data;
-    /* Po `done` znamy skalę i nazwę — dopiero teraz sens ma tworzyć powierzchnię. */
-    if (o->state->layer_shell && o->state->compositor) output_create_surface(o);
+    /* Po `done` znamy skalę i nazwę — dopiero teraz sens ma tworzyć powierzchnię.
+     * Zaległe odtworzenie (`recreate`: po `closed` albo błędzie EGL) zostawiamy
+     * pętli — inaczej kolejne `done` omijałoby przerwę przed ponowieniem. */
+    if (o->state->layer_shell && o->state->compositor && !o->recreate) output_create_surface(o);
 }
 static void out_scale(void *data, struct wl_output *w, int32_t factor) {
     (void)w;
@@ -647,13 +699,17 @@ static void main_loop(struct state *s) {
 
         /* Limit fps: czekamy tylko RESZTĘ okresu (najkrótszą spośród monitorów
          * z zaległą klatką), zaokrągloną w górę do ms, nie mniej niż 1 ms.
-         * Pełny okres 1000/fps dawał przy -f 30 na 60 Hz ~20 fps. */
+         * Pełny okres 1000/fps dawał przy -f 30 na 60 Hz ~20 fps. Tak samo
+         * termin ponowienia powierzchni po błędzie EGL (`recreate`). */
         int timeout = -1;
         {
             double now = flux_now_seconds();
             for (struct output *o = s->outputs; o; o = o->next) {
-                if (!o->needs_frame) continue;
-                int ms = (int)ceil(frame_wait(o, now) * 1000.0);
+                double wait;
+                if (o->needs_frame) wait = frame_wait(o, now);
+                else if (o->recreate) wait = flux_retry_wait(&o->retry, now);
+                else continue;
+                int ms = (int)ceil(wait * 1000.0);
                 if (ms < 1) ms = 1;
                 if (timeout < 0 || ms < timeout) timeout = ms;
             }
@@ -684,10 +740,18 @@ static void main_loop(struct state *s) {
             die(2, "dispatch: %s", strerror(errno));
         }
 
-        /* Powierzchnie zamknięte przez kompozytor (`closed`) — monitor wciąż
-         * istnieje (global_remove zdjąłby go z listy), więc tworzymy nową. */
-        for (struct output *o = s->outputs; o; o = o->next)
-            if (o->recreate) { o->recreate = false; output_create_surface(o); }
+        /* Powierzchnie zamknięte przez kompozytor (`closed`) albo sprzątnięte
+         * po błędzie EGL — monitor wciąż istnieje (global_remove zdjąłby go
+         * z listy), więc tworzymy nową; po błędzie dopiero w terminie z
+         * recovery.h (po `closed` termin jest zerowy). */
+        {
+            double now = flux_now_seconds();
+            for (struct output *o = s->outputs; o; o = o->next)
+                if (o->recreate && flux_retry_wait(&o->retry, now) <= 0) {
+                    o->recreate = false;
+                    output_create_surface(o);
+                }
+        }
 
         update_detail(s);
         {
