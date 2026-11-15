@@ -178,7 +178,9 @@ bool flux_update_path(const char *frag_path, char *out, size_t outlen) {
 static bool set_param(struct flux_params *p, const char *key, const char *val, char *err, size_t errlen) {
     char *end;
     double d = strtod(val, &end);
-    if (end == val || *end != 0) { snprintf(err, errlen, "#pragma flux %s: '%s' nie jest liczbą", key, val); return false; }
+    /* strtod przyjmuje „nan” i „inf”: NaN przeszedłby każde sprawdzenie zakresu
+     * niżej (porównania z NaN są fałszywe), a (int)NaN jest niezdefiniowane */
+    if (end == val || *end != 0 || !isfinite(d)) { snprintf(err, errlen, "#pragma flux %s: '%s' nie jest liczbą", key, val); return false; }
     if      (strcmp(key, "particles") == 0) { if (d < 1 || d > 4000000) goto range; p->particles = (int)d; }
     else if (strcmp(key, "life")      == 0) { if (d <= 0 || d > 600)    goto range; p->life = (float)d; }
     else if (strcmp(key, "rate")      == 0) { if (d <= 0 || d > 1000)   goto range; p->rate = (float)d; }

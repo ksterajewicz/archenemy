@@ -138,6 +138,21 @@ int main(void) {
     CHECK(fp.audio == 0 && fp.audio_tempo == 0.0f, "domyślnie bez dźwięku i bez reakcji");
     CHECK(flux_params_parse("#pragma flux audio 1\n#pragma flux audio_tempo 0.6\n", &fp, err, sizeof err) && fp.audio == 1 && near(fp.audio_tempo, 0.6f), "audio 1 + audio_tempo");
     CHECK(!flux_params_parse("#pragma flux audio 2\n", &fp, err, sizeof err), "audio 2 → poza zakresem");
+    /* NaN przechodził każde sprawdzenie zakresu (porównanie z NaN zawsze fałszywe),
+     * a (int)NaN to zachowanie niezdefiniowane — audyt 2026-11-05, F9. */
+    {
+        static const char *keys[] = { "particles", "life", "rate", "inc", "gain", "scale", "warmup", "warm", "seed", "audio_tempo", "audio_glow", "audio_sparkle", NULL };
+        int accepted = 0;
+        for (int i = 0; keys[i]; i++) {
+            char src[96]; snprintf(src, sizeof src, "#pragma flux %s nan\n", keys[i]);
+            fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
+            if (flux_params_parse(src, &fp, err, sizeof err)) { accepted++; printf("       przyjęte: %s nan\n", keys[i]); }
+        }
+        CHECK(accepted == 0, "wartość nan → błąd dla każdego klucza liczbowego");
+        fp = (struct flux_params)FLUX_PARAMS_DEFAULT;
+        CHECK(!flux_params_parse("#pragma flux life inf\n", &fp, err, sizeof err), "life inf → błąd");
+        CHECK(flux_params_parse("#pragma flux life 0.5\n", &fp, err, sizeof err) && near(fp.life, 0.5f), "life 0.5 nadal przyjęte");
+    }
 
     printf("flux_update_path\n");
     char up[64];
@@ -374,6 +389,31 @@ int main(void) {
         CHECK(rc == 1, "--dither=1 (flaga bez wartości) → kod 1");
         rc = run_cli(dir, a_help, log, sizeof log);
         CHECK(rc == 0 && strstr(log, "--dither") && strstr(log, "--no-dither"), "--help zna --dither/--no-dither (wrapper po tym rozpoznaje binarkę)");
+        remove(shader);
+    }
+
+    printf("CLI: -d (detail) — tylko liczba skończona z 0..1\n");
+    {
+        char shader[600], log[4096];
+        snprintf(shader, sizeof shader, "%s/cli.frag", dir);
+        write_file(shader, "#version 300 es\nvoid main(){}\n");
+        /* -d nan przechodził `d < 0 || d > 1` (porównania z NaN fałszywe) —
+         * audyt 2026-11-05, F9; kod 2 = argumenty przyjęte, dopiero brak Waylanda */
+        char *a_nan[]  = { "flux-wall", "-s", shader, "-d", "nan", NULL };
+        char *a_nnan[] = { "flux-wall", "-s", shader, "-d", "-nan", NULL };
+        char *a_inf[]  = { "flux-wall", "-s", shader, "-d", "inf", NULL };
+        char *a_ok[]   = { "flux-wall", "-s", shader, "-d", "0.5", NULL };
+        char *a_out[]  = { "flux-wall", "-s", shader, "-d", "1.5", NULL };
+        int rc = run_cli(dir, a_nan, log, sizeof log);
+        CHECK(rc == 1, "-d nan → kod 1");
+        rc = run_cli(dir, a_nnan, log, sizeof log);
+        CHECK(rc == 1, "-d -nan → kod 1");
+        rc = run_cli(dir, a_inf, log, sizeof log);
+        CHECK(rc == 1, "-d inf → kod 1");
+        rc = run_cli(dir, a_ok, log, sizeof log);
+        CHECK(rc == 2, "-d 0.5 → przyjęte (kod 2 = brak Waylanda)");
+        rc = run_cli(dir, a_out, log, sizeof log);
+        CHECK(rc == 1, "-d 1.5 → kod 1");
         remove(shader);
     }
 

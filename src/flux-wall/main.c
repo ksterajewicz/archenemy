@@ -758,7 +758,9 @@ int main(int argc, char **argv) {
         case 'd': {
             char *end;
             s.cfg.detail = strtof(optarg, &end);
-            if (end == optarg || *end) die(1, "detail: '%s' nie jest liczbą", optarg);
+            /* strtof przyjmuje „nan” i „inf”; NaN przeszedłby niżej każde
+             * porównanie z zakresem (zawsze fałszywe), więc najpierw isfinite */
+            if (end == optarg || *end || !isfinite(s.cfg.detail)) die(1, "detail: '%s' nie jest liczbą", optarg);
             if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1");
             break;
         }
