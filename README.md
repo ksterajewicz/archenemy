@@ -223,7 +223,9 @@ archenemy/
 │   │                                 #   (shared with install.sh and the Super+A → [p] picker).
 │   │                                 #   lib/monitor-id.sh — monitor identity for the machine layer:
 │   │                                 #   "desc:<EDID description>" selectors instead of connector
-│   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots).
+│   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots);
+│   │                                 #   lua_string/lua_comment put names into generated Lua with
+│   │                                 #   control characters escaped, so a CR can't break the file.
 │   │                                 #   machine-layer-check.sh — read-only self-check at session start:
 │   │                                 #   one notification when the generated files no longer match the
 │   │                                 #   connected monitors (instead of Hyprland's silent fallback),

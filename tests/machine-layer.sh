@@ -60,6 +60,22 @@ check "desc: → żywa nazwa po zmianie złącza"  '[[ "$(MOCK_MONS=both monitor
 check "desc: odpiętego monitora → pusto"      '[[ -z "$(MOCK_MONS=edp monitor_live_name "desc:$DESC_HDMI")" ]]'
 check "stara nazwa → pusto (nie ma eDP-2)"    '[[ -z "$(MOCK_MONS=both monitor_live_name eDP-2)" ]]'
 check "lua_string cytuje \\ i \""             '[[ "$(lua_string "a\"b\\c")" == "\"a\\\"b\\\\c\"" ]]'
+# Znak sterujący (np. CR z ręcznie edytowanego .dat, \n w nazwie pliku) jako
+# surowy bajt urywał literał Lua i cały plik (audyt 2026-11-05, S14).
+CTL=$'a\nb\rc\td\x7fe'
+check "lua_string: sterujące jako \\ddd, 1 linia" '[[ "$(lua_string "$CTL")" == '"'"'"a\010b\013c\009d\127e"'"'"' ]]'
+check "lua_string: UTF-8 bez zmian"           '[[ "$(lua_string "Żółć")" == "\"Żółć\"" ]]'
+generate_workspaces_monitors "$T/ctl.lua" decades $'DP-7\r'
+check "nazwa z CR: 1 reguła = 1 linia"        '[[ $(grep -c "^hl\.workspace_rule({ workspace = \"[0-9]*\", monitor = \"DP-7\\\\013\"" "$T/ctl.lua") -eq 10 ]]'
+mkdir -p "$T/ctl-mon"
+printf 'MONITOR=DP-7\r\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nORDER=1\n' > "$T/ctl-mon/DP-7"$'\r'".dat"
+( source "$REPO/scripts/hypr/lib/gen-monitors.sh"; generate_monitors_conf "$T/ctl-mon.lua" "$T/ctl-mon" )
+check "gen-monitors: CR → \\013, komentarz z ?" 'grep -qF "output = \"DP-7\\013\"" "$T/ctl-mon.lua" && grep -qxF -e "-- DP-7?" "$T/ctl-mon.lua"'
+if command -v lua5.4 >/dev/null 2>&1; then
+    check "gen-monitors: CR — plik Lua się wczytuje" 'lua5.4 -e "hl={monitor=function(t) assert(t.output==\"\" or t.output==\"DP-7\\r\") end}" -e "dofile(\"$T/ctl-mon.lua\")" </dev/null'
+    check "lua_string: Lua czyta te same bajty"  '[[ "$(lua5.4 -e "io.write($(lua_string "$CTL"))" </dev/null)" == "$CTL" ]]'
+    check "nazwa z CR: plik Lua się wczytuje"    'lua5.4 -e "hl={workspace_rule=function() end, bind=function() end, dsp={focus=function() end, window={move=function() end}}}" -e "dofile(\"$T/ctl.lua\")" </dev/null'
+fi
 check "monitor_desc_usable odrzuca pusty/#/=" '! monitor_desc_usable "" && ! monitor_desc_usable "a#b" && ! monitor_desc_usable "a=b" && monitor_desc_usable "$DESC_EDP"'
 
 echo "== gen-workspaces.sh"

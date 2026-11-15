@@ -82,11 +82,14 @@ Rules that follow directly from the table:
   name.** `eDP-2`/`HDMI-A-1` became `eDP-1`/`HDMI-A-3` after a reboot on the
   owner's laptop (2026-09-21) and every rule of the machine layer stopped
   matching. `scripts/hypr/lib/monitor-id.sh` (`monitor_selector_from_dat`,
-  `monitor_live_name`, `lua_string`) is the only place that turns a
-  `data/monitors/*.dat` into a selector or a live connector name — use it in
-  anything that writes a monitor into a generated file or talks to
+  `monitor_live_name`, `lua_string`, `lua_comment`) is the only place that
+  turns a `data/monitors/*.dat` into a selector or a live connector name — use
+  it in anything that writes a monitor into a generated file or talks to
   `hyprctl`/`hyprpaper` about a specific output; a raw `MONITOR=` value is
-  only good for "is this the built-in panel" and for file names.
+  only good for "is this the built-in panel" and for file names. Names go into
+  generated Lua only through `lua_string` (values; control characters become
+  `\ddd`) or `lua_comment` (comments; control characters become `?`): a raw
+  CR or newline ends a Lua string or comment and breaks the whole file.
 - **Integrity rule for the machine layer (public project — other
   people's machines).** A generated file describes the machine *on the day
   of installation*, and Hyprland never complains when reality drifts — it
