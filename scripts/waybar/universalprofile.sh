@@ -12,11 +12,26 @@
 
 ERR_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-profile-err"
 
-PROFILES=("power-saver" "balanced" "performance")
+# Kolejność cyklu. Nie każdy sprzęt ma wszystkie trzy: bez sterownika platformy
+# (część AMD, desktopy) ppd nie wystawia `performance`. Dawniej cykl był stały,
+# a pierwszy krok z `balanced` to zawsze `performance` — klik nigdy nic nie
+# zmieniał i za każdym razem wisiało krytyczne powiadomienie (audyt 2026-11-05,
+# A8). Dlatego: (1) cykl tylko po profilach z `powerprofilesctl list` (wiersze
+# nagłówka „[*] <nazwa>:”, aktywny z gwiazdką); pusta albo nieczytelna lista =
+# pełny cykl jak dawniej; (2) profil, którego nie udało się ustawić (odczyt `get`
+# po zmianie się nie zgadza), pomijamy i próbujemy następnego.
+ALL_PROFILES=("power-saver" "balanced" "performance")
+
+LISTED="$(powerprofilesctl list 2>/dev/null | sed -nE 's/^[*[:space:]]*([a-z-]+):[[:space:]]*$/\1/p')"
+PROFILES=()
+for p in "${ALL_PROFILES[@]}"; do
+    grep -qxF -- "$p" <<< "$LISTED" && PROFILES+=("$p")
+done
+((${#PROFILES[@]})) || PROFILES=("${ALL_PROFILES[@]}")
 
 CURRENT=$(powerprofilesctl get 2>/dev/null)
 
-# Indeks bieżącego profilu (nieznany → 0, czyli przejście na "balanced")
+# Indeks bieżącego profilu (nieznany → 0, czyli przejście na następny po pierwszym)
 CURRENT_IDX=0
 for i in "${!PROFILES[@]}"; do
     if [[ "${PROFILES[$i]}" == "$CURRENT" ]]; then
@@ -25,16 +40,24 @@ for i in "${!PROFILES[@]}"; do
     fi
 done
 
-# Następny profil (cyklicznie)
-NEXT_IDX=$(( (CURRENT_IDX + 1) % ${#PROFILES[@]} ))
-NEXT="${PROFILES[$NEXT_IDX]}"
+# Kolejne profile (cyklicznie) aż do skutku; sam bieżący nie jest „zmianą”.
+NEXT=""
+for (( step = 1; step <= ${#PROFILES[@]}; step++ )); do
+    try="${PROFILES[$(( (CURRENT_IDX + step) % ${#PROFILES[@]} ))]}"
+    [[ "$try" == "$CURRENT" ]] && continue
+    out="$(powerprofilesctl set "$try" 2>&1)"
+    ACTUAL="$(powerprofilesctl get 2>/dev/null)"
+    if [[ "$ACTUAL" == "$try" ]]; then
+        NEXT="$try"
+        break
+    fi
+    err="$out"
+    [[ -n "$err" ]] || err="powerprofilesctl set $try: profil po zmianie to '$ACTUAL'"
+done
 
-out="$(powerprofilesctl set "$NEXT" 2>&1)"
-ACTUAL="$(powerprofilesctl get 2>/dev/null)"
-
-if [[ "$ACTUAL" != "$NEXT" ]]; then
-    printf '%s\n' "${out:-powerprofilesctl set $NEXT: profil po zmianie to '$ACTUAL'}" \
-        | head -2 > "$ERR_FILE"
+if [[ -z "$NEXT" ]]; then
+    [[ -n "${err:-}" ]] || err="powerprofilesctl: brak innego profilu niż '$CURRENT'"
+    printf '%s\n' "$err" | head -2 > "$ERR_FILE"
     exit 1
 fi
 
