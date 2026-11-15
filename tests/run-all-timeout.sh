@@ -6,8 +6,9 @@
 #   w mktemp z atrapami pakietów: zielony, „skip” z kodem 0, czerwony,
 #   wiszący (z wnukiem, który też wisi), wiszący z ignorowanym SIGTERM
 #   i z pułapką SIGINT (pakiet nie może dostać SIGINT-u ignorowanego).
-#   Każdy bieg kopii pilnuje zewnętrzny `timeout`, więc na kodzie bez limitu
-#   test kończy się ✗ zamiast wisieć. Trwa ok. 20 s (SIGKILL po 10 s).
+#   Każdy bieg kopii pilnuje zewnętrzny `timeout -k 5` (SIGTERM, po 5 s
+#   SIGKILL), więc na kodzie bez limitu albo bez `-k` w run-all.sh test
+#   kończy się ✗ zamiast wisieć. Trwa ok. 20 s (SIGKILL po 10 s).
 #   Uruchom: bash tests/run-all-timeout.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -17,10 +18,11 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
-# Sprzątanie także po nieudanym scenariuszu: atrapy zapisują swoje PID-y.
+# Sprzątanie także po nieudanym scenariuszu: atrapy zapisują swoje PID-y
+# (każda sekcja z wiszącymi pakietami we własnym katalogu pids*).
 cleanup() {
     local f
-    for f in "$T"/pids/*.pid; do
+    for f in "$T"/pids*/*.pid; do
         [[ -f "$f" ]] && kill -KILL "$(<"$f")" 2>/dev/null
     done
     rm -rf "$T"
@@ -124,7 +126,7 @@ echo "== A: wiszący pakiet przy RUN_ALL_TIMEOUT=2"
 suite "$T/a" a-green.sh b-hang.sh c-skip.sh d-red.sh e-stubborn.sh
 : > "$RAN"
 t0=$SECONDS
-out="$(RUN_ALL_TIMEOUT=2 timeout 45 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=2 timeout -k 5 45 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
 took=$((SECONDS - t0))
 check "bieg kończy się sam (bez zewnętrznego limitu 45 s)" '[[ $rc -ne 124 && $took -lt 40 ]]'
 check "kod 1 (są pakiety niezielone)"                     '[[ $rc -eq 1 ]]'
@@ -140,23 +142,25 @@ check "każdy pakiet uruchomiony raz, po kolei"             '[[ "$(tr "\n" " " <
 
 echo "== B: wartość RUN_ALL_TIMEOUT i SIGINT w pakiecie"
 : > "$RAN"
-out="$(RUN_ALL_TIMEOUT=abc timeout 10 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=abc timeout -k 5 10 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
 check "zła wartość: kod 2, komunikat, żaden pakiet nie ruszył" '[[ $rc -eq 2 && "$out" == *RUN_ALL_TIMEOUT* && ! -s "$RAN" ]]'
 suite "$T/b" f-slow.sh
-out="$(RUN_ALL_TIMEOUT=1 timeout 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=1 timeout -k 5 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
 check "limit 1 s: pakiet 2-sekundowy zawieszony"           '[[ $rc -eq 1 && "$out" == *"✗ f-slow.sh — zawieszony"* ]]'
-out="$(RUN_ALL_TIMEOUT=0 timeout 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=0 timeout -k 5 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
 check "0 = bez limitu: ten sam pakiet ✓"                   '[[ $rc -eq 0 && "$out" == *"✓ f-slow.sh — Wynik: wolny, ale skończony"* ]]'
 suite "$T/d" g-int.sh
-out="$(RUN_ALL_TIMEOUT=10 timeout 20 bash "$T/d/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash "$T/d/run-all.sh" 2>&1)"; rc=$?
 check "pakiet dostaje SIGINT jak z terminala, nie ignorowany" '[[ $rc -eq 0 && "$out" == *"✓ g-int.sh — Wynik: pułapka INT działa"* ]]'
 
 echo "== C: Ctrl+C w trakcie wiszącego pakietu"
 suite "$T/c" b-hang.sh
-rm -f "$PIDS"/*.pid
+# Własny katalog PID-ów: pliki z sekcji A zostają dla cleanup (procesy, które
+# przeżyły regresję, i tak zostaną dobite).
+PIDS="$T/pids-c"; mkdir -p "$PIDS"
 # Proces w tle nieinteraktywnej powłoki ma SIGINT ignorowany (i niepodmienialny
 # pułapką) — env przywraca domyślny, jak przy Ctrl+C w terminalu.
-RUN_ALL_TIMEOUT=60 env --default-signal=INT timeout 30 bash "$T/c/run-all.sh" > "$T/c.out" 2>&1 &
+RUN_ALL_TIMEOUT=60 env --default-signal=INT timeout -k 5 30 bash "$T/c/run-all.sh" > "$T/c.out" 2>&1 &
 guard=$!
 for _ in $(seq 100); do [[ -s "$PIDS/b-hang.pid" ]] && break; sleep 0.1; done
 runall_pid="$(pgrep -P "$guard" -f 'c/run-all.sh' | head -1)"
