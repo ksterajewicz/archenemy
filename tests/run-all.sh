@@ -9,7 +9,8 @@
 #   bieg bez słowa): RUN_ALL_TIMEOUT sekund, domyślnie 600, 0 = bez limitu.
 #   Po limicie pakiet i jego procesy potomne dostają SIGTERM, po 10 s SIGKILL,
 #   a wynik to „✗ <pakiet> — zawieszony”. Pakiet dostaje stdin z /dev/null.
-#   Ctrl+C (albo SIGTERM) przerywa cały bieg razem z bieżącym pakietem.
+#   Ctrl+C, SIGTERM albo zamknięcie terminala (SIGHUP) przerywa cały bieg
+#   razem z bieżącym pakietem.
 #   Pakiet z kodem 0 to ✓, także gdy coś pominął (semantyka pominięć: T2).
 #   Test tego pliku: tests/run-all-timeout.sh.
 #   Uruchom: bash tests/run-all.sh   (kod 0 = wszystkie pakiety zielone)
@@ -29,8 +30,8 @@ LOG="$(mktemp 2>/dev/null || TMPDIR=/tmp mktemp)" || { echo "run-all: mktemp nie
 trap 'rm -f "$LOG"' EXIT
 tpid="" name=""
 # `timeout` przenosi się do własnej grupy procesów (dzięki temu zabija też
-# procesy potomne pakietu), więc Ctrl+C z terminala do niego nie dociera —
-# przerwanie przekazujemy sami.
+# procesy potomne pakietu), więc ani Ctrl+C, ani SIGHUP po zamknięciu
+# terminala do niego nie docierają — przerwanie przekazujemy sami.
 interrupted() {
     if [[ -n "$tpid" ]]; then
         kill -TERM "$tpid" 2>/dev/null

@@ -5,7 +5,9 @@
 #   zawieszona regresja blokowała cały bieg bez komunikatu). Kopia run-all.sh
 #   w mktemp z atrapami pakietów: zielony, „skip” z kodem 0, czerwony,
 #   wiszący (z wnukiem, który też wisi), wiszący z ignorowanym SIGTERM
-#   i z pułapką SIGINT (pakiet nie może dostać SIGINT-u ignorowanego).
+#   i z pułapką SIGINT (pakiet nie może dostać SIGINT-u ignorowanego), kod
+#   124 przed limitem (zwykłe ✗, nie „zawieszony”) oraz przerwanie biegu
+#   przez Ctrl+C (SIGINT), SIGTERM i zamknięty terminal (SIGHUP).
 #   Każdy bieg kopii pilnuje zewnętrzny `timeout -k 5` (SIGTERM, po 5 s
 #   SIGKILL), więc na kodzie bez limitu albo bez `-k` w run-all.sh test
 #   kończy się ✗ zamiast wisieć. Trwa ok. 20 s (SIGKILL po 10 s).
@@ -121,6 +123,12 @@ kill -INT $$
 echo "  ✗ SIGINT zignorowany"
 exit 1
 EOF
+# Kod 124 bez przekroczenia limitu (np. własny `timeout` w pakiecie) to zwykła
+# porażka, nie „zawieszony”.
+cat > "$T/stubs/h-124.sh" <<'EOF'
+echo "  ✗ własny timeout w pakiecie"
+exit 124
+EOF
 
 echo "== A: wiszący pakiet przy RUN_ALL_TIMEOUT=2"
 suite "$T/a" a-green.sh b-hang.sh c-skip.sh d-red.sh e-stubborn.sh
@@ -140,7 +148,7 @@ check "ignorujący SIGTERM: zawieszony i dobity SIGKILL"    '[[ "$out" == *"✗ 
 check "podsumowanie wymienia trzy niezielone"              '[[ "$out" == *"NIEZIELONE: b-hang.sh d-red.sh e-stubborn.sh"* ]]'
 check "każdy pakiet uruchomiony raz, po kolei"             '[[ "$(tr "\n" " " < "$RAN")" == "a-green b-hang c-skip d-red e-stubborn " ]]'
 
-echo "== B: wartość RUN_ALL_TIMEOUT i SIGINT w pakiecie"
+echo "== B: wartość RUN_ALL_TIMEOUT, kod 124 i SIGINT w pakiecie"
 : > "$RAN"
 out="$(RUN_ALL_TIMEOUT=abc timeout -k 5 10 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
 check "zła wartość: kod 2, komunikat, żaden pakiet nie ruszył" '[[ $rc -eq 2 && "$out" == *RUN_ALL_TIMEOUT* && ! -s "$RAN" ]]'
@@ -149,30 +157,44 @@ out="$(RUN_ALL_TIMEOUT=1 timeout -k 5 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
 check "limit 1 s: pakiet 2-sekundowy zawieszony"           '[[ $rc -eq 1 && "$out" == *"✗ f-slow.sh — zawieszony"* ]]'
 out="$(RUN_ALL_TIMEOUT=0 timeout -k 5 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
 check "0 = bez limitu: ten sam pakiet ✓"                   '[[ $rc -eq 0 && "$out" == *"✓ f-slow.sh — Wynik: wolny, ale skończony"* ]]'
+suite "$T/e" h-124.sh
+out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash "$T/e/run-all.sh" 2>&1)"; rc=$?
+check "kod 124 przed limitem: zwykłe ✗, bez „zawieszony”"  '[[ $rc -eq 1 && "$out" != *zawieszony* ]] && grep -qx "✗ h-124.sh" <<< "$out" && [[ "$out" == *"    ✗ własny timeout w pakiecie"* ]]'
 suite "$T/d" g-int.sh
 out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash "$T/d/run-all.sh" 2>&1)"; rc=$?
 check "pakiet dostaje SIGINT jak z terminala, nie ignorowany" '[[ $rc -eq 0 && "$out" == *"✓ g-int.sh — Wynik: pułapka INT działa"* ]]'
 
-echo "== C: Ctrl+C w trakcie wiszącego pakietu"
+echo "== C: przerwanie biegu w trakcie wiszącego pakietu"
 suite "$T/c" b-hang.sh
-# Własny katalog PID-ów: pliki z sekcji A zostają dla cleanup (procesy, które
+# interrupt <sygnał> <etykieta> — kopia run-all z wiszącym pakietem dostaje
+# sygnał, gdy pakiet już działa (znacznik: jego plik PID). Każdy sygnał ma
+# własny katalog PID-ów: pliki z sekcji A zostają dla cleanup (procesy, które
 # przeżyły regresję, i tak zostaną dobite).
-PIDS="$T/pids-c"; mkdir -p "$PIDS"
 # Proces w tle nieinteraktywnej powłoki ma SIGINT ignorowany (i niepodmienialny
 # pułapką) — env przywraca domyślny, jak przy Ctrl+C w terminalu.
-RUN_ALL_TIMEOUT=60 env --default-signal=INT timeout -k 5 30 bash "$T/c/run-all.sh" > "$T/c.out" 2>&1 &
-guard=$!
-for _ in $(seq 100); do [[ -s "$PIDS/b-hang.pid" ]] && break; sleep 0.1; done
-runall_pid="$(pgrep -P "$guard" -f 'c/run-all.sh' | head -1)"
-[[ -n "$runall_pid" ]] && kill -INT "$runall_pid"
-t0=$SECONDS
-for _ in $(seq 100); do kill -0 "$guard" 2>/dev/null || break; sleep 0.1; done
-took=$((SECONDS - t0))
-wait "$guard"; rc=$?
-out="$(<"$T/c.out")"
-check "bieg przerwany od razu, kod 130"                    '[[ -n "$runall_pid" && $rc -eq 130 && $took -lt 10 ]]'
-check "komunikat wskazuje przerwany pakiet"                '[[ "$out" == *"PRZERWANO na b-hang.sh."* ]]'
-check "przerwany pakiet i jego wnuk zabici"                '! alive "$PIDS/b-hang.pid" && ! alive "$PIDS/b-grandchild.pid"'
+interrupt() {
+    local sig="$1" label="$2" guard runall_pid t0
+    PIDS="$T/pids-c-$sig"; mkdir -p "$PIDS"
+    RUN_ALL_TIMEOUT=60 env --default-signal=INT timeout -k 5 30 bash "$T/c/run-all.sh" > "$T/c-$sig.out" 2>&1 &
+    guard=$!
+    for _ in $(seq 100); do [[ -s "$PIDS/b-hang.pid" ]] && break; sleep 0.1; done
+    runall_pid="$(pgrep -P "$guard" -f 'c/run-all.sh' | head -1)"
+    [[ -n "$runall_pid" ]] && kill -"$sig" "$runall_pid"
+    t0=$SECONDS
+    for _ in $(seq 100); do kill -0 "$guard" 2>/dev/null || break; sleep 0.1; done
+    took=$((SECONDS - t0))
+    wait "$guard"; rc=$?
+    out="$(<"$T/c-$sig.out")"
+    check "$label: bieg przerwany od razu, kod 130"        '[[ -n "$runall_pid" && $rc -eq 130 && $took -lt 10 ]]'
+    check "$label: komunikat wskazuje przerwany pakiet"    '[[ "$out" == *"PRZERWANO na b-hang.sh."* ]]'
+    check "$label: przerwany pakiet i jego wnuk zabici"    '! alive "$PIDS/b-hang.pid" && ! alive "$PIDS/b-grandchild.pid"'
+}
+interrupt INT "Ctrl+C (SIGINT)"
+interrupt TERM "SIGTERM"
+# Zamknięty terminal: SIGHUP trafia do grupy procesów run-all (zadania powłoki),
+# a nie do pakietu, który działa w osobnej grupie `timeout` — bez pułapki HUP
+# w run-all pakiet z wnukiem przeżyłby zamknięcie terminala.
+interrupt HUP "zamknięty terminal (SIGHUP)"
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
