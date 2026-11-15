@@ -12,19 +12,48 @@
 #   generowany z data/autostart-apps.dat (lista ID .desktop, jedno na linię).
 # =============================================
 
+# ID pominięte przy ostatnim generate_autostart_apps (znak sterujący w ID) —
+# picker TUI je wypisuje, zamiast liczyć jako zapisane.
+AUTOSTART_SKIPPED=()
+
+# Jedna linia Lua uruchamiająca aplikację. Hyprland wykonuje hl.exec_cmd przez
+# /bin/sh -c, więc ID spoza [A-Za-z0-9._+-] (spacja — np. skróty gier ze Steama,
+# apostrof, cudzysłów) idzie w apostrofach ('\'' w środku), a cały napis dostaje
+# escape literału Lua (\ i "). Zwykłe ID wychodzą tak samo jak dawniej.
+autostart_exec_line() {
+    local id="$1" cmd
+    if [[ "$id" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+        cmd="gtk-launch $id"
+    else
+        cmd="gtk-launch '${id//\'/\'\\\'\'}'"
+    fi
+    cmd="${cmd//\\/\\\\}"
+    cmd="${cmd//\"/\\\"}"
+    printf '    hl.exec_cmd("%s")\n' "$cmd"
+}
+
 # Argumenty: <plik-danych .dat> <plik-wyjściowy .lua>
 generate_autostart_apps() {
     local dat="$1" out="$2"
     local -a apps=()
     local id tmp
 
+    AUTOSTART_SKIPPED=()
     if [[ -f "$dat" ]]; then
         while IFS= read -r id; do
-            # Puste linie i komentarze pomijamy — plik bywa ruszany ręcznie.
+            # Plik bywa ruszany ręcznie: białe znaki na brzegach (też \r z CRLF)
+            # zdejmujemy, puste linie i komentarze pomijamy.
+            id="${id#"${id%%[![:space:]]*}"}"
+            id="${id%"${id##*[![:space:]]}"}"
             [[ -z "$id" || "$id" == \#* ]] && continue
-            # ID trafia do stringa Lua i na linię poleceń sh — cudzysłów,
-            # backslash albo spacja popsułyby cały plik, nie tylko ten wpis.
-            [[ "$id" =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+            # Spacja, cudzysłów czy backslash są cytowane (autostart_exec_line).
+            # Znaków sterujących nie cytujemy (\r w środku rozrywa literał Lua,
+            # nazwy plików .desktop ich nie mają) — pomijamy i zgłaszamy. Dotąd
+            # każde ID spoza [A-Za-z0-9._+-] znikało po cichu (audyt Z7).
+            if [[ "$id" == *[[:cntrl:]]* ]]; then
+                AUTOSTART_SKIPPED+=("$id")
+                continue
+            fi
             apps+=("$id")
         done < "$dat"
     fi
@@ -39,7 +68,7 @@ generate_autostart_apps() {
             echo "-- changes are replaced on the next save from the TUI."
             echo "hl.on(\"hyprland.start\", function()"
             for id in "${apps[@]}"; do
-                echo "    hl.exec_cmd(\"gtk-launch $id\")"
+                autostart_exec_line "$id"
             done
             echo "end)"
         fi

@@ -275,7 +275,13 @@ picker_loop() {
             p|P) (( PAGE > 0 )) && PAGE=$(( PAGE - 1 )); continue ;;
             s|S)
                 if save_selection; then
-                    echo -e "  ${GREEN}✓ Saved ${count} apps. They start at your next login.${NC}"
+                    # Liczba z pliku Lua (skutek), nie z zaznaczenia: wpis, którego
+                    # generator nie zapisał, nie może wyglądać na zapisany (Z7).
+                    count="$(grep -c '^    hl.exec_cmd("gtk-launch ' "$OUT_LUA" 2>/dev/null)"
+                    echo -e "  ${GREEN}✓ Saved ${count:-0} apps. They start at your next login.${NC}"
+                    for id in "${AUTOSTART_SKIPPED[@]}"; do
+                        echo -e "  ${YELLOW}⚠ Not saved (control characters in the ID): ${id@Q}${NC}"
+                    done
                 else
                     echo -e "  ${RED}✗ Save failed (missing generator or temp file).${NC}"
                 fi
