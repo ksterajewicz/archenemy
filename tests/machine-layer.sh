@@ -220,6 +220,60 @@ check "pełny bieg: workspace-mode.dat = shared" '[[ "$(<"$I/workspace-mode.dat"
 check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat saved (2 monitors)"* ]]'
 check "pełny bieg: po [3.7] pułapka EXIT dalej z sudo -k (K18)" '[[ "$(cat "$T/sudo.log" 2>/dev/null)" == -k ]]'
 
+# Audyt 2026-11-05, Z12: numer z zerem na początku w [3.6] („08”) to zła liczba
+# ósemkowa w $((n - 1)) — błąd rozwinięcia kończył instalator w pół kroku.
+# „08 1” ma być odrzucone jak każdy numer spoza listy, „02 01” = „2 1”.
+I4="$T/inst4"; mkdir -p "$I4/monitors"
+out=$(printf '\n\n\n\n\n\n\n\n\n\n08 1\n02 01\n1\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I4" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" 2>&1)
+check '[3.6] 08 1 odrzucone, bieg trwa'      '[[ "$out" == *"Use each number from 1..2 exactly once"* && "$(<"$I4/workspace-mode.dat")" == shared ]]'
+check '[3.6] 02 01 = odwrócona numeracja'    'grep -qx "ORDER=1" "$I4/monitors/HDMI-A-3.dat" && grep -qx "ORDER=2" "$I4/monitors/eDP-1.dat"'
+
+# Audyt 2026-11-05, Z13: wejście zamknięte na pytaniu [3.7] (potok bez odpowiedzi,
+# Ctrl-D) = pętla „Enter 1 or 2” bez końca. Ma być koniec z kodem 1, stare .dat
+# na miejscu. head ucina wyjście, gdyby pętla wróciła (SIGPIPE kończy bieg).
+I5="$T/inst5"; mkdir -p "$I5/monitors"
+printf 'MONITOR=DP-OLD\nRESOLUTION=1x1\nROLE=primary\nORDER=1\n' > "$I5/monitors/DP-OLD.dat"
+printf '\n\n\n\n\n\n\n\n\n\n\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I5" GREEN= NC= YELLOW= BLUE= CYAN= RED= \
+    timeout 30 bash "$T/step3-37.sh" 2>&1 | head -n 300 > "$T/eof.out"
+rc=${PIPESTATUS[1]}
+check '[3.7] zamknięte wejście: koniec z kodem 1' '[[ $rc -eq 1 && "$(grep -c "Enter 1 or 2" "$T/eof.out")" -le 1 && "$(<"$T/eof.out")" == *"input closed"* ]]'
+check '[3.7] zamknięte wejście: stare .dat zostają, bez trybu' '[[ -f "$I5/monitors/DP-OLD.dat" && ! -e "$I5/monitors/eDP-1.dat" && ! -e "$I5/workspace-mode.dat" ]] && ! ls -d "$I5"/monitors.new.* >/dev/null 2>&1'
+
+echo "== install.sh [3.5] rola: Enter = obecna rola z .dat (nowy konsument .dat: A/B/C)"
+# Audyt 2026-11-05, Z4: nagłówek [3.5] obiecuje „Enter = keep current setting”,
+# a rola szła z kolejności monitora — ponowny bieg (aktualizator proponuje go po
+# każdym pullu) zamieniał primary/secondary, czyli tapety v1/v2. Obecna rola =
+# ROLE z .dat, którego selektor wskazuje TERAZ ten monitor (desc: przed nazwą).
+# ORDER zostaje propozycją z pozycji X (DECYZJE 2026-07-17 D3) — tu bez zmian.
+role_run() {   # role_run <MOCK_MONS> <DATA_DIR>: same Entery w [3.5]–[3.6], „1” w [3.7]
+    printf '\n\n\n\n\n\n\n\n\n\n\n1\n' | MOCK_MONS="$1" ARCHENEMY_DIR="$REPO" DATA_DIR="$2" \
+        GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" >/dev/null 2>&1
+}
+role_of() { grep -m1 '^ROLE=' "$1" | cut -d= -f2; }
+R="$T/roles-a"; mkdir -p "$R/monitors"
+printf 'MONITOR=eDP-2\nROLE=primary\nDESCRIPTION=%s\nORDER=1\n' "$DESC_EDP" > "$R/monitors/eDP-2.dat"
+printf 'MONITOR=HDMI-A-1\nROLE=secondary\nDESCRIPTION=%s\nORDER=2\n' "$DESC_HDMI" > "$R/monitors/HDMI-A-1.dat"
+printf 'MONITOR=HDMI-A-3\nROLE=other\nORDER=3\n' > "$R/monitors/HDMI-A-3.dat"   # selektor po nazwie przegrywa z desc:
+role_run both "$R"
+check "A: desc: — role przeżywają zmianę złączy" '[[ "$(role_of "$R/monitors/eDP-1.dat")" == primary && "$(role_of "$R/monitors/HDMI-A-3.dat")" == secondary ]]'
+R="$T/roles-b"; mkdir -p "$R/monitors"
+printf 'MONITOR=HDMI-A-3\nROLE=other\nORDER=2\n' > "$R/monitors/HDMI-A-3.dat"
+printf 'MONITOR=eDP-2\nROLE=secondary\nORDER=1\n' > "$R/monitors/eDP-2.dat"   # stara nazwa bez opisu — nie pasuje
+role_run both "$R"
+check "B: .dat bez opisu — rola po nazwie, reszta: pierwsza wolna" '[[ "$(role_of "$R/monitors/HDMI-A-3.dat")" == other && "$(role_of "$R/monitors/eDP-1.dat")" == primary ]]'
+R="$T/roles-c"; mkdir -p "$R/monitors"
+printf 'MONITOR=DP-1\nROLE=secondary\nORDER=1\n' > "$R/monitors/DP-1.dat"
+printf 'MONITOR=DP-2\nROLE=primary\nORDER=2\n' > "$R/monitors/DP-2.dat"
+role_run twins "$R"
+check "C: identyczne monitory — role po nazwach złączy" '[[ "$(role_of "$R/monitors/DP-1.dat")" == secondary && "$(role_of "$R/monitors/DP-2.dat")" == primary ]]'
+R="$T/roles-d"; mkdir -p "$R/monitors"
+printf 'MONITOR=eDP-2\nROLE=primary\nDESCRIPTION=%s\nORDER=1\n' "$DESC_EDP" > "$R/monitors/eDP-2.dat"
+role_run both "$R"
+check "nowy monitor obok znanego: pierwsza wolna rola, bez dwóch primary" '[[ "$(role_of "$R/monitors/HDMI-A-3.dat")" == secondary && "$(role_of "$R/monitors/eDP-1.dat")" == primary ]]'
+R="$T/roles-e"; mkdir -p "$R/monitors"
+role_run both "$R"
+check "świeża instalacja: pierwszy primary, drugi secondary (jak dawniej)" '[[ "$(role_of "$R/monitors/HDMI-A-3.dat")" == primary && "$(role_of "$R/monitors/eDP-1.dat")" == secondary ]]'
+
 echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
 # Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie
 # mówiło. Alarm tylko przy zmianach w katalogach przetwarzanych przez

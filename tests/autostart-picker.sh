@@ -72,6 +72,10 @@ out="$(pick 'p\nq\n')"
 check "p na pierwszej stronie zostaje"    '[[ "$out" != *"page 0/"* ]]'
 : > "$DAT"; out="$(pick '20\ns\n\n')"
 check "numer z innej strony działa"       '[[ -s "$DAT" && "$(wc -l < "$DAT")" == 1 ]]'
+# Audyt 2026-11-05, Z12: „08” w arytmetyce basha = zła liczba ósemkowa, picker
+# wychodził z kodem 1 bez zapisu.
+: > "$DAT"; out="$(pick '08 3\ns\n\n')"
+check "liczba z zerem (08) zaznacza app08"  '[[ "$(sort "$DAT" | tr "\n" " ")" == "app03 app08 " ]]'
 
 echo "== zapis i wyjście"
 : > "$DAT"; out="$(pick '1\ns\n\n')"
@@ -101,12 +105,39 @@ check "Esc i potwierdzenie nie zapisują" '[[ "$(<"$DAT")" == "$saved" ]]'
 : > "$DAT"; out="$(pick '\e[Fk\ns\n\n')"
 check "strzałki wybierają zapis" '[[ "$out" == *"Saved 0 apps"* ]]'
 
+echo "== ID ze spacją (np. skróty gier ze Steama)"
+# Audyt 2026-11-05, Z7: generator pomijał ID spoza [A-Za-z0-9._+-], a picker
+# i tak mówił „Saved N apps” — aplikacja wyglądała na zapisaną i nie startowała.
+entry "$LOC/Space Game.desktop" "Space Game"
+: > "$DAT"; out="$(pick '/Space\n1\ns\n\n')"
+want_line="gtk-launch 'Space Game'"
+check "ID ze spacją zapisany w .dat"      'grep -qx "Space Game" "$DAT"'
+check "ID ze spacją trafia do autostartu" 'grep -qF "$want_line" "$LUA"'
+check "Saved liczy wpisy z pliku Lua"     '[[ "$out" == *"Saved 1 apps"* ]]'
+printf 'app01\nzły\tznak\n' > "$DAT"; out="$(pick 's\n\n')"
+check "znak sterujący: zgłoszony, nie liczony" '[[ "$out" == *"Saved 1 apps"* && "$out" == *"Not saved"*"zły"* ]]'
+rm -f "$LOC/Space Game.desktop"
+
 echo "== generator"
-printf 'dobra.app\nzła"nazwa\n' > "$DAT"
+printf '%s\n' dobra.app 'Space Game' 'zła"nazwa' "it's\\back" " padded.app "$'\r' $'zły\tznak' > "$DAT"
 source "$REPO/scripts/hypr/lib/gen-autostart.sh"
 generate_autostart_apps "$DAT" "$LUA"
-check "znak psujący Lua pominięty"        'grep -q "dobra.app" "$LUA" && ! grep -q "nazwa" "$LUA"'
+skipped_expected=$'zły\tznak'
+check "znak sterujący pominięty i zgłoszony" '[[ "${AUTOSTART_SKIPPED[*]-}" == "$skipped_expected" ]] && ! grep -q "znak" "$LUA"'
 check "plik bez resztek tymczasowych"     '[[ -z "$(ls "$A/config/hypr" | grep -v "^autostart-apps.lua$")" ]]'
+# Skutek, nie tekst: plik wykonuje Lua (atrapa hl), a każde polecenie idzie
+# przez sh -c jak w Hyprlandzie; gtk-launch ma dostać ID jako JEDEN argument.
+if command -v lua5.4 >/dev/null 2>&1; then
+    mkdir -p "$T/launch"
+    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "$#" "$1" >> "%s"\n' "$T/launched" > "$T/launch/gtk-launch"
+    chmod +x "$T/launch/gtk-launch"; : > "$T/launched"
+    lua5.4 -e 'hl = { on = function(_, f) f() end, exec_cmd = function(c) io.write(c, "\0") end }' "$LUA" > "$T/cmds" 2>"$T/lua.err"
+    while IFS= read -r -d '' c; do PATH="$T/launch:$PATH" sh -c "$c"; done < "$T/cmds"
+    launched_expected="$(printf '1|%s\n' dobra.app 'Space Game' 'zła"nazwa' "it's\\back" padded.app)"
+    check "każde ID dociera do gtk-launch jako jeden argument" '[[ ! -s "$T/lua.err" && "$(<"$T/launched")" == "$launched_expected" ]]'
+else
+    echo "  - pominięte: brak lua5.4 (wykonanie autostart-apps.lua)"
+fi
 
 # Rzeczywisty terminal: etykiety i wpisywane numery muszą wskazywać tę samą aplikację.
 : > "$DAT"

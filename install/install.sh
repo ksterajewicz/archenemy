@@ -203,7 +203,46 @@ declare -A MON_ORDER
 echo -e "${CYAN}[3.5] Configure monitor layout...${NC}"
 echo ""
 
-mon_idx=0
+# Obecna rola monitora = ROLE z .dat, którego selektor (desc: albo nazwa złącza,
+# lib/monitor-id.sh) wskazuje TERAZ ten monitor — tak samo rozwiązują go tapety.
+# Stare data/monitors/*.dat leżą na miejscu do [3.7]. Enter w pytaniu o rolę =
+# ta rola: nagłówek obiecuje „keep current setting”, a rola szła z kolejności
+# monitora i ponowny bieg zamieniał primary/secondary, czyli tapety v1/v2
+# (audyt 2026-11-05, Z4). Trafienie po desc: wygrywa z trafieniem po nazwie
+# (dwa przebiegi). ORDER nadal z pozycji X w [3.6] (DECYZJE 2026-07-17 D3).
+declare -A PREV_ROLE=()
+declare -A MON_ROLE=()
+for pass in name desc; do
+    for f in "$DATA_DIR/monitors"/*.dat; do
+        [[ -f "$f" ]] || continue
+        sel="$(monitor_selector_from_dat "$f")"
+        if [[ "$sel" == desc:* ]]; then kind=desc; else kind=name; fi
+        [[ "$kind" == "$pass" ]] || continue
+        role="$(grep -m1 '^ROLE=' "$f" | cut -d= -f2-)"
+        [[ "$role" == primary || "$role" == secondary || "$role" == other ]] || continue
+        live="$(monitor_live_name "$sel")"
+        [[ -n "$live" ]] && PREV_ROLE[$live]="$role"
+    done
+done
+
+# Monitor bez obecnej roli (nowy albo .dat z dawną nazwą złącza): pierwsza rola,
+# której nie ma żaden inny podłączony monitor — wybór z tego biegu, a dla
+# monitorów jeszcze przed pytaniem ich obecna rola. Jak default_role
+# w monitor-settings.sh; świeża instalacja = dawne „pierwszy primary, drugi
+# secondary, reszta other”.
+first_free_role() {
+    local m r taken=" "
+    for m in "${MONITOR_NAMES[@]}"; do
+        [[ "$m" == "$1" ]] && continue
+        r="${MON_ROLE[$m]:-${PREV_ROLE[$m]:-}}"
+        taken+="$r "
+    done
+    if [[ "$taken" != *" primary "* ]]; then echo primary
+    elif [[ "$taken" != *" secondary "* ]]; then echo secondary
+    else echo other
+    fi
+}
+
 for mon in "${MONITOR_NAMES[@]}"; do
     echo -e "${YELLOW}Monitor: ${BLUE}$mon${NC}  ${NC}(Enter = keep current setting)${NC}"
 
@@ -248,22 +287,20 @@ for mon in "${MONITOR_NAMES[@]}"; do
         echo -e "  ${YELLOW}⚠ Enter a number (e.g. 1, 1.33, 2) or 'auto'.${NC}"
     done
 
-    # Sensible default: first monitor = primary, second = secondary, rest = other.
+    # Domyślna rola: obecna (PREV_ROLE), inaczej pierwsza wolna.
     # (rofi_wallpaper_switcher.sh maps primary→v1, secondary→v2.)
-    case "$mon_idx" in
-        0) def_role="primary" ;;
-        1) def_role="secondary" ;;
-        *) def_role="other" ;;
-    esac
+    def_role="${PREV_ROLE[$mon]:-$(first_free_role "$mon")}"
     while :; do
         read -rp "  Role (primary/secondary/other) [${def_role}]: " role
         role="${role:-$def_role}"
         [[ "$role" == "primary" || "$role" == "secondary" || "$role" == "other" ]] && break
         echo -e "  ${YELLOW}⚠ Choose: primary, secondary or other.${NC}"
     done
+    MON_ROLE[$mon]="$role"
 
-    # Rola NIE trafia do tablicy — od 2026-07-17 [8b] nie czyta ról (workspace'y
-    # rządzi ORDER+tryb); rola żyje tylko w .dat (czyta ją wallpaper switcher).
+    # Poza [3.5] (MON_ROLE = tylko domyślne następnych monitorów) rola żyje
+    # wyłącznie w .dat (czyta ją wallpaper switcher) — od 2026-07-17 [8b] nie
+    # czyta ról, workspace'ami rządzi ORDER+tryb.
     MON_RES[$mon]="$res"
     MON_RATE[$mon]="$rate"
     MON_POS[$mon]="$pos"
@@ -281,7 +318,6 @@ for mon in "${MONITOR_NAMES[@]}"; do
 
     echo -e "  ${GREEN}✓ $mon.dat ready (saved to data/monitors/ after [3.7])${NC}"
     echo ""
-    mon_idx=$((mon_idx + 1))
 done
 
 # ─── 3.6 MONITOR NUMBERING (lewa→prawa) ──────────────────────────────────────
@@ -337,8 +373,11 @@ else
         _ok=1
         _seen=""
         for n in "${picks[@]}"; do
-            if [[ ! "$n" =~ ^[0-9]+$ ]] || (( n < 1 || n > ${#ORDER_PROPOSED[@]} )) \
-               || [[ " $_seen " == *" $n "* ]]; then
+            [[ "$n" =~ ^[0-9]+$ ]] || { _ok=0; break; }
+            # 10#: „08” to dla basha zła liczba ósemkowa — błąd rozwinięcia
+            # kończył cały instalator (audyt 2026-11-05, Z12).
+            n=$((10#$n))
+            if (( n < 1 || n > ${#ORDER_PROPOSED[@]} )) || [[ " $_seen " == *" $n "* ]]; then
                 _ok=0
                 break
             fi
@@ -349,7 +388,7 @@ else
             continue
         fi
         _reordered=()
-        for n in "${picks[@]}"; do
+        for n in $_seen; do
             _reordered+=("${ORDER_PROPOSED[$((n - 1))]}")
         done
         ORDER_PROPOSED=("${_reordered[@]}")
@@ -378,7 +417,14 @@ echo -e "     decades). Super+1..0 works on the focused monitor. A daemon"
 echo -e "     merges workspaces when a monitor is unplugged."
 echo ""
 while :; do
-    read -rp "  Choose mode [1/2]: " ws_choice
+    # Koniec wejścia (Ctrl-D, potok bez odpowiedzi) — to pytanie nie ma
+    # domyślnej, więc pętla kręciła się bez końca (audyt 2026-11-05, Z13).
+    # Kończymy jak Ctrl-C: trap sprząta nowe .dat, stare zostają na miejscu.
+    if ! read -rp "  Choose mode [1/2]: " ws_choice && [[ -z "$ws_choice" ]]; then
+        echo ""
+        echo -e "  ${RED}✗ No answer (input closed) — stopping, data/monitors/ left unchanged.${NC}"
+        exit 1
+    fi
     case "$ws_choice" in
         1) WS_MODE="shared";  break ;;
         2) WS_MODE="decades"; break ;;
@@ -527,7 +573,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         sel_aur=()
         for n in "${picks[@]}"; do
             [[ "$n" =~ ^[0-9]+$ ]] || continue
-            idx=$((n - 1))
+            idx=$((10#$n - 1))   # 10#: „08” nie jest liczbą ósemkową (Z12)
             (( idx >= 0 && idx < ${#ADD_NAMES[@]} )) || continue
             if [[ "${ADD_SRC[$idx]}" == "aur" ]]; then
                 sel_aur+=("${ADD_NAMES[$idx]}")
@@ -548,14 +594,31 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
             echo -e "  ${YELLOW}  (install/gpudrivers-installation.sh) or manually in /etc/pacman.conf.${NC}"
         fi
 
+        # Wynik sprawdzany (audyt 2026-11-05, Z3): jedna nieznana nazwa albo
+        # brak [multilib] anuluje CAŁĄ transakcję pacmana, a podsumowanie
+        # dotąd milczało. Przy porażce wypisujemy to, czego pacman -Qi nie
+        # widzi (wcześniej zainstalowane pakiety nie są porażką).
         if [[ ${#sel_pacman[@]} -gt 0 ]]; then
-            sudo pacman -S --needed "${sel_pacman[@]}"
+            if ! sudo pacman -S --needed "${sel_pacman[@]}"; then
+                add_missing=()
+                for p in "${sel_pacman[@]}"; do
+                    pacman -Qi "$p" &>/dev/null || add_missing+=("$p")
+                done
+                [[ ${#add_missing[@]} -gt 0 ]] || add_missing=("${sel_pacman[@]}")
+                echo -e "  ${RED}✗ pacman failed — not installed: ${add_missing[*]}${NC}"
+                echo -e "  ${RED}  One unknown name cancels the whole transaction; check the pacman output above.${NC}"
+                SUMMARY_SKIPPED+=("Additional pacman packages — installation FAILED: ${add_missing[*]} (retry: sudo pacman -S --needed ${add_missing[*]})")
+            fi
         fi
         if [[ ${#sel_aur[@]} -gt 0 ]]; then
             if command -v yay &>/dev/null; then
-                aur_install "${sel_aur[@]}"
+                if ! aur_install "${sel_aur[@]}"; then
+                    echo -e "  ${RED}✗ yay failed to install: ${sel_aur[*]}${NC}"
+                    SUMMARY_SKIPPED+=("Additional AUR packages — installation FAILED: ${sel_aur[*]} (retry: yay -S --needed ${sel_aur[*]})")
+                fi
             else
                 echo -e "  ${YELLOW}⚠ yay unavailable — skipping AUR packages: ${sel_aur[*]}${NC}"
+                SUMMARY_SKIPPED+=("Additional AUR packages skipped (no yay): ${sel_aur[*]}")
             fi
         fi
     fi
@@ -645,14 +708,28 @@ echo ""
 
 echo -e "${CYAN}[6.5] Optional drivers & kernel...${NC}"
 
+# Kod wyjścia każdego instalatora trafia do podsumowania (audyt 2026-11-05,
+# Z8: dotąd nieczytany, a baner ogłaszał pełny sukces). Kontrakt: 0 = gotowe
+# albo pominięte z wyboru, 2 = zainstalowane, ale wpisy bootowania trzeba
+# poprawić ręcznie (regenerate_bootloader: systemd-boot/nieznany), inny = porażka.
+run_driver_installer() {   # run_driver_installer <etykieta> <skrypt w install/>
+    local rc
+    bash "$ARCHENEMY_DIR/install/$2"; rc=$?
+    case "$rc" in
+        0) ;;
+        2) SUMMARY_SKIPPED+=("$1 — installed, but the boot entries need the manual steps printed above") ;;
+        *) SUMMARY_SKIPPED+=("$1 — installation FAILED (details above; retry: bash ~/archenemy/install/$2)") ;;
+    esac
+}
+
 read -rp "  Run CPU microcode installer? [y/N]: " ans
-[[ "$ans" =~ ^[Yy]$ ]] && bash "$ARCHENEMY_DIR/install/cpudrivers-installation.sh"
+[[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "CPU microcode" cpudrivers-installation.sh
 
 read -rp "  Run GPU drivers installer? [y/N]: " ans
-[[ "$ans" =~ ^[Yy]$ ]] && bash "$ARCHENEMY_DIR/install/gpudrivers-installation.sh"
+[[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "GPU drivers" gpudrivers-installation.sh
 
 read -rp "  Run kernel installer? [y/N]: " ans
-[[ "$ans" =~ ^[Yy]$ ]] && bash "$ARCHENEMY_DIR/install/kernel-install.sh"
+[[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "Kernel" kernel-install.sh
 
 echo ""
 
@@ -761,7 +838,9 @@ echo -e "  ${GREEN}✓ hardware-keys.lua ($HW_PROFILE)${NC}"
 # 8d. Zmienne środowiskowe GPU (wg wykrytej karty)
 GPU_KIND="unknown"
 if command -v lspci &>/dev/null; then
-    GPU_INFO=$(lspci 2>/dev/null | grep -Ei 'vga|3d|display')
+    # Klasa PCI 03xx (VGA/3D/display), jak w gpudrivers-installation.sh — grep
+    # 'vga|3d|display' po całym wierszu łapał adres PCI 3d:00.0 (audyt Z14).
+    GPU_INFO=$(lspci -d ::03xx 2>/dev/null)
     grep -qi 'nvidia' <<<"$GPU_INFO" && GPU_KIND="nvidia"
     [[ "$GPU_KIND" == "unknown" ]] && grep -qi 'amd\|radeon' <<<"$GPU_INFO" && GPU_KIND="amd"
     [[ "$GPU_KIND" == "unknown" ]] && grep -qi 'intel' <<<"$GPU_INFO" && GPU_KIND="intel"
@@ -918,10 +997,12 @@ seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
 #     pipewire; przepisuje je Super+A → [o] → 3) i local.conf (osobista) — stub
 #     tylko gdy pliku nie ma;
 #   - ~/.config/mpd → symlink do config/mpd, ale istniejący PRAWDZIWY katalog
-#     (albo ~/.mpdconf, ~/.mpd) zostaje nietknięty bez jawnego „y" — cudzy
-#     mpd.conf może wskazywać bibliotekę na NAS-ie i bazę budowaną godzinami;
+#     albo cudzy (także wiszący) link (albo ~/.mpdconf, ~/.mpd) zostaje
+#     nietknięty bez jawnego „y" — cudzy mpd.conf może wskazywać bibliotekę
+#     na NAS-ie i bazę budowaną godzinami;
 #   - usługa użytkownika włączana wyłącznie po pytaniu [y/N]; gdy mpd działa
 #     jako usługa SYSTEMOWA — tylko informacja (dwa mpd = konflikt portu/karty);
+#     włączony przez użytkownika mpd.socket = ostrzeżenie (port 6600 w sieci);
 #   - ~/.local/share/applications/ncmpcpp.desktop (wpis dla rofi drun i dla
 #     [p] autostart) kopiowany tylko gdy go nie ma.
 # Drugi bieg instalatora jest no-op (same „istnieje — nie ruszam").
@@ -957,35 +1038,69 @@ if command -v mpd >/dev/null 2>&1; then
     fi
 
     MPD_USER_DIR="$CONFIG_DIR/mpd"
-    if [[ -L "$MPD_USER_DIR" && "$(readlink -f "$MPD_USER_DIR")" == "$(readlink -f "$MPD_CONF_DIR")" ]]; then
+    # ✓ dopiero po odczycie linku (audyt 2026-11-05, Z11): wiszący symlink
+    # ~/.config/mpd umykał testowi -e, `ln -s` padał na istniejącej nazwie,
+    # a ✓ i SUMMARY_DONE i tak leciały — mpd czytał nie ten config. Wiszący
+    # link to też cudzy ~/.config/mpd, więc bez „y” go nie podmieniamy.
+    # `ln -T`: na prawdziwym katalogu, którego mv nie przeniósł, ln nie
+    # utworzy linku W ŚRODKU niego.
+    mpd_link_ok() {
+        [[ -L "$MPD_USER_DIR" && "$(readlink -f "$MPD_USER_DIR")" == "$(readlink -f "$MPD_CONF_DIR")" ]]
+    }
+    mpd_link_failed() {
+        echo -e "  ${RED}✗ ~/.config/mpd is not linked to config/mpd — mpd will not read archenemy's config.${NC}"
+        SUMMARY_SKIPPED+=("mpd config NOT linked: ln -sT $MPD_CONF_DIR $MPD_USER_DIR (move ~/.config/mpd away first if it exists)")
+    }
+    if mpd_link_ok; then
         echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (already linked)${NC}"
-    elif [[ -e "$MPD_USER_DIR" || -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]]; then
+    elif [[ -e "$MPD_USER_DIR" || -L "$MPD_USER_DIR" || -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]]; then
         echo -e "  ${YELLOW}⚠ You already have an mpd config (~/.config/mpd, ~/.mpdconf or ~/.mpd).${NC}"
+        [[ -L "$MPD_USER_DIR" && ! -e "$MPD_USER_DIR" ]] \
+            && echo -e "    ~/.config/mpd is a broken link (→ $(readlink "$MPD_USER_DIR"))."
         echo -e "    archenemy does NOT replace it automatically. You can replace it now (the old directory"
         echo -e "    will be kept as ~/.config/mpd.bak-<timestamp>) or manually later."
         read -rp "  Replace ~/.config/mpd with archenemy's config now (backup kept)? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            [[ -e "$MPD_USER_DIR" ]] && mv "$MPD_USER_DIR" "$MPD_USER_DIR.bak-$(date +%Y%m%d_%H%M%S)"
-            ln -s "$MPD_CONF_DIR" "$MPD_USER_DIR"
-            echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (previous kept as .bak)${NC}"
-            [[ -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]] && echo -e "  ${YELLOW}⚠ ~/.mpdconf / ~/.mpd are kept — mpd reads ~/.config/mpd/mpd.conf first.${NC}"
-            SUMMARY_DONE+=("mpd config linked (previous kept as .bak)")
+            [[ -e "$MPD_USER_DIR" || -L "$MPD_USER_DIR" ]] && mv "$MPD_USER_DIR" "$MPD_USER_DIR.bak-$(date +%Y%m%d_%H%M%S)"
+            ln -sT "$MPD_CONF_DIR" "$MPD_USER_DIR"
+            if mpd_link_ok; then
+                echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (previous kept as .bak)${NC}"
+                [[ -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]] && echo -e "  ${YELLOW}⚠ ~/.mpdconf / ~/.mpd are kept — mpd reads ~/.config/mpd/mpd.conf first.${NC}"
+                SUMMARY_DONE+=("mpd config linked (previous kept as .bak)")
+            else
+                mpd_link_failed
+            fi
         else
             echo -e "  ${YELLOW}⚠ Keeping your mpd config. The ncmpcpp theme still works;${NC}"
             echo -e "    the ncmpcpp visualizer needs a fifo output in your mpd.conf (see config/mpd/mpd.conf)."
             SUMMARY_SKIPPED+=("mpd: existing user config kept (archenemy's config/mpd not linked)")
         fi
     else
-        ln -s "$MPD_CONF_DIR" "$MPD_USER_DIR"
-        echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd${NC}"
-        SUMMARY_DONE+=("mpd config linked (~/.config/mpd → config/mpd)")
+        ln -sT "$MPD_CONF_DIR" "$MPD_USER_DIR"
+        if mpd_link_ok; then
+            echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd${NC}"
+            SUMMARY_DONE+=("mpd config linked (~/.config/mpd → config/mpd)")
+        else
+            mpd_link_failed
+        fi
     fi
 
     if systemctl is-enabled --quiet mpd.service 2>/dev/null || systemctl is-active --quiet mpd.service 2>/dev/null; then
         echo -e "  ${YELLOW}⚠ mpd runs as a SYSTEM service — skipping the user service${NC}"
         echo -e "    (two mpd instances conflict over port 6600 and the sound card). Left as it is."
         SUMMARY_SKIPPED+=("mpd user service (system-wide mpd is enabled)")
-    elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null || systemctl --user is-enabled --quiet mpd.socket 2>/dev/null; then
+    elif systemctl --user is-enabled --quiet mpd.socket 2>/dev/null || systemctl --user is-active --quiet mpd.socket 2>/dev/null; then
+        # mpd.socket z pakietu ma ListenStream=6600 (wszystkie interfejsy), a mpd
+        # aktywowany gniazdem pomija bind_to_address "localhost" z mpd.conf
+        # (src/Listen.cxx) — mpd bez hasła słucha w całej sieci, a instalator
+        # mówił „already enabled” (audyt 2026-11-05, S13). Wyboru użytkownika
+        # nie zmieniamy: mówimy wprost i podajemy komendę.
+        echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled: socket activation listens on port 6600 on ALL interfaces${NC}"
+        echo -e "    and ignores bind_to_address \"localhost\" from mpd.conf, so mpd (no password) is reachable"
+        echo -e "    from your network unless a firewall blocks the port. To keep it local:"
+        echo -e "    systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"
+        SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
+    elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null; then
         echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
     else
         read -rp "  Enable mpd as your user service now (systemctl --user enable --now mpd)? [y/N]: " ans
@@ -1200,16 +1315,32 @@ FIRST_WP=$(find "$ARCHENEMY_DIR/wallpapers" -type f \
     \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
     2>/dev/null | sort | head -n1)
 WP_RESULT="$(bash "$WALLPAPER_SWITCHER" --init "$FIRST_WP")"
-case "${WP_RESULT%%$'\n'*}" in
+# Przełącznik wypisuje wynik dopiero po zastosowaniu tapety (audyt 2026-11-05,
+# Z10: dawniej „initial” padało przed ustawieniem i tu leciało ✓). Szukamy
+# całego wiersza z wynikiem — na stdout może trafić też obce wyjście.
+# Log leży tam, gdzie pisze go przełącznik: prywatny katalog sesji
+# (lib/runtime-dir.sh, S12), nigdy wspólny /tmp; --existing, bo instalator
+# tylko go wskazuje. Bez katalogu przełącznik loguje do /dev/null.
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+WP_LOG="$(archenemy_runtime_dir --existing)/archenemy-hyprpaper-err.log" \
+    || WP_LOG="none, no private runtime directory"
+case "$(grep -x -m1 -E 'restored|initial|none|restored-failed|initial-failed' <<< "$WP_RESULT")" in
     restored)
         echo -e "  ${GREEN}✓ Wallpaper kept — your last choice restored.${NC}"
         SUMMARY_DONE+=("Wallpaper kept (last choice restored)") ;;
     initial)
         echo -e "  ${GREEN}✓ Initial wallpaper applied.${NC}"
         SUMMARY_DONE+=("Initial wallpaper applied") ;;
-    *)
+    restored-failed|initial-failed)
+        echo -e "  ${YELLOW}⚠ Wallpaper not shown — hyprpaper did not apply it. Log: $WP_LOG${NC}"
+        SUMMARY_SKIPPED+=("wallpaper — hyprpaper did not show it (log: $WP_LOG); pick one with Super+W after logging back in") ;;
+    none)
         echo -e "  ${YELLOW}⚠ No wallpapers found in wallpapers/ — use Super+W after adding some.${NC}"
         SUMMARY_SKIPPED+=("initial wallpaper (none in wallpapers/)") ;;
+    *)
+        echo -e "  ${YELLOW}⚠ Wallpaper not set — the wallpaper switcher gave no result.${NC}"
+        SUMMARY_SKIPPED+=("wallpaper — the switcher gave no result; pick one with Super+W") ;;
 esac
 echo ""
 
@@ -1319,7 +1450,32 @@ echo ""
 
 echo -e "${CYAN}[10] Optional configuration...${NC}"
 
-read -rp "Auto-configure UFW firewall? [y/N]: " ans
+# Działającej zapory nie ruszamy: ponowny bieg (zalecany po każdym pullu) po
+# „y” znów wołał `ufw default deny incoming` / `allow outgoing` i po cichu
+# nadpisywał polityki ustawione przez użytkownika (audyt 2026-11-05, S7).
+# Stan czyta `ufw status` (wymaga roota); bez ufw albo bez odczytu = pytanie.
+UFW_STATUS=""
+command -v ufw >/dev/null 2>&1 && UFW_STATUS="$(sudo ufw status verbose 2>/dev/null)"
+if grep -q '^Status: active' <<< "$UFW_STATUS"; then
+    echo -e "  ${GREEN}✓ UFW firewall already active — your policies and rules are left as they are.${NC}"
+    UFW_DEFAULTS="$(sed -n 's/^Default: //p' <<< "$UFW_STATUS")"
+    [[ -n "$UFW_DEFAULTS" ]] && echo "    Default: $UFW_DEFAULTS"
+    if ! systemctl is-enabled --quiet ufw 2>/dev/null; then
+        echo -e "  ${YELLOW}⚠ ufw.service is not enabled — the firewall will be off after a reboot.${NC}"
+        SUMMARY_SKIPPED+=("UFW is active now but does not start at boot: sudo systemctl enable ufw")
+    fi
+    ans=n
+else
+    # Skutki włączenia wprost: domyślne polityki ORAZ /etc/ufw/sysctl.conf,
+    # który ufw nakłada przy starcie (rp_filter=1 zamiast 2 z systemd,
+    # accept_redirects=0) — plan bezpieczeństwa 2026-11-14 (Y1).
+    echo "  UFW firewall: blocks incoming connections, outgoing stay allowed. Starting it"
+    echo "  also applies /etc/ufw/sysctl.conf (strict reverse-path filtering rp_filter=1,"
+    echo "  ICMP redirects ignored), which some VPN setups do not like. Serving anything"
+    echo "  to your LAN (Steam Remote Play and LAN game transfers, KDE Connect, LocalSend)"
+    echo "  stops working until you allow it with: sudo ufw allow ..."
+    read -rp "Enable the UFW firewall with these defaults? [y/N]: " ans
+fi
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     # Każdy krok sprawdzany osobno — dotąd „✓ UFW configured" leciało nawet
     # gdy pacman/ufw/systemctl zawiodły (audyt 2026-09-25). Sukces = ufw
@@ -1432,9 +1588,21 @@ if [[ ${#SUMMARY_SKIPPED[@]} -gt 0 ]]; then
 fi
 echo ""
 
-echo -e "${BLUE}"
-echo "  ┌─────────────────────────────────────┐"
-echo "  │   Everything is set up. Have fun!   │"
+# Baner zależy od listy pominięć (audyt 2026-11-05, Z8): „Everything is set
+# up” tylko wtedy, gdy nic nie trafiło do SUMMARY_SKIPPED — dotąd leciał
+# także po nieudanym pacmanie, sterowniku czy jądrze. Tekst w ramce tylko
+# ASCII: printf wyrównuje bajtami.
+if [[ ${#SUMMARY_SKIPPED[@]} -eq 0 ]]; then
+    echo -e "${BLUE}"
+    echo "  ┌─────────────────────────────────────┐"
+    echo "  │   Everything is set up. Have fun!   │"
+else
+    echo -e "${YELLOW}"
+    echo "  ┌─────────────────────────────────────┐"
+    echo "  │   Setup finished with warnings:     │"
+    printf '  │   %-34s│\n' "${#SUMMARY_SKIPPED[@]} item(s) skipped or failed," \
+        "see the summary above."
+fi
 echo "  │                                     │"
 echo "  │   If everything is working,         │"
 echo "  │   leave a star on GitHub :)         │"
@@ -1448,6 +1616,13 @@ echo -e "${NC}"
 # spod strażnika roota.
 sudo -k 2>/dev/null
 
+# Pasek, tapetę, powiadomienia, OSD i schowek rice uruchamia w
+# hl.on("hyprland.start"), a reload tego zdarzenia nie wywołuje. Po pierwszej
+# instalacji (sesja z domyślnym configiem) pełny wygląd daje dopiero ponowne
+# zalogowanie — dotąd nic o tym nie mówiło (audyt 2026-11-05, Z9).
+echo -e "${YELLOW}After the first install, log out and back in once: the bar, wallpaper,${NC}"
+echo -e "${YELLOW}notifications and clipboard start with the Hyprland session, a reload does not start them.${NC}"
+echo ""
 read -rp "Reload Hyprland now? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     # hyprctl reload wypisuje „ok" przy sukcesie; błąd configu lub brak

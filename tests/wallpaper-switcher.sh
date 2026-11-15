@@ -336,6 +336,24 @@ printf 'desc:%s=%s\n' "$DESC_HDMI" "$WP/skasowana.png" > "$A/data/wallpaper.dat"
 boot_daemon_with ""
 out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
 check "--init ze stanem na skasowany plik → initial" '[[ "$out" == *initial* && "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]]'
+# Z10 (audyt 2026-11-05): „initial” leciało PRZED ustawieniem tapety, więc
+# install.sh meldował „✓ Initial wallpaper applied”, choć hyprpaper nic nie
+# pokazał. Demon, który nie wstaje (IPC milczy, restart nie pomaga): wynik
+# dopiero po apply_ipc, z dopiskiem -failed.
+mkdir -p "$T/bin-deadpaper"
+printf '#!/bin/bash\necho "DAEMON dead" >> "${MOCK_LOG:-/dev/null}"\nexit 1\n' > "$T/bin-deadpaper/hyprpaper"
+chmod +x "$T/bin-deadpaper/hyprpaper"
+setup_dat a
+rm -f "$MOCK_HYPRPAPER_STATE"
+out=$(PATH="$T/bin-deadpaper:$PATH" MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init, hyprpaper nie wstaje → initial-failed" '[[ "$out" == initial-failed ]]'
+printf 'desc:%s=%s\n' "$DESC_HDMI" "$WP/nowa-v1.png" > "$A/data/wallpaper.dat"
+out=$(PATH="$T/bin-deadpaper:$PATH" MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init ze stanem, hyprpaper nie wstaje → restored-failed" '[[ "$out" == restored-failed ]]'
+setup_dat a
+boot_daemon_with ""
+out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init: tapeta na ekranie → dokładnie initial" '[[ "$out" == initial ]]'
 
 echo "== K: wszystkie monitory, tapeta dither-flux — para z nazwy wybranego pliku (A7)"
 # generated/ trzyma kilka form i rozdzielczości w jednym katalogu; dawne
