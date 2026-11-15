@@ -411,7 +411,9 @@ on a real machine. Verification has three levels:
    new consumer needs all three. **`bash tests/run-all.sh` runs every
    suite** (updater on real git, rice switcher, per-rice autostart on a
    fake `hl` API, GPU installer on a fake `/etc`, repo hygiene, …) — keep
-   it green. In suites with `pipefail`, capture a script's output into a
+   it green. Each suite gets `RUN_ALL_TIMEOUT` seconds (default 600) and
+   is then killed and reported as hung, so a suite must not wait for input
+   (its stdin is `/dev/null`). In suites with `pipefail`, capture a script's output into a
    variable instead of `… | grep -q` (SIGPIPE turns a pass into a fail).
 3. **The real test** — `install.sh` and rice switching (`Super+T`) need a
    live Arch + Hyprland machine. If you don't have one, **say so

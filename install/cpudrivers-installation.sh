@@ -16,7 +16,13 @@ source "$(dirname "$(readlink -f "$0")")/bootloader.sh"
 
 # ─── DETECT CPU VENDOR ────────────────────────────────────────────────────────
 
-VENDOR="$(grep -m1 '^vendor_id' /proc/cpuinfo | awk '{print $NF}')"
+# Hak testowy (tests/bootloader.sh): plik atrapy zamiast /proc/cpuinfo —
+# TYLKO przy ARCHENEMY_TEST=1 (jak haki instalatora GPU, K10).
+CPUINFO=/proc/cpuinfo
+if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
+    CPUINFO="${ARCHENEMY_CPUINFO:-/proc/cpuinfo}"
+fi
+VENDOR="$(grep -m1 '^vendor_id' "$CPUINFO" | awk '{print $NF}')"
 echo -e "${YELLOW}Detected CPU vendor: ${VENDOR:-unknown}${NC}"
 
 case "$VENDOR" in
