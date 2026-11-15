@@ -160,6 +160,9 @@ selftest "brak [multilib] lokalnie → skip, nie ✗" "? skip: steam" ARCHENEMY_
 selftest "brak [multilib] → skip także dla lib32-*" "? skip: lib32-gamemode" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_MULTILIB_MISSING=1
 selftest "brak [multilib]: literówka spoza multilib → ✗, nie skip" "✗ pacman: hyprlandd" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_MULTILIB_MISSING=1
 selftest "z [multilib]: literówka → ✗" "✗ pacman: hyprlandd" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json"
+# Nazwy z osobnego `pacman -Slq multilib` liczą się jako oficjalne (VPS i CI są
+# bez [multilib], więc ich dołączenie do repo_names pilnuje tylko ten autotest).
+selftest "z [multilib]: steam z repo multilib → ✓" "✓ pacman: steam" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json"
 # shellcheck disable=SC2016  # dosłowny tekst z install.sh, nie rozwinięcie zmiennej
 if grep -qF 'case "$p" in steam|lib32-*)' "$REPO/install/install.sh"; then ok "autotest: wzorzec nazw [multilib] taki sam jak w install.sh [5]"
 else fail "autotest: install.sh [5] zmienił wzorzec nazw [multilib] — zsynchronizuj is_multilib_name"; fi
