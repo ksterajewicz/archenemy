@@ -366,7 +366,9 @@ archenemy/
 │                                     #   install-requirements.sh — install.sh step [5] on a fake pacman with
 │                                     #   provides: a package counts as installed only under its own name.
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
-│                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip".
+│                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip";
+│                                     #   a broken or killed shellcheck (output not in gcc format, xargs exit
+│                                     #   other than 0/123) → ✗; `--selftest` runs only its fake-shellcheck autotest.
 │                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
 │                                     #   over the whole history (when installed; otherwise "skip").
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
