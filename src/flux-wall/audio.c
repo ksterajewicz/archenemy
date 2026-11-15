@@ -363,6 +363,15 @@ static pa_simple *open_stream(struct audio *a, const char **used) {
     return NULL;
 }
 
+/* Pauza przed kolejną próbą: `*backoff` sekund w krokach po 100 ms (audio_stop
+ * czeka na wątek tylko 200 ms), potem podwojenie — do ~30 s. */
+static void retry_pause(struct audio *a, int *backoff) {
+    for (int i = 0; i < *backoff * 10 && a->running; i++) {
+        struct timespec ts = { 0, 100000000L }; nanosleep(&ts, NULL);
+    }
+    if (*backoff < 30) *backoff *= 2;
+}
+
 static void run_pulse(struct audio *a) {
     int backoff = 1;
     bool reported = false;
@@ -372,14 +381,11 @@ static void run_pulse(struct audio *a) {
         if (!s) {
             set_live(a, false);
             if (!reported) { logv(a, "brak serwera dźwięku — ponawiam (backoff do 30 s)"); reported = true; }
-            for (int i = 0; i < backoff * 10 && a->running; i++) {
-                struct timespec ts = { 0, 100000000L }; nanosleep(&ts, NULL);
-            }
-            if (backoff < 30) backoff *= 2;
+            retry_pause(a, &backoff);
             continue;
         }
         logv(a, "strumień z %s", used);
-        reported = false; backoff = 1;
+        reported = false;
         int err = 0;
         while (a->running) {
             /* Blokuje, gdy sink śpi (nic nie gra) — wtedy snapshot się starzeje,
@@ -388,10 +394,16 @@ static void run_pulse(struct audio *a) {
                 logv(a, "strumień zerwany: %s", pa_strerror(err));
                 break;
             }
+            /* Backoff wraca do 1 s dopiero po danych, nie po samym otwarciu:
+             * strumień zrywany zaraz po połączeniu czeka coraz dłużej. */
+            backoff = 1;
             push_hop(a);
         }
         pa_simple_free(s);
         set_live(a, false);
+        /* Po zerwanym strumieniu też pauza — wcześniej pętla od razu otwierała
+         * nowy i biła w serwer bez przerwy (audyt 2026-11-05, F8). */
+        if (a->running) retry_pause(a, &backoff);
     }
 }
 

@@ -18,9 +18,12 @@
  * bez końca — stęchłe wartości gasi audio_features_age() po stronie renderu.
  *
  * Nigdy mikrofon: urządzenie to zawsze MONITOR sinku (`@DEFAULT_MONITOR@`
- * albo `<sink>.monitor` z wrappera). Brak serwera = praca bez audio, backoff.
+ * albo `<sink>.monitor` z wrappera). Brak serwera albo zerwany strumień =
+ * praca bez audio i ponowienie po pauzie (1 s, podwajanej do ~30 s; wraca do
+ * 1 s dopiero po odebranych danych).
  *
- * Funkcje czyste (bez wątku, bez libpulse) są testowane w test.c.
+ * Funkcje czyste (bez wątku, bez libpulse) są testowane w test.c; wątek —
+ * z plikiem (`--audio-file`) i z atrapą libpulse (zerwany strumień).
  */
 #ifndef FLUX_AUDIO_H
 #define FLUX_AUDIO_H

@@ -1,7 +1,8 @@
 /*
  * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL).
  * Budowane przez `make test`: main.c wchodzi z main() przemianowanym na
- * flux_wall_main, więc tu jest własny main().
+ * flux_wall_main, więc tu jest własny main(). libpulse-simple zastępuje
+ * atrapa niżej (pa_simple_*) — testy nie łączą się z serwerem dźwięku.
  */
 #define _POSIX_C_SOURCE 200809L
 #include <stdbool.h>
@@ -16,7 +17,10 @@
 #include "audio.h"
 #define TEST_PI 3.14159265f
 #include <math.h>
+#include <stdatomic.h>
 #include <time.h>
+#include <pulse/error.h>
+#include <pulse/simple.h>
 bool  parse_hex_color(const char *hex, float out[3]);
 bool  parse_palette(const char *spec, struct palette *p);
 float battery_detail(const char *power_supply_dir);
@@ -27,6 +31,27 @@ static int failures = 0;
                               else { printf("  FAIL %s\n", msg); failures++; } } while (0)
 
 static bool near(float a, float b) { return a - b < 0.002f && b - a < 0.002f; }
+
+/* Atrapa libpulse-simple: definicje w tym pliku wygrywają przy linkowaniu
+ * z biblioteką, więc wątek audio (audio.c, run_pulse) w testach NIGDY nie
+ * łączy się z prawdziwym serwerem dźwięku. Strumień otwiera się zawsze,
+ * a każdy odczyt od razu się zrywa — jak serwer, który pada zaraz po
+ * połączeniu. `fake_pa_opens` liczy próby połączenia. */
+static atomic_int fake_pa_opens;
+static char fake_pa_stream;
+pa_simple *pa_simple_new(const char *server, const char *name, pa_stream_direction_t dir, const char *dev,
+                         const char *stream_name, const pa_sample_spec *ss, const pa_channel_map *map,
+                         const pa_buffer_attr *attr, int *error) {
+    (void)server; (void)name; (void)dir; (void)dev; (void)stream_name; (void)ss; (void)map; (void)attr; (void)error;
+    atomic_fetch_add(&fake_pa_opens, 1);
+    return (pa_simple *)(void *)&fake_pa_stream;
+}
+int pa_simple_read(pa_simple *s, void *data, size_t bytes, int *error) {
+    (void)s; (void)data; (void)bytes;
+    if (error) *error = PA_ERR_CONNECTIONTERMINATED;
+    return -1;
+}
+void pa_simple_free(pa_simple *s) { (void)s; }
 
 static void write_file(const char *path, const char *content) {
     FILE *f = fopen(path, "w");
@@ -400,6 +425,28 @@ int main(void) {
         CHECK(snap.live && snap.bass > 0.5f, "po 0.4 s: bas 80 Hz widoczny mimo uszkodzonych próbek");
         audio_stop(au);
         remove(fpath);
+    }
+
+    /* Audyt 2026-11-05, F8: po udanym otwarciu backoff wracał do 1, a po
+     * zerwanym odczycie pętla od razu otwierała strumień ponownie — serwer,
+     * który zrywa strumień zaraz po połączeniu, dostawał próby bez przerwy.
+     * Atrapa libpulse wyżej: każdy strumień pada na pierwszym odczycie. */
+    printf("audio: zerwany strumień → pauza przed ponowieniem (atrapa libpulse)\n");
+    {
+        atomic_store(&fake_pa_opens, 0);
+        struct audio *au = audio_start(NULL, NULL, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct timespec ts = { 0, 300000000L }; nanosleep(&ts, NULL);
+        int opens = atomic_load(&fake_pa_opens);
+        printf("       prób połączenia po 0.3 s: %d\n", opens);
+        CHECK(opens == 1, "po 0.3 s: jedna próba (pauza ~1 s po zerwaniu, nie pętla bez przerwy)");
+        ts = (struct timespec){ 1, 200000000L }; nanosleep(&ts, NULL);
+        opens = atomic_load(&fake_pa_opens);
+        printf("       prób połączenia po 1.5 s: %d\n", opens);
+        CHECK(opens == 2, "po 1.5 s: dwie próby (ponowienie po ~1 s, następna pauza ~2 s)");
+        struct audio_features snap; audio_snapshot(au, &snap);
+        CHECK(!snap.live, "zerwany strumień → live = false");
+        audio_stop(au);
     }
 
     printf("CLI: --dither / --no-dither (uniform dither)\n");
