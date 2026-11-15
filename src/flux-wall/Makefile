@@ -7,7 +7,7 @@
 #   make            zbuduj build/flux-wall
 #   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio,
 #                   wątek audio z pliku i z atrapy libpulse — bez serwera dźwięku,
-#                   kody wyjścia CLI 1 i 2, decyzje po błędach EGL;
+#                   kody wyjścia CLI 1 i 2, decyzje po błędach EGL, czyste decyzje main.c z logic.h;
 #                   sekcje GL silnika na EGL surfaceless: --once po zmianie rozmiaru, błędny shader — bez EGL pomijane)
 #   make tools      build/offscreen — klatki animacji do PNG bez ekranu (narzędzie dev)
 #   make clean
@@ -43,17 +43,18 @@ $(BUILD)/%-client-protocol.h: $(PROTO)/%.xml | $(BUILD)
 # audio.c = analiza dźwięku z monitora wyjścia (libpulse-simple + pthread).
 # util.h = zegar monotoniczny i odczyt pliku (static inline, wspólne z tools/).
 # recovery.h = decyzje po błędach EGL i przerwy ponowień (static inline, testy w test.c).
-$(BUILD)/flux-wall: main.c engine.c engine.h audio.c audio.h util.h recovery.h $(PROTO_C) $(PROTO_H) | $(BUILD)
+# logic.h = pozostałe czyste decyzje main.c: bufor ze skali, tempo klatek, timeout poll, audio (jak recovery.h).
+$(BUILD)/flux-wall: main.c engine.c engine.h audio.c audio.h util.h recovery.h logic.h $(PROTO_C) $(PROTO_H) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(BUILD) -o $@ main.c engine.c audio.c $(PROTO_C) $(LDLIBS) -lm -lpthread
 
 # Testy funkcji czystych (paleta, bateria) bez Waylanda; jedna sekcja GL na EGL
 # surfaceless (bez EGL pomijana) — patrz test.c.
 # main.c kompilowany OSOBNO z main() przemianowanym na flux_wall_main; test.c
 # ma własny main(). Jedna komenda z -Dmain dla obu plików przemianowałaby oba.
-$(BUILD)/main-under-test.o: main.c engine.h audio.h util.h recovery.h $(PROTO_H) | $(BUILD)
+$(BUILD)/main-under-test.o: main.c engine.h audio.h util.h recovery.h logic.h $(PROTO_H) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(BUILD) -Dmain=flux_wall_main -c -o $@ main.c
 
-$(BUILD)/flux-wall-test: test.c engine.c engine.h audio.c audio.h util.h recovery.h $(BUILD)/main-under-test.o $(PROTO_C) | $(BUILD)
+$(BUILD)/flux-wall-test: test.c engine.c engine.h audio.c audio.h util.h recovery.h logic.h $(BUILD)/main-under-test.o $(PROTO_C) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(BUILD) -o $@ test.c engine.c audio.c $(BUILD)/main-under-test.o $(PROTO_C) $(LDLIBS) -lm -lpthread
 
 test: $(BUILD)/flux-wall-test

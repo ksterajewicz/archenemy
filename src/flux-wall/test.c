@@ -1,6 +1,7 @@
 /*
  * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL),
- * CLI binarki (kody wyjścia 1 i 2 — run_cli niżej), wątek audio z pliku
+ * czyste decyzje main.c (recovery.h, logic.h), CLI binarki (kody wyjścia
+ * 1 i 2 — run_cli niżej), wątek audio z pliku
  * i z atrapy libpulse (run_pulse, open_stream) oraz sekcje GL na EGL
  * surfaceless (silnik bez Waylanda: --once po zmianie rozmiaru, błędny
  * shader; bez EGL — „POMINIĘTO” w wyjściu, nie błąd).
@@ -20,6 +21,7 @@
 #include "engine.h"
 #include "audio.h"
 #include "recovery.h"
+#include "logic.h"
 #define TEST_PI 3.14159265f
 #include <math.h>
 #include <pthread.h>
@@ -1020,6 +1022,73 @@ int main(void) {
         struct flux_ctx_guard k = {0};
         flux_ctx_lost_recover(&k, 0.0); flux_ctx_lost_recover(&k, 1.0); flux_ctx_lost_recover(&k, 2.0);
         CHECK(flux_ctx_lost_recover(&k, 60.0), "okno mija 60 s po pierwszej utracie → licznik od nowa");
+    }
+
+    /* Decyzje main.c bez kompozytora (logic.h): main.c tylko je wykonuje. */
+    printf("logic: rozmiar bufora ze skali monitora\n");
+    {
+        int32_t w = 0, h = 0;
+        bool frac = flux_buffer_size(1920, 1080, 1, 150, true, &w, &h);
+        CHECK(frac && w == 2400 && h == 1350, "skala 1.25 (150/120) z viewportem → bufor 2400x1350, ułamkowa");
+        frac = flux_buffer_size(1536, 864, 2, 150, true, &w, &h);
+        CHECK(frac && w == 1920 && h == 1080, "skala ułamkowa wygrywa ze skalą całkowitą wl_output (2)");
+        flux_buffer_size(1707, 960, 1, 180, true, &w, &h);
+        CHECK(w == 2561 && h == 1440, "1707 × 1.5 = 2560.5 → 2561 — zaokrąglenie do najbliższego piksela (+60/120)");
+        flux_buffer_size(1001, 1, 1, 210, true, &w, &h);
+        CHECK(w == 1752 && h == 2, "1001 × 1.75 = 1751.75 → 1752, 1 × 1.75 → 2 (nie obcięte w dół)");
+        flux_buffer_size(1001, 1, 1, 126, true, &w, &h);
+        CHECK(w == 1051 && h == 1, "1001 × 1.05 = 1051.05 → 1051, 1 × 1.05 → 1 (nie w górę)");
+        frac = flux_buffer_size(1920, 1080, 2, 150, false, &w, &h);
+        CHECK(!frac && w == 3840 && h == 2160, "bez viewportu skala ułamkowa nieużyta → całkowita 2");
+        frac = flux_buffer_size(1920, 1080, 1, 0, true, &w, &h);
+        CHECK(!frac && w == 1920 && h == 1080, "viewport, ale skala ułamkowa nieznana (0) → całkowita 1");
+        CHECK(flux_output_scale(2) == 2 && flux_output_scale(0) == 1 && flux_output_scale(-3) == 1,
+              "wl_output.scale niedodatnia → 1");
+        CHECK(flux_bind_version(3, 4) == 3 && flux_bind_version(4, 4) == 4 && flux_bind_version(6, 4) == 4,
+              "wersja globala: oferowana, najwyżej obsługiwana");
+        CHECK(flux_output_selected(NULL, "DP-1") && flux_output_selected("DP-1", "DP-1") &&
+              !flux_output_selected("DP-1", "HDMI-A-1") && !flux_output_selected("DP-1", "DP-10"),
+              "-o: bez nazwy wszystkie monitory, z nazwą tylko ten (dokładnie)");
+    }
+
+    printf("logic: tempo klatek i timeout poll()\n");
+    {
+        CHECK(near((float)flux_frame_wait(30, 100.010, 100.0), (float)(1.0 / 30 - 0.010)),
+              "-f 30: 10 ms po klatce czeka resztę okresu (23,3 ms), nie cały okres");
+        CHECK(flux_frame_wait(30, 100.034, 100.0) <= 0, "-f 30: po 34 ms można rysować");
+        CHECK(near((float)flux_frame_wait(0, 100.030, 100.0), 0.07f), "bez limitu fps: zaległa klatka po 100 ms");
+        CHECK(flux_frame_wait(1000, 100.002, 100.0) < 0, "-f 1000: po 2 ms od razu");
+        CHECK(flux_poll_timeout(-1, 0.0233) == 24, "jedyny monitor: reszta okresu w górę do ms (23,3 → 24)");
+        CHECK(flux_poll_timeout(-1, 0.0) == 1 && flux_poll_timeout(-1, -0.5) == 1,
+              "termin już minął → 1 ms, nigdy 0 ani ujemny (bez kręcenia pętli)");
+        CHECK(flux_poll_timeout(24, 0.005) == 5 && flux_poll_timeout(5, 0.024) == 5,
+              "kilka monitorów → najkrótsze czekanie");
+        CHECK(flux_poll_timeout(-1, 30.0) == 30000, "ponowienie powierzchni za 30 s → 30000 ms");
+        CHECK(!flux_battery_due(false, 1000.0, 0.0), "bez --battery nigdy nie czyta baterii");
+        CHECK(!flux_battery_due(true, 129.0, 100.0) && flux_battery_due(true, 130.5, 100.0),
+              "--battery: odczyt dopiero po 30 s od poprzedniego");
+        float d = 0.2f;
+        d = flux_detail_step(d, 1.0f);
+        CHECK(near(d, 0.216f), "szczegółowość: krok to 2 % różnicy (0.2 → 0.216), bez skoku");
+        for (int i = 0; i < 2000; i++) d = flux_detail_step(d, 1.0f);
+        CHECK(d == 1.0f, "szczegółowość dochodzi DOKŁADNIE do celu (różnica < 0.002 → cel)");
+        CHECK(flux_detail_step(1.0f, 0.4f) < 1.0f && flux_detail_step(1.0f, 0.4f) > 0.98f,
+              "szczegółowość w dół też płynnie");
+        CHECK(flux_connection_closed(EPIPE) && flux_connection_closed(ECONNRESET) &&
+              !flux_connection_closed(EPROTO) && !flux_connection_closed(0),
+              "EPIPE/ECONNRESET = kompozytor zamknął połączenie (kod 0), inny błąd = kod 2");
+    }
+
+    printf("logic: start wątku audio\n");
+    {
+        CHECK(flux_audio_mode(false, false, false, false) == FLUX_AUDIO_OFF,
+              "animacja bez `#pragma flux audio 1` → bez nasłuchu");
+        CHECK(flux_audio_mode(true, false, false, false) == FLUX_AUDIO_START, "wizualizacja muzyki → wątek audio");
+        CHECK(flux_audio_mode(false, true, false, false) == FLUX_AUDIO_START, "--audio-file wymusza audio");
+        CHECK(flux_audio_mode(true, false, true, false) == FLUX_AUDIO_SKIPPED &&
+              flux_audio_mode(true, true, false, true) == FLUX_AUDIO_SKIPPED,
+              "--once i --no-audio → nigdy wątku, także z --audio-file");
+        CHECK(flux_audio_mode(false, false, true, true) == FLUX_AUDIO_OFF, "--once bez audio → OFF (bez logu „pominięte”)");
     }
 
     /* --once (tapeta statyczna) liczy rozgrzewkę przed jedyną klatką. Zmiana

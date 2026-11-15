@@ -68,6 +68,7 @@
 #include "audio.h"
 #include "util.h"       /* flux_now_seconds, flux_read_file — wspólne z audio.c i tools/offscreen.c */
 #include "recovery.h"   /* decyzje po błędach EGL i przerwy ponowień — testowane w test.c */
+#include "logic.h"      /* pozostałe czyste decyzje (skala, tempo klatek, audio) — testowane w test.c */
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
 
@@ -397,12 +398,9 @@ static void render_output(struct output *o) {
 }
 
 /* Ile sekund brakuje TEMU monitorowi do następnej klatki z `needs_frame`
- * (<= 0 = można rysować): przy limicie -f reszta okresu, bez limitu
- * (klatka zaległa tylko po nieudanym EGL) ponowienie po 100 ms. */
+ * (<= 0 = można rysować) — logic.h: flux_frame_wait. */
 static double frame_wait(const struct output *o, double now) {
-    const struct state *s = o->state;
-    double min_dt = s->cfg.fps > 0 ? 1.0 / s->cfg.fps : 0.1;
-    return min_dt - (now - o->last_render);
+    return flux_frame_wait(o->state->cfg.fps, now, o->last_render);
 }
 
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time_ms) {
@@ -460,23 +458,21 @@ static void output_apply_size(struct output *o) {
     if (o->logical_w <= 0 || o->logical_h <= 0) return;
 
     int32_t pw, ph;
-    if (o->viewport && o->frac_scale120) {
+    bool fractional = flux_buffer_size(o->logical_w, o->logical_h, o->scale, o->frac_scale120,
+                                       o->viewport != NULL, &pw, &ph);
+    if (fractional) {
         /* skala ułamkowa: bufor w pikselach fizycznych, viewport → rozmiar logiczny */
-        pw = (int32_t)((o->logical_w * o->frac_scale120 + 60) / 120);
-        ph = (int32_t)((o->logical_h * o->frac_scale120 + 60) / 120);
         wp_viewport_set_destination(o->viewport, o->logical_w, o->logical_h);
         wl_surface_set_buffer_scale(o->surface, 1);
     } else {
-        pw = o->logical_w * o->scale;
-        ph = o->logical_h * o->scale;
         wl_surface_set_buffer_scale(o->surface, o->scale);
     }
     if (pw <= 0 || ph <= 0) return;
     bool changed = (pw != o->width || ph != o->height);
     o->width = pw; o->height = ph;
     logv(s, "%s: %dx%d logicznie, skala %s%.3f → bufor %dx%d px", o->name, o->logical_w, o->logical_h,
-         (o->viewport && o->frac_scale120) ? "ułamkowa " : "całkowita ",
-         (o->viewport && o->frac_scale120) ? o->frac_scale120 / 120.0 : (double)o->scale, pw, ph);
+         fractional ? "ułamkowa " : "całkowita ",
+         fractional ? o->frac_scale120 / 120.0 : (double)o->scale, pw, ph);
 
     if (!o->egl_window) {
         o->egl_window = wl_egl_window_create(o->surface, pw, ph);
@@ -568,7 +564,7 @@ static const struct zwlr_layer_surface_v1_listener layer_listener = {
 static void output_create_surface(struct output *o) {
     struct state *s = o->state;
     if (o->surface) return;
-    if (s->cfg.output_name && strcmp(s->cfg.output_name, o->name) != 0) {
+    if (!flux_output_selected(s->cfg.output_name, o->name)) {
         logv(s, "%s: pomijam (wybrano %s)", o->name, s->cfg.output_name);
         return;
     }
@@ -662,7 +658,7 @@ static void out_done(void *data, struct wl_output *w) {
 static void out_scale(void *data, struct wl_output *w, int32_t factor) {
     (void)w;
     struct output *o = data;
-    o->scale = factor > 0 ? factor : 1;
+    o->scale = flux_output_scale(factor);
 }
 static void out_name(void *data, struct wl_output *w, const char *name) {
     (void)w;
@@ -682,9 +678,9 @@ static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
                        const char *iface, uint32_t version) {
     struct state *s = data;
     if (strcmp(iface, wl_compositor_interface.name) == 0) {
-        s->compositor = wl_registry_bind(reg, name, &wl_compositor_interface, version < 4 ? version : 4);
+        s->compositor = wl_registry_bind(reg, name, &wl_compositor_interface, flux_bind_version(version, 4));
     } else if (strcmp(iface, zwlr_layer_shell_v1_interface.name) == 0) {
-        s->layer_shell = wl_registry_bind(reg, name, &zwlr_layer_shell_v1_interface, version < 4 ? version : 4);
+        s->layer_shell = wl_registry_bind(reg, name, &zwlr_layer_shell_v1_interface, flux_bind_version(version, 4));
     } else if (strcmp(iface, wp_viewporter_interface.name) == 0) {
         s->viewporter = wl_registry_bind(reg, name, &wp_viewporter_interface, 1);
     } else if (strcmp(iface, wp_fractional_scale_manager_v1_interface.name) == 0) {
@@ -697,7 +693,7 @@ static void reg_global(void *data, struct wl_registry *reg, uint32_t name,
         o->scale = 1;
         snprintf(o->name, sizeof o->name, "output-%u", name);
         /* v4 daje zdarzenie `name` (potrzebne do -o); starsze wersje — sama skala. */
-        o->version = version < 4 ? version : 4;
+        o->version = flux_bind_version(version, 4);
         o->wl_output = wl_registry_bind(reg, name, &wl_output_interface, o->version);
         wl_output_add_listener(o->wl_output, &output_listener, o);
         o->next = s->outputs;
@@ -733,21 +729,18 @@ static const struct wl_registry_listener registry_listener = {
 static volatile sig_atomic_t stop_requested;
 static void on_stop_signal(int sig) { stop_requested = sig; }
 
-/* Normalne zamknięcie połączenia przez kompozytor (wylogowanie, restart
- * kompozytora) — to nie jest błąd, kończymy kodem 0. */
-static bool connection_closed(int err) { return err == EPIPE || err == ECONNRESET; }
+/* Normalne zamknięcie połączenia przez kompozytor = kod 0 (logic.h). */
+static bool connection_closed(int err) { return flux_connection_closed(err); }
 
 static void update_detail(struct state *s) {
     double t = flux_now_seconds();
-    if (s->cfg.battery && t - s->last_battery_poll > 30.0) {
+    if (flux_battery_due(s->cfg.battery, t, s->last_battery_poll)) {
         s->detail_target = battery_detail("/sys/class/power_supply");
         s->last_battery_poll = t;
         logv(s, "bateria → detail cel %.2f", s->detail_target);
     }
     /* Płynne dojście do celu — skok szczegółowości byłby widoczny. */
-    float d = s->detail_target - s->detail_current;
-    if (d > 0.002f || d < -0.002f) s->detail_current += d * 0.02f;
-    else s->detail_current = s->detail_target;
+    s->detail_current = flux_detail_step(s->detail_current, s->detail_target);
 }
 
 static void main_loop(struct state *s) {
@@ -769,9 +762,7 @@ static void main_loop(struct state *s) {
                 if (o->needs_frame) wait = frame_wait(o, now);
                 else if (o->recreate) wait = flux_retry_wait(&o->retry, now);
                 else continue;
-                int ms = (int)ceil(wait * 1000.0);
-                if (ms < 1) ms = 1;
-                if (timeout < 0 || ms < timeout) timeout = ms;
+                timeout = flux_poll_timeout(timeout, wait);
             }
         }
         int r = poll(&pfd, 1, timeout);
@@ -986,13 +977,14 @@ int main(int argc, char **argv) {
         char perr[256];
         flux_params_parse(s.frag_src, &pp, perr, sizeof perr);
         if (s.update_src) flux_params_parse(s.update_src, &pp, perr, sizeof perr);
-        bool wants = pp.audio || s.cfg.audio_file;
-        if (wants && !s.cfg.once && !s.cfg.no_audio) {
+        enum flux_audio_mode am = flux_audio_mode(pp.audio != 0, s.cfg.audio_file != NULL,
+                                                  s.cfg.once, s.cfg.no_audio);
+        if (am == FLUX_AUDIO_START) {
             s.audio = audio_start(s.cfg.audio_device, s.cfg.audio_file, s.cfg.verbose);
             if (!s.audio) logv(&s, "audio: nie udało się uruchomić wątku — bez reakcji na dźwięk");
             else logv(&s, "audio: wizualizacja muzyki, źródło %s", s.cfg.audio_file ? s.cfg.audio_file
                       : (s.cfg.audio_device ? s.cfg.audio_device : "@DEFAULT_MONITOR@"));
-        } else if (wants) {
+        } else if (am == FLUX_AUDIO_SKIPPED) {
             logv(&s, "audio: pominięte (%s)", s.cfg.once ? "--once" : "--no-audio");
         }
     }
