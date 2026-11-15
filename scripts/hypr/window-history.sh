@@ -350,7 +350,10 @@ daemon() {
     ) 9>"$STATE_LOCK"
     refresh
 
-    local sock="$RUNTIME/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
+    # Gniazdo jest Hyprlanda, nie nasze: zawsze w XDG_RUNTIME_DIR (jak w guardzie
+    # workspace'ów). RUNTIME bywa innym katalogiem, gdy XDG_RUNTIME_DIR nie jest
+    # prywatny (S12) — tam gniazda nie ma i demon spadałby na sondę (przegląd, R2).
+    local sock="${XDG_RUNTIME_DIR:-}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
     if command -v socat >/dev/null 2>&1 && [[ -S "$sock" ]]; then
         # openwindow/closewindow nie mają wariantu v2 (Window.cpp v0.56.2 —
         # jedno postEvent na zdarzenie). Paczkę zdarzeń (np. zamknięcie kilku
