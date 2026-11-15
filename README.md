@@ -422,7 +422,7 @@ archenemy/
 │                                     #   mktemp build dir, cleanup, review on request (also without `less`),
 │                                     #   ✓ only with yay in PATH, Ctrl+C in step [4] stops install.sh,
 │                                     #   yay always cloned from the fixed AUR URL (no environment override).
-│                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
+│                                     #   shellcheck.sh — `shellcheck -x -S info -e SC1091` on every tracked script;
 │                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip";
 │                                     #   a broken or killed shellcheck (output not in gcc format, xargs exit
 │                                     #   other than 0/123) → ✗; `--selftest` runs only its fake-shellcheck autotest;

@@ -6,9 +6,6 @@ scripts/appbinds/appbinds.sh SC2015
 scripts/appbinds/appbinds.sh SC2153
 scripts/hypr/gaming-diag.sh SC2012
 scripts/wallpapers/flux-wall.sh SC2012
-scripts/waybar/timer-ctl.sh SC2034
-scripts/waybar/timer.sh SC2034
-scripts/waybar/timer.sh SC2034
 tests/appbinds-menu.sh SC2059
 tests/autostart-picker.sh SC2059
 tests/install-link.sh SC2012

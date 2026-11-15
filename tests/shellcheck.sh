@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================
 #   archenemy - tests/shellcheck.sh
-#   Uruchamia `shellcheck -S info -e SC1091` na każdym śledzonym skrypcie: *.sh oraz
+#   Uruchamia `shellcheck -x -S info -e SC1091` na każdym śledzonym skrypcie: *.sh oraz
 #   atrapach tests/mock/* (K9 z audytu bezpieczeństwa 2026-11-14 — ręczny
 #   bieg znalazł 7× SC2086, niecytowane ścieżki pod sudo w instalatorze GPU).
 #   SC1091 wyłączone: `source` ze ścieżek liczonych w czasie biegu
@@ -45,6 +45,7 @@ selftest() (
     printf 'a.sh:2:1: %s\n' "$w" > "$T/fx/upd/a.sh"; cp "$T/fx/new/c.sh" "$T/fx/upd/"
     cat > "$T/bin/shellcheck" <<'MOCK'
 #!/bin/bash
+[[ -n "${MOCK_SC_ARGS:-}" ]] && printf '%s\n' "$*" >> "$MOCK_SC_ARGS"
 case "${MOCK_SC:-}" in
     broken) echo "shellcheck: error while loading shared libraries: libHSaeson-2.2.3.0-ghc9.6.6.so: cannot open shared object file: No such file or directory" >&2; exit 127 ;;
     silent) exit 127 ;;
@@ -93,6 +94,14 @@ MOCK
     # Ręcznie dopisany wyjątek w edytorze bez końcowego „\n”: ostatni wpis też się liczy.
     printf 'a.sh SC2034\na.sh SC2034\nb.sh SC2012' > "$M/tests/shellcheck.baseline"
     expect "baseline without a final newline: last entry still counts" 0 "no new findings (3 known" "" MOCK_SC_DIR="$T/fx/ok"
+    # Każde wywołanie z -x: bez niego `source` działa tylko w obrębie jednej
+    # partii xargs -n 4 i wynik zależy od kolejności plików (scalenie 2026-11-15).
+    : > "$T/args"
+    env PATH="$T/bin:$PATH" ARCHENEMY_SHELLCHECK_NESTED=1 MOCK_SC_DIR="$T/fx/ok" MOCK_SC_ARGS="$T/args" \
+        bash "$M/tests/shellcheck.sh" >/dev/null 2>&1
+    if [[ -s "$T/args" ]] && ! grep -qvE '(^| )-x( |$)' "$T/args"; then
+        echo "  ✓ autotest: every shellcheck call has -x (sources followed across xargs batches)"
+    else fails=$((fails + 1)); echo "  ✗ autotest: shellcheck called without -x:"; sed 's/^/      | /' "$T/args"; fi
     exit "$fails"
 )
 SELF_FAIL=0
@@ -114,8 +123,14 @@ mapfile -d '' -t files < <(git -C "$REPO" ls-files -z -- '*.sh' 'tests/mock/*')
 
 # Wyjście gcc: plik:linia:kolumna: poziom: opis [SCxxxx] — jedno znalezisko na linię;
 # poziomy to error, warning i note (info i style drukują się jako „note”).
+# -x: shellcheck bez niego idzie za `source` tylko wtedy, gdy plik źródłowy jest
+# w TYM SAMYM wywołaniu, a xargs -n 4 tnie listę na partie — wynik zależał od
+# tego, czy biblioteka trafiła do partii pliku (scalenie 2026-11-15: nowy
+# scripts/lib/runtime-dir.sh przesunął listę o 1 i rofi_clipboard.sh dostał
+# fałszywe SC2034 THUMB_DIR, którego używa lib/rofi-preview.sh). Ścieżki
+# z dyrektyw `# shellcheck source=…` są względem korzenia repo (cd "$REPO").
 out="$(cd "$REPO" && printf '%s\0' "${files[@]}" \
-    | xargs -0 -n 4 -P "$(nproc 2>/dev/null || echo 2)" shellcheck -S info -e SC1091 -f gcc 2>&1)"
+    | xargs -0 -n 4 -P "$(nproc 2>/dev/null || echo 2)" shellcheck -x -S info -e SC1091 -f gcc 2>&1)"
 xrc=$?   # kod xargs (pipefail): 0 = czysto, 123 = któryś bieg zwrócił 1–125
 
 # Zepsuty albo zabity shellcheck nie może dać ✓ (R1 C1): błąd ładowania bibliotek

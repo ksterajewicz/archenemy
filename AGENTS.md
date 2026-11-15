@@ -426,8 +426,12 @@ so these rules are tested, not just conventions:
   `git add` + `git stash drop`, and never `drop` when nothing was applied
   (`bash tests/update-archenemy.sh` runs the advice on real git).
 - **shellcheck with a baseline:** `bash tests/shellcheck.sh` runs
-  `shellcheck -S info -e SC1091` on every tracked script and fails only on
-  findings that are not in `tests/shellcheck.baseline`. Fix new findings in
+  `shellcheck -x -S info -e SC1091` on every tracked script and fails only on
+  findings that are not in `tests/shellcheck.baseline`. Keep `-x`: without it
+  shellcheck follows `source` only into files in the same call, so the result
+  depended on which files `xargs -n 4` put together (a new file once turned a
+  variable read by a sourced library into a false SC2034); check a single file
+  the same way, from the repo root. Fix new findings in
   the code instead of adding them to the baseline: `--update-baseline` only
   removes fixed entries, and a deliberate exception goes in by hand with a
   `#` comment. A broken or killed shellcheck is a ✗, never a pass. Run it
