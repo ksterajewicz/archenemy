@@ -81,6 +81,9 @@ MOCK
     if [[ "$(cat "$M/tests/shellcheck.baseline")" == "$want" ]]; then echo "  ✓ autotest: --update-baseline removed only fixed entries, kept comments"
     else fails=$((fails + 1)); echo "  ✗ autotest: baseline after --update-baseline:"; sed 's/^/      | /' "$M/tests/shellcheck.baseline"; fi
     expect "new finding still ✗ after --update-baseline" 1 "✗ c.sh:2:6: note:" "" MOCK_SC_DIR="$T/fx/upd"
+    # Ręcznie dopisany wyjątek w edytorze bez końcowego „\n”: ostatni wpis też się liczy.
+    printf 'a.sh SC2034\na.sh SC2034\nb.sh SC2012' > "$M/tests/shellcheck.baseline"
+    expect "baseline without a final newline: last entry still counts" 0 "no new findings (3 known" "" MOCK_SC_DIR="$T/fx/ok"
     exit "$fails"
 )
 SELF_FAIL=0
@@ -161,7 +164,8 @@ if [[ "${1:-}" == --update-baseline ]]; then
 fi
 declare -A allowed=()
 if [[ -f "$BASE" ]]; then
-    while read -r f c _; do
+    # `|| [[ -n … ]]`: ostatni wpis bez końcowego „\n” (ręczna edycja) też się liczy.
+    while read -r f c _ || [[ -n "${f:-}" ]]; do
         [[ -z "${f:-}" || "$f" == \#* ]] && continue
         allowed["$f $c"]=$(( ${allowed["$f $c"]:-0} + 1 ))
     done < "$BASE"
