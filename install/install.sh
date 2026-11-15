@@ -793,7 +793,9 @@ echo -e "  ${GREEN}✓ hardware-keys.lua ($HW_PROFILE)${NC}"
 # 8d. Zmienne środowiskowe GPU (wg wykrytej karty)
 GPU_KIND="unknown"
 if command -v lspci &>/dev/null; then
-    GPU_INFO=$(lspci 2>/dev/null | grep -Ei 'vga|3d|display')
+    # Klasa PCI 03xx (VGA/3D/display), jak w gpudrivers-installation.sh — grep
+    # 'vga|3d|display' po całym wierszu łapał adres PCI 3d:00.0 (audyt Z14).
+    GPU_INFO=$(lspci -d ::03xx 2>/dev/null)
     grep -qi 'nvidia' <<<"$GPU_INFO" && GPU_KIND="nvidia"
     [[ "$GPU_KIND" == "unknown" ]] && grep -qi 'amd\|radeon' <<<"$GPU_INFO" && GPU_KIND="amd"
     [[ "$GPU_KIND" == "unknown" ]] && grep -qi 'intel' <<<"$GPU_INFO" && GPU_KIND="intel"

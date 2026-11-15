@@ -86,7 +86,8 @@ archenemy/
 │   │                                 #   CPU/kernel/GPU installer exit codes are a contract with step [6.5]:
 │   │                                 #   0 done or declined, 1 failed, 2 boot entries need manual steps.
 │   ├── cpudrivers-installation.sh    # CPU microcode (Intel/AMD) — detects the CPU, installs it, regenerates the bootloader.
-│   ├── gpudrivers-installation.sh    # GPU drivers — detects the card; NVIDIA: open/proprietary, modeset,
+│   ├── gpudrivers-installation.sh    # GPU drivers — detects the card (PCI class 03xx, `lspci -d ::03xx`,
+│   │                                 #   same filter as gpu-env.lua in [8d]); NVIDIA: open/proprietary, modeset,
 │   │                                 #   initramfs; if a driver is already installed: update (-Syu) / switch variant.
 │   │                                 #   For gaming: enables the [multilib] repo and installs lib32 (Steam/Proton/Wine).
 │   │                                 #   Exits 1 when any step printed ✗ (pacman, lib32, initramfs).

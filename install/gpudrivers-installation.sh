@@ -32,9 +32,12 @@ if ! command -v lspci &>/dev/null; then
     fi
 fi
 
-GPU_INFO="$(lspci | grep -Ei 'vga|3d|display')"
+# GPU = urządzenie klasy PCI 03xx (0300 VGA, 0302 3D, 0380 display). Filtr po
+# klasie, nie grep po całym wierszu: „3d” pasowało też do adresu PCI 3d:00.0 —
+# karta sieciowa Intela na szynie 0x3d dawała sterowniki Intela (audyt Z14).
+GPU_INFO="$(lspci -d ::03xx)"
 if [[ -z "$GPU_INFO" ]]; then
-    echo -e "${YELLOW}lspci reports no GPU (vga/3d/display) — skipping driver installation.${NC}"
+    echo -e "${YELLOW}lspci reports no GPU (PCI class 03xx: VGA/3D/display) — skipping driver installation.${NC}"
     exit 0
 fi
 echo -e "${YELLOW}Detected GPUs:${NC}"

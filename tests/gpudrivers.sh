@@ -41,9 +41,21 @@ cat > "$T/bin/sudo" <<'EOF'
 #!/bin/bash
 exec "$@"
 EOF
+# lspci: MOCK_PCI = wiersze „<klasa PCI> <wiersz lspci>”; `-d ::<klasa>` filtruje
+# po klasie jak pciutils („x” = dowolna cyfra), bez -d drukuje wszystko.
 cat > "$T/bin/lspci" <<'EOF'
 #!/bin/bash
-echo "01:00.0 VGA compatible controller: NVIDIA Corporation AD106M [GeForce RTX 4070 Max-Q / Mobile]"
+pci="${MOCK_PCI:-0300 01:00.0 VGA compatible controller: NVIDIA Corporation AD106M [GeForce RTX 4070 Max-Q / Mobile]}"
+want=""
+[[ "${1:-}" == -d && "${2:-}" == ::* ]] && want="${2#::}"
+while read -r cls line; do
+    [[ -n "$cls" ]] || continue
+    if [[ -n "$want" ]]; then
+        pat="${want//x/?}"   # wzorzec glob, dlatego $pat bez cudzysłowu
+        [[ "$cls" == $pat ]] || continue
+    fi
+    printf '%s\n' "$line"
+done <<<"$pci"
 EOF
 # pacman: -Qi <pkg> = zainstalowany, jeśli jest w MOCK_INSTALLED; -S/-Syu
 # logowane, porażka instalacji na żądanie (MOCK_PACMAN_FAIL=1).
@@ -132,6 +144,30 @@ echo "== F: odmowa instalacji = nie porażka"
 setup "linux-6.16"
 out=$(MOCK_INSTALLED="" run_gpu '1\nn\n'); rc=$?
 check "Skipped, kod wyjścia 0"                 '[[ "$out" == *"Skipped."* && $rc -eq 0 ]]'
+
+# Audyt 2026-11-05, Z14: `grep -Ei 'vga|3d|display'` na całym lspci łapał adres
+# PCI „3d:00.0” — karta sieciowa Intela na szynie 0x3d dawała sterowniki Intela.
+# GPU = urządzenie klasy PCI 03xx (VGA 0300, 3D 0302, display 0380).
+PCI_AMD_NET=$'0300 03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 23\n0280 3d:00.0 Network controller: Intel Corporation Wi-Fi 6 AX201'
+echo "== G: adres PCI 3d: to nie GPU"
+setup "linux-6.16"
+out=$(MOCK_PCI="$PCI_AMD_NET" run_gpu 'n\n'); rc=$?
+check "AMD wykryte, sieciówka Intela nie"      '[[ "$out" == *"Navi 23"* && "$out" != *"Network controller"* ]]'
+check "propozycja bez pakietów Intela"         '[[ "$out" == *"Proposed packages: mesa vulkan-radeon libva-mesa-driver"* && "$out" != *"vulkan-intel"* && $rc -eq 0 ]]'
+out=$(MOCK_PCI=$'0280 3d:00.0 Network controller: Intel Corporation Wi-Fi 6 AX201\n0302 3e:00.0 3D controller: NVIDIA Corporation GA107M' run_gpu '1\nn\n'); rc=$?
+check "3D controller (klasa 0302) to GPU"      '[[ "$out" == *"GA107M"* && "$out" != *"Network controller"* && "$out" != *"vulkan-intel"* ]]'
+out=$(MOCK_PCI=$'0280 3d:00.0 Network controller: Intel Corporation Wi-Fi 6 AX201' run_gpu ''); rc=$?
+check "bez GPU: nic nie proponuje, kod 0"      '[[ "$out" == *"reports no GPU"* && "$out" != *"Proposed packages"* && $rc -eq 0 ]]'
+
+echo "== G: install.sh [8d] (gpu-env.lua) — ta sama klasa PCI"
+INST="$REPO/install/install.sh"
+S=$(grep -n '^# 8d\. ' "$INST" | cut -d: -f1); E=$(grep -n '^# 8e\. ' "$INST" | cut -d: -f1)
+sed -n "${S},$((E-1))p" "$INST" > "$T/step8d.sh"
+mkdir -p "$T/hl"
+gpu_kind() { MOCK_PCI="$1" HYPR_LOCAL_DIR="$T/hl" GREEN='' NC='' bash "$T/step8d.sh" >/dev/null 2>&1; head -n1 "$T/hl/gpu-env.lua"; }
+check "wycinek [8d] znaleziony"                '[[ -s "$T/step8d.sh" ]]'
+check "[8d] AMD + sieciówka Intela na 3d: → amd" '[[ "$(gpu_kind "$PCI_AMD_NET")" == *"GPU: amd" ]]'
+check "[8d] sama sieciówka na 3d: → unknown"   '[[ "$(gpu_kind "0280 3d:00.0 Network controller: Intel Corporation Wi-Fi 6 AX201")" == *"GPU: unknown" ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
