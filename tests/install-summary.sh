@@ -180,6 +180,16 @@ check "nieudany ln: ✗, SKIPPED, bez DONE"        '[[ "$out" == *"✗"*"mpd"* &
 mpd_reset; mkdir -p "$MPD_LINK"
 out=$(PATH="$T/bin-noln:$PATH" run_step "$T/step8l.sh" $'y\nn\n' "$MPD_PRE")
 check "y, nieudany ln: ✗, SKIPPED, bez DONE"     '[[ "$out" == *"✗"*"mpd"* ]] && grep -q "^SKIPPED=mpd config NOT linked" "$T/summary" && ! grep -q "^DONE=mpd config linked" "$T/summary"'
+# mv, który pada (np. katalog bez prawa zapisu): prawdziwy ~/.config/mpd zostaje
+# na miejscu, a `ln -sT` odmawia — zwykłe `ln -s` utworzyłoby link W ŚRODKU
+# niego (~/.config/mpd/mpd), czyli obcy plik w configu użytkownika (przegląd P-3).
+mkdir -p "$T/bin-nomv"
+printf '#!/bin/bash\necho "mv: cannot move: Permission denied" >&2\nexit 1\n' > "$T/bin-nomv/mv"
+chmod +x "$T/bin-nomv/mv"
+mpd_reset; mkdir -p "$MPD_LINK"
+out=$(PATH="$T/bin-nomv:$PATH" run_step "$T/step8l.sh" $'y\nn\n' "$MPD_PRE")
+check "y, nieudany mv: ✗, SKIPPED, bez DONE"     '[[ "$out" == *"✗"*"mpd"* ]] && grep -q "^SKIPPED=mpd config NOT linked" "$T/summary" && ! grep -q "^DONE=mpd config linked" "$T/summary"'
+check "y, nieudany mv: katalog nietknięty, bez linku w środku" '[[ -d "$MPD_LINK" && ! -L "$MPD_LINK" && ! -e "$MPD_LINK/mpd" && ! -L "$MPD_LINK/mpd" ]]'
 mpd_reset
 
 # ─── [9.5] tapeta: ✓ dopiero, gdy hyprpaper ją pokazał (Z10) ────────────────
