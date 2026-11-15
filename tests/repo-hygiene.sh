@@ -98,6 +98,19 @@ else
     ok "ogólne przykłady (network, \$T/home, /home/x, komentarz) dozwolone"
 fi
 
+echo "== testy wykonania Lua: brak lua5.4 = widoczny skip, nie OK ani cisza"
+# R1 C2: CI ma tylko lua 5.5, a bez lua5.4 mouse-settings.sh dopisywał sztuczne
+# OK, keyboard-layouts.sh i machine-layer.sh pomijały wykonanie wygenerowanego Lua
+# bez śladu. Pakiet, który sprawdza `command -v lua5.4`, ma w gałęzi bez
+# interpretera wywołać skip z tym tekstem i liczyć go w wierszu wyniku.
+mapfile -t lua_tests < <(git -C "$REPO" grep -lF 'command -v lua5.4 >/dev/null' -- 'tests/*.sh' ':!tests/repo-hygiene.sh')
+bad=""
+for f in "${lua_tests[@]}"; do
+    grep -qF 'skip "lua5.4 is not installed' "$REPO/$f" || bad+=" $f"
+done
+if [[ -z "$bad" ]]; then ok "${#lua_tests[@]} pakiety z lua5.4 mają skip zamiast OK lub ciszy"
+else fail "bez skip przy braku lua5.4:$bad"; fi
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ $FAIL -eq 0 ]]

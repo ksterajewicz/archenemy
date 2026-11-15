@@ -30,9 +30,11 @@ mkdir -p "$T/stub"
 printf '#!/bin/bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/stub/sudo"; chmod +x "$T/stub/sudo"
 export PATH="$T/stub:$PATH"
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
+# Pominięcie nigdy nie liczy się jako ✓; liczba trafia do ostatniego wiersza (run-all pokazuje tylko jego).
+skip() { SKIP=$((SKIP + 1)); echo "  ? skip: $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 # ─── środowisko: $HOME/archenemy = linki do repo + własna warstwa maszynowa ───
@@ -77,6 +79,8 @@ generate_workspaces_monitors "$T/sh.lua" shared "eDP-2"$'\t'"desc:$DESC_EDP" "HD
 check "A: shared — 2 domowe reguły po desc:" '[[ $(grep -c "monitor = \"desc:" "$T/sh.lua") -eq 2 ]]'
 if command -v lua5.4 >/dev/null 2>&1; then
     check "Lua: plik wczytuje się z atrapą hl.*" 'lua5.4 -e "hl={workspace_rule=function(t) assert(type(t.workspace)==\"string\" and type(t.monitor)==\"string\") end, bind=function() end, dsp={focus=function() end, window={move=function() end}}}" -e "dofile(\"$T/dec.lua\")" </dev/null'
+else
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — generated Lua not executed"
 fi
 
 echo "== workspace-orphan-guard.sh"
@@ -221,5 +225,5 @@ rep=$(MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/nu
 check "raport podaje obie wersje"              '[[ "$rep" == *"installed from: 0123456 · repo HEAD:"* ]]'
 
 echo ""
-echo "passed: $PASS, failed: $FAIL"
+echo "passed: $PASS, failed: $FAIL, skipped: $SKIP"
 (( FAIL == 0 ))
