@@ -6,6 +6,7 @@
 #
 #   make            zbuduj build/flux-wall
 #   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio,
+#                   wątek audio z pliku i z atrapy libpulse — bez serwera dźwięku,
 #                   kody wyjścia CLI 1 i 2, decyzje po błędach EGL;
 #                   sekcje GL silnika na EGL surfaceless: --once po zmianie rozmiaru, błędny shader — bez EGL pomijane)
 #   make tools      build/offscreen — klatki animacji do PNG bez ekranu (narzędzie dev)

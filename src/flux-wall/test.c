@@ -1,8 +1,9 @@
 /*
  * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL),
  * CLI binarki (kody wyjścia 1 i 2 — run_cli niżej), wątek audio z pliku
- * i sekcje GL na EGL surfaceless (silnik bez Waylanda: --once po zmianie
- * rozmiaru, błędny shader; bez EGL — „POMINIĘTO” w wyjściu, nie błąd).
+ * i z atrapy libpulse (run_pulse, open_stream) oraz sekcje GL na EGL
+ * surfaceless (silnik bez Waylanda: --once po zmianie rozmiaru, błędny
+ * shader; bez EGL — „POMINIĘTO” w wyjściu, nie błąd).
  * Budowane przez `make test`: main.c wchodzi z main() przemianowanym na
  * flux_wall_main, więc tu jest własny main(). libpulse-simple zastępuje
  * atrapa niżej (pa_simple_*) — testy nie łączą się z serwerem dźwięku.
@@ -21,7 +22,8 @@
 #include "recovery.h"
 #define TEST_PI 3.14159265f
 #include <math.h>
-#include <stdatomic.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <time.h>
 #include <pulse/error.h>
 #include <pulse/simple.h>
@@ -38,25 +40,111 @@ static int failures = 0;
 static bool near(float a, float b) { return a - b < 0.002f && b - a < 0.002f; }
 
 /* Atrapa libpulse-simple: definicje w tym pliku wygrywają przy linkowaniu
- * z biblioteką, więc wątek audio (audio.c, run_pulse) w testach NIGDY nie
- * łączy się z prawdziwym serwerem dźwięku. Strumień otwiera się zawsze,
- * a każdy odczyt od razu się zrywa — jak serwer, który pada zaraz po
- * połączeniu. `fake_pa_opens` liczy próby połączenia. */
-static atomic_int fake_pa_opens;
+ * z biblioteką, więc wątek audio (audio.c: run_pulse, open_stream) w testach
+ * NIGDY nie łączy się z prawdziwym serwerem dźwięku. fake_pa_setup przed
+ * audio_start ustawia zachowanie: `reject` — urządzenie, którego
+ * pa_simple_new odmawia (jak serwer bez domyślnego sinka; "*" = każde, czyli
+ * brak serwera), `data_reads` — ile odczytów na strumień daje dane (sinus
+ * 80 Hz 0.5 w obu kanałach, 20 ms na odczyt jak hop z serwera), potem
+ * strumień się zrywa; 0 = zerwanie na pierwszym odczycie (serwer pada zaraz
+ * po połączeniu). Atrapa zapisuje, o co prosił audio.c (urządzenia po
+ * kolei, kierunek, format, fragment), i kiedy (próby, zerwania). Stan pod
+ * muteksem: pisze wątek audio, czyta test. */
+#define FAKE_PA_MAX 8
+struct fake_pa_state {
+    const char *reject;
+    int data_reads, left;                /* odczyty z danymi: na strumień / zostało w bieżącym */
+    int tries, opens, frees, fails;      /* pa_simple_new: wszystkie / udane; pa_simple_free; zerwania */
+    int null_dev;                        /* próby z dev = NULL (domyślne ŹRÓDŁO serwera = mikrofon) */
+    bool server_null;                    /* każda próba do domyślnego serwera */
+    char dev[FAKE_PA_MAX][64];           /* urządzenia kolejnych prób */
+    double t_try[FAKE_PA_MAX], t_fail[FAKE_PA_MAX];   /* zegar monotoniczny: próby / zerwania */
+    pa_stream_direction_t dir;           /* kierunek, format i bufor ostatniej próby */
+    pa_sample_spec ss;
+    bool has_attr;
+    uint32_t fragsize;
+    long frame;                          /* faza sinusa ciągła między odczytami */
+};
+static pthread_mutex_t fake_pa_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct fake_pa_state fake_pa;
 static char fake_pa_stream;
+
+static double test_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static void test_sleep_ms(long ms) {
+    struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
+    nanosleep(&ts, NULL);
+}
+
+static void fake_pa_setup(const char *reject, int data_reads) {
+    pthread_mutex_lock(&fake_pa_lock);
+    memset(&fake_pa, 0, sizeof fake_pa);
+    fake_pa.reject = reject;
+    fake_pa.data_reads = data_reads;
+    fake_pa.server_null = true;
+    pthread_mutex_unlock(&fake_pa_lock);
+}
+
+static struct fake_pa_state fake_pa_get(void) {
+    pthread_mutex_lock(&fake_pa_lock);
+    struct fake_pa_state s = fake_pa;
+    pthread_mutex_unlock(&fake_pa_lock);
+    return s;
+}
+
 pa_simple *pa_simple_new(const char *server, const char *name, pa_stream_direction_t dir, const char *dev,
                          const char *stream_name, const pa_sample_spec *ss, const pa_channel_map *map,
                          const pa_buffer_attr *attr, int *error) {
-    (void)server; (void)name; (void)dir; (void)dev; (void)stream_name; (void)ss; (void)map; (void)attr; (void)error;
-    atomic_fetch_add(&fake_pa_opens, 1);
+    (void)name; (void)stream_name; (void)map;
+    pthread_mutex_lock(&fake_pa_lock);
+    int n = fake_pa.tries++;
+    if (n < FAKE_PA_MAX) {
+        snprintf(fake_pa.dev[n], sizeof fake_pa.dev[n], "%s", dev ? dev : "(NULL)");
+        fake_pa.t_try[n] = test_now();
+    }
+    if (!dev) fake_pa.null_dev++;
+    if (server) fake_pa.server_null = false;
+    fake_pa.dir = dir;
+    if (ss) fake_pa.ss = *ss;
+    fake_pa.has_attr = attr != NULL;
+    fake_pa.fragsize = attr ? attr->fragsize : 0;
+    bool rejected = fake_pa.reject && (strcmp(fake_pa.reject, "*") == 0 || (dev && strcmp(fake_pa.reject, dev) == 0));
+    if (!rejected) { fake_pa.opens++; fake_pa.left = fake_pa.data_reads; }
+    pthread_mutex_unlock(&fake_pa_lock);
+    if (rejected) { if (error) *error = PA_ERR_NOENTITY; return NULL; }
     return (pa_simple *)(void *)&fake_pa_stream;
 }
+
 int pa_simple_read(pa_simple *s, void *data, size_t bytes, int *error) {
-    (void)s; (void)data; (void)bytes;
-    if (error) *error = PA_ERR_CONNECTIONTERMINATED;
-    return -1;
+    (void)s;
+    size_t frames = bytes / (AUDIO_CHANNELS * sizeof(float));
+    pthread_mutex_lock(&fake_pa_lock);
+    bool more = fake_pa.left > 0;
+    long frame = fake_pa.frame;
+    if (more) { fake_pa.left--; fake_pa.frame += (long)frames; }
+    else if (fake_pa.fails < FAKE_PA_MAX) fake_pa.t_fail[fake_pa.fails++] = test_now();
+    pthread_mutex_unlock(&fake_pa_lock);
+    if (!more) {
+        if (error) *error = PA_ERR_CONNECTIONTERMINATED;
+        return -1;
+    }
+    float *out = data;
+    for (size_t i = 0; i < frames; i++)
+        out[2 * i] = out[2 * i + 1] = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)(frame + (long)i) / AUDIO_RATE);
+    test_sleep_ms(20);                   /* hop 20 ms, jak z serwera */
+    return 0;
 }
-void pa_simple_free(pa_simple *s) { (void)s; }
+
+void pa_simple_free(pa_simple *s) {
+    (void)s;
+    pthread_mutex_lock(&fake_pa_lock);
+    fake_pa.frees++;
+    pthread_mutex_unlock(&fake_pa_lock);
+}
 
 static void write_file(const char *path, const char *content) {
     FILE *f = fopen(path, "w");
@@ -643,20 +731,101 @@ int main(void) {
      * Atrapa libpulse wyżej: każdy strumień pada na pierwszym odczycie. */
     printf("audio: zerwany strumień → pauza przed ponowieniem (atrapa libpulse)\n");
     {
-        atomic_store(&fake_pa_opens, 0);
+        fake_pa_setup(NULL, 0);
         struct audio *au = audio_start(NULL, NULL, false);
         CHECK(au != NULL, "wątek wystartował");
         struct timespec ts = { 0, 300000000L }; nanosleep(&ts, NULL);
-        int opens = atomic_load(&fake_pa_opens);
+        int opens = fake_pa_get().opens;
         printf("       prób połączenia po 0.3 s: %d\n", opens);
         CHECK(opens == 1, "po 0.3 s: jedna próba (pauza ~1 s po zerwaniu, nie pętla bez przerwy)");
         ts = (struct timespec){ 1, 200000000L }; nanosleep(&ts, NULL);
-        opens = atomic_load(&fake_pa_opens);
+        opens = fake_pa_get().opens;
         printf("       prób połączenia po 1.5 s: %d\n", opens);
         CHECK(opens == 2, "po 1.5 s: dwie próby (ponowienie po ~1 s, następna pauza ~2 s)");
         struct audio_features snap; audio_snapshot(au, &snap);
         CHECK(!snap.live, "zerwany strumień → live = false");
         audio_stop(au);
+    }
+
+    /* run_pulse i open_stream (audyt 2026-11-05, KT5). Źródło to zawsze
+     * MONITOR wyjścia: najpierw @DEFAULT_MONITOR@, potem --audio-device;
+     * nigdy dev = NULL, bo to domyślne ŹRÓDŁO serwera, czyli mikrofon
+     * (DECYZJE 2026-09-08). Strumień: nagrywanie, float32 stereo 48 kHz,
+     * fragment = jeden hop. Czasy przerw mierzy atrapa (próba vs zerwanie),
+     * test czeka na zdarzenia, nie na stałe opóźnienia — przerwa nie bywa
+     * krótsza niż zadana, a górne granice mają zapas na obciążony rdzeń. */
+    printf("audio: run_pulse / open_stream — monitor wyjścia, dane, zerwanie (atrapa libpulse)\n");
+    {
+        fake_pa_setup(NULL, 15);                       /* każdy strumień: 15 hopów (0.3 s), potem zerwanie */
+        struct audio *au = audio_start(NULL, NULL, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct audio_features snap = {0};
+        bool heard = false;
+        for (double end = test_now() + 2.0; !heard && test_now() < end; test_sleep_ms(5)) {
+            audio_snapshot(au, &snap);
+            heard = snap.live && snap.bass > 0.5f;
+        }
+        CHECK(heard, "dane ze strumienia → live, bas 80 Hz widoczny w analizie");
+        struct fake_pa_state fs = fake_pa_get();
+        CHECK(fs.tries >= 1 && strcmp(fs.dev[0], "@DEFAULT_MONITOR@") == 0, "pierwsza próba: @DEFAULT_MONITOR@ (monitor wyjścia)");
+        CHECK(fs.dir == PA_STREAM_RECORD && fs.server_null, "nagrywanie z domyślnego serwera");
+        CHECK(fs.ss.format == PA_SAMPLE_FLOAT32NE && fs.ss.rate == AUDIO_RATE && fs.ss.channels == AUDIO_CHANNELS,
+              "format strumienia: float32 stereo 48 kHz (jak --audio-file)");
+        CHECK(fs.has_attr && fs.fragsize == AUDIO_HOP * AUDIO_CHANNELS * sizeof(float), "fragment = jeden hop (20 ms)");
+        bool dark = false;                             /* live gaśnie w pauzie, przed następną próbą */
+        for (double end = test_now() + 3.0; test_now() < end; test_sleep_ms(5)) {
+            fs = fake_pa_get();
+            if (fs.tries >= 2) break;
+            audio_snapshot(au, &snap);
+            if (fs.fails >= 1 && !snap.live) { dark = true; break; }
+        }
+        CHECK(dark, "po zerwaniu strumienia live = false (w pauzie przed ponowieniem)");
+        for (double end = test_now() + 6.0; fake_pa_get().tries < 3 && test_now() < end; ) test_sleep_ms(10);
+        audio_stop(au);
+        for (double end = test_now() + 1.0; test_now() < end; test_sleep_ms(10)) {
+            fs = fake_pa_get();
+            if (fs.frees == fs.opens) break;           /* audio_stop czeka na wątek tylko 200 ms */
+        }
+        double g1 = fs.t_try[1] - fs.t_fail[0], g2 = fs.t_try[2] - fs.t_fail[1];
+        printf("       przerwy od zerwania do ponowienia: %.2f s, %.2f s\n", g1, g2);
+        CHECK(fs.tries >= 3 && fs.fails >= 2 && g1 >= 0.95 && g1 < 1.6 && g2 >= 0.95 && g2 < 1.6,
+              "po strumieniu z danymi przerwa wraca do 1 s (bez powrotu druga trwałaby 2 s)");
+        CHECK(fs.null_dev == 0 && fs.opens >= 3 && fs.frees == fs.opens, "ani razu dev = NULL; każdy otwarty strumień zwolniony");
+    }
+    printf("audio: @DEFAULT_MONITOR@ odmawia → --audio-device (atrapa libpulse)\n");
+    {
+        fake_pa_setup("@DEFAULT_MONITOR@", 15);        /* serwer bez domyślnego sinka */
+        struct audio *au = audio_start("test-sink.monitor", NULL, false);
+        CHECK(au != NULL, "wątek wystartował (--audio-device test-sink.monitor)");
+        struct audio_features snap = {0};
+        bool heard = false;
+        for (double end = test_now() + 2.0; !heard && test_now() < end; test_sleep_ms(5)) {
+            audio_snapshot(au, &snap);
+            heard = snap.live && snap.bass > 0.5f;
+        }
+        audio_stop(au);
+        struct fake_pa_state fs = fake_pa_get();
+        CHECK(heard, "dane z --audio-device → live, bas 80 Hz");
+        CHECK(fs.tries == 2 && strcmp(fs.dev[0], "@DEFAULT_MONITOR@") == 0 && strcmp(fs.dev[1], "test-sink.monitor") == 0 &&
+              fs.opens == 1, "najpierw @DEFAULT_MONITOR@, po odmowie --audio-device (monitor sinka z wrappera)");
+    }
+    printf("audio: brak serwera dźwięku → nigdy mikrofon, przerwa się podwaja (atrapa libpulse)\n");
+    {
+        fake_pa_setup("*", 0);
+        struct audio *au = audio_start(NULL, NULL, false);
+        CHECK(au != NULL, "wątek wystartował (bez serwera, bez --audio-device)");
+        for (double end = test_now() + 6.0; fake_pa_get().tries < 3 && test_now() < end; ) test_sleep_ms(10);
+        struct audio_features snap; audio_snapshot(au, &snap);
+        audio_stop(au);
+        struct fake_pa_state fs = fake_pa_get();
+        bool monitors = fs.tries >= 1;
+        for (int i = 0; i < fs.tries && i < FAKE_PA_MAX; i++) if (strcmp(fs.dev[i], "@DEFAULT_MONITOR@") != 0) monitors = false;
+        CHECK(fs.null_dev == 0 && monitors, "każda próba to @DEFAULT_MONITOR@, nigdy dev = NULL (mikrofon)");
+        CHECK(!snap.live && fs.opens == 0, "bez serwera: live = false, nic nie otwarte");
+        double g1 = fs.t_try[1] - fs.t_try[0], g2 = fs.t_try[2] - fs.t_try[1];
+        printf("       przerwy między próbami: %.2f s, %.2f s\n", g1, g2);
+        CHECK(fs.tries >= 3 && g1 >= 0.95 && g1 < 1.6 && g2 >= 1.95 && g2 < 2.8,
+              "przerwa między próbami 1 s, potem 2 s (backoff się podwaja)");
     }
 
     /* Kody wyjścia to kontrakt z flux-wall.sh (DECYZJE 2026-09-07h): 1 =
