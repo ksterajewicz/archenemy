@@ -6,7 +6,8 @@
 #   yay budowany w świeżym katalogu mktemp (nie /tmp/yay) i sprzątany,
 #   przegląd PKGBUILD na żądanie, ✓ tylko gdy yay naprawdę jest w PATH,
 #   `--answerdiff All` wyłącznie po „y”; przegląd działa bez less (pager
-#   z zapasem i GIT_PAGER dla yay, I1 z przeglądu 2026-11-15). Bez sieci, bez roota.
+#   z zapasem i GIT_PAGER dla yay, I1 z przeglądu 2026-11-15); Ctrl+C w [4]
+#   zatrzymuje install.sh (I2, wycinek [4]–[5]). Bez sieci, bez roota.
 #   Uruchom: bash tests/install-aur.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -49,8 +50,9 @@ chmod +x "$T/bin"/*
 # (np. na maszynie dewelopera) zafałszowałby test „✓ tylko gdy yay jest w PATH”.
 # Bez less (świeży Arch go nie ma — I1); more osobno, żeby sprawdzić też cat.
 mkdir -p "$T/sys" "$T/sys-more"
-for c in bash sh env mktemp rm cat mkdir dirname chmod find; do ln -s "$(command -v "$c")" "$T/sys/$c"; done
+for c in bash sh env mktemp rm cat mkdir dirname chmod find sleep setsid timeout; do ln -s "$(command -v "$c")" "$T/sys/$c"; done
 ln -s "$(command -v more)" "$T/sys-more/more"
+ORIG_PATH="$PATH"
 export PATH="$T/bin:$T/sys" MOCK_BIN="$T/bin" PAGER="$T/bin/pager"
 RED='' GREEN='' YELLOW='' NC=''
 
@@ -129,6 +131,68 @@ inst_paged 'y\n' "$T/bin:$T/sys" GIT_PAGER=my-pager
 check "GIT_PAGER użytkownika zostaje"                 '[[ "$(cat "$LOG/yay-git-pager")" == my-pager ]]'
 inst_paged '\n' "$T/bin:$T/sys"
 check "bez przeglądu GIT_PAGER nieustawiony"          '[[ "$(cat "$LOG/yay-git-pager")" == "<unset>" ]]'
+
+echo "== Ctrl+C w [4] zatrzymuje install.sh (I2)"
+# Wycinek prawdziwego install.sh: nagłówek do [1] bez strażnika roota (testy
+# biegną też jako root) + kroki [4] i [5]. Ctrl+C jak z terminala: SIGINT do
+# całej grupy procesów, w nowej sesji (setsid) z domyślną obsługą SIGINT
+# (proces w tle w nieinteraktywnej powłoce miałby go ignorowany). Sygnał idzie
+# na znacznik w wyjściu, nie po stałym czasie. Dawniej podpowłoka robiła
+# `exit 130`, a instalator jechał dalej do [5] „Install missing…? [Y/n]”.
+INST="$REPO/install/install.sh"
+( PATH="$ORIG_PATH"   # grep/sed/cut są poza okrojonym PATH testu
+  W=$(grep -n '^# ─── 1. WELCOME' "$INST" | cut -d: -f1)
+  S4=$(grep -n '^# ─── 4. CHECK YAY' "$INST" | cut -d: -f1)
+  S6=$(grep -n '^# ─── 6. DEVICE DETECTION' "$INST" | cut -d: -f1)
+  sed -n "1,$((W-1))p" "$INST" | sed '/^if \[\[ \$EUID -eq 0 \]\]; then$/,/^fi$/d'
+  sed -n "${S4},$((S6-1))p" "$INST" ) > "$T/step4-5.sh"
+H4="$T/home4"; mkdir -p "$H4/archenemy/rices" "$H4/archenemy/packages" "$T/bin4"
+PATH="$ORIG_PATH" ln -s "$REPO/install" "$H4/archenemy/install"
+echo testpkg > "$H4/archenemy/packages/requirements-pacman.txt"
+printf '#!/bin/bash\nexec "$MOCK_BIN/git" "$@"\n' > "$T/bin4/git"
+printf '#!/bin/bash\necho "$*" >> "$LOG/sudo"\n' > "$T/bin4/sudo"
+printf '#!/bin/bash\nexit 1\n' > "$T/bin4/pacman"
+# Jak prawdziwy makepkg (/usr/bin/makepkg:113-114): na SIGINT sprząta
+# i zgłasza ten sam sygnał ponownie. MOCK_MAKEPKG_WAIT=1 = długa budowa.
+cat > "$T/bin4/makepkg" <<'EOF'
+#!/bin/bash
+trap 'echo "==> ERROR: Aborted by user!"; trap - INT; kill -INT $$' INT
+echo MOCK-MAKEPKG-RUNNING
+[[ -n "${MOCK_MAKEPKG_WAIT:-}" ]] && sleep 30
+exit 0
+EOF
+chmod +x "$T/bin4"/*
+run_int() {   # run_int <znacznik albo pusto> <odpowiedzi> [zmienna=wartość…] — wynik: out, RC
+    local mark="$1" answers="$2" feeder; shift 2
+    rm -f "$T/int.pid" "$T/log"/*; : > "$T/int.out"
+    exec 3< <(printf '%b' "$answers"
+              [[ -n "$mark" ]] || exit 0
+              for ((i = 0; i < 300; i++)); do [[ "$(<"$T/int.out")" == *"$mark"* ]] && break; sleep 0.1; done
+              pid="$(<"$T/int.pid")"
+              kill -INT -- "-$pid" 2>/dev/null
+              # Wejście otwarte, dopóki instalator żyje (albo doszedł do [5]).
+              for ((i = 0; i < 300; i++)); do
+                  kill -0 "$pid" 2>/dev/null || break
+                  [[ "$(<"$T/int.out")" == *"[5]"* ]] && break
+                  sleep 0.1
+              done)
+    feeder=$!
+    timeout 30 env --default-signal=INT HOME="$H4" PATH="$T/bin4:$T/sys" "$@" \
+        setsid bash -c 'echo $$ > "$1"; exec bash "$2"' _ "$T/int.pid" "$T/step4-5.sh" \
+        <&3 >"$T/int.out" 2>&1
+    RC=$?
+    exec 3<&-; wait "$feeder" 2>/dev/null
+    out="$(<"$T/int.out")"
+}
+run_int '' 'y\n\n'
+check "kontrola bez Ctrl+C: bieg dochodzi do [5]"    '[[ $RC -eq 0 && "$out" == *"MOCK-MAKEPKG-RUNNING"* && "$out" == *"[5] Checking requirements"* ]]'
+run_int MOCK-MAKEPKG-RUNNING 'y\n\n' MOCK_MAKEPKG_WAIT=1
+check "Ctrl+C w makepkg → install.sh ginie od SIGINT" '[[ $RC -eq 130 && "$out" == *"Aborted by user"* ]]'
+check "Ctrl+C w makepkg → brak [5] i instalacji"     '[[ "$out" != *"[5]"* && "$(cat "$LOG/sudo" 2>/dev/null)" != *testpkg* ]]'
+check "Ctrl+C w makepkg → katalog budowy usunięty"   '[[ -z "$(find "$T/tmp" -maxdepth 1 -name "archenemy-yay.*")" ]]'
+run_int "comes from the AUR" 'y\n'
+check "Ctrl+C przy „Review PKGBUILD?” → koniec, bez [5]" '[[ $RC -eq 130 && "$out" != *"[5]"* && "$out" != *MOCK-MAKEPKG-RUNNING* ]]'
+check "Ctrl+C przy pytaniu → katalog budowy usunięty" '[[ -z "$(find "$T/tmp" -maxdepth 1 -name "archenemy-yay.*")" ]]'
 
 echo "== install.sh używa biblioteki"
 INST="$(cat "$REPO/install/install.sh")"

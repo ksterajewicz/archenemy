@@ -57,7 +57,12 @@ aur_bootstrap_yay() {
     (
         build="$(mktemp -d "${TMPDIR:-/tmp}/archenemy-yay.XXXXXX")" || exit 1
         trap 'rm -rf "$build"' EXIT
-        trap 'exit 130' INT TERM
+        # Ctrl-C (I2, przegląd 2026-11-15): sprzątanie, potem ten sam sygnał
+        # jeszcze raz, już bez pułapki — podpowłoka ginie od SIGINT, więc
+        # install.sh też staje. Dawne `exit 130` było zwykłym wyjściem: bash
+        # uznawał sygnał za obsłużony i instalator jechał dalej do [5].
+        trap 'rm -rf "$build"; trap - INT; kill -INT "$BASHPID"' INT
+        trap 'rm -rf "$build"; trap - TERM; kill -TERM "$BASHPID"' TERM
         git clone "${ARCHENEMY_YAY_URL:-https://aur.archlinux.org/yay.git}" "$build/yay" || exit 1
         echo -e "  yay comes from the AUR (user-submitted, not checked by Arch); its PKGBUILD runs on this machine."
         read -rp "Review PKGBUILD before building? [y/N]: " ans
