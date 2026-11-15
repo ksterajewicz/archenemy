@@ -51,7 +51,12 @@ case "${MOCK_SC:-}" in
     killed) kill -KILL $$ ;;
 esac
 rc=0
-for f in "$@"; do [[ -f "$MOCK_SC_DIR/$f" ]] && { cat "$MOCK_SC_DIR/$f"; rc=1; }; done
+for f in "$@"; do
+    [[ -f "$MOCK_SC_DIR/$f" ]] && { cat "$MOCK_SC_DIR/$f"; rc=1; }
+    # partial: jeden plik pada jak prawdziwy shellcheck pod LANG=C na komunikacie
+    # z „ż” (wiersz spoza formatu gcc, znalezisko zgubione, rc 2), reszta działa.
+    [[ "${MOCK_SC:-}" == partial && "$f" == c.sh ]] && { echo "c.sh: <stdout>: commitBuffer: invalid argument (cannot encode character '\\380')" >&2; rc=2; }
+done
 exit "$rc"
 MOCK
     chmod +x "$T/bin/shellcheck"
@@ -72,6 +77,10 @@ MOCK
     expect "shellcheck without its libraries (rc 127) → ✗, never ✓" 1 "error while loading shared libraries" "" MOCK_SC=broken MOCK_SC_DIR="$T/fx/ok"
     expect "silent rc 127 → ✗" 1 "shellcheck did not finish cleanly" "" MOCK_SC=silent MOCK_SC_DIR="$T/fx/ok"
     expect "shellcheck killed (SIGKILL, xargs 125) → ✗" 1 "xargs exit 125" "" MOCK_SC=killed MOCK_SC_DIR="$T/fx/ok"
+    # Tu xargs daje 123 przy poprawnych znaleziskach z a.sh i b.sh — łapie to
+    # TYLKO sprawdzanie wierszy spoza formatu gcc (pozostałe przypadki padają na
+    # wszystkich plikach naraz i łapie je też warunek „123 bez znaleziska”).
+    expect "one file breaks (line outside gcc format), others report → ✗, never ✓" 1 "commitBuffer: invalid argument" "" MOCK_SC=partial MOCK_SC_DIR="$T/fx/ok"
     # --update-baseline tylko usuwa (R1 C5): naprawione wypadają, nowe nie wchodzą.
     expect "broken shellcheck with --update-baseline → ✗" 1 "did not finish cleanly" --update-baseline MOCK_SC=broken MOCK_SC_DIR="$T/fx/ok"
     if cmp -s "$T/base" "$M/tests/shellcheck.baseline"; then echo "  ✓ autotest: broken shellcheck leaves the baseline untouched"
