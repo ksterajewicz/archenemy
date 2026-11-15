@@ -38,9 +38,12 @@ esac
 
 # Nic nie zadziałało — pokaż PRAWDZIWY błąd ostatniej próby (jeśli jest),
 # nie tylko ogólną instrukcję.
-ERR_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-profile-err"
+# Ten sam plik diagnozy co w asusprofile.sh / universalprofile.sh (lib/runtime-dir.sh, S12).
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$SCRIPTS_DIR/../lib/runtime-dir.sh"
+ERR_FILE="$(archenemy_runtime_dir)/archenemy-profile-err" || ERR_FILE=""
 DIAG=""
-[[ -f "$ERR_FILE" ]] && DIAG="$(head -1 "$ERR_FILE")"
+[[ -n "$ERR_FILE" && -f "$ERR_FILE" ]] && DIAG="$(head -1 "$ERR_FILE")"
 command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" \
     "Przełączenie profilu nie zadziałało.${DIAG:+ Błąd: $DIAG.} ASUS: uruchom demona (sudo systemctl restart asusd), a przy braku asusctl: bash ~/archenemy/install/asus-installation.sh. Inne: power-profiles-daemon (systemctl enable --now power-profiles-daemon)."
 exit 1

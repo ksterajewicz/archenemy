@@ -49,6 +49,8 @@ CONFIRM_SECONDS=15
 source "$ARCHENEMY_DIR/scripts/appbinds/lib/tui.sh"
 # shellcheck source=lib/monitor-id.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
 # shellcheck source=lib/gen-monitors.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/gen-monitors.sh"
 # shellcheck source=lib/gen-workspaces.sh
@@ -1085,7 +1087,9 @@ menu() {
 # (audyt 2026-11-05, A12). Biegi idą po kolei (flock), a monitor zgłoszony
 # w ostatnich NOTIFY_REPEAT_S sekundach pomijamy; wpięty ponownie później
 # dostaje powiadomienie jak dawniej. Bez blokady (flock padł) — dawne zachowanie.
-NOTIFIED_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-new-monitors.notified"
+# Plik i blokada w prywatnym katalogu sesji (lib/runtime-dir.sh, S12); bez
+# niego bez blokady i bez pamięci zgłoszeń, czyli też dawne zachowanie.
+NOTIFIED_FILE=""
 NOTIFY_REPEAT_S=30
 notify_new() {
     local age name now t n tmp
@@ -1093,13 +1097,14 @@ notify_new() {
     age="$(ps -o etimes= -C Hyprland 2>/dev/null | sort -n | head -1 | tr -d ' ')"
     [[ "$age" =~ ^[0-9]+$ ]] && (( age < 30 )) && return 0
     command -v notify-send >/dev/null 2>&1 || return 0
-    { exec 8>"$NOTIFIED_FILE.lock"; } 2>/dev/null && flock -w 10 8
+    NOTIFIED_FILE="$(archenemy_runtime_dir)/archenemy-new-monitors.notified" || NOTIFIED_FILE=""
+    [[ -n "$NOTIFIED_FILE" ]] && { exec 8>"$NOTIFIED_FILE.lock"; } 2>/dev/null && flock -w 10 8
     # Opis EDID pojawia się chwilę po zdarzeniu.
     sleep 1
     load_dats
     ((${#DATS[@]})) || return 0
     now="$(date +%s)"
-    if [[ -f "$NOTIFIED_FILE" ]]; then
+    if [[ -n "$NOTIFIED_FILE" && -f "$NOTIFIED_FILE" ]]; then
         while read -r t n; do
             [[ "$t" =~ ^[0-9]+$ && -n "$n" ]] && (( now - t < NOTIFY_REPEAT_S )) && recent[$n]="$t"
         done < "$NOTIFIED_FILE"
@@ -1109,6 +1114,7 @@ notify_new() {
         notify-send "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
         recent[$name]="$now"
     done < <(new_monitors)
+    [[ -n "$NOTIFIED_FILE" ]] || return 0
     tmp="$(mktemp "$NOTIFIED_FILE.XXXXXX")" || return 0
     for n in "${!recent[@]}"; do printf '%s %s\n' "${recent[$n]}" "$n"; done > "$tmp"
     mv "$tmp" "$NOTIFIED_FILE"

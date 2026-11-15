@@ -40,6 +40,7 @@ echo "flux-wall.sh → --dither / --no-dither"
 H="$T/home"; A="$H/archenemy"
 mkdir -p "$A/src/flux-wall/build" "$A/src/flux-wall/shaders" "$A/scripts/wallpapers" "$A/data" "$T/bin" "$T/run"
 cp "$REPO/scripts/wallpapers/flux-wall.sh" "$A/scripts/wallpapers/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 cp -r "$REPO/rices" "$A/rices"
 for n in dither-flux bars orb-static; do : > "$A/src/flux-wall/shaders/$n.frag"; done
 # rice ze starym confem (sprzed klucza) — ma działać jak 0

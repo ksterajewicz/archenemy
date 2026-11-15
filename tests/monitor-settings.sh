@@ -32,6 +32,7 @@ mkdir -p "$D" "$A/config/hypr" "$A/scripts/hypr/lib" "$A/scripts/appbinds/lib" "
 cp "$REPO"/scripts/hypr/lib/{monitor-id,gen-monitors,gen-workspaces,hypr-apply}.sh "$A/scripts/hypr/lib/"
 cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 cp "$REPO/scripts/wallpapers/lib/dither-flux-sizes.sh" "$A/scripts/wallpapers/lib/"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
 # Atrapy kroków po zmianie układu: log wywołań zamiast tapet i workspace'ów.

@@ -99,6 +99,17 @@ CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 # Hyprland. TYM SAMYM selektorem idzie polecenie IPC (patrz apply_ipc).
 # shellcheck source=scripts/hypr/lib/monitor-id.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+# Logi w prywatnym katalogu sesji (lib/runtime-dir.sh, S12) — ten sam co
+# flux-wall.sh; bez niego logi idą do /dev/null (pliki są tylko dopisywane
+# i czytane, nigdy usuwane).
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+RUN_DIR="$(archenemy_runtime_dir)" || RUN_DIR=""
+HYPRPAPER_ERR_LOG="/dev/null"; FLUX_WALL_LOG="/dev/null"
+if [[ -n "$RUN_DIR" ]]; then
+    HYPRPAPER_ERR_LOG="$RUN_DIR/archenemy-hyprpaper-err.log"
+    FLUX_WALL_LOG="$RUN_DIR/flux-wall.log"
+fi
 # Podglądy w menu rofi (miniatury tapet, kadry animacji, siatka ikon).
 # shellcheck source=scripts/rofi/lib/rofi-preview.sh
 source "$ARCHENEMY_DIR/scripts/rofi/lib/rofi-preview.sh"
@@ -465,7 +476,7 @@ wallpaper_shown_matches() {
 # Zwraca 0 = tapeta poszła (IPC albo restart), 1 = restart też nie pomógł
 # (wołający pokazuje krytyczne powiadomienie zamiast fałszywego sukcesu).
 apply_ipc() {
-    local mon ok=1 err_log="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    local mon ok=1 err_log="$HYPRPAPER_ERR_LOG"
     : > "$err_log"
     local live applied=0 shown
     for mon in "${!STATE[@]}"; do
@@ -559,7 +570,7 @@ if [[ "$1" == "--restore" ]]; then
     [[ ${#STATE[@]} -eq 0 ]] && exit 0
     fill_missing_state
     save_and_generate
-    apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
     exit 0
 elif [[ -n "$1" ]]; then
     # Wywołanie bezpośrednie: absolutny plik / plik względem wallpapers/ / folder zestawu.
@@ -682,7 +693,7 @@ else
             notify-send "archenemy" "Animation '$anim' applied."
             exit 0
         fi
-        notify-send -u critical "archenemy" "Animation '$anim' failed to start — see ${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
+        notify-send -u critical "archenemy" "Animation '$anim' failed to start — see $FLUX_WALL_LOG"
         exit 1
     fi
 
@@ -715,6 +726,6 @@ save_and_generate
 if apply_ipc; then
     notify-send "archenemy" "Wallpaper '$CHOICE' applied."
 else
-    notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
 fi
 exit 0

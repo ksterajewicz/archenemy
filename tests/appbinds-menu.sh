@@ -30,6 +30,7 @@ cp "$REPO"/scripts/waybar/timer-ctl.sh "$A/scripts/waybar/"
 cp "$REPO"/scripts/hypr/workspace-mode-switch.sh "$A/scripts/hypr/"
 cp "$REPO"/scripts/hypr/lib/{gen-workspaces,gen-monitors,monitor-id,hypr-apply}.sh "$A/scripts/hypr/lib/"
 cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 mkdir -p "$A/scripts/appbinds/lib"; cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 printf 'MONITOR=DP-1\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=\nORDER=1\n' > "$A/data/monitors/DP-1.dat"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/notify-send"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/setsid"

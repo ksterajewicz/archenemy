@@ -167,6 +167,9 @@ archenemy/
 │                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── archenemy-doctor.sh           # Public, offline installation diagnostics (`archenemy doctor`).
+│   ├── lib/runtime-dir.sh            # Library: the private session directory for locks, state and logs —
+│                                     #   $XDG_RUNTIME_DIR, /run/user/<UID> or a 0700 archenemy-<UID> dir in /tmp,
+│                                     #   only if ours and private; never a shared /tmp file.
 │   ├── shell/                        # shell-settings.sh — Super+A → [h]: bash ↔ zsh (package, chsh),
 │   │                                 #   arrow-key menus, editing shellrc in neovim, configuring the zsh vi-mode key, optional zsh plugins and CLI tools for bash/zsh;
 │   │                                 #   lib/shell-rc.sh — the shared shell file, rc blocks and personal
@@ -364,6 +367,8 @@ archenemy/
 │                                     #   timer.sh — waybar timer: running → finished, one notification with two bars at once.
 │                                     #   rofi-power-menu.sh — Super+RShift power menu on fake rofi/pidof/systemctl (nothing
 │                                     #   is shut down): poweroff under hyprlock, confirm with Yes, Esc/No do nothing.
+│                                     #   runtime-dir.sh — scripts/lib/runtime-dir.sh: no ${XDG_RUNTIME_DIR:-/tmp} left,
+│                                     #   only our private dirs, refusal on a planted one, window history then off.
 │                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
 │                                     #   fake /sys/module: success only with vboxdrv loaded, reboot code 2.
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
@@ -439,7 +444,7 @@ scripts/wallpapers/flux-wall.sh status               # exit status: is flux-wall
 scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump
 ```
 
-Runtime logs go to `$XDG_RUNTIME_DIR/flux-wall.log` (or `/tmp/flux-wall.log` without that variable). `doctor` reports the checkout, binary age and capabilities, shaders, saved choice, process and log.
+Runtime logs go to `$XDG_RUNTIME_DIR/flux-wall.log` (without that variable: `/run/user/<UID>` or a private `0700` `archenemy-<UID>` directory in `/tmp`, never a shared `/tmp` file; see `scripts/lib/runtime-dir.sh`). `doctor` reports the checkout, binary age and capabilities, shaders, saved choice, process and log.
 
 **Adding shaders.** A single-pass animation is a `.frag` file. A matching `<name>.update.glsl` enables the particle engine: positions and fading trails live in floating-point textures, with parameters from `#pragma flux` declarations. Supported uniforms and parameters are defined in `src/flux-wall/engine.h` and implemented in `engine.c`. Add previews with `src/flux-wall/tools/render-previews.sh -r <rice>` after building the tools. Dithering must follow the uniform rather than the animation name. Accumulator reads at computed columns need a small band (`bars` uses `xc-1..xc+1`), because point stamps may land one pixel to the left; `tests/flux-wall-bars.sh` checks both screen halves. `tests/flux-wall-dither.sh` checks wrapper flags and, when tools are built, rendering.
 

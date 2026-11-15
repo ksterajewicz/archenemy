@@ -47,6 +47,7 @@ mkdir -p "$A/rices/alfa/hypr" "$A/rices/alfa/waybar" "$A/rices/alfa/mako" \
          "$A/rices/beta/hypr" "$A/rices/beta/rofi" \
          "$A/scripts/changing-theme-scripts" "$C" "$XDG_RUNTIME_DIR"
 ln -s "$REPO/scripts/changing-theme-scripts/lib" "$A/scripts/changing-theme-scripts/lib"
+ln -s "$REPO/scripts/lib" "$A/scripts/lib"   # lib/runtime-dir.sh — katalog sesji (S12)
 
 # ─── wycinek [9] z install.sh ────────────────────────────────────────────────
 S=$(grep -n '^# ─── 9. SYMLINKS' "$REPO/install/install.sh" | cut -d: -f1)

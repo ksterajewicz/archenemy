@@ -57,7 +57,6 @@ SHADERS_DIR="$ARCHENEMY_DIR/src/flux-wall/shaders"
 CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 DATA_DIR="$ARCHENEMY_DIR/data"
 CHOICE_DAT="$DATA_DIR/flux-wall.dat"
-LOG="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
 
 # Bezpieczna sonda publicznego doctora: nigdy nie wykonuje konfiguracji.
 # Wszystkie odczyty są ograniczone; dowiązania muszą zostać w drzewie repo.
@@ -106,6 +105,13 @@ print('Binary: ' + ('present' if (repo / 'src/flux-wall/build/flux-wall').is_fil
 sys.exit(0 if text is not None else 1)
 PY
 fi
+
+# Log w prywatnym katalogu sesji (lib/runtime-dir.sh, S12), ten sam co
+# w przełączniku tapet; bez niego /dev/null (log jest tylko pisany i czytany).
+# Liczony po sondzie doctora, bo ta niczego nie zakłada.
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+LOG="$(archenemy_runtime_dir)/flux-wall.log" || LOG=/dev/null
 
 # ─── odczyt konfiguracji ──────────────────────────────────────────────────────
 

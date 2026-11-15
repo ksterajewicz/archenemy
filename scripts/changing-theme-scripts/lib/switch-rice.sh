@@ -41,7 +41,16 @@ fi
 # dostają `9>&-` — inaczej trzymałyby blokadę do końca sesji.
 # SWITCH_RICE_LOCK_WAIT: ile sekund czekać (domyślnie 30) — tests/switch-rice.sh
 # skraca go, żeby sprawdzić zajętą blokadę bez 30 s czekania.
-LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-switch-rice.lock"
+# Blokada leży w prywatnym katalogu sesji (lib/runtime-dir.sh): we wspólnym
+# /tmp inny użytkownik mógł ją założyć i zająć pierwszy (audyt S12). Bez
+# takiego katalogu przełączenie odmawia, zamiast wracać do /tmp.
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+if ! RUN_DIR="$(archenemy_runtime_dir)"; then
+    notify-send "archenemy" "No private runtime directory (XDG_RUNTIME_DIR) — rice switch cancelled."
+    exit 1
+fi
+LOCK_FILE="$RUN_DIR/archenemy-switch-rice.lock"
 LOCK_WAIT="${SWITCH_RICE_LOCK_WAIT:-30}"
 [[ "$LOCK_WAIT" =~ ^[0-9]+$ ]] || LOCK_WAIT=30
 exec 9>"$LOCK_FILE"

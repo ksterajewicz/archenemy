@@ -215,8 +215,13 @@ fi
 # Tryb shared — nie stawiaj demona w ogóle (bez locka i nasłuchu socket2).
 ws_mode_is_shared && exit 0
 
-# Jedna instancja demona na sesję.
-exec 9>"${XDG_RUNTIME_DIR:-/tmp}/archenemy-workspace-guard.lock" || exit 0
+# Jedna instancja demona na sesję. Blokada w prywatnym katalogu sesji
+# (lib/runtime-dir.sh, S12): we wspólnym /tmp ktoś inny mógł ją zająć i demon
+# by nie wstał. Bez takiego katalogu — jak przy nieudanym otwarciu blokady.
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/runtime-dir.sh" || exit 0
+RUN_DIR="$(archenemy_runtime_dir)" || exit 0
+exec 9>"$RUN_DIR/archenemy-workspace-guard.lock" || exit 0
 flock -n 9 || exit 0
 
 # exec-once startuje razem z kompozytorem — poczekaj aż hyprctl odpowiada.

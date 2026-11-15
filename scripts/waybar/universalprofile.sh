@@ -10,7 +10,11 @@
 #   pokazuje wtedy błąd zamiast udawać sukces.
 # =============================================
 
-ERR_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-profile-err"
+# Diagnoza w prywatnym katalogu sesji (lib/runtime-dir.sh, S12); bez niego
+# pusta ścieżka = bez pliku diagnozy (nigdy wspólny /tmp, nigdy rm na /dev/null).
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/runtime-dir.sh"
+ERR_FILE="$(archenemy_runtime_dir)/archenemy-profile-err" || ERR_FILE=""
 
 # Kolejność cyklu. Nie każdy sprzęt ma wszystkie trzy: bez sterownika platformy
 # (część AMD, desktopy) ppd nie wystawia `performance`. Dawniej cykl był stały,
@@ -57,11 +61,11 @@ done
 
 if [[ -z "$NEXT" ]]; then
     [[ -n "${err:-}" ]] || err="powerprofilesctl: brak innego profilu niż '$CURRENT'"
-    printf '%s\n' "$err" | head -2 > "$ERR_FILE"
+    [[ -n "$ERR_FILE" ]] && printf '%s\n' "$err" | head -2 > "$ERR_FILE"
     exit 1
 fi
 
 pkill -RTMIN+8 waybar
 command -v notify-send >/dev/null 2>&1 && notify-send "archenemy" "Power profile: $NEXT"
-rm -f "$ERR_FILE"
+[[ -n "$ERR_FILE" ]] && rm -f "$ERR_FILE"
 exit 0

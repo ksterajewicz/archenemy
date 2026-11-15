@@ -27,6 +27,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 H="$T/home"; A="$H/archenemy"
 mkdir -p "$A/data" "$A/scripts/waybar" "$T/bin" "$T/run"
 cp "$REPO"/scripts/waybar/{profile-get,profile-switch,asusprofile,universalprofile}.sh "$A/scripts/waybar/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 echo asus > "$A/data/hardware.dat"
 export ARCHENEMY_PP_SYSFS="$T/platform_profile" XDG_RUNTIME_DIR="$T/run"
 echo balanced > "$ARCHENEMY_PP_SYSFS"

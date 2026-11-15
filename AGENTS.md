@@ -149,6 +149,15 @@ Rules that follow directly from the table:
   notification, code 1, nothing changed); every background process it starts
   gets `9>&-`, or it would hold the lock for the whole session.
   `bash tests/switch-rice.sh`.
+- **Session files (locks, Super+Tab state, logs) live only in
+  `archenemy_runtime_dir` from `scripts/lib/runtime-dir.sh`**, never in
+  `${XDG_RUNTIME_DIR:-/tmp}`: in a shared `/tmp` another user can create the
+  file first, take the lock, read the log or plant a command for Super+Tab. The
+  function returns `$XDG_RUNTIME_DIR`, `/run/user/<UID>` or a `0700`
+  `archenemy-<UID>` directory in `$TMPDIR`/`/tmp`, each only if it is ours, a
+  real directory and private; otherwise it fails and the caller refuses
+  (rice switch, window history, guard) or skips the lock or log.
+  `bash tests/runtime-dir.sh`.
 - **Monitors: `scripts/hypr/monitor-settings.sh` (`Super+A → [n]`) is the only
   live way to change them**, including a new monitor, renumbering and forgetting an
   unplugged one. `lib/gen-monitors.sh` and `lib/gen-workspaces.sh` are the only

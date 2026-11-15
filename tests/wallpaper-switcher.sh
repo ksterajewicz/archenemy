@@ -111,6 +111,7 @@ mkdir -p "$A/config/hypr" "$A/data/monitors" "$A/scripts/hypr" "$A/scripts/rofi"
 ln -s "$REPO/scripts/hypr/lib" "$A/scripts/hypr/lib"
 ln -s "$REPO/scripts/rofi/rofi_wallpaper_switcher.sh" "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
 ln -s "$REPO/scripts/rofi/lib" "$A/scripts/rofi/lib"
+ln -s "$REPO/scripts/lib" "$A/scripts/lib"   # lib/runtime-dir.sh — katalog sesji (S12)
 export HOME="$H"
 SW="$A/scripts/rofi/rofi_wallpaper_switcher.sh"
 WP="$A/wallpapers/zestaw"

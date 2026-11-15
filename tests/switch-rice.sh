@@ -62,6 +62,7 @@ mkdir -p "$A/rices/alfa/hypr" "$A/rices/alfa/mako" "$A/rices/beta/hypr" "$A/rice
          "$A/scripts/changing-theme-scripts" "$C" "$XDG_RUNTIME_DIR"
 ln -s "$REPO/scripts/changing-theme-scripts/lib" "$A/scripts/changing-theme-scripts/lib"
 ln -s "$REPO/scripts/hypr" "$A/scripts/hypr"    # lib/hypr-apply.sh (reload z odczytem błędów)
+ln -s "$REPO/scripts/lib" "$A/scripts/lib"   # lib/runtime-dir.sh — katalog sesji (S12)
 # Atrapa flux-walla: zapisuje, który rice widzi w .current_rice w chwili autostartu.
 mkdir -p "$A/scripts/wallpapers"
 printf '#!/bin/bash\necho "FLUXWALL $1 rice=$(cat "$HOME/archenemy/.current_rice")" >> "$MOCK_LOG"\n' > "$A/scripts/wallpapers/flux-wall.sh"
