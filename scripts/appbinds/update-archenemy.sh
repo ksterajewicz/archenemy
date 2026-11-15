@@ -121,15 +121,31 @@ fi
 # wpis w `git stash list`, więc zmiany nie giną — mówimy, gdzie są.
 # Kod 1 = konflikt: drzewo ma znaczniki konfliktu, więc wołający nie melduje
 # „✓” i nie proponuje install.sh (audyt bezpieczeństwa 2026-11-14, K3).
+# Rada zależy od stanu (A7, przegląd 2026-11-15): po konflikcie zmiany SĄ
+# już w drzewie (ze znacznikami), a wpis w schowku to kopia — kolejny
+# `git stash pop` daje „needs merge”, a po `git add` nakłada schowek drugi
+# raz; działa: rozwiąż, `git add`, `git stash drop` (man git-stash). Gdy pop
+# padł bez konfliktu, nic nie weszło do drzewa — wtedy `drop` zgubiłby
+# zmiany, więc radzimy samo `git stash pop` po usunięciu przyczyny.
 restore_stash() {
     [[ $stashed -eq 1 ]] || return 0
     echo -e "  ${CYAN}→ Restoring your local changes...${NC}"
     if git -C "$ARCHENEMY_DIR" stash pop 2>&1 | sed 's/^/    /'; then
         echo -e "  ${GREEN}✓ Local changes restored.${NC}"
-    else
-        echo -e "  ${RED}✗ Could not restore automatically — your changes are in the stash (git stash list); resolve the conflict and run git stash pop.${NC}"
-        return 1
+        return 0
     fi
+    local conflicted
+    conflicted="$(git -C "$ARCHENEMY_DIR" diff --name-only --diff-filter=U 2>/dev/null)"
+    if [[ -n "$conflicted" ]]; then
+        echo -e "  ${RED}✗ Could not restore automatically — conflict in:${NC}"
+        head -n 10 <<< "$conflicted" | sed 's/^/    /'
+        echo -e "  ${RED}  A copy of your changes stays in the stash (git stash list). To finish, in ~/archenemy:${NC}"
+        echo -e "  ${RED}  fix the conflict markers, git add those files, then git stash drop (not git stash pop).${NC}"
+    else
+        echo -e "  ${RED}✗ Could not restore automatically — your changes are still in the stash (git stash list).${NC}"
+        echo -e "  ${RED}  Fix the error above, then run git stash pop in ~/archenemy.${NC}"
+    fi
+    return 1
 }
 
 echo -e "  ${CYAN}→ Switching to ${target}...${NC}"
@@ -149,7 +165,7 @@ if ! git -C "$ARCHENEMY_DIR" pull --ff-only origin "$target" 2>&1 | sed 's/^/   
 fi
 
 if ! restore_stash; then
-    echo -e "  ${YELLOW}⚠ The code is at origin/${target}, but the update is not finished: resolve the conflict first.${NC}"
+    echo -e "  ${YELLOW}⚠ The code is at origin/${target}, but the update is not finished: bring your local changes back first (see above).${NC}"
     echo -e "  ${YELLOW}  Afterwards start the installer yourself: bash ~/archenemy/install/install.sh${NC}"
     pause
     exit 0

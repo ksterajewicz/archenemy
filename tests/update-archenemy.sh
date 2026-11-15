@@ -98,6 +98,37 @@ upstream_commit dev f.txt upstream-wersja-k3
 out=$(run_upd '1yy\n\n')
 check "konflikt schowka + „y”: install.sh się nie uruchamia" '[[ "$out" != *INSTALL-RAN* ]]'
 
+# A7 (przegląd 2026-11-15): dawna rada „resolve the conflict and run git
+# stash pop” nie działa — pop na pliku z konfliktem kończy się „needs merge”
+# (rc 128), a po `git add` nakłada schowek drugi raz (nowy konflikt). Działa
+# to, co mówi man git-stash: rozwiąż, `git add`, `git stash drop`. Test robi
+# dokładnie to, co wypisuje aktualizator.
+echo "== A7: rada po konflikcie schowka (rozwiąż, git add, git stash drop) działa"
+fresh_clone dev
+echo lokalna-wersja > "$A/f.txt"; echo lokalna-g > "$A/g.txt"   # f.txt: konflikt, g.txt: bez
+upstream_commit dev f.txt upstream-wersja-a7
+out=$(run_upd '1yn\n\n')
+check "A7: rada mówi git add i git stash drop, nie „run git stash pop”" '[[ "$out" == *"git add those files, then git stash drop"* && "$out" != *"run git stash pop"* ]]'
+check "A7: po konflikcie: f.txt nierozwiązany, wpis w schowku" '[[ "$(git -C "$A" diff --name-only --diff-filter=U)" == f.txt && -n "$(git -C "$A" stash list)" ]]'
+want_f=$'upstream-wersja-a7\nlokalna-wersja'
+printf '%s\n' "$want_f" > "$A/f.txt"                              # rozwiązanie: obie zmiany
+check "A7: dawna rada (stash pop po poprawce pliku) odmawia, wpis zostaje" '! git -C "$A" stash pop >/dev/null 2>&1 && [[ -n "$(git -C "$A" stash list)" ]]'
+check "A7: git add + git stash drop → rc 0" 'git -C "$A" add f.txt && git -C "$A" stash drop >/dev/null 2>&1'
+check "A7: schowek pusty, bez konfliktów, obie zmiany i g.txt na miejscu" '[[ -z "$(git -C "$A" stash list)" && -z "$(git -C "$A" diff --name-only --diff-filter=U)" && "$(<"$A/f.txt")" == "$want_f" && "$(<"$A/g.txt")" == lokalna-g ]]'
+out=$(run_upd '1yn\n')
+check "A7: następna aktualizacja po radzie przechodzi" '[[ "$out" == *"✓ Local changes restored"* && "$out" == *"✓ Updated"* ]]'
+# Pop nieudany BEZ konfliktu (atrapa gita odmawia `stash pop`): nic nie weszło
+# do drzewa, więc rada „git stash drop” zgubiłaby zmiany — ma paść samo pop.
+mkdir -p "$T/fakegit"
+printf '#!/bin/bash\nfor a in "$@"; do [[ "$a" == pop ]] && { echo "error: TEST simulated failure" >&2; exit 1; }; done\nexec %q "$@"\n' "$(command -v git)" > "$T/fakegit/git"
+chmod +x "$T/fakegit/git"
+fresh_clone dev
+echo lokalna-g > "$A/g.txt"
+upstream_commit dev f.txt upstream-a7-bez-konfliktu
+out=$(printf '%b' '1yn\n\n' | PATH="$T/fakegit:$PATH" bash "$UPD" 2>&1)
+check "A7: pop bez konfliktu — rada „git stash pop”, nigdy „drop”" '[[ "$out" == *"✗ Could not restore"* && "$out" == *"then run git stash pop"* && "$out" != *"stash drop"* && "$out" != *"✓ Updated"* ]]'
+check "A7: pop bez konfliktu — po radzie zmiany wracają" 'git -C "$A" stash pop >/dev/null 2>&1 && [[ "$(<"$A/g.txt")" == lokalna-g && -z "$(git -C "$A" stash list)" ]]'
+
 echo "== K4: pytanie o install.sh domyślnie N i z ostrzeżeniem o sudo"
 fresh_clone dev
 upstream_commit dev f.txt v4-k4
