@@ -5,6 +5,7 @@
 #     K8  — install.sh odmawia biegu jako root (zanim cokolwiek zapisze);
 #     K10 — haki ARCHENEMY_ETC_DIR/ARCHENEMY_MODULES_DIR instalatora GPU
 #           działają tylko przy ARCHENEMY_TEST=1, ścieżki pod sudo cytowane;
+#           tak samo haki instalatora VirtualBoksa (I6, przegląd 2026-11-15);
 #     K18 — `sudo -k` po ostatnim użyciu sudo w install.sh, a pułapka EXIT
 #           unieważnia hasło także po Ctrl+C i exit z [2] (I4, przegląd 2026-11-15).
 #   Bez sudo i bez zapisu poza mktemp (install.sh dostaje pusty $HOME).
@@ -101,6 +102,16 @@ check "ARCHENEMY_TEST=0 → hak ignorowany"         '[[ "$(probe ARCHENEMY_TEST=
 unquoted="$(grep -nE '\bsudo\b.*[^"]\$ETC_DIR' "$GPU")"
 check "każde \$ETC_DIR w linii z sudo jest cytowane" '[[ -z "$unquoted" ]]'
 [[ -n "$unquoted" ]] && sed 's/^/      /' <<< "$unquoted"
+
+echo "== I6: haki instalatora VirtualBoksa tylko przy ARCHENEMY_TEST=1"
+# Blok haków do pierwszej pustej linii (nie do „fi”): w wersji bez bramki
+# „fi” nie ma, a zakres do następnego „fi” wykonałby resztę instalatora.
+VB="$REPO/install/virtualbox-installation.sh"
+vb_hooks="$(sed -n '/^# Haki testowe/,/^$/p' "$VB")"
+vb_probe() { env -i PATH="$PATH" "$@" bash -c "$vb_hooks"$'\n''echo "$KMOD_DIR|$SYSMOD_DIR"'; }
+check "bez ARCHENEMY_TEST haki ignorowane → system" '[[ "$(vb_probe ARCHENEMY_MODULES_DIR=/tmp/zly ARCHENEMY_SYSMODULE_DIR=/tmp/zly)" == "/usr/lib/modules|/sys/module" ]]'
+check "ARCHENEMY_TEST=1 → atrapa"                   '[[ "$(vb_probe ARCHENEMY_TEST=1 ARCHENEMY_MODULES_DIR=/tmp/m ARCHENEMY_SYSMODULE_DIR=/tmp/s)" == "/tmp/m|/tmp/s" ]]'
+check "ARCHENEMY_TEST=0 → haki ignorowane"          '[[ "$(vb_probe ARCHENEMY_TEST=0 ARCHENEMY_SYSMODULE_DIR=/tmp/zly)" == "/usr/lib/modules|/sys/module" ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
