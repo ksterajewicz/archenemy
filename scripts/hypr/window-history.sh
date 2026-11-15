@@ -34,7 +34,9 @@
 #   programu, który nie powinien wyjść z piaskownicy (H11/S6, 2026-11-14).
 #
 #   Stan żyje tylko w sesji: $XDG_RUNTIME_DIR/archenemy-window-history/
-#   (tmpfs, 0700, znika po wylogowaniu). Komendy mogą zawierać ścieżki
+#   (tmpfs, 0700, znika po wylogowaniu). Katalog sesji wybiera
+#   lib/runtime-dir.sh; bez prywatnego katalogu skrypt odmawia, bo stan ze
+#   wspólnego /tmp mógłby podsunąć komendę do uruchomienia (S12). Komendy mogą zawierać ścieżki
 #   plików — nie zapisujemy ich na dysk. Środowiska procesu nie
 #   odtwarzamy (może zawierać sekrety).
 #
@@ -48,7 +50,14 @@
 
 set -uo pipefail
 
-RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/runtime-dir.sh"
+if ! RUNTIME="$(archenemy_runtime_dir)"; then
+    echo "window-history.sh: no private runtime directory (XDG_RUNTIME_DIR) — window history is off" >&2
+    [[ "${1:-}" == restore ]] && command -v notify-send >/dev/null 2>&1 && \
+        notify-send -u low "archenemy" "Super+Tab: no private runtime directory (XDG_RUNTIME_DIR)"
+    exit 1
+fi
 STATE_DIR="$RUNTIME/archenemy-window-history"
 OPEN_TSV="$STATE_DIR/open.tsv"       # adres  pid  start  klasa  cwd  komenda
 CLOSED_TSV="$STATE_DIR/closed.tsv"   # pid  start  czas_zamknięcia  klasa  cwd  komenda
@@ -341,7 +350,10 @@ daemon() {
     ) 9>"$STATE_LOCK"
     refresh
 
-    local sock="$RUNTIME/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
+    # Gniazdo jest Hyprlanda, nie nasze: zawsze w XDG_RUNTIME_DIR (jak w guardzie
+    # workspace'ów). RUNTIME bywa innym katalogiem, gdy XDG_RUNTIME_DIR nie jest
+    # prywatny (S12) — tam gniazda nie ma i demon spadałby na sondę (przegląd, R2).
+    local sock="${XDG_RUNTIME_DIR:-}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
     if command -v socat >/dev/null 2>&1 && [[ -S "$sock" ]]; then
         # openwindow/closewindow nie mają wariantu v2 (Window.cpp v0.56.2 —
         # jedno postEvent na zdarzenie). Paczkę zdarzeń (np. zamknięcie kilku

@@ -6,7 +6,7 @@
 #   scripts/hypr/monitor-settings.sh (zmiana na żywo, Super+A → [n])
 #   i workspace-mode-switch.sh (kolejność monitorów).
 #   Nie uruchamiaj bezpośrednio — to biblioteka funkcji.
-#   Wymaga: monitor_selector_from_dat i lua_string z lib/monitor-id.sh.
+#   Wymaga: monitor_selector_from_dat, lua_string i lua_comment z lib/monitor-id.sh.
 # =============================================
 
 # Jedna wartość z pliku .dat monitora.
@@ -51,7 +51,7 @@ generate_monitors_conf() {
             scale="$(monitor_dat_get "$f" SCALE)"
             sel="$(lua_string "$(monitor_selector_from_dat "$f")")"
 
-            echo "-- $mon"
+            echo "-- $(lua_comment "$mon")"
             if [[ -n "$rate" ]]; then
                 echo "hl.monitor({ output = $sel, mode = \"${res}@${rate}\", position = \"$pos\", scale = $scale })"
             else

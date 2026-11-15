@@ -19,7 +19,11 @@
 # =============================================
 
 PP_SYSFS="${ARCHENEMY_PP_SYSFS:-/sys/firmware/acpi/platform_profile}"
-ERR_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-profile-err"
+# Diagnoza w prywatnym katalogu sesji (lib/runtime-dir.sh, S12); bez niego
+# pusta ścieżka = bez pliku diagnozy (nigdy wspólny /tmp, nigdy rm na /dev/null).
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/runtime-dir.sh"
+ERR_FILE="$(archenemy_runtime_dir)/archenemy-profile-err" || ERR_FILE=""
 
 before="$(cat "$PP_SYSFS" 2>/dev/null)"
 out="$(asusctl profile next 2>&1)"
@@ -38,10 +42,10 @@ if [[ $ok -eq 1 ]]; then
     pkill -RTMIN+8 waybar
     command -v notify-send >/dev/null 2>&1 && \
         notify-send "archenemy" "Power profile: ${after:-zmieniony}"
-    rm -f "$ERR_FILE"
+    [[ -n "$ERR_FILE" ]] && rm -f "$ERR_FILE"
     exit 0
 fi
 
-printf '%s\n' "${out:-asusctl profile next: kod $rc, profil w sysfs bez zmian}" \
+[[ -n "$ERR_FILE" ]] && printf '%s\n' "${out:-asusctl profile next: kod $rc, profil w sysfs bez zmian}" \
     | head -2 > "$ERR_FILE"
 exit 1

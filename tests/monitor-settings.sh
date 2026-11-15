@@ -32,6 +32,7 @@ mkdir -p "$D" "$A/config/hypr" "$A/scripts/hypr/lib" "$A/scripts/appbinds/lib" "
 cp "$REPO"/scripts/hypr/lib/{monitor-id,gen-monitors,gen-workspaces,hypr-apply}.sh "$A/scripts/hypr/lib/"
 cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 cp "$REPO/scripts/wallpapers/lib/dither-flux-sizes.sh" "$A/scripts/wallpapers/lib/"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
 # Atrapy kroków po zmianie układu: log wywołań zamiast tapet i workspace'ów.
@@ -71,7 +72,9 @@ show() {
 case "\$1" in
   reload) [[ -f "$T/vanish" ]] && rm -f "$T/third"
     if grep -q 'scale = 9' "$LUA"; then echo 'hl.monitor: bad scale' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
-  configerrors) cat "$T/errors" 2>/dev/null; echo ;;
+  # autoreload = Hyprland wczytał zapisany plik przez inotify, zanim padło
+  # \`hyprctl reload\` — błąd jest w configerrors od razu po zapisie (A2).
+  configerrors) if [[ -f "$T/autoreload" ]]; then grep -q 'scale = 9' "$LUA" && echo 'hl.monitor: bad scale'; else cat "$T/errors" 2>/dev/null; fi; echo ;;
   monitors)
     show eDP-1 0 "\$(rule 'desc:Maker Panel 123')" 'Maker Panel 123 (eDP-1)'
     d='x"y'; [[ -f "$T/twin" ]] && d='Acme Wide 99 (HDMI-A-1)'
@@ -96,7 +99,7 @@ reset() {
     cp "$D/eDP-2.dat" "$T/dat.orig"; cp "$LUA" "$T/lua.orig"; cp "$WS" "$T/ws.orig"
     : > "$T/log"; : > "$T/errors"; : > "$T/after"; : > "$T/notified"
     rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen" "$T/pinned" "$T/rotated" "$T/twodec"
-    rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"
+    rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py" "$XDG_RUNTIME_DIR/archenemy-new-monitors.notified"
 }
 gen_all() {
     ( source "$A/scripts/hypr/lib/monitor-id.sh"; source "$A/scripts/hypr/lib/gen-monitors.sh"; source "$A/scripts/hypr/lib/gen-workspaces.sh"
@@ -193,6 +196,8 @@ reset; out="$(run '1\n1\n\n\n\n')"
 check "brak klawisza cofa"                     'unchanged'
 reset; out="$(run '1\n\n9\n\n\n')"
 check "błąd configu cofa"                      'unchanged && [[ "$out" == *"config error"*"bad scale"* ]]'
+reset; touch "$T/autoreload"; out="$(run '1\n\n9\n\n\n')"; rm -f "$T/autoreload"
+check "autoreload przed reloadem: błąd cofa (A2)" 'unchanged && [[ "$out" == *"config error"*"bad scale"* ]]'
 reset; touch "$T/dead"; out="$(run '1\n1\n\n\n\n\n')"; rm "$T/dead"
 check "martwy Hyprland cofa"                   'unchanged'
 reset; ( printf '1\n1\n\n\n\n'; /usr/bin/sleep 2 ) | bash "$A/scripts/hypr/monitor-settings.sh" >/dev/null 2>&1 &
@@ -477,6 +482,15 @@ reset; echo 100 > "$T/age"; notify
 check "znany monitor: cisza"                   '[[ ! -s "$T/notified" ]]'
 reset; touch "$T/third"; echo 5 > "$T/age"; notify
 check "start sesji: cisza"                     '[[ ! -s "$T/notified" ]]'
+# Dock z dwoma nowymi ekranami: dwa zdarzenia monitor.added naraz, a każdy bieg
+# widzi oba nowe monitory — dawniej 4 powiadomienia zamiast 2 (A12).
+reset; touch "$T/third"; rm "$D/HDMI-A-1.dat"; echo 100 > "$T/age"
+notify & notify & wait
+check "dock z dwoma nowymi: jedno powiadomienie na monitor" '[[ $(grep -c "Super+A → \[n\]" "$T/notified") -eq 2 && $(grep -c "HDMI-A-1: " "$T/notified") -eq 1 && $(grep -c "DP-2: " "$T/notified") -eq 1 ]]'
+notify
+check "kolejne zdarzenie zaraz potem: bez powtórki" '[[ $(grep -c "Super+A → \[n\]" "$T/notified") -eq 2 ]]'
+printf '%s DP-2\n' "$(( $(date +%s) - 100 ))" > "$XDG_RUNTIME_DIR/archenemy-new-monitors.notified"; : > "$T/notified"; notify
+check "monitor wpięty ponownie po przerwie: znowu powiadomienie" '[[ $(grep -c "DP-2: " "$T/notified") -eq 1 ]]'
 
 echo "== skrót"
 reset

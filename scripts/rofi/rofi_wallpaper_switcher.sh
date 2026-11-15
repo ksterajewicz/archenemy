@@ -19,8 +19,10 @@
 #
 #   Menu ma na górze przełącznik "[x] Upload to all monitors" (domyślnie
 #   zaznaczony). Zaznaczony: tapeta idzie na wszystkie monitory — a gdy obok
-#   wybranego pliku *v1*/*v2* leży druga połowa pary, primary dostaje v1,
-#   secondary v2. Odznaczony: tapeta trafia tylko na monitor z fokusem.
+#   wybranego pliku *v1*/*v2* leży druga połowa pary (ta sama nazwa przed
+#   tagiem, np. dither-flux-atraktor-v1-… → dither-flux-atraktor-v2-…),
+#   primary dostaje v1, pozostałe v2. Odznaczony: tapeta trafia tylko na
+#   monitor z fokusem.
 #
 #   Drugi przełącznik "[ ] Set as hyprlock background (no blur)" (domyślnie
 #   odznaczony): zaznaczony — wybrana tapeta idzie też jako `path` w
@@ -97,6 +99,17 @@ CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 # Hyprland. TYM SAMYM selektorem idzie polecenie IPC (patrz apply_ipc).
 # shellcheck source=scripts/hypr/lib/monitor-id.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+# Logi w prywatnym katalogu sesji (lib/runtime-dir.sh, S12) — ten sam co
+# flux-wall.sh; bez niego logi idą do /dev/null (pliki są tylko dopisywane
+# i czytane, nigdy usuwane).
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+RUN_DIR="$(archenemy_runtime_dir)" || RUN_DIR=""
+HYPRPAPER_ERR_LOG="/dev/null"; FLUX_WALL_LOG="/dev/null"
+if [[ -n "$RUN_DIR" ]]; then
+    HYPRPAPER_ERR_LOG="$RUN_DIR/archenemy-hyprpaper-err.log"
+    FLUX_WALL_LOG="$RUN_DIR/flux-wall.log"
+fi
 # Podglądy w menu rofi (miniatury tapet, kadry animacji, siatka ikon).
 # shellcheck source=scripts/rofi/lib/rofi-preview.sh
 source "$ARCHENEMY_DIR/scripts/rofi/lib/rofi-preview.sh"
@@ -108,12 +121,15 @@ MONITORS_EXTRA=()   # trzeci i kolejne -> jak secondary (v2)
 
 declare -A SELECTOR_KNOWN   # selektor z .dat -> 1 (dzisiejszy format klucza)
 declare -A SEL_OF_LIVE      # żywa nazwa złącza -> selektor tego samego monitora
+declare -A RES_OF           # selektor -> RESOLUTION z .dat (tylko WxH; do wyboru pary v1/v2)
 
 if [[ -d "$DATA_DIR/monitors" ]]; then
     for dat in "$DATA_DIR/monitors"/*.dat; do
         [[ -f "$dat" ]] || continue
         mon=$(monitor_selector_from_dat "$dat")
         role=$(grep '^ROLE='    "$dat" | cut -d= -f2)
+        res=$(grep '^RESOLUTION=' "$dat" | cut -d= -f2)
+        [[ "$res" =~ ^[0-9]+x[0-9]+$ ]] && RES_OF[$mon]="$res"
         SELECTOR_KNOWN[$mon]=1
         live=$(monitor_live_name "$mon")
         [[ -n "$live" ]] && SEL_OF_LIVE[$live]="$mon"
@@ -207,11 +223,63 @@ load_state() {
     done
 }
 
+# Druga połowa pary v1/v2 dla pliku $1 — liczona z JEGO nazwy, tag docelowy $2
+# (v1|v2), rozdzielczość monitora docelowego $3 (może być pusta). Kandydaci: pliki
+# z tego samego katalogu z tym samym przedrostkiem przed tagiem i separatorem po
+# nim (dither-flux-atraktor-v1-1920x1080.png → dither-flux-atraktor-v2-*).
+# Wygrywa: rozdzielczość monitora w nazwie (tapety dither-flux są liczone pod
+# ekran), potem ta sama nazwa z podmienionym tagiem, potem pierwszy alfabetycznie.
+# Rozszerzenie rozstrzyga tylko remis w każdym z tych stopni: city-v1.jpg łączy się
+# z city-v2.png, ale city-v2.jpg obok wygrywa. Kandydat z innym rozszerzeniem musi
+# być obrazem z menu (jpg/jpeg/png/webp), nie np. city-v2.txt. Wielkość liter bez
+# znaczenia (jak dawne -iname). Brak pary = pusto.
+# Dawniej `find -iname "*v2*" | head -n1` brał pierwszy plik w kolejności systemu
+# plików: generated/ ma kilka form i rozdzielczości w jednym katalogu, więc drugi
+# monitor dostawał inną formę niż wybrana (audyt 2026-11-05, A7).
+wallpaper_pair() {
+    local f="$1" to="$2" want="${3,,}" from=v2 lbase pre post c lc rest rank
+    local -a best=()   # best[stopień*2 + inne rozszerzenie] = pierwszy taki plik
+    [[ "$to" == v1 ]] || from=v1
+    lbase="$(basename "$f")"; lbase="${lbase,,}"
+    [[ "$lbase" == *"$from"* ]] || return 0
+    pre="${lbase%%"$from"*}"
+    post="${lbase:$(( ${#pre} + ${#from} ))}"
+    for c in "$(dirname "$f")"/*; do
+        [[ -f "$c" ]] || continue
+        lc="$(basename "$c")"; lc="${lc,,}"
+        [[ "$lc" == "$pre$to"* ]] || continue
+        rest="${lc:$(( ${#pre} + ${#to} ))}"
+        [[ -z "$rest" || "$rest" == [!a-z0-9]* ]] || continue     # v2 tak, v20 nie
+        if [[ -n "$want" && "$rest" == *[!0-9]"$want"[!0-9]* ]]; then rank=0
+        elif [[ "${rest%.*}" == "${post%.*}" ]]; then rank=2      # ta sama nazwa
+        else rank=4; fi
+        if [[ "${rest##*.}" != "${post##*.}" ]]; then
+            [[ "$rest" =~ \.(jpe?g|png|webp)$ ]] || continue
+            rank=$(( rank + 1 ))
+        fi
+        [[ -n "${best[rank]:-}" ]] || best[rank]="$c"
+    done
+    for c in "${best[@]}"; do printf '%s\n' "$c"; return 0; done   # najniższy stopień
+    return 0
+}
+
+# Pierwszy alfabetycznie plik katalogu $1 z tagiem $2 w nazwie (bez względu na wielkość liter).
+first_tagged() {
+    local c lc
+    for c in "$1"/*; do
+        lc="$(basename "$c")"
+        [[ -f "$c" && "${lc,,}" == *"$2"* ]] && { printf '%s\n' "$c"; return 0; }
+    done
+    return 0
+}
+
 # Zestaw folderowy (stary model): v1 → primary, v2 → secondary.
 apply_set_folder() {
     local dir="$1" v1 v2
-    v1=$(find "$dir" -maxdepth 1 -iname "*v1*" | head -n1)
-    v2=$(find "$dir" -maxdepth 1 -iname "*v2*" | head -n1)
+    v1=$(first_tagged "$dir" v1)
+    v2=""
+    [[ -n "$v1" ]] && v2=$(wallpaper_pair "$v1" v2 "${RES_OF[${MONITOR2:-_}]:-}")
+    [[ -n "$v2" ]] || v2=$(first_tagged "$dir" v2)
     if [[ -z "$v1" ]]; then
         notify-send "archenemy" "Missing v1 wallpaper in folder '$(basename "$dir")'."
         return 1
@@ -223,25 +291,27 @@ apply_set_folder() {
     return 0
 }
 
-# Plik na wszystkie monitory; jeśli obok leży druga połowa pary v1/v2,
-# primary dostaje v1, secondary v2 — inaczej ten sam plik wszędzie.
+# Plik na wszystkie monitory; jeśli obok leży druga połowa pary v1/v2 (ta sama
+# nazwa przed tagiem — wallpaper_pair), primary dostaje v1, reszta v2 — każdy
+# monitor pod swoją rozdzielczość, gdy jest taki plik. Inaczej ten sam plik wszędzie.
 apply_file_allmon() {
-    local f="$1" p="$1" s="$1" base dir pair
-    base=$(basename "$f")
-    dir=$(dirname "$f")
-    shopt -s nocasematch
-    if [[ "$base" == *v1* ]]; then
-        pair=$(find "$dir" -maxdepth 1 -iname "*v2*" | head -n1)
-        [[ -n "$pair" ]] && s="$pair"
-    elif [[ "$base" == *v2* ]]; then
-        pair=$(find "$dir" -maxdepth 1 -iname "*v1*" | head -n1)
-        [[ -n "$pair" ]] && p="$pair"
+    local f="$1" lbase m pair
+    lbase=$(basename "$f"); lbase="${lbase,,}"
+    if [[ "$lbase" == *v1* ]]; then
+        STATE[$MONITOR1]="$f"
+        for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
+            [[ -n "$m" ]] || continue
+            pair=$(wallpaper_pair "$f" v2 "${RES_OF[$m]:-}")
+            STATE[$m]="${pair:-$f}"
+        done
+    elif [[ "$lbase" == *v2* ]]; then
+        pair=$(wallpaper_pair "$f" v1 "${RES_OF[$MONITOR1]:-}")
+        STATE[$MONITOR1]="${pair:-$f}"
+        for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do [[ -n "$m" ]] && STATE[$m]="$f"; done
+    else
+        for m in "$MONITOR1" "$MONITOR2" "${MONITORS_EXTRA[@]}"; do [[ -n "$m" ]] && STATE[$m]="$f"; done
     fi
-    shopt -u nocasematch
-    STATE[$MONITOR1]="$p"
-    [[ -n "$MONITOR2" ]] && STATE[$MONITOR2]="$s"
-    local m
-    for m in "${MONITORS_EXTRA[@]}"; do STATE[$m]="$s"; done
+    return 0
 }
 
 # Monitor bez zapisanej tapety (właśnie dodany w Super+A → [n]) dostaje to, co
@@ -353,7 +423,7 @@ same_path() {
 # protokołu v2 albo brak odpowiedzi) — wołający traktuje 2 jak dawniej, czyli
 # ufa kodowi wyjścia IPC.
 wallpaper_shown_matches() {
-    local tries="${1:-5}" out mon live have all_ok answered=0
+    local tries="${1:-5}" out mon live have line all_ok answered=0
     while (( tries-- > 0 )); do
         # Demon po restarcie podnosi gniazdo chwilę po procesie — brak
         # odpowiedzi jest powodem do ponowienia, nie do werdyktu.
@@ -363,9 +433,14 @@ wallpaper_shown_matches() {
             for mon in "${!STATE[@]}"; do
                 live=$(monitor_live_name "$mon")
                 [[ -n "$live" ]] || continue
-                # ścieżka może zawierać ": ", więc ucinamy tylko pierwszy prefiks
-                have=$(grep -m1 -F "$live: " <<< "$out")
-                have="${have#"$live": }"
+                # Nazwa złącza od POCZĄTKU linii: „DP-1: ” jest też w środku
+                # „eDP-1: …”, więc grep -F bez kotwicy brał linię panelu i zgodny
+                # ekran wyglądał na rozjazd (restart demona, fałszywe „failed”).
+                # Ścieżka może zawierać ": ", więc ucinamy tylko pierwszy prefiks.
+                have=""
+                while IFS= read -r line; do
+                    [[ "$line" == "$live: "* ]] && { have="${line#"$live": }"; break; }
+                done <<< "$out"
                 same_path "$have" "${STATE[$mon]}" || all_ok=0
             done
             (( all_ok == 1 )) && return 0
@@ -409,7 +484,7 @@ wallpaper_shown_matches() {
 # Zwraca 0 = tapeta poszła (IPC albo restart), 1 = restart też nie pomógł
 # (wołający pokazuje krytyczne powiadomienie zamiast fałszywego sukcesu).
 apply_ipc() {
-    local mon ok=1 err_log="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    local mon ok=1 err_log="$HYPRPAPER_ERR_LOG"
     : > "$err_log"
     local live applied=0 shown
     for mon in "${!STATE[@]}"; do
@@ -441,7 +516,10 @@ apply_ipc() {
         pkill -9 -x hyprpaper 2>/dev/null
         sleep 0.2
     fi
-    hyprpaper & disown
+    # setsid -f: nowa sesja bez terminala sterującego. Restart idzie też z TUI
+    # (Super+A → monitory woła --restore), a `& disown` zostawiał demona w grupie
+    # procesów okna terminala — zamknięcie okna (SIGHUP) zabijało tapetę.
+    setsid -f hyprpaper </dev/null >/dev/null 2>&1
     for _ in $(seq 1 20); do
         pgrep -x hyprpaper >/dev/null && break
         sleep 0.1
@@ -500,7 +578,7 @@ if [[ "$1" == "--restore" ]]; then
     [[ ${#STATE[@]} -eq 0 ]] && exit 0
     fill_missing_state
     save_and_generate
-    apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
     exit 0
 elif [[ -n "$1" ]]; then
     # Wywołanie bezpośrednie: absolutny plik / plik względem wallpapers/ / folder zestawu.
@@ -623,7 +701,7 @@ else
             notify-send "archenemy" "Animation '$anim' applied."
             exit 0
         fi
-        notify-send -u critical "archenemy" "Animation '$anim' failed to start — see ${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
+        notify-send -u critical "archenemy" "Animation '$anim' failed to start — see $FLUX_WALL_LOG"
         exit 1
     fi
 
@@ -656,6 +734,6 @@ save_and_generate
 if apply_ipc; then
     notify-send "archenemy" "Wallpaper '$CHOICE' applied."
 else
-    notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
 fi
 exit 0

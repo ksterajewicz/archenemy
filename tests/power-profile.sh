@@ -27,6 +27,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 H="$T/home"; A="$H/archenemy"
 mkdir -p "$A/data" "$A/scripts/waybar" "$T/bin" "$T/run"
 cp "$REPO"/scripts/waybar/{profile-get,profile-switch,asusprofile,universalprofile}.sh "$A/scripts/waybar/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 echo asus > "$A/data/hardware.dat"
 export ARCHENEMY_PP_SYSFS="$T/platform_profile" XDG_RUNTIME_DIR="$T/run"
 echo balanced > "$ARCHENEMY_PP_SYSFS"
@@ -51,10 +52,30 @@ cat > "$T/bin/systemctl" <<MOCK
 #!/bin/bash
 [[ "\$1" == is-active && ! -f "$T/asusd-dead" ]]
 MOCK
+# ppd: profile z pliku ppd-profiles (domyślnie trzy); `set` innego = błąd jak
+# w demonie, bez zmiany. `list` w układzie powerprofilesctl (od ostatniego,
+# aktywny z „*”, pod nagłówkiem wiersze sterowników); ppd-nolist = list pada.
 cat > "$T/bin/powerprofilesctl" <<MOCK
 #!/bin/bash
 [[ -f "$T/ppd" ]] || exit 1
-if [[ "\$1" == get ]]; then cat "$T/ppd"; else echo "\${2:-}" > "$T/ppd"; fi
+avail="power-saver balanced performance"
+[[ -f "$T/ppd-profiles" ]] && avail="\$(cat "$T/ppd-profiles")"
+case "\$1" in
+    get) cat "$T/ppd" ;;
+    list)
+        [[ -f "$T/ppd-nolist" ]] && exit 1
+        sep=""
+        for p in \$(printf '%s\\n' \$avail | tac); do
+            m=" "; [[ "\$p" == "\$(cat "$T/ppd")" ]] && m="*"
+            printf '%s%s %s:\\n    CpuDriver:\\tamd_pstate\\n    PlatformDriver:\\tplaceholder\\n' "\$sep" "\$m" "\$p"
+            sep=\$'\\n'
+        done ;;
+    set)
+        echo "set \${2:-}" >> "$T/ppd-calls"
+        [[ " \$avail " == *" \${2:-} "* ]] || { echo "Failed to activate profile \${2:-}: not available" >&2; exit 1; }
+        echo "\${2:-}" > "$T/ppd" ;;
+    *) exit 1 ;;
+esac
 MOCK
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"
 printf '#!/bin/bash\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"
@@ -90,6 +111,27 @@ echo "== martwy asusd"
 echo balanced > "$ARCHENEMY_PP_SYSFS"; echo balanced > "$T/ppd"
 check "przełącza przez ppd"                        'switch; [[ "$(cat "$ARCHENEMY_PP_SYSFS")" == "balanced" && "$(cat "$T/ppd")" != "balanced" ]]'
 rm -f "$T/asusd-dead" "$T/ppd"
+
+echo "== ppd bez profilu performance (A8)"
+# Sprzęt bez sterownika platformy: ppd ma tylko power-saver i balanced. Dawniej
+# z balanced klik zawsze próbował performance, więc profil nigdy się nie zmieniał.
+echo universal > "$A/data/hardware.dat"; : > "$T/asusd-dead"
+echo balanced > "$T/ppd"; echo "power-saver balanced" > "$T/ppd-profiles"; : > "$T/notified"; : > "$T/ppd-calls"
+check "klik: balanced → power-saver"               'switch && [[ "$(cat "$T/ppd")" == power-saver ]]'
+check "klik: power-saver → balanced"               'switch && [[ "$(cat "$T/ppd")" == balanced ]]'
+check "bez krytycznego powiadomienia"              '! grep -q "nie zadziałało" "$T/notified" && [[ "$(tail -1 "$T/notified")" == *"balanced"* ]]'
+check "cykl z powerprofilesctl list: bez próby performance" '! grep -qx "set performance" "$T/ppd-calls"'
+: > "$T/ppd-nolist"
+check "list nie działa: nieudany krok pominięty"   'switch && [[ "$(cat "$T/ppd")" == power-saver ]]'
+rm -f "$T/ppd-nolist"
+echo "== ppd z trzema profilami: cykl jak dawniej"
+rm -f "$T/ppd-profiles"; echo balanced > "$T/ppd"
+check "balanced → performance → power-saver"       'switch && [[ "$(cat "$T/ppd")" == performance ]] && switch && [[ "$(cat "$T/ppd")" == power-saver ]]'
+echo "== jeden profil: uczciwy błąd, nie pętla"
+echo balanced > "$T/ppd-profiles"; echo balanced > "$T/ppd"; : > "$T/notified"
+check "nie melduje sukcesu"                        '! switch && [[ "$(cat "$T/ppd")" == balanced ]]'
+check "krytyczne powiadomienie z przyczyną"        '[[ "$(tail -1 "$T/notified")" == *"nie zadziałało"* ]]'
+rm -f "$T/ppd-profiles" "$T/ppd" "$T/asusd-dead"; echo asus > "$A/data/hardware.dat"
 
 echo "== stara składnia nie wraca"
 check "żadnego asusctl profile -n/-p w kodzie"     '! grep -rnE "asusctl profile -[np]\b" "$REPO/scripts" "$REPO/install" "$REPO/config" --include=*.sh --include=*.lua | grep -v "^[^:]*:[0-9]*:[[:space:]]*#"'

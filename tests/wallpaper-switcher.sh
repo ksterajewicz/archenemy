@@ -49,6 +49,11 @@ cat > "$T/bin/hyprpaper" <<'EOF'
 # Atrapa DEMONA: start = wczytanie hyprpaper.conf do stanu, w kolejności pliku
 # (hyprpaper dodaje wpisy configu w tej samej kolejności — patrz mock/hyprctl).
 conf="$HOME/archenemy/config/hypr/hyprpaper.conf"
+# Log przed stanem: wołający widzi demona (pgrep) dopiero, gdy stan istnieje.
+echo "DAEMON start" >> "${MOCK_LOG:-/dev/null}"
+# Własna sesja (SID = PID) = brak terminala sterującego, więc zamknięcie okna
+# TUI, z którego poszedł restart, nie zabije demona (SIGHUP).
+[[ "$(awk '{print $6}' "/proc/$$/stat")" == "$$" ]] && echo "DAEMON own-session" >> "${MOCK_LOG:-/dev/null}"
 : > "$MOCK_HYPRPAPER_STATE"
 mon=""
 while IFS= read -r line; do
@@ -57,7 +62,6 @@ while IFS= read -r line; do
         printf '%s\t%s\n' "$mon" "${BASH_REMATCH[1]}" >> "$MOCK_HYPRPAPER_STATE"
     fi
 done < "$conf"
-echo "DAEMON start" >> "${MOCK_LOG:-/dev/null}"
 EOF
 cat > "$T/bin/pkill" <<'EOF'
 #!/bin/bash
@@ -107,6 +111,7 @@ mkdir -p "$A/config/hypr" "$A/data/monitors" "$A/scripts/hypr" "$A/scripts/rofi"
 ln -s "$REPO/scripts/hypr/lib" "$A/scripts/hypr/lib"
 ln -s "$REPO/scripts/rofi/rofi_wallpaper_switcher.sh" "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
 ln -s "$REPO/scripts/rofi/lib" "$A/scripts/rofi/lib"
+ln -s "$REPO/scripts/lib" "$A/scripts/lib"   # lib/runtime-dir.sh — katalog sesji (S12)
 export HOME="$H"
 SW="$A/scripts/rofi/rofi_wallpaper_switcher.sh"
 WP="$A/wallpapers/zestaw"
@@ -133,8 +138,11 @@ boot_daemon_with() {
     hyprpaper
 }
 
-active_of() {   # co hyprpaper POKAZUJE na monitorze $1
-    hyprctl hyprpaper listactive | grep -m1 -F "$1: " | sed "s/^$1: //"
+active_of() {   # co hyprpaper POKAZUJE na monitorze $1 (nazwa od początku linii: DP-1 ≠ eDP-1)
+    local line
+    while IFS= read -r line; do
+        [[ "$line" == "$1: "* ]] && { printf '%s\n' "${line#"$1": }"; return; }
+    done < <(hyprctl hyprpaper listactive)
 }
 
 echo "== A: opis EDID (desc:) — zmiana tapety musi być widoczna"
@@ -217,6 +225,28 @@ printf 'DP-1=%s\nDP-2=%s\n' "$WP/stara-v1.png" "$WP/stara-v2.png" > "$A/data/wal
 MOCK_MONS=twins bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
 check "każdy bliźniak dostaje swoją połowę pary" '[[ "$(MOCK_MONS=twins active_of DP-1)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=twins active_of DP-2)" == "$WP/nowa-v2.png" ]]'
 
+echo "== C2: eDP-1 i DP-1 naraz — nazwa złącza to przyrostek drugiej (A1, audyt 2026-11-05)"
+# listactive wypisuje eDP-1 przed DP-1; dopasowanie „DP-1: ” bez kotwicy brało
+# linię eDP-1, więc zgodny ekran wyglądał na rozjazd: restart demona i fałszywe
+# „failed to apply”.
+printf 'MONITOR=eDP-1\nROLE=secondary\nORDER=1\n' > "$A/data/monitors/eDP-1.dat"
+printf 'MONITOR=DP-1\nROLE=primary\nORDER=2\n'   > "$A/data/monitors/DP-1.dat"
+rm -f "$A/data/monitors/DP-2.dat"
+boot_daemon_with "wallpaper {
+    monitor = eDP-1
+    path = $WP/stara-v2.png
+}
+wallpaper {
+    monitor = DP-1
+    path = $WP/stara-v1.png
+}"
+printf 'eDP-1=%s\nDP-1=%s\n' "$WP/stara-v2.png" "$WP/stara-v1.png" > "$A/data/wallpaper.dat"
+: > "$MOCK_LOG"
+MOCK_MONS=edpdp bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
+check "DP-1 (primary) pokazuje v1, eDP-1 v2"    '[[ "$(MOCK_MONS=edpdp active_of DP-1)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=edpdp active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
+check "zgodny ekran: bez restartu demona"     '! grep -q "DAEMON kill" "$MOCK_LOG"'
+check "zgodny ekran: sukces, nie 'failed'"    'grep -q "NOTIFY: .*applied" "$MOCK_LOG" && ! grep -q "failed to apply" "$MOCK_LOG"'
+
 echo "== D: monitor odpięty — jego wpis zostaje w configu, IPC go pomija"
 setup_dat a
 boot_daemon_with "wallpaper {
@@ -237,6 +267,7 @@ rm -f "$MOCK_HYPRPAPER_STATE"    # hyprpaper padł
 : > "$MOCK_LOG"
 MOCK_MONS=both bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
 check "demon wystartował ponownie"            'grep -q "DAEMON start" "$MOCK_LOG"'
+check "restart we własnej sesji (A3: przeżyje zamknięcie okna TUI)" 'grep -q "DAEMON own-session" "$MOCK_LOG"'
 check "po restarcie ekran ma nową tapetę"     '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/nowa-v1.png" ]]'
 check "sukces, nie fałszywy alarm"            'grep -q "NOTIFY: .*applied" "$MOCK_LOG" && ! grep -q "failed to apply" "$MOCK_LOG"'
 
@@ -306,6 +337,49 @@ boot_daemon_with ""
 out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
 check "--init ze stanem na skasowany plik → initial" '[[ "$out" == *initial* && "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]]'
 
+echo "== K: wszystkie monitory, tapeta dither-flux — para z nazwy wybranego pliku (A7)"
+# generated/ trzyma kilka form i rozdzielczości w jednym katalogu; dawne
+# `find -iname "*v2*" | head -n1` dawało drugiemu monitorowi tę samą, przypadkową
+# formę dla każdego wyboru (kolejność katalogu, różna między maszynami).
+setup_dat a
+sed -i '$a RESOLUTION=2560x1600' "$A/data/monitors/eDP-1.dat"
+G="$A/wallpapers/dither-flux/generated"; mkdir -p "$G"
+for f in atraktor-v1-1920x1080 atraktor-v2-1920x1200 atraktor-v2-2560x1600 \
+         przeplyw-v1-1920x1080 przeplyw-v2-2560x1600 przeplyw2-v1-1920x1080 przeplyw2-v2-2560x1600; do
+    : > "$G/dither-flux-$f.png"
+done
+boot_daemon_with ""
+pair_ok=1
+for form in atraktor przeplyw przeplyw2; do
+    MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-$form-v1-1920x1080.png" >/dev/null 2>&1
+    p="$(MOCK_MONS=both active_of HDMI-A-3)"; s2="$(MOCK_MONS=both active_of eDP-1)"
+    if [[ "$p" != "$G/dither-flux-$form-v1-1920x1080.png" || "$s2" != "$G/dither-flux-$form-v2-2560x1600.png" ]]; then
+        pair_ok=0; echo "    $form: primary ${p##*/}, secondary ${s2##*/}"
+    fi
+done
+check "v1 wybranej formy na primary, v2 TEJ SAMEJ formy na secondary" '(( pair_ok == 1 ))'
+MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-atraktor-v1-1920x1080.png" >/dev/null 2>&1
+check "z dwóch v2 tej formy: rozdzielczość monitora z .dat" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-atraktor-v2-2560x1600.png" ]]'
+MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-przeplyw-v2-2560x1600.png" >/dev/null 2>&1
+check "wybór v2: primary dostaje v1 tej samej formy" '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$G/dither-flux-przeplyw-v1-1920x1080.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-przeplyw-v2-2560x1600.png" ]]'
+: > "$G/dither-flux-samotna-v1-1920x1080.png"
+MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-samotna-v1-1920x1080.png" >/dev/null 2>&1
+check "forma bez pary: ten sam plik na obu"     '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-samotna-v1-1920x1080.png" ]]'
+rm -rf "$A/wallpapers/dither-flux"
+# Inne rozszerzenie to dalej ta sama para (przegląd A7, R1): city-v1.jpg +
+# city-v2.png. Rozszerzenie rozstrzyga tylko remis, a para musi być obrazem.
+M="$A/wallpapers/miasto"; mkdir -p "$M"
+: > "$M/city-v1.jpg"; : > "$M/city-v2.txt"
+MOCK_MONS=both bash "$SW" "miasto/city-v1.jpg" >/dev/null 2>&1
+check "plik, który nie jest obrazem, nie jest parą" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$M/city-v1.jpg" ]]'
+: > "$M/city-v2.png"
+MOCK_MONS=both bash "$SW" "miasto/city-v1.jpg" >/dev/null 2>&1
+check "para z innym rozszerzeniem: city-v1.jpg + city-v2.png" '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$M/city-v1.jpg" && "$(MOCK_MONS=both active_of eDP-1)" == "$M/city-v2.png" ]]'
+: > "$M/city-v2.jpg"
+MOCK_MONS=both bash "$SW" "miasto/city-v1.jpg" >/dev/null 2>&1
+check "remis nazw: wygrywa to samo rozszerzenie" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$M/city-v2.jpg" ]]'
+rm -rf "$M"
+
 # ─── H–J: podglądy w menu (atrapa rofi) ─────────────────────────────────────
 export MOCK_ROFI_DIR="$T/rofi" MOCK_ROFI_ANSWERS="$T/rofi.answers"
 THUMBS="$A/data/thumbs"
@@ -322,6 +396,61 @@ rofi_in() { tr '\000\037' '|#' < "$MOCK_ROFI_DIR/in-$1"; }
 icon_of() { rofi_in "$1" | awk -v l="$2" 'index($0, l "|icon#") == 1 { print substr($0, length(l) + 7); exit }'; }
 glycin_calls() { grep -c '^GLYCIN' "$MOCK_LOG"; }
 n_thumbs() { find "$THUMBS" -name '*.png' 2>/dev/null | wc -l; }
+
+echo '== L: menu — „Upload to all monitors” i monitor z fokusem (T7)'
+# Skutek na ekranie (listactive atrapy), nie tekst powiadomienia. W atrapie
+# fokus ma eDP-1 (secondary), primary to HDMI-A-3.
+start_old() {
+    setup_dat a
+    boot_daemon_with "wallpaper {
+    monitor = desc:$DESC_HDMI
+    path = $WP/stara-v1.png
+}
+wallpaper {
+    monitor = desc:$DESC_EDP
+    path = $WP/stara-v2.png
+}"
+    printf 'desc:%s=%s\ndesc:%s=%s\n' "$DESC_HDMI" "$WP/stara-v1.png" "$DESC_EDP" "$WP/stara-v2.png" > "$A/data/wallpaper.dat"
+}
+start_old
+menu "Wallpapers/" "zestaw/nowa-v1.png"
+check "domyślnie wszystkie: primary v1, secondary v2"  '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
+start_old
+menu "[x] Upload to all monitors" "Wallpapers/" "zestaw/nowa-v1.png"
+check "odznaczone: tylko monitor z fokusem dostaje plik" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v1.png" ]]'
+check "odznaczone: drugi monitor bez zmian"            '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]] && grep -qxF "desc:$DESC_HDMI=$WP/stara-v1.png" "$A/data/wallpaper.dat"'
+
+echo "== M: menu — tło hyprlocka bez rozmycia i powrót do zrzutu (T7)"
+LB=("$A/config/hypr/hyprlock-background-white-blue.conf" "$A/config/hypr/hyprlock-background-tron.conf")
+lock_default() {
+    local f
+    for f in "${LB[@]}"; do
+        printf 'background {\n    monitor =\n    path = screenshot\n    blur_size = 7\n    blur_passes = 3\n    brightness = 0.55\n}\n' > "$f"
+    done
+    rm -f "$A/data/hyprlock-wallpaper.dat"
+}
+# wszystkie pliki tła mają path=$1, blur_size=$2, blur_passes=$3 i nietkniętą jasność
+lock_is() {
+    local f
+    for f in "${LB[@]}"; do
+        grep -qxF "    path = $1" "$f" && grep -qxF "    blur_size = $2" "$f" && grep -qxF "    blur_passes = $3" "$f" \
+            && grep -qxF "    brightness = 0.55" "$f" || return 1
+    done
+}
+start_old; lock_default
+menu "Wallpapers/" "zestaw/nowa-v1.png"
+check "ptaszek odznaczony (domyślnie): hyprlock dalej na zrzucie" 'lock_is screenshot 7 3'
+menu "[ ] Set as hyprlock background (no blur)" "Wallpapers/" "zestaw/nowa-v2.png"
+check "zaznaczony: tło = wybrany plik, bez rozmycia, jasność rice'a zostaje" 'lock_is "$WP/nowa-v2.png" 0 0'
+check "zaznaczony: wybór zapisany w hyprlock-wallpaper.dat" '[[ "$(<"$A/data/hyprlock-wallpaper.dat")" == "$WP/nowa-v2.png" ]]'
+menu "Wallpapers/" "zestaw/stara-v1.png"
+check "ptaszek zapamiętany: kolejny wybór też idzie na hyprlock" 'lock_is "$WP/stara-v1.png" 0 0'
+for f in "${LB[@]}"; do sed -i 's|^    path = .*|    path = screenshot|' "$f"; done
+MOCK_MONS=both bash "$SW" --restore >/dev/null 2>&1
+check "--restore (Super+T) przywraca tło hyprlocka"    'lock_is "$WP/stara-v1.png" 0 0'
+menu "[x] Set as hyprlock background (no blur)" "Wallpapers/" "zestaw/nowa-v1.png"
+check "odznaczony: powrót do zrzutu z rozmyciem"       'lock_is screenshot 7 3 && [[ "$(<"$A/data/hyprlock-wallpaper.dat")" == off ]]'
+rm -f "${LB[@]}" "$A/data/hyprlock-wallpaper.dat"
 
 echo "== H: Wallpapers/ — miniatury w data/thumbs/, cache po mtime"
 setup_dat a
@@ -393,6 +522,22 @@ check "← Back bez ikony, siatka włączona"      'rofi_in 2 | grep -qx "← Ba
 echo norice > "$A/.current_rice"
 menu "Animations/" ""
 check "rice bez kadrów: zwykła lista, zero ikon" '! grep -q "$X1F" "$MOCK_ROFI_DIR/in-2" && ! grep -q -- "-theme-str" "$MOCK_ROFI_DIR/args-2" && rofi_in 2 | grep -qx "plain"'
+
+echo "== J2: Animations/ → flux-wall.sh select: do flux-wall.dat tylko istniejąca animacja (T7)"
+# rofi -dmenu oddaje też wpisany tekst bez dopasowania; nazwa staje się ścieżką
+# shadera, więc select sprawdza ją, zanim cokolwiek zapisze.
+echo plain > "$A/data/flux-wall.dat"
+menu "Animations/" "orb-spinnin'   ♪ music visualisation"
+check "wybór z menu w flux-wall.dat (apostrof, bez dopisku ♪)" '[[ "$(<"$A/data/flux-wall.dat")" == "orb-spinnin'"'"'" ]]'
+bad_kept=1
+for bad in "nie-ma-takiej" "../shaders/plain" "Plain" "plain;x"; do
+    echo plain > "$A/data/flux-wall.dat"; : > "$MOCK_LOG"
+    menu "Animations/" "$bad"
+    if [[ "$(<"$A/data/flux-wall.dat")" != plain ]] || ! grep -q "NOTIFY: .*failed to start" "$MOCK_LOG"; then
+        bad_kept=0; echo "    '$bad' → flux-wall.dat: $(<"$A/data/flux-wall.dat")"
+    fi
+done
+check "zła nazwa (brak pliku, ../, wielkie litery, ;): wybór bez zmian, krytyczne powiadomienie" '(( bad_kept == 1 ))'
 
 echo ""
 echo "passed: $PASS, failed: $FAIL"

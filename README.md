@@ -168,6 +168,9 @@ archenemy/
 │                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── archenemy-doctor.sh           # Public, offline installation diagnostics (`archenemy doctor`).
+│   ├── lib/runtime-dir.sh            # Library: the private session directory for locks, state and logs —
+│                                     #   $XDG_RUNTIME_DIR, /run/user/<UID> or a 0700 archenemy-<UID> dir in /tmp,
+│                                     #   only if ours and private; never a shared /tmp file.
 │   ├── shell/                        # shell-settings.sh — Super+A → [h]: bash ↔ zsh (package, chsh),
 │   │                                 #   arrow-key menus, editing shellrc in neovim, configuring the zsh vi-mode key, optional zsh plugins and CLI tools for bash/zsh;
 │   │                                 #   lib/shell-rc.sh — the shared shell file, rc blocks and personal
@@ -219,12 +222,14 @@ archenemy/
 │   │                                 #   (regen + reload + guard); lib/gen-workspaces.sh — shared
 │   │                                 #   generator for workspace rules/binds (shared with install.sh);
 │   │                                 #   lib/gen-monitors.sh — monitor rules and saved monitor order;
-│   │                                 #   lib/hypr-apply.sh — reload checked against configerrors;
+│   │                                 #   lib/hypr-apply.sh — reload checked against configerrors read before the write;
 │   │                                 #   lib/gen-autostart.sh — generator for autostart-apps.lua
 │   │                                 #   (shared with install.sh and the Super+A → [p] picker).
 │   │                                 #   lib/monitor-id.sh — monitor identity for the machine layer:
 │   │                                 #   "desc:<EDID description>" selectors instead of connector
-│   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots).
+│   │                                 #   names (eDP-2 / HDMI-A-1 change between reboots);
+│   │                                 #   lua_string/lua_comment put names into generated Lua with
+│   │                                 #   control characters escaped, so a CR can't break the file.
 │   │                                 #   machine-layer-check.sh — read-only self-check at session start:
 │   │                                 #   one notification when the generated files no longer match the
 │   │                                 #   connected monitors (instead of Hyprland's silent fallback),
@@ -309,11 +314,17 @@ archenemy/
 │                                     #   dither-flux rice (fake binary); offscreen: --dither = palette colors only,
 │                                     #   --no-dither = smooth gradient, with spectrogram unchanged by the flag (render part skips without tools).
 │                                     #   flux-wall-wrapper.sh — effect of flux-wall.sh start/select/off/stop/status/autostart/doctor
-│                                     #   on a fake binary with process state (pgrep/pkill mocks see only its PIDs).
+│                                     #   on a fake binary with process state (pgrep/pkill mocks see only its PIDs);
+│                                     #   the ready file sits in the private session dir, without one start exits 3.
+│                                     #   dither-flux-sizes.sh — the plan from data/monitors/*.dat plus the REAL
+│                                     #   generator at ~64 px: every role (other = m-<connector>) gets every form;
+│                                     #   an interrupted run is re-queued and never leaves a truncated PNG.
 │                                     #   wallpaper-switcher.sh — Super+W against a fake hyprpaper daemon
 │                                     #   (settings list + first-match rule): the picked wallpaper must end up
-│                                     #   ON SCREEN in all three .dat scenarios; plus the menu previews on a
-│                                     #   fake rofi (thumbnail cache by mtime, no tool → original image).
+│                                     #   ON SCREEN in all three .dat scenarios; plus the menu on a fake rofi:
+│                                     #   all monitors vs the focused one, the hyprlock background toggle,
+│                                     #   only existing animations reach flux-wall.dat, previews (thumbnail
+│                                     #   cache by mtime, no tool → original image).
 │                                     #   `bash tests/wallpaper-switcher.sh`.
 │                                     #   rofi-inputbar.sh — static font and vertical alignment checks for every rice input bar.
 │                                     #   rofi-theme-switcher.sh — Super+T previews on a fake rofi; every rice
@@ -325,7 +336,8 @@ archenemy/
 │                                     #   (bare origin in a temp dir): no false "✓" on failure, no
 │                                     #   switching to a branch older than what you run.
 │                                     #   switch-rice.sh — rice switching on a fake ~/.config: foreign
-│                                     #   symlinks backed up, two quick Super+T don't race.
+│                                     #   symlinks backed up, two quick Super+T don't race, a lock held
+│                                     #   past the wait ends with code 1 and the old rice intact.
 │                                     #   install-link.sh — installer step [9] (link-only mode of the same
 │                                     #   lib): stow symlinks and real dirs go to .bak, never rm.
 │                                     #   install-tui-entry.sh — installer step [8m]: rofi entry with an
@@ -343,7 +355,8 @@ archenemy/
 │                                     #   appbinds.sh — Super+A list vs [d]: a hand-written bind between
 │                                     #   TUI binds doesn't shift the numbering.
 │                                     #   rice-autostart.sh — runs every rice's hyprland.lua on a fake
-│                                     #   `hl` API (lua5.4) and checks what starts with the session.
+│                                     #   `hl` API (lua5.4) and checks what starts with the session;
+│                                     #   window `move` rules must evaluate (PiP lands in the corner).
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
@@ -372,11 +385,18 @@ archenemy/
 │                                     #   asus-installation.sh — ASUS installer on a fake pacman: AUR variants
 │                                     #   replaced, success = the package named asusctl, supergfxctl guard.
 │                                     #   power-profile.sh — profile get/next on a fake asusctl with the 6.5.0
-│                                     #   syntax, verified change, fallback to power-profiles-daemon.
+│                                     #   syntax, verified change, fallback to power-profiles-daemon; ppd
+│                                     #   without `performance` still cycles (only listed profiles, failed step skipped).
 │                                     #   bootloader.sh — install/bootloader.sh, kernel-install.sh and
 │                                     #   cpudrivers-installation.sh on fake sudo/pacman/grub-mkconfig/bootctl,
 │                                     #   a fake /boot and /proc/cpuinfo: GRUB regenerated only after the
 │                                     #   packages are really installed, systemd-boot/unknown entries untouched.
+│                                     #   volume-bar.sh — waybar volume module on fake pactl/wpctl: headphones in any locale.
+│                                     #   timer.sh — waybar timer: running → finished, one notification with two bars at once.
+│                                     #   rofi-power-menu.sh — Super+RShift power menu on fake rofi/pidof/systemctl (nothing
+│                                     #   is shut down): poweroff under hyprlock, confirm with Yes, Esc/No do nothing.
+│                                     #   runtime-dir.sh — scripts/lib/runtime-dir.sh: no ${XDG_RUNTIME_DIR:-/tmp} left,
+│                                     #   only our private dirs, refusal on a planted one, window history then off.
 │                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
 │                                     #   fake /sys/module: success only with vboxdrv loaded, reboot code 2.
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
@@ -422,7 +442,7 @@ archenemy/
 
 ## Wallpapers
 
-Wallpapers live in `wallpapers/` (loose files or in subfolders) and are versioned in git — a fresh install has them right away. Exception: the `dither-flux` set is **generated for the real monitors** — `install.sh` step **[9.7]** reads resolutions and roles from `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, further ones → `m-<name>`; modes named like `preferred` are resolved via `hyprctl`) and runs `gen_dither_flux_wallpaper.py` in the background into `wallpapers/dither-flux/generated/` (outside git; logged to `generate.log`). A 1px raster doesn't tolerate scaling, so the wallpaper must exactly match the screen resolution. As of 2026-09-08 the repo keeps no ready-made PNGs for this set — until generation finishes (a few minutes after install) the `dither-flux` entry in `Super+W` simply isn't there; the flux-wall animations are independent of these files.
+Wallpapers live in `wallpapers/` (loose files or in subfolders) and are versioned in git — a fresh install has them right away. Exception: the `dither-flux` set is **generated for the real monitors** — `install.sh` step **[9.7]** reads resolutions and roles from `data/monitors/*.dat` (primary → `v1`, secondary → `v2`, further ones → `m-<name>`; modes named like `preferred` are resolved via `hyprctl`) and runs `gen_dither_flux_wallpaper.py` in the background into `wallpapers/dither-flux/generated/` (outside git; logged to `generate.log`). Each PNG is written atomically (a hidden `.part` file, then a rename), and a size counts as done only once its last form exists, so a run cut short by a reboot is completed by the next `install.sh` or `Super+A → [n]`. A 1px raster doesn't tolerate scaling, so the wallpaper must exactly match the screen resolution. As of 2026-09-08 the repo keeps no ready-made PNGs for this set — until generation finishes (a few minutes after install) the `dither-flux` entry in `Super+W` simply isn't there; the flux-wall animations are independent of these files.
 
 The `Super+W` menu is two-level: under two checkboxes are the **`Wallpapers/`** folder (files from `wallpapers/`) and **`Animations/`** (flux-wall animations, when built; music visualizations tagged `♪ music visualisation`), and below them **`Animation: off`**; `← Back` in the submenu returns to the top. Picking an animation doesn't change the hyprpaper wallpaper: the animation draws on top of it and works in **every** rice, using `rices/<rice>/flux-wall.conf` for the palette when present (beta has no such file and uses the binary's default palette). The choice is remembered in `data/flux-wall.dat` and survives `Super+T` and reboots; `off` disables the animation everywhere, and deleting the file restores the rice's default behavior (dither-flux: enabled, the rest: disabled). Switching: `Super + W` — the menu shows all images (jpg/jpeg/png/webp), with two checkboxes at the top: `[x] Upload to all monitors` (checked by default — wallpaper goes to all monitors instead of just the focused one) and `[ ] Set as hyprlock background (no blur)` (unchecked by default — checking it sets the chosen image as the lock-screen background without blur, instead of the default live screenshot + blur; survives switching rices).
 
@@ -430,7 +450,7 @@ The `Super+W` menu is two-level: under two checkboxes are the **`Wallpapers/`** 
 
 At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked by default):
 
-- **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and every other monitor gets `v2`; without a pair, the same image goes everywhere.
+- **Checked** — the wallpaper goes to all monitors. If a matching `*v1*`/`*v2*` counterpart sits next to the chosen file, the primary monitor gets `v1` and every other monitor gets `v2`; without a pair, the same image goes everywhere. The counterpart is found from the chosen file's own name: same part before the tag, so `dither-flux-atraktor-v1-1920x1080.png` pairs with `dither-flux-atraktor-v2-…`, never with another form from the same folder; among several such files the one with the monitor's resolution (from `data/monitors/*.dat`) wins, then the same name with the tag swapped. The extension may differ (`city-v1.jpg` pairs with `city-v2.png`, as long as the counterpart is a `jpg`/`jpeg`/`png`/`webp` image); it only breaks ties, so `city-v2.jpg` next to it would win.
 - **Unchecked** (click the entry to toggle) — the wallpaper goes only to the monitor you have focus on; the others stay unchanged.
 
 The per-monitor choice is remembered in `data/wallpaper.dat` and restored when you switch rice or re-run `install.sh` (a fresh install, or a choice pointing at deleted files, falls back to the first wallpaper). Set wallpaper roles in the installer or `Super+A → [n]`; the installer proposes the first monitor as primary and the rest as secondary. A monitor without a saved wallpaper uses the secondary wallpaper on restore.
@@ -467,7 +487,7 @@ scripts/wallpapers/flux-wall.sh status               # exit status: is flux-wall
 scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump
 ```
 
-`start` and `select` (what `Super+W` reports as "applied") wait for the binary to confirm its **first frame on screen**: the binary gets `--ready-file $XDG_RUNTIME_DIR/flux-wall.ready` and creates that file with its PID after the first successful buffer swap, i.e. after the shader compiled and the EGL surface exists. A process that is merely alive proves nothing — shader or EGL errors (exit code 3) arrive only at the first surface, later on a slow GPU. If the process exits first, or no frame arrives within `FLUX_WALL_READY_TIMEOUT` seconds (default 10; the process is then left running), the wrapper exits with 3 and prints the end of the log. An older binary without `--ready-file` is checked as before (alive after 0.5 s). `autostart`/`restore` stay quiet and do not wait. Runtime logs go to `$XDG_RUNTIME_DIR/flux-wall.log` (or `/tmp/flux-wall.log` without that variable). `doctor` reports the checkout, binary age and capabilities, shaders, saved choice, process and log.
+`start` and `select` (what `Super+W` reports as "applied") wait for the binary to confirm its **first frame on screen**: the binary gets `--ready-file <session dir>/flux-wall.ready` and creates that file with its PID after the first successful buffer swap, i.e. after the shader compiled and the EGL surface exists. A process that is merely alive proves nothing — shader or EGL errors (exit code 3) arrive only at the first surface, later on a slow GPU. If the process exits first, or no frame arrives within `FLUX_WALL_READY_TIMEOUT` seconds (default 10; the process is then left running), the wrapper exits with 3 and prints the end of the log. An older binary without `--ready-file` is checked as before (alive after 0.5 s). `autostart`/`restore` stay quiet and do not wait. The ready file and the runtime log (`flux-wall.log`) live in the private session directory from `scripts/lib/runtime-dir.sh`: `$XDG_RUNTIME_DIR` (without that variable, or when it is not a private directory: `/run/user/<UID>` or a private `0700` `archenemy-<UID>` directory in `$TMPDIR`, default `/tmp`), never a shared `/tmp` file. When no such directory is available, the log goes to `/dev/null` and there is no ready file, so `start` cannot confirm the first frame: it exits with 3 instead of reporting success, and leaves the process running. `doctor` reports the checkout, binary age and capabilities, shaders, saved choice, process and log.
 
 **EGL errors while running.** Exit code 3 belongs to startup: until the first frame is on screen (the moment `--ready-file` marks), any EGL error ends the process and hyprpaper stays visible. After that, an EGL error on one monitor's surface (for example a newly connected monitor on which `eglCreateWindowSurface` fails) drops only that surface and retries it after 1 s, doubling up to 30 s; the other monitors keep animating. A lost EGL context (`EGL_CONTEXT_LOST`, e.g. after the GPU wakes up) never recovers by itself, so the binary creates a new context, rebuilds the shader program and recreates every monitor's surface instead of skipping frames forever with a frozen picture while `status` reports it running. More than 3 losses within 60 s, or a failed new context, end the process with 3 and hyprpaper stays. Such errors are always written to the log, also without `-v`.
 
@@ -567,9 +587,9 @@ Every change to `~/.bashrc` or `~/.zshrc` keeps a dated copy next to it (`~/.bas
 
 `[i] diagnostics` runs a read-only check of the generated config against the connected monitors, and saves workspace and GPU dumps as `~/archenemy-diag-*.txt`. Those files list your hardware, including monitor serial numbers, so keep them private.
 
-Volume: waybar's `pulseaudio` module has been replaced with a custom `custom/volumebar` (script `scripts/waybar/volume-bar.sh`) — it draws a fill bar with a percentage instead of just an icon. Scrolling on the bar and volume keys work as before (hardware keys additionally send waybar signal 10 = instant bar refresh). Click: left-click opens `pavucontrol`, right-click mutes. Three styles selectable in `Super+A` → `[v]`: `line` (thin bar, 10 cells), `ticks` (▮▮▯ segments, 10 cells), and `solid` (a thick volume block on a thin line, longer — 20 cells, 5% per cell). The `>100%` state (boost) has its own color class per rice. The speaker icon automatically switches to headphones when the default sink's Active Port (from `pactl`) points to a headphone output — and switches back on unplug; detected in the same `interval:1` backstop, no separate trigger. The headphone glyph itself sits lower than the speaker and mic glyphs in Iosevka, so the script nudges it up with a pango span (`rise`) — the correction height is a single `ICON_RISE_HEADPHONES` constant at the top of `volume-bar.sh` (positive = up, negative = down, `0` = no correction).
+Volume: waybar's `pulseaudio` module has been replaced with a custom `custom/volumebar` (script `scripts/waybar/volume-bar.sh`) — it draws a fill bar with a percentage instead of just an icon. Scrolling on the bar and volume keys work as before (hardware keys additionally send waybar signal 10 = instant bar refresh). Click: left-click opens `pavucontrol`, right-click mutes. Three styles selectable in `Super+A` → `[v]`: `line` (thin bar, 10 cells), `ticks` (▮▮▯ segments, 10 cells), and `solid` (a thick volume block on a thin line, longer — 20 cells, 5% per cell). The `>100%` state (boost) has its own color class per rice. The speaker icon automatically switches to headphones when the default sink's Active Port (from `pactl`, read in the C locale, so any system language works) points to a headphone output — and switches back on unplug; detected in the same `interval:1` backstop, no separate trigger. The headphone glyph itself sits lower than the speaker and mic glyphs in Iosevka, so the script nudges it up with a pango span (`rise`) — the correction height is a single `ICON_RISE_HEADPHONES` constant at the top of `volume-bar.sh` (positive = up, negative = down, `0` = no correction).
 
-Power profile: the `custom/profileswitcher` module shows the current profile, and clicking cycles through them. On ASUS ROG machines the **top hardware profile key** (`XF86Launch4`) does the same thing — since 2026-09-07 it goes through the same path as a click, i.e. `scripts/waybar/profile-switch.sh`: the change is verified against `/sys/firmware/acpi/platform_profile`, with an automatic fallback to `power-profiles-daemon` if `asusd` is dead, and if nothing works a critical notification shows the tool's actual error. Previously the key called raw `asusctl`, which can exit with code 0 without changing anything (client newer than the daemon after an update without restarting `asusd`) — the bar would refresh, the profile would stay the old one, and the key would look dead. The bind is in the machine layer (`config/hypr/hardware-keys.lua`, generated by `install.sh`), so it needs another installer run after a repo update.
+Power profile: the `custom/profileswitcher` module shows the current profile, and clicking cycles through them. On ASUS ROG machines the **top hardware profile key** (`XF86Launch4`) does the same thing — since 2026-09-07 it goes through the same path as a click, i.e. `scripts/waybar/profile-switch.sh`: the change is verified against `/sys/firmware/acpi/platform_profile`, with an automatic fallback to `power-profiles-daemon` if `asusd` is dead, and if nothing works a critical notification shows the tool's actual error. With `power-profiles-daemon` the click cycles only through the profiles `powerprofilesctl list` offers (hardware without a platform driver has no `performance`), and a profile that does not take is skipped for the next one. Previously the key called raw `asusctl`, which can exit with code 0 without changing anything (client newer than the daemon after an update without restarting `asusd`) — the bar would refresh, the profile would stay the old one, and the key would look dead. The bind is in the machine layer (`config/hypr/hardware-keys.lua`, generated by `install.sh`), so it needs another installer run after a repo update.
 
 ### ASUS laptops
 
@@ -661,7 +681,9 @@ Bar controls: **left-click** start / pause / resume (and on a timer that's
 reached zero — dismiss the alert), **right-click** reset to the default
 duration, **scroll** ±1 minute (only works while the timer is stopped or
 paused — scroll doesn't touch a running countdown). One notification fires
-(`notify-send`) when it reaches zero. The countdown is computed from the
+(`notify-send`) when it reaches zero, also with a bar on every monitor: the
+bars take turns under a lock on `data/`, and only the one that records the
+finish sends it. The countdown is computed from the
 wall clock, so reloading waybar or switching rice doesn't shift it.
 Disabling the timer in the TUI hides the module entirely — the clock then
 returns to exactly the center of the bar.

@@ -28,7 +28,10 @@ is_desktop_command() {
     IFS=: read -ra dirs <<<"${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
     for dir in "${dirs[@]}"; do
         [[ -d "$dir/applications" ]] || continue
-        entries="$(grep -rhs --include='*.desktop' '^Exec=' "$dir/applications")" || continue
+        # -R, nie -r: Flatpak (exports/share/applications) i część instalatorów
+        # wystawia wpisy jako symlinki, a -r pomija symlinki w głębi katalogu —
+        # bramka odcinała wtedy aplikacje widoczne w menu.
+        entries="$(grep -Rhs --include='*.desktop' '^Exec=' "$dir/applications")" || continue
         found_any=1
         while IFS= read -r value; do
             value="${value#Exec=}"

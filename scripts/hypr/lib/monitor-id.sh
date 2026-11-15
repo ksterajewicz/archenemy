@@ -102,10 +102,31 @@ monitor_live_name() {
 }
 
 # Literał stringu Lua (cudzysłów i backslash w opisie z EDID nie mogą
-# rozerwać hl.monitor({ output = "..." })).
+# rozerwać hl.monitor({ output = "..." })). Znaki sterujące idą jako \ddd:
+# surowy \n albo \r urywa literał Lua i cały plik (Hyprland gubi wtedy
+# wszystkie reguły z niego), a parsery bashowe wymagają 1 reguły = 1 linii.
+# Opis z EDID odsiewa już monitor_desc_usable, ale nazwa złącza z MONITOR=
+# (CR z ręcznej edycji) albo z nazwy pliku .dat przechodzi tędy (S14).
+# Bajty liczone w locale C, więc UTF-8 przechodzi bez zmian.
 lua_string() {
-    local s="$1"
+    local s="$1" out="" c i LC_ALL=C
     s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
+    if [[ "$s" == *[[:cntrl:]]* ]]; then
+        for (( i = 0; i < ${#s}; i++ )); do
+            c="${s:i:1}"
+            [[ "$c" == [[:cntrl:]] ]] && printf -v c '\\%03d' "'$c"
+            out+="$c"
+        done
+        s="$out"
+    fi
     printf '"%s"\n' "$s"
+}
+
+# Tekst do komentarza Lua w pliku generowanym (nazwa złącza / pliku .dat).
+# Komentarz Lua kończy każdy \n i \r, a reszta linii staje się kodem, więc
+# znaki sterujące zamieniamy na "?" (S14).
+lua_comment() {
+    local s="$1" LC_ALL=C
+    printf '%s\n' "${s//[[:cntrl:]]/?}"
 }

@@ -31,9 +31,9 @@
 
 is_internal_panel() { [[ "$1" == eDP* || "$1" == LVDS* || "$1" == DSI* ]]; }
 
-# lua_string (cytowanie selektora) — z lib/monitor-id.sh; wołający mógł jej
-# nie source'ować (stare testy/atrapy), więc dociągamy obok siebie.
-if ! declare -F lua_string >/dev/null; then
+# lua_string (cytowanie selektora) i lua_comment — z lib/monitor-id.sh;
+# wołający mógł ich nie source'ować (stare testy/atrapy), więc dociągamy obok siebie.
+if ! declare -F lua_string >/dev/null || ! declare -F lua_comment >/dev/null; then
     # shellcheck source=scripts/hypr/lib/monitor-id.sh
     source "$(dirname "${BASH_SOURCE[0]}")/monitor-id.sh"
 fi
@@ -67,7 +67,7 @@ generate_workspaces_monitors() {
             k=1
             for mon in "${mons_lr[@]}"; do
                 echo ""
-                echo "-- monitor $k: $mon — home workspace $k"
+                echo "-- monitor $k: $(lua_comment "$mon") — home workspace $k"
                 echo "hl.workspace_rule({ workspace = \"$k\", monitor = $(lua_string "${selector_of[$mon]}"), default = true })"
                 k=$((k + 1))
             done
@@ -115,7 +115,7 @@ BINDS
             ws_base=0
             for mon in "${ordered[@]}"; do
                 echo ""
-                echo "-- $mon — workspaces $((ws_base+1))-$((ws_base+10))"
+                echo "-- $(lua_comment "$mon") — workspaces $((ws_base+1))-$((ws_base+10))"
                 for i in $(seq 1 10); do
                     ws=$((ws_base + i))
                     rule="hl.workspace_rule({ workspace = \"$ws\", monitor = $(lua_string "${selector_of[$mon]}")"

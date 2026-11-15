@@ -25,7 +25,7 @@ export HOME="$T/home" XDG_DATA_DIRS="$T/share" PATH="$T/bin:$PATH"
 unset XDG_DATA_HOME
 
 # Atrapy binarek zapisują, że się uruchomiły, razem z argumentami.
-for b in app-a app-b app-c app-d forbidden; do
+for b in app-a app-b app-c app-d app-f forbidden; do
     printf '#!/bin/bash\necho "%s $*" >> "$RAN"\n' "$b" > "$T/bin/$b"
     chmod +x "$T/bin/$b"
 done
@@ -36,6 +36,11 @@ printf '[Desktop Entry]\nExec=app-b --flag\n' > "$T/share/applications/wine/b.de
 printf '[Desktop Entry]\nExec="%s/bin/app-c" %%f\n' "$T" > "$T/share/applications/c.desktop"
 printf '[Desktop Entry]\nExec=app-d\n' > "$T/home/.local/share/applications/d.desktop"
 printf '[Desktop Entry]\nTryExec=forbidden\nExec=other\n' > "$T/share/applications/e.desktop"
+# Flatpak eksportuje wpisy jako SYMLINKI (exports/share/applications/*.desktop →
+# app/<id>/…/export/…); grep -r pomija symlinki w głębi katalogu (A14).
+mkdir -p "$T/flatpak-app"
+printf '[Desktop Entry]\nExec=app-f run --command=f org.example.F\n' > "$T/flatpak-app/org.example.F.desktop"
+ln -s "$T/flatpak-app/org.example.F.desktop" "$T/share/applications/org.example.F.desktop"
 
 ran() { : > "$RAN"; "$GATE" --exec "$@"; RC=$?; }
 
@@ -48,6 +53,9 @@ ran "$T/bin/app-c" plik
 [[ "$(<"$RAN")" == "app-c plik" ]] && ok "Exec w cudzysłowie" || fail "app-c: $(<"$RAN")"
 ran app-d
 [[ "$(<"$RAN")" == "app-d " ]] && ok "wpis z ~/.local/share/applications" || fail "app-d: $(<"$RAN")"
+
+ran app-f run --command=f org.example.F
+if [[ "$(<"$RAN")" == "app-f run --command=f org.example.F" ]]; then ok "wpis .desktop jako symlink (Flatpak)"; else fail "app-f: $(<"$RAN")"; fi
 
 ran siga
 [[ $RC -eq 0 && ! -s "$RAN" ]] && ok "brak aplikacji → cisza, kod 0 (bez okna błędu)" || fail "siga: rc=$RC"

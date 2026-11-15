@@ -12,7 +12,8 @@
 #   natychmiast Super+Tab”, deduplikację i limit stosu, wyjątki (archenemy-*,
 #   gry Steama), awarię hyprctl, to, że przywrócona aplikacja nie trzyma
 #   blokady stanu, oraz demona: zdarzenia socket2 (prawdziwy socket przez
-#   socat), jedna instancja i czysty stan przy nowej instancji Hyprlanda.
+#   socat), jedna instancja, czysty stan przy nowej instancji Hyprlanda
+#   i gniazdo z XDG_RUNTIME_DIR także wtedy, gdy stan leży gdzie indziej.
 #   Uruchom: bash tests/window-history.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -316,6 +317,33 @@ check "closewindow → wpis na stosie bez udziału restore" 'bash "$WH" list | g
 exec 7>&-                     # EOF socketa = koniec sesji Hyprlanda
 for _ in $(seq 1 30); do kill -0 "$D" 2>/dev/null || break; sleep 0.1; done
 check "demon kończy się po zamknięciu socketa" '! kill -0 "$D" 2>/dev/null'
+
+echo "== demon: XDG_RUNTIME_DIR nie jest prywatny — gniazdo i tak stamtąd (R2) =="
+# Stan i blokada idą do katalogu z archenemy_runtime_dir (S12), przy
+# XDG_RUNTIME_DIR 0755 to /run/user/<UID> albo /tmp/archenemy-<UID>. Hyprland
+# trzyma gniazdo w XDG_RUNTIME_DIR: demon szukający go obok stanu przechodził
+# na sondę co 2 s i gubił okno otwarte i zamknięte między dwiema sondami.
+X2="$T/xdg-open"; SYS="$T/sys-run"
+mkdir -p "$X2"; chmod 755 "$X2"; mkdir -m 700 "$SYS"
+SOCK2="$X2/hypr/sig2/.socket2.sock"
+mkdir -p "$(dirname "$SOCK2")"
+mkfifo "$T/events2"
+socat -u "OPEN:$T/events2" "UNIX-LISTEN:$SOCK2" 2>/dev/null &
+PIDS+=("$!")
+exec 7>"$T/events2"
+for _ in $(seq 1 30); do [[ -S "$SOCK2" ]] && break; sleep 0.1; done
+XDG_RUNTIME_DIR="$X2" ARCHENEMY_RUNTIME_SYSTEM="$SYS" HYPRLAND_INSTANCE_SIGNATURE=sig2 \
+    bash "$WH" daemon >/dev/null 2>&1 7>&- &
+D2=$!
+PIDS+=("$D2")
+# Na znacznik, nie po stałym czasie: socat demona połączony z gniazdem.
+for _ in $(seq 1 100); do pgrep -f "UNIX-CONNECT:$SOCK2" >/dev/null && break; sleep 0.1; done
+check "demon słucha gniazda z XDG_RUNTIME_DIR, nie sondy co 2 s" 'pgrep -f "UNIX-CONNECT:$SOCK2" >/dev/null'
+check "stan w prywatnym katalogu, nie w XDG_RUNTIME_DIR 0755" \
+    '[[ -f "$SYS/archenemy-window-history/session" && ! -e "$X2/archenemy-window-history" ]]'
+exec 7>&-
+for _ in $(seq 1 50); do kill -0 "$D2" 2>/dev/null || break; sleep 0.1; done
+check "demon kończy się po zamknięciu gniazda" '! kill -0 "$D2" 2>/dev/null'
 
 echo ""
 echo "window-history: $PASS ✓, $FAIL ✗"

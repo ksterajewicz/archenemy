@@ -30,6 +30,7 @@ cp "$REPO"/scripts/waybar/timer-ctl.sh "$A/scripts/waybar/"
 cp "$REPO"/scripts/hypr/workspace-mode-switch.sh "$A/scripts/hypr/"
 cp "$REPO"/scripts/hypr/lib/{gen-workspaces,gen-monitors,monitor-id,hypr-apply}.sh "$A/scripts/hypr/lib/"
 cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
+mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 mkdir -p "$A/scripts/appbinds/lib"; cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 printf 'MONITOR=DP-1\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=\nORDER=1\n' > "$A/data/monitors/DP-1.dat"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/notify-send"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/setsid"
@@ -37,14 +38,23 @@ printf 'hl.bind(mainMod .. " + Q", hl.dsp.window.close())\nhl.bind(mainMod .. " 
 printf '#define XKB_KEY_F5 0xffc2\n#define XKB_KEY_semicolon 0x3b\n#define XKB_KEY_Return 0xff0d\n' > "$T/keysyms.h"
 printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
 # Atrapa hyprctl: reload ocenia appbinds.lua; klawisz `badkey` albo plik
-# $T/failreload = błąd configu.
+# $T/failreload = błąd configu. Plik $T/autoreload = Hyprland z autoreloadem
+# (misc:disable_autoreload = false): plik wczytany przez inotify zaraz po
+# zapisie, więc błąd jest w configerrors, zanim padnie `hyprctl reload` —
+# `badkey` w bindach albo plik reguł workspace'ów podmieniony (inny i-węzeł niż
+# zapisany w $T/ws.inode).
 cat > "$T/bin/hyprctl" <<EOS
 #!/bin/bash
 echo "hyprctl \$*" >> "$T/log"
 [[ -f "$T/dead" ]] && exit 1
 case "\$1" in
   reload) if grep -q badkey "$BINDS" 2>/dev/null || [[ -f "$T/failreload" ]]; then echo 'hl.bind: Unknown key: badkey' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
-  configerrors) cat "$T/errors" 2>/dev/null; echo ;;
+  configerrors)
+    if [[ -f "$T/autoreload" ]]; then
+      if grep -q badkey "$BINDS" 2>/dev/null; then echo 'hl.bind: Unknown key: badkey'
+      elif [[ -f "$T/ws.inode" && "\$(stat -c %i "$A/config/hypr/workspaces-monitors.lua")" != "\$(cat "$T/ws.inode")" ]]; then echo 'hl.workspace_rule: bad rule'; fi
+    else cat "$T/errors" 2>/dev/null; fi
+    echo ;;
 esac
 EOS
 # Atrapy procesów: guard „żyje”, gdy setsid go wystartował (plik guard-alive),
@@ -116,6 +126,9 @@ out="$(tui 'abadkey\nls\n\nq')"
 check "błąd configu zgłoszony (F1)"       '[[ "$out" == *"config error"* && "$out" == *"Unknown key"* ]]'
 check "brak fałszywego sukcesu"           '[[ "$out" != *"no config errors"* ]]'
 check "bind cofnięty"                     '[[ "$(cat "$BINDS")" == "$before" ]]'
+reset; touch "$T/autoreload"; out="$(tui 'abadkey\nls\n\nq')"; rm "$T/autoreload"
+check "autoreload przed reloadem: błąd zgłoszony (A2)"  '[[ "$out" == *"config error"* && "$out" != *"no config errors"* ]]'
+check "autoreload przed reloadem: bind cofnięty (A2)"   '[[ "$(cat "$BINDS")" == "$before" ]]'
 printf '#define XKB_KEY_F5 0xffc2\n' > "$T/keysyms.h"
 reset; touch "$T/dead"; out="$(tui 'ag\nls\n\nq')"; rm "$T/dead"
 check "martwy Hyprland: bez ✓ reloadu"    '[[ "$out" != *"no config errors"* && "$out" == *"did not respond"* ]]'
@@ -248,6 +261,8 @@ ws_from decades; touch "$T/dead"; out="$(tui 'wy\n\nq')"; rm "$T/dead"
 check "[w] martwy Hyprland: Saved, bez ✓ trybu"         '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Saved: workspace mode decades → shared"* ]]'
 ws_from decades; touch "$T/failreload"; out="$(tui 'wy\n\nq')"; rm "$T/failreload"
 check "[w] błąd configu: bez ✓ trybu"                   '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"config error"* && "$out" == *"saved as"* ]]'
+ws_from decades; stat -c %i "$WSL" > "$T/ws.inode"; touch "$T/autoreload"; out="$(tui 'wy\n\nq')"; rm "$T/autoreload" "$T/ws.inode"
+check "[w] autoreload przed reloadem: bez ✓ trybu (A2)"  '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"config error"* ]]'
 ws_from decades; echo workspace-mode.dat > "$T/mv-fails"; out="$(tui 'wy\n\nq')"; rm "$T/mv-fails"
 check "[w] nieudany zapis trybu: bez ✓, komunikat"      '[[ "$out" != *"✓ Workspace mode"* && "$out" == *"Could not save"* ]]'
 check "[w] nieudany zapis trybu: tryb i reguły jak przedtem" '[[ "$(<"$A/data/workspace-mode.dat")" == decades ]] && cmp -s "$T/ws.before" "$WSL" && ! compgen -G "$A/data/workspace-mode.dat.*" >/dev/null && ! compgen -G "$WSL.*" >/dev/null'

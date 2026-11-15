@@ -93,8 +93,16 @@ hyprctl configerrors 2>/dev/null
 
 section "guard sierot i waybar"
 pgrep -af "workspace-orphan-guard.sh" || echo "guard: NIE DZIAŁA"
-LOCK="${XDG_RUNTIME_DIR:-/tmp}/archenemy-workspace-guard.lock"
-if [[ -e "$LOCK" ]]; then
+# Ten sam katalog sesji co guard (lib/runtime-dir.sh); diagnostyka niczego nie zakłada.
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+LOCK=""
+if RUN_DIR="$(archenemy_runtime_dir --existing)"; then
+    LOCK="$RUN_DIR/archenemy-workspace-guard.lock"
+else
+    echo "lock guarda: brak prywatnego katalogu sesji (XDG_RUNTIME_DIR)"
+fi
+if [[ -n "$LOCK" && -e "$LOCK" ]]; then
     if flock -n "$LOCK" true 2>/dev/null; then echo "lock guarda: wolny (demon nie trzyma)"; else echo "lock guarda: zajęty (demon żyje)"; fi
 fi
 echo "waybar procesów: $(pgrep -xc waybar)"

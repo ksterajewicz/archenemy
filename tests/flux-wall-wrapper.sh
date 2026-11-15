@@ -40,8 +40,9 @@ fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 
 A="$HOME/archenemy"; BIN="$A/src/flux-wall/build/flux-wall"
 mkdir -p "$A/src/flux-wall/build" "$A/src/flux-wall/shaders" "$A/scripts/wallpapers" "$A/data" \
-         "$A/rices/test-rice" "$T/bin" "$FW_STATE"
+         "$A/rices/test-rice" "$A/scripts/lib" "$T/bin" "$FW_STATE"
 cp "$REPO/scripts/wallpapers/flux-wall.sh" "$A/scripts/wallpapers/"
+cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji na log i plik gotowości (S12)
 WRAP="$A/scripts/wallpapers/flux-wall.sh"
 for n in alpha beta; do printf '#version 300 es\nvoid main(){}\n' > "$A/src/flux-wall/shaders/$n.frag"; done
 printf '%s\n' 'FLUX_WALL_PALETTE="000000,777777,FFFFFF"' 'FLUX_WALL_SHADER="src/flux-wall/shaders/alpha.frag"' \
@@ -232,6 +233,41 @@ pid8="$(alive)"
 if [[ $RC -eq 0 && "$OUT" == *"flux-wall działa: alpha"* && -n "$pid8" && "$(<"$FW_STATE/args.$pid8")" != *--ready-file* ]]; then
     ok "binarka sprzed --ready-file: bez flagi, jak dawniej (żywy proces po 0,5 s)"
 else fail "stara binarka: rc=$RC, argumenty: $(cat "$FW_STATE/args.$pid8" 2>/dev/null), wyjście: $OUT"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+
+# Log i plik gotowości tylko w prywatnym katalogu sesji (lib/runtime-dir.sh,
+# S12), nie w gołym $XDG_RUNTIME_DIR ani we wspólnym /tmp. /run/user/<UID>
+# zastępuje hak ARCHENEMY_RUNTIME_SYSTEM (test nie dotyka prawdziwego).
+echo "start: plik gotowości w prywatnym katalogu sesji"
+mkdir -m 755 "$T/xdg-open"; mkdir -m 700 "$T/sys"
+XDG_RUNTIME_DIR="$T/xdg-open" ARCHENEMY_RUNTIME_SYSTEM="$T/sys" wrap start
+pid9="$(alive)"
+if [[ $RC -eq 0 && "$OUT" == *"flux-wall działa: alpha (log: $T/sys/flux-wall.log)"* && -n "$pid9" \
+      && "$(<"$FW_STATE/args.$pid9")" == *"--ready-file $T/sys/flux-wall.ready"* \
+      && "$(cat "$T/sys/flux-wall.ready" 2>/dev/null)" == "$pid9" && -z "$(ls -A "$T/xdg-open")" ]]; then
+    ok "XDG_RUNTIME_DIR 0755: plik gotowości i log w /run/user/<UID>, nic w XDG"
+else fail "XDG 0755: rc=$RC, argumenty: $(cat "$FW_STATE/args.$pid9" 2>/dev/null), w XDG: $(ls -A "$T/xdg-open"), wyjście: $OUT"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+# Żaden katalog się nie nadaje (zapasowy archenemy-<UID> podstawiony jako
+# dowiązanie): pliku gotowości nie ma gdzie położyć, więc nie wolno ani
+# zgłosić „działa” bez klatki, ani czekać na plik, który nie powstanie.
+mkdir -p "$T/tmp-planted" "$T/evil"; ln -s "$T/evil" "$T/tmp-planted/archenemy-$UID"
+nodir() { XDG_RUNTIME_DIR="" ARCHENEMY_RUNTIME_SYSTEM="$T/none" TMPDIR="$T/tmp-planted" wrap "$@"; }
+FLUX_WALL_READY_TIMEOUT=3 nodir start
+pid10="$(alive)"
+if [[ $RC -eq 3 && "$OUT" == *"pierwszej klatki nie potwierdzę"* && "$OUT" != *"flux-wall działa"* \
+      && "$OUT" != *"nie potwierdził pierwszej klatki w"* && -n "$pid10" && $(n_alive) -eq 1 \
+      && "$(<"$FW_STATE/args.$pid10")" != *--ready-file* && -z "$(ls -A "$T/evil")" ]]; then
+    ok "bez prywatnego katalogu: kod 3 od razu (bez czekania na plik), bez „działa”, proces zostaje, nic w podstawionym"
+else fail "bez katalogu: rc=$RC, żywych $(n_alive), argumenty: $(cat "$FW_STATE/args.$pid10" 2>/dev/null), w podstawionym: $(ls -A "$T/evil"), wyjście: $OUT"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+FW_MOCK=fail-fast nodir start
+if [[ $RC -eq 3 && "$OUT" == *"NIE wystartował"* && $(n_alive) -eq 0 ]]; then ok "bez prywatnego katalogu: padnięcie od razu nadal „NIE wystartował”"
+else fail "bez katalogu, fail-fast: rc=$RC, żywych $(n_alive), wyjście: $OUT"; fi
+FW_MOCK_OLD=1 nodir start
+pid11="$(alive)"
+if [[ $RC -eq 0 && "$OUT" == *"flux-wall działa: alpha"* && -n "$pid11" ]]; then ok "bez prywatnego katalogu, binarka sprzed --ready-file: jak dawniej"
+else fail "bez katalogu, stara binarka: rc=$RC, wyjście: $OUT"; fi
 bash "$WRAP" stop >/dev/null 2>&1
 
 echo "start nieudany i brak binarki"

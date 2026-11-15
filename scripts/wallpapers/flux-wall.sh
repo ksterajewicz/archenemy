@@ -38,15 +38,18 @@
 #     flux-wall.sh list-audio            nazwy animacji będących wizualizacją muzyki
 #     flux-wall.sh start [opcje]         jak restore, ale głośno; opcje → flux-wall;
 #                                        „działa” dopiero po PIERWSZEJ klatce na ekranie
-#                                        (plik --ready-file, limit FLUX_WALL_READY_TIMEOUT
-#                                        sekund, domyślnie 10; stara binarka: żywa po 0,5 s)
+#                                        (plik --ready-file w prywatnym katalogu sesji,
+#                                        limit FLUX_WALL_READY_TIMEOUT sekund, domyślnie 10;
+#                                        stara binarka: żywa po 0,5 s; bez katalogu sesji
+#                                        klatki nie potwierdzi → kod 3, proces zostaje)
 #     flux-wall.sh stop | status
 #     flux-wall.sh doctor-safe          sonda bez source konfiguracji (publiczny doctor)
 #     flux-wall.sh doctor               zrzut stanu do diagnozy (repo, binarka,
 #                                        shadery, wybór, proces, log) — tylko odczyt
 #
 #   Kody: 0 ok · 1 użycie/zła nazwa · 2 brak binarki · 3 start nieudany albo
-#         bez pierwszej klatki w limicie (log; proces wtedy zostaje) ·
+#         bez pierwszej klatki w limicie albo bez możliwości jej potwierdzenia
+#         (log; proces wtedy zostaje) ·
 #         4 nic do uruchomienia (off / rice bez autostartu)
 #
 #   Fallback jest w architekturze, nie tu: hyprpaper działa ZAWSZE, a flux-wall
@@ -61,10 +64,7 @@ SHADERS_DIR="$ARCHENEMY_DIR/src/flux-wall/shaders"
 CURRENT_RICE_FILE="$ARCHENEMY_DIR/.current_rice"
 DATA_DIR="$ARCHENEMY_DIR/data"
 CHOICE_DAT="$DATA_DIR/flux-wall.dat"
-LOG="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.log"
-# Plik gotowości: binarka tworzy go z PID-em po PIERWSZEJ klatce na ekranie
-# (--ready-file); `start` czeka na niego najwyżej READY_TIMEOUT sekund.
-READY="${XDG_RUNTIME_DIR:-/tmp}/flux-wall.ready"
+# Najdłuższe czekanie `start` na plik gotowości (READY, liczony niżej obok LOG).
 READY_TIMEOUT="${FLUX_WALL_READY_TIMEOUT:-10}"
 [[ "$READY_TIMEOUT" =~ ^[1-9][0-9]{0,2}$ ]] || READY_TIMEOUT=10
 
@@ -114,6 +114,23 @@ print('Rice configuration: present (not executed)' if text is not None else 'Ric
 print('Binary: ' + ('present' if (repo / 'src/flux-wall/build/flux-wall').is_file() else 'absent'))
 sys.exit(0 if text is not None else 1)
 PY
+fi
+
+# Log i plik gotowości w prywatnym katalogu sesji (lib/runtime-dir.sh, S12),
+# tym samym co w przełączniku tapet; nigdy we wspólnym /tmp. Liczone po sondzie
+# doctora, bo ta niczego nie zakłada.
+# Plik gotowości: binarka tworzy go z PID-em po PIERWSZEJ klatce na ekranie
+# (--ready-file); `start` czeka na niego najwyżej READY_TIMEOUT sekund.
+# Bez katalogu: log do /dev/null (jest tylko pisany i czytany), a pliku
+# gotowości nie ma — `start` nie potwierdzi klatki, więc nie mówi „działa”
+# (kod 3, proces zostaje; patrz wait_ready).
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
+RUN_DIR="$(archenemy_runtime_dir)" || RUN_DIR=""
+LOG=/dev/null; READY=""
+if [[ -n "$RUN_DIR" ]]; then
+    LOG="$RUN_DIR/flux-wall.log"
+    READY="$RUN_DIR/flux-wall.ready"
 fi
 
 # ─── odczyt konfiguracji ──────────────────────────────────────────────────────
@@ -196,10 +213,15 @@ dither_args() {     # ustawia DITHER_ARGS
 
 # Binarka z --ready-file potwierdza pierwszą klatkę plikiem. Sprzed flagi
 # (git pull bez make) nic nie podajemy — start sprawdzamy jak dawniej.
+# Zna flagę, ale nie ma prywatnego katalogu sesji (READY pusty): pliku nie
+# podajemy (nie wracamy do wspólnego /tmp), a READY_UNCONFIRMED=1 zabrania
+# wait_ready meldować „rysuje” — potwierdzić nie ma czym.
 # --help do zmiennej, nie `| grep -q` (pipefail + SIGPIPE = fałszywe „nie”).
-ready_args() {      # ustawia READY_ARGS
-    READY_ARGS=()
-    [[ "$("$BIN" --help 2>&1)" == *--ready-file* ]] && READY_ARGS=(--ready-file "$READY")
+ready_args() {      # ustawia READY_ARGS i READY_UNCONFIRMED
+    READY_ARGS=(); READY_UNCONFIRMED=0
+    [[ "$("$BIN" --help 2>&1)" == *--ready-file* ]] || return 0
+    if [[ -n "$READY" ]]; then READY_ARGS=(--ready-file "$READY")
+    else READY_UNCONFIRMED=1; fi
     return 0
 }
 
@@ -216,14 +238,16 @@ is_flux_pid() {
 # — Super+W meldował „applied”, a animacji nie było (audyt 2026-11-05, F7).
 # Czekamy więc na plik gotowości z PID-em żywego flux-walla (pierwsza klatka
 # na ekranie), najwyżej READY_TIMEOUT s; $1 = PID z `$!`.
-# Kod: 0 rysuje · 1 proces padł · 2 żyje, ale bez klatki w limicie.
+# Kod: 0 rysuje · 1 proces padł · 2 żyje, ale bez klatki w limicie ·
+# 3 żyje po 0,5 s, ale bez prywatnego katalogu sesji klatki nie potwierdzimy.
 # Binarka sprzed --ready-file: jak dawniej, żywy proces po 0,5 s = 0.
 wait_ready() {
     local child="$1" i pid
     if ((${#READY_ARGS[@]} == 0)); then
         sleep 0.5
-        pgrep -x flux-wall >/dev/null && return 0
-        return 1
+        pgrep -x flux-wall >/dev/null || return 1
+        ((READY_UNCONFIRMED == 0)) || return 3
+        return 0
     fi
     for ((i = 0; i < READY_TIMEOUT * 10; i++)); do
         if [[ -s "$READY" ]]; then
@@ -294,7 +318,7 @@ do_start() {
     audio_args
     dither_args
     ready_args
-    rm -f "$READY"
+    [[ -z "$READY" ]] || rm -f "$READY"
     # shellcheck disable=SC2086  # FLUX_WALL_ARGS to celowo lista argumentów
     setsid "$BIN" -s "$SHADER" "${PALETTE_ARGS[@]}" "${AUDIO_ARGS[@]}" "${DITHER_ARGS[@]}" "${READY_ARGS[@]}" $FLUX_WALL_ARGS "$@" >"$LOG" 2>&1 &
     local child=$! rc
@@ -307,6 +331,8 @@ do_start() {
     fi
     if ((rc == 2)); then
         echo "flux-wall nie potwierdził pierwszej klatki w ${READY_TIMEOUT} s (proces żyje, zostawiony) — ostatnie linie logu:" >&2
+    elif ((rc == 3)); then
+        echo "flux-wall uruchomiony, ale pierwszej klatki nie potwierdzę: brak prywatnego katalogu sesji (scripts/lib/runtime-dir.sh), więc bez pliku gotowości i logu (proces żyje, zostawiony)" >&2
     else
         echo "flux-wall NIE wystartował — ostatnie linie logu:" >&2
     fi

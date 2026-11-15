@@ -49,6 +49,8 @@ CONFIRM_SECONDS=15
 source "$ARCHENEMY_DIR/scripts/appbinds/lib/tui.sh"
 # shellcheck source=lib/monitor-id.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/monitor-id.sh"
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
 # shellcheck source=lib/gen-monitors.sh
 source "$ARCHENEMY_DIR/scripts/hypr/lib/gen-monitors.sh"
 # shellcheck source=lib/gen-workspaces.sh
@@ -315,6 +317,7 @@ regen_workspaces() {
 
 BACKUP_DIR=""
 PENDING=0
+ERRORS_BEFORE=""   # błędy configu sprzed zapisu (backup_state)
 
 backup_state() {
     BACKUP_DIR="$(mktemp -d)" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
@@ -322,6 +325,9 @@ backup_state() {
     cp -p "$MON_DIR"/*.dat "$BACKUP_DIR/monitors/" 2>/dev/null
     cp -p "$MON_CONF" "$BACKUP_DIR/lua" 2>/dev/null || : > "$BACKUP_DIR/lua"
     cp -p "$WS_CONF" "$BACKUP_DIR/ws" 2>/dev/null
+    # Błędy configu PRZED zapisem — porównanie po reloadzie (lib/hypr-apply.sh:
+    # odczyt po zapisie łapałby już błąd wczytany autoreloadem).
+    ERRORS_BEFORE="$(hypr_config_errors)"
     PENDING=1
 }
 
@@ -337,7 +343,7 @@ rollback() {
     cp -p "$BACKUP_DIR/lua" "$MON_CONF"
     if [[ -f "$BACKUP_DIR/ws" ]]; then cp -p "$BACKUP_DIR/ws" "$WS_CONF"; else rm -f "$WS_CONF"; fi
     PENDING=0
-    hypr_reload_checked >/dev/null
+    hypr_reload_checked "$ERRORS_BEFORE" >/dev/null
 }
 
 cleanup() { [[ -z "$BACKUP_DIR" ]] || rm -rf "$BACKUP_DIR"; BACKUP_DIR=""; }
@@ -410,7 +416,7 @@ commit_change() {
         return 1
     fi
 
-    errors="$(hypr_reload_checked)"; rc=$?
+    errors="$(hypr_reload_checked "$ERRORS_BEFORE")"; rc=$?
     case $rc in
         0) ;;
         2) rollback; cleanup
@@ -1075,18 +1081,44 @@ menu() {
 # Powiadomienie z hl.on("monitor.added"). Na starcie sesji każdy monitor jest
 # „dodany”, a o monitorze bez reguły mówi wtedy machine-layer-check.sh, więc młoda
 # sesja milczy. Brak .dat = system bez install.sh, tu nie ma czego ustawiać.
+#
+# Jedno powiadomienie na monitor: dock z dwoma nowymi ekranami to dwa zdarzenia,
+# a każdy bieg widzi oba nowe monitory, więc dawniej przychodziły 4 zamiast 2
+# (audyt 2026-11-05, A12). Biegi idą po kolei (flock), a monitor zgłoszony
+# w ostatnich NOTIFY_REPEAT_S sekundach pomijamy; wpięty ponownie później
+# dostaje powiadomienie jak dawniej. Bez blokady (flock padł) — dawne zachowanie.
+# Plik i blokada w prywatnym katalogu sesji (lib/runtime-dir.sh, S12); bez
+# niego bez blokady i bez pamięci zgłoszeń, czyli też dawne zachowanie.
+NOTIFIED_FILE=""
+NOTIFY_REPEAT_S=30
 notify_new() {
-    local age name
+    local age name now t n tmp
+    local -A recent=()
     age="$(ps -o etimes= -C Hyprland 2>/dev/null | sort -n | head -1 | tr -d ' ')"
     [[ "$age" =~ ^[0-9]+$ ]] && (( age < 30 )) && return 0
     command -v notify-send >/dev/null 2>&1 || return 0
+    NOTIFIED_FILE="$(archenemy_runtime_dir)/archenemy-new-monitors.notified" || NOTIFIED_FILE=""
+    [[ -n "$NOTIFIED_FILE" ]] && { exec 8>"$NOTIFIED_FILE.lock"; } 2>/dev/null && flock -w 10 8
     # Opis EDID pojawia się chwilę po zdarzeniu.
     sleep 1
     load_dats
     ((${#DATS[@]})) || return 0
+    now="$(date +%s)"
+    if [[ -n "$NOTIFIED_FILE" && -f "$NOTIFIED_FILE" ]]; then
+        while read -r t n; do
+            [[ "$t" =~ ^[0-9]+$ && -n "$n" ]] && (( now - t < NOTIFY_REPEAT_S )) && recent[$n]="$t"
+        done < "$NOTIFIED_FILE"
+    fi
     while IFS= read -r name; do
-        [[ -n "$name" ]] && notify-send "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
+        [[ -n "$name" && -z "${recent[$name]:-}" ]] || continue
+        notify-send "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
+        recent[$name]="$now"
     done < <(new_monitors)
+    [[ -n "$NOTIFIED_FILE" ]] || return 0
+    tmp="$(mktemp "$NOTIFIED_FILE.XXXXXX")" || return 0
+    for n in "${!recent[@]}"; do printf '%s %s\n' "${recent[$n]}" "$n"; done > "$tmp"
+    mv "$tmp" "$NOTIFIED_FILE"
+    return 0
 }
 
 case "${1:-}" in

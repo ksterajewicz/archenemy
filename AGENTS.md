@@ -82,11 +82,14 @@ Rules that follow directly from the table:
   name.** `eDP-2`/`HDMI-A-1` became `eDP-1`/`HDMI-A-3` after a reboot on the
   owner's laptop (2026-09-21) and every rule of the machine layer stopped
   matching. `scripts/hypr/lib/monitor-id.sh` (`monitor_selector_from_dat`,
-  `monitor_live_name`, `lua_string`) is the only place that turns a
-  `data/monitors/*.dat` into a selector or a live connector name — use it in
-  anything that writes a monitor into a generated file or talks to
+  `monitor_live_name`, `lua_string`, `lua_comment`) is the only place that
+  turns a `data/monitors/*.dat` into a selector or a live connector name — use
+  it in anything that writes a monitor into a generated file or talks to
   `hyprctl`/`hyprpaper` about a specific output; a raw `MONITOR=` value is
-  only good for "is this the built-in panel" and for file names.
+  only good for "is this the built-in panel" and for file names. Names go into
+  generated Lua only through `lua_string` (values; control characters become
+  `\ddd`) or `lua_comment` (comments; control characters become `?`): a raw
+  CR or newline ends a Lua string or comment and breaks the whole file.
 - **Integrity rule for the machine layer (public project — other
   people's machines).** A generated file describes the machine *on the day
   of installation*, and Hyprland never complains when reality drifts — it
@@ -135,7 +138,10 @@ Rules that follow directly from the table:
   wrapper's old 0.5 s check (audit 2026-11-05, F7). `flux-wall.sh start`
   passes `--ready-file` and waits for the PID file the binary writes after
   its first successful swap (`FLUX_WALL_READY_TIMEOUT`, default 10 s);
-  keep that call after `eglSwapBuffers` in `render_output`.
+  keep that call after `eglSwapBuffers` in `render_output`. The ready file,
+  like the log, lives in `archenemy_runtime_dir` (session files below);
+  without such a directory `start` cannot confirm the frame and exits with 3
+  (process left running), never "running" and never a wait on a missing file.
   `bash tests/flux-wall-wrapper.sh` checks start/stop/off/status/doctor
   effects on a fake binary whose PIDs are the only ones pgrep/pkill see.
 - **flux-wall: exit code 3 only before the first frame.** Until the first
@@ -173,8 +179,19 @@ Rules that follow directly from the table:
   a symlink pointing outside `rices/` (e.g. GNU stow) where a rice folder
   goes is moved to `<name>.bak-<timestamp>`, never `rm`'d; links are made
   with `ln -sfn`. The switcher runs under `flock` (a second `Super+T` waits
-  and wins); every background process it starts gets `9>&-`, or it would
-  hold the lock for the whole session. `bash tests/switch-rice.sh`.
+  and wins; still busy after `SWITCH_RICE_LOCK_WAIT` seconds, default 30 →
+  notification, code 1, nothing changed); every background process it starts
+  gets `9>&-`, or it would hold the lock for the whole session.
+  `bash tests/switch-rice.sh`.
+- **Session files (locks, Super+Tab state, logs) live only in
+  `archenemy_runtime_dir` from `scripts/lib/runtime-dir.sh`**, never in
+  `${XDG_RUNTIME_DIR:-/tmp}`: in a shared `/tmp` another user can create the
+  file first, take the lock, read the log or plant a command for Super+Tab. The
+  function returns `$XDG_RUNTIME_DIR`, `/run/user/<UID>` or a `0700`
+  `archenemy-<UID>` directory in `$TMPDIR`/`/tmp`, each only if it is ours, a
+  real directory and private; otherwise it fails and the caller refuses
+  (rice switch, window history, guard) or skips the lock or log.
+  `bash tests/runtime-dir.sh`.
 - **Monitors: `scripts/hypr/monitor-settings.sh` (`Super+A → [n]`) is the only
   live way to change them**, including a new monitor, renumbering and forgetting an
   unplugged one. `lib/gen-monitors.sh` and `lib/gen-workspaces.sh` are the only
@@ -220,7 +237,10 @@ Rules that follow directly from the table:
 - **Optional CLI tools:** `[h] → 6` uses `tui_menu` for shell selection and each checklist. The trusted catalog `config/shell/cli-tools.tsv` supplies packages, commands, licenses, support and initialization; one row extends the menu without code changes. All tools default off independently for bash/zsh. Only `shell-rc.sh` writes personal `cli-tools.bash` / `cli-tools.zsh`, with marked blocks, dated backups, idempotence and custom-content/symlink refusal. The rc block loads the selected file after `shellrc`. Missing commands require `[Y/n]` before `sudo pacman -S --needed`; verify the command exists afterwards. Disabling removes only the initialization block and keeps packages. Plain PATH tools cannot be hidden per shell. zoxide must preserve `cd` (default `z`/`zi`, never `--cmd cd`). Keep README and THIRD-PARTY license tables in sync. `tests/shell-cli-tools.sh` uses isolated mocks without zsh, pacman or real tools.
 - **New monitor notification:** `hl.on("monitor.added")` in `autostart-common.lua`
   calls `monitor-settings.sh notify`, which stays quiet for known monitors and in a
-  young session, where `machine-layer-check.sh` reports it instead.
+  young session, where `machine-layer-check.sh` reports it instead. One notification
+  per monitor: a dock with two new screens fires two events and each run sees both,
+  so runs take a `flock` and skip a monitor announced in the last 30 s
+  (`$XDG_RUNTIME_DIR/archenemy-new-monitors.notified`); `tests/monitor-settings.sh`.
 - **Wallpapers cover every monitor:** primary gets v1, all others get v2. A monitor
   with no saved wallpaper takes secondary's on `--restore`.
 - **Main TUI keys (Super+A):** `[p]` opens autostart (programs), and `[u]` opens
@@ -253,7 +273,12 @@ Rules that follow directly from the table:
   `pgrep`, `pkill`, `setsid` mocks in `tests/appbinds-menu.sh`.
 - **After changing a Hyprland config from a script, use
   `scripts/hypr/lib/hypr-apply.sh`** (`hypr_reload_checked`): success means no
-  new `hyprctl configerrors`, not the exit code of `hyprctl reload`.
+  new `hyprctl configerrors`, not the exit code of `hyprctl reload`. Read
+  `hypr_config_errors` BEFORE writing the file and pass it as the first
+  argument: Hyprland's autoreload picks the file up through inotify before
+  `hyprctl reload`, so errors read after the write already contain the new
+  error and the reload looks clean. Super+T (`lib/switch-rice.sh`) reloads the
+  same way and only says "applied" after a clean reload.
 - **App launcher: `scripts/rofi/rofi_drun.sh` is the only way to open
   `rofi -show drun`.** On Enter with no match rofi runs the typed text as a
   command and has no option to disable that in drun mode, so the script sets
@@ -264,6 +289,11 @@ Rules that follow directly from the table:
   inactive ones while the cursor is on another monitor. It changes the look
   only: keyboard focus stays in the window. Palette is read once per Lua state,
   because Hyprland truncates colours when returning them. `tests/focus-highlight.sh`.
+- **Window rule `move` is a muParser expression**, e.g.
+  `move = { "monitor_w-window_w-10", "monitor_h-window_h-10" }`. `%` is not an
+  operator there: `"100%-490"` fails to parse, Hyprland just centres the window
+  and `configerrors` stays empty. `bash tests/rice-autostart.sh` evaluates every
+  `move` rule and checks that the Picture-in-Picture window lands in the corner.
 - **Shared autostart lives in `config/hypr/autostart-common.lua`**, required
   by every rice — today the flux-wall animation (the `Super+W` choice is
   global). Don't add `flux-wall.sh autostart` to a rice's `hyprland.lua`

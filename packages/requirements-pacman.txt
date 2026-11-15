@@ -44,7 +44,8 @@ libnotify
 socat
 # util-linux: flock — blokady w workspace-orphan-guard.sh, window-history.sh
 # i przełączniku rice'ów (lib/switch-rice.sh: dwa szybkie Super+T czekają na
-# siebie); setsid — window-history.sh uruchamia przywróconą aplikację
+# siebie); setsid — window-history.sh uruchamia przywróconą aplikację,
+# rofi_wallpaper_switcher.sh restartuje hyprpaper poza sesją terminala
 util-linux
 # xdg-desktop-portal-hyprland: portal Hyprlanda — udostępnianie ekranu
 # (Discord, przeglądarki, RustDesk) i zrzuty przez portal; hyprland ma go
