@@ -111,14 +111,9 @@ for conf in "$REPO"/rices/*/flux-wall.conf; do
     if [[ "$v" == "$want" ]]; then ok "rices/$r/flux-wall.conf: FLUX_WALL_DITHER=$v"
     else fail "rices/$r/flux-wall.conf: FLUX_WALL_DITHER='${v}' (ma być $want)"; fi
 done
-# przełącznik rice'ów zapisuje .current_rice PRZED `flux-wall.sh autostart` — inaczej flaga szłaby za starym rice'em
-SW="$REPO/scripts/changing-theme-scripts/lib/switch-rice.sh"
-# shellcheck disable=SC2016  # szukamy dosłownego tekstu `$CURRENT_RICE` / `$FLUX_WALL` w skrypcie
-l_cur="$(grep -n '> "\$CURRENT_RICE"' "$SW" | head -1 | cut -d: -f1)"
-# shellcheck disable=SC2016
-l_fw="$(grep -n '"\$FLUX_WALL" autostart' "$SW" | head -1 | cut -d: -f1)"
-if [[ -n "$l_cur" && -n "$l_fw" && "$l_cur" -lt "$l_fw" ]]; then ok "switch-rice.sh: .current_rice (l. $l_cur) przed autostartem flux-walla (l. $l_fw)"
-else fail "switch-rice.sh: kolejność .current_rice / flux-wall autostart (l. ${l_cur:-?} / ${l_fw:-?})"; fi
+# Kolejność w Super+T (.current_rice zapisany PRZED `flux-wall.sh autostart`, inaczej
+# flaga szłaby za starym rice'em) sprawdza tests/switch-rice.sh skutkiem: prawdziwy
+# przełącznik z atrapą flux-walla, która zapisuje rice widziany przy autostarcie.
 
 # ─── 2. render: raster tylko przy --dither ───────────────────────────────────
 

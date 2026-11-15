@@ -60,6 +60,9 @@ mkdir -p "$A/rices/alfa/hypr" "$A/rices/alfa/mako" "$A/rices/beta/hypr" "$A/rice
          "$A/scripts/changing-theme-scripts" "$C" "$XDG_RUNTIME_DIR"
 ln -s "$REPO/scripts/changing-theme-scripts/lib" "$A/scripts/changing-theme-scripts/lib"
 ln -s "$REPO/scripts/hypr" "$A/scripts/hypr"    # lib/hypr-apply.sh (reload z odczytem błędów)
+# Atrapa flux-walla: zapisuje, który rice widzi w .current_rice w chwili autostartu.
+mkdir -p "$A/scripts/wallpapers"
+printf '#!/bin/bash\necho "FLUXWALL $1 rice=$(cat "$HOME/archenemy/.current_rice")" >> "$MOCK_LOG"\n' > "$A/scripts/wallpapers/flux-wall.sh"
 for r in alfa beta; do
     printf '#!/bin/bash\nRICE_NAME="%s"\nsource "$(dirname "$(readlink -f "$0")")/lib/switch-rice.sh"\n' "$r" \
         > "$A/scripts/changing-theme-scripts/$r.sh"
@@ -107,6 +110,14 @@ echo "== blokada nie zostaje w procesach tła (kolejne Super+T nie wisi)"
 start=$(date +%s)
 MOCK_WAYBAR_SLEEP=60 sw alfa; MOCK_WAYBAR_SLEEP=60 sw beta
 check "dwa przełączenia po sobie < 10 s"        '(( $(date +%s) - start < 10 ))'
+
+echo "== kolejność skutków: flux-wall startuje już dla nowego rice'a (T9)"
+# Flaga --dither idzie za rice'em z .current_rice — autostart przed zapisem
+# .current_rice puściłby animację z flagą POPRZEDNIEGO rice'a.
+sw alfa; : > "$MOCK_LOG"; sw beta
+check "autostart flux-walla widzi .current_rice = beta"  'grep -qx "FLUXWALL autostart rice=beta" "$MOCK_LOG"'
+check "autostart przed powiadomieniem o wyniku"          '[[ "$(grep -n "^FLUXWALL" "$MOCK_LOG" | cut -d: -f1)" -lt "$(grep -n "^NOTIFY" "$MOCK_LOG" | tail -1 | cut -d: -f1)" ]]'
+check "bez sesji Hyprlanda: bez reloadu, Rice applied"   '! grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Rice .beta. applied" "$MOCK_LOG"'
 
 echo "== Super+T: 'applied' tylko po reloadzie bez nowych błędów configu (A15)"
 HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw alfa; : > "$MOCK_LOG"; touch "$MOCK_BROKEN"
