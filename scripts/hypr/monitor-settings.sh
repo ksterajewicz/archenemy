@@ -315,6 +315,7 @@ regen_workspaces() {
 
 BACKUP_DIR=""
 PENDING=0
+ERRORS_BEFORE=""   # błędy configu sprzed zapisu (backup_state)
 
 backup_state() {
     BACKUP_DIR="$(mktemp -d)" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
@@ -322,6 +323,9 @@ backup_state() {
     cp -p "$MON_DIR"/*.dat "$BACKUP_DIR/monitors/" 2>/dev/null
     cp -p "$MON_CONF" "$BACKUP_DIR/lua" 2>/dev/null || : > "$BACKUP_DIR/lua"
     cp -p "$WS_CONF" "$BACKUP_DIR/ws" 2>/dev/null
+    # Błędy configu PRZED zapisem — porównanie po reloadzie (lib/hypr-apply.sh:
+    # odczyt po zapisie łapałby już błąd wczytany autoreloadem).
+    ERRORS_BEFORE="$(hypr_config_errors)"
     PENDING=1
 }
 
@@ -337,7 +341,7 @@ rollback() {
     cp -p "$BACKUP_DIR/lua" "$MON_CONF"
     if [[ -f "$BACKUP_DIR/ws" ]]; then cp -p "$BACKUP_DIR/ws" "$WS_CONF"; else rm -f "$WS_CONF"; fi
     PENDING=0
-    hypr_reload_checked >/dev/null
+    hypr_reload_checked "$ERRORS_BEFORE" >/dev/null
 }
 
 cleanup() { [[ -z "$BACKUP_DIR" ]] || rm -rf "$BACKUP_DIR"; BACKUP_DIR=""; }
@@ -410,7 +414,7 @@ commit_change() {
         return 1
     fi
 
-    errors="$(hypr_reload_checked)"; rc=$?
+    errors="$(hypr_reload_checked "$ERRORS_BEFORE")"; rc=$?
     case $rc in
         0) ;;
         2) rollback; cleanup

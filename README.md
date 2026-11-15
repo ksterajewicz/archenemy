@@ -218,7 +218,7 @@ archenemy/
 │   │                                 #   (regen + reload + guard); lib/gen-workspaces.sh — shared
 │   │                                 #   generator for workspace rules/binds (shared with install.sh);
 │   │                                 #   lib/gen-monitors.sh — monitor rules and saved monitor order;
-│   │                                 #   lib/hypr-apply.sh — reload checked against configerrors;
+│   │                                 #   lib/hypr-apply.sh — reload checked against configerrors read before the write;
 │   │                                 #   lib/gen-autostart.sh — generator for autostart-apps.lua
 │   │                                 #   (shared with install.sh and the Super+A → [p] picker).
 │   │                                 #   lib/monitor-id.sh — monitor identity for the machine layer:

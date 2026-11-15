@@ -110,9 +110,10 @@ key_name_valid() {
 
 # Przeładuj Hyprlanda i powiedz, co się naprawdę stało. Kod 2 = nowe błędy configu
 # (wołający cofa zmianę), reszta kodów jak w hypr_reload_checked.
+#   $1 błędy configu sprzed zapisu (hypr_config_errors)
 reload_hyprland() {
     local errors rc
-    errors="$(hypr_reload_checked)"; rc=$?
+    errors="$(hypr_reload_checked "$1")"; rc=$?
     case $rc in
         0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}" ;;
         1) echo -e "  ${YELLOW}⚠ Hyprland did not respond — saved, reload it manually.${NC}" ;;
@@ -146,15 +147,15 @@ report_write_failed() {
 # Zielony komunikat pada dopiero po przeładowaniu bez błędów; przy błędzie
 # configu plik wraca do kopii, a wynik cofnięcia też jest odczytany.
 #   $1 zawartość sprzed zmiany, $2 tekst sukcesu, $3 co zostało zapisane,
-#   $4 tekst cofnięcia
+#   $4 tekst cofnięcia, $5 błędy configu odczytane PRZED zapisem
 finish_bind_change() {
-    local backup="$1" done_msg="$2" saved_msg="$3" undone_msg="$4" rc
-    reload_hyprland; rc=$?
+    local backup="$1" done_msg="$2" saved_msg="$3" undone_msg="$4" errors_before="$5" rc
+    reload_hyprland "$errors_before"; rc=$?
     case $rc in
         0) echo -e "  ${GREEN}✓ ${done_msg}${NC}" ;;
         2) if ! restore_binds "$backup"; then
                echo -e "  ${RED}✗ Could not restore ${BINDS_CONF} — remove the line named above by hand.${NC}"
-           elif hypr_reload_checked >/dev/null; then
+           elif hypr_reload_checked "$errors_before" >/dev/null; then
                echo -e "  ${YELLOW}↩ ${undone_msg}${NC}"
            else
                echo -e "  ${YELLOW}↩ ${undone_msg} Hyprland did not confirm the reload — reload it manually.${NC}"
@@ -309,8 +310,9 @@ add_bind() {
         confirm "Add anyway?" N || return
     fi
 
-    local backup line
+    local backup line errors_before
     backup="$(cat "$BINDS_CONF")"
+    errors_before="$(hypr_config_errors)"
     line="$(format_bind_line "$combo" "$cmd")"
     # Dowodem zapisu jest ostatnia linia pliku, nie kod wyjścia dopisania.
     printf '%s\n' "$line" >> "$BINDS_CONF"
@@ -319,11 +321,11 @@ add_bind() {
         return 0
     fi
     finish_bind_change "$backup" "Added: Super + ${combo} → ${cmd}" \
-        "Saved: Super + ${combo} → ${cmd}" "Bind removed again — nothing was added."
+        "Saved: Super + ${combo} → ${cmd}" "Bind removed again — nothing was added." "$errors_before"
 }
 
 edit_bind() {
-    local total num cmd backup key
+    local total num cmd backup key errors_before
     total="$(bind_count "$BINDS_CONF")"
     if [[ "$total" -eq 0 ]]; then
         echo -e "  ${YELLOW}⚠ Nothing to edit.${NC}"
@@ -342,6 +344,7 @@ edit_bind() {
     cmd=$(trim "$cmd")
     [[ -n "$cmd" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
     backup="$(cat "$BINDS_CONF")"
+    errors_before="$(hypr_config_errors)"
     replace_bind_command "$BINDS_CONF" "$num" "$cmd"
     case $? in
         0) ;;
@@ -354,7 +357,7 @@ edit_bind() {
         return 0
     fi
     finish_bind_change "$backup" "Changed: bind ${num} → ${cmd}" \
-        "Saved: bind ${num} → ${cmd}" "Change undone — the bind runs the old command."
+        "Saved: bind ${num} → ${cmd}" "Change undone — the bind runs the old command." "$errors_before"
 }
 
 remove_bind() {
@@ -378,8 +381,9 @@ remove_bind() {
     # Ten sam wybór linii co lista wyżej — numer N kasuje dokładnie linię
     # pokazaną jako N, niezależnie od innych `hl.bind(` w pliku.
     confirm "Remove ${choices[$((num - 1))]}?" N || { echo "Cancelled."; return; }
-    local backup
+    local backup errors_before
     backup="$(cat "$BINDS_CONF")"
+    errors_before="$(hypr_config_errors)"
     # Numer sprawdzony wyżej, więc porażka tutaj to nieudany zapis. Dowodem
     # usunięcia jest lista krótsza o jeden bind.
     if ! remove_bind_by_index "$BINDS_CONF" "$num" || [[ "$(bind_count "$BINDS_CONF")" -ne $((total - 1)) ]]; then
@@ -387,7 +391,7 @@ remove_bind() {
         return 0
     fi
     finish_bind_change "$backup" "Removed: ${choices[$((num - 1))]}" \
-        "Saved: ${choices[$((num - 1))]} is off the list." "Bind restored — nothing was removed."
+        "Saved: ${choices[$((num - 1))]} is off the list." "Bind restored — nothing was removed." "$errors_before"
 }
 
 # ─── TRYB WORKSPACE'ÓW (shared/decades) ──────────────────────────────────────

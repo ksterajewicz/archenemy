@@ -101,6 +101,11 @@ if [[ -f "$WS_CONF" ]]; then
         exit 1
     fi
 fi
+# Błędy configu PRZED zapisem reguł (lib/hypr-apply.sh: odczyt po zapisie łapałby
+# już błąd wczytany autoreloadem i reload wyglądałby na czysty).
+# shellcheck source=/dev/null
+source "$ARCHENEMY_DIR/scripts/hypr/lib/hypr-apply.sh"
+errors_before="$(hypr_config_errors)"
 if ! mv "$tmp" "$WS_CONF"; then
     rm -f "$tmp" "$ws_backup"
     echo -e "  ${RED}✗ Could not write ${WS_CONF} — mode unchanged.${NC}" >&2
@@ -123,9 +128,7 @@ RESULT=0   # 0 = wszystko odczytane, 2 = zapisane, ale nie potwierdzone
 
 # ─── Reload Hyprlanda ───
 # Zielony komunikat o trybie pada dopiero po przeładowaniu bez błędów.
-# shellcheck source=/dev/null
-source "$ARCHENEMY_DIR/scripts/hypr/lib/hypr-apply.sh"
-reload_errors="$(hypr_reload_checked)"
+reload_errors="$(hypr_reload_checked "$errors_before")"
 case $? in
     0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}"
        echo -e "  ${GREEN}✓ Workspace mode: ${SUMMARY}" ;;

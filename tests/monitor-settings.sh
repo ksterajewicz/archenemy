@@ -71,7 +71,9 @@ show() {
 case "\$1" in
   reload) [[ -f "$T/vanish" ]] && rm -f "$T/third"
     if grep -q 'scale = 9' "$LUA"; then echo 'hl.monitor: bad scale' > "$T/errors"; else : > "$T/errors"; fi; echo ok ;;
-  configerrors) cat "$T/errors" 2>/dev/null; echo ;;
+  # autoreload = Hyprland wczytał zapisany plik przez inotify, zanim padło
+  # \`hyprctl reload\` — błąd jest w configerrors od razu po zapisie (A2).
+  configerrors) if [[ -f "$T/autoreload" ]]; then grep -q 'scale = 9' "$LUA" && echo 'hl.monitor: bad scale'; else cat "$T/errors" 2>/dev/null; fi; echo ;;
   monitors)
     show eDP-1 0 "\$(rule 'desc:Maker Panel 123')" 'Maker Panel 123 (eDP-1)'
     d='x"y'; [[ -f "$T/twin" ]] && d='Acme Wide 99 (HDMI-A-1)'
@@ -193,6 +195,8 @@ reset; out="$(run '1\n1\n\n\n\n')"
 check "brak klawisza cofa"                     'unchanged'
 reset; out="$(run '1\n\n9\n\n\n')"
 check "błąd configu cofa"                      'unchanged && [[ "$out" == *"config error"*"bad scale"* ]]'
+reset; touch "$T/autoreload"; out="$(run '1\n\n9\n\n\n')"; rm -f "$T/autoreload"
+check "autoreload przed reloadem: błąd cofa (A2)" 'unchanged && [[ "$out" == *"config error"*"bad scale"* ]]'
 reset; touch "$T/dead"; out="$(run '1\n1\n\n\n\n\n')"; rm "$T/dead"
 check "martwy Hyprland cofa"                   'unchanged'
 reset; ( printf '1\n1\n\n\n\n'; /usr/bin/sleep 2 ) | bash "$A/scripts/hypr/monitor-settings.sh" >/dev/null 2>&1 &
