@@ -940,8 +940,9 @@ seed_dat "$DATA_DIR/timer-color.dat"    "#ff0000"
 #     pipewire; przepisuje je Super+A → [o] → 3) i local.conf (osobista) — stub
 #     tylko gdy pliku nie ma;
 #   - ~/.config/mpd → symlink do config/mpd, ale istniejący PRAWDZIWY katalog
-#     (albo ~/.mpdconf, ~/.mpd) zostaje nietknięty bez jawnego „y" — cudzy
-#     mpd.conf może wskazywać bibliotekę na NAS-ie i bazę budowaną godzinami;
+#     albo cudzy (także wiszący) link (albo ~/.mpdconf, ~/.mpd) zostaje
+#     nietknięty bez jawnego „y" — cudzy mpd.conf może wskazywać bibliotekę
+#     na NAS-ie i bazę budowaną godzinami;
 #   - usługa użytkownika włączana wyłącznie po pytaniu [y/N]; gdy mpd działa
 #     jako usługa SYSTEMOWA — tylko informacja (dwa mpd = konflikt portu/karty);
 #   - ~/.local/share/applications/ncmpcpp.desktop (wpis dla rofi drun i dla
@@ -979,28 +980,51 @@ if command -v mpd >/dev/null 2>&1; then
     fi
 
     MPD_USER_DIR="$CONFIG_DIR/mpd"
-    if [[ -L "$MPD_USER_DIR" && "$(readlink -f "$MPD_USER_DIR")" == "$(readlink -f "$MPD_CONF_DIR")" ]]; then
+    # ✓ dopiero po odczycie linku (audyt 2026-11-05, Z11): wiszący symlink
+    # ~/.config/mpd umykał testowi -e, `ln -s` padał na istniejącej nazwie,
+    # a ✓ i SUMMARY_DONE i tak leciały — mpd czytał nie ten config. Wiszący
+    # link to też cudzy ~/.config/mpd, więc bez „y” go nie podmieniamy.
+    # `ln -T`: na prawdziwym katalogu, którego mv nie przeniósł, ln nie
+    # utworzy linku W ŚRODKU niego.
+    mpd_link_ok() {
+        [[ -L "$MPD_USER_DIR" && "$(readlink -f "$MPD_USER_DIR")" == "$(readlink -f "$MPD_CONF_DIR")" ]]
+    }
+    mpd_link_failed() {
+        echo -e "  ${RED}✗ ~/.config/mpd is not linked to config/mpd — mpd will not read archenemy's config.${NC}"
+        SUMMARY_SKIPPED+=("mpd config NOT linked: ln -sT $MPD_CONF_DIR $MPD_USER_DIR (move ~/.config/mpd away first if it exists)")
+    }
+    if mpd_link_ok; then
         echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (already linked)${NC}"
-    elif [[ -e "$MPD_USER_DIR" || -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]]; then
+    elif [[ -e "$MPD_USER_DIR" || -L "$MPD_USER_DIR" || -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]]; then
         echo -e "  ${YELLOW}⚠ You already have an mpd config (~/.config/mpd, ~/.mpdconf or ~/.mpd).${NC}"
+        [[ -L "$MPD_USER_DIR" && ! -e "$MPD_USER_DIR" ]] \
+            && echo -e "    ~/.config/mpd is a broken link (→ $(readlink "$MPD_USER_DIR"))."
         echo -e "    archenemy does NOT replace it automatically. You can replace it now (the old directory"
         echo -e "    will be kept as ~/.config/mpd.bak-<timestamp>) or manually later."
         read -rp "  Replace ~/.config/mpd with archenemy's config now (backup kept)? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            [[ -e "$MPD_USER_DIR" ]] && mv "$MPD_USER_DIR" "$MPD_USER_DIR.bak-$(date +%Y%m%d_%H%M%S)"
-            ln -s "$MPD_CONF_DIR" "$MPD_USER_DIR"
-            echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (previous kept as .bak)${NC}"
-            [[ -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]] && echo -e "  ${YELLOW}⚠ ~/.mpdconf / ~/.mpd are kept — mpd reads ~/.config/mpd/mpd.conf first.${NC}"
-            SUMMARY_DONE+=("mpd config linked (previous kept as .bak)")
+            [[ -e "$MPD_USER_DIR" || -L "$MPD_USER_DIR" ]] && mv "$MPD_USER_DIR" "$MPD_USER_DIR.bak-$(date +%Y%m%d_%H%M%S)"
+            ln -sT "$MPD_CONF_DIR" "$MPD_USER_DIR"
+            if mpd_link_ok; then
+                echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (previous kept as .bak)${NC}"
+                [[ -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]] && echo -e "  ${YELLOW}⚠ ~/.mpdconf / ~/.mpd are kept — mpd reads ~/.config/mpd/mpd.conf first.${NC}"
+                SUMMARY_DONE+=("mpd config linked (previous kept as .bak)")
+            else
+                mpd_link_failed
+            fi
         else
             echo -e "  ${YELLOW}⚠ Keeping your mpd config. The ncmpcpp theme still works;${NC}"
             echo -e "    the ncmpcpp visualizer needs a fifo output in your mpd.conf (see config/mpd/mpd.conf)."
             SUMMARY_SKIPPED+=("mpd: existing user config kept (archenemy's config/mpd not linked)")
         fi
     else
-        ln -s "$MPD_CONF_DIR" "$MPD_USER_DIR"
-        echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd${NC}"
-        SUMMARY_DONE+=("mpd config linked (~/.config/mpd → config/mpd)")
+        ln -sT "$MPD_CONF_DIR" "$MPD_USER_DIR"
+        if mpd_link_ok; then
+            echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd${NC}"
+            SUMMARY_DONE+=("mpd config linked (~/.config/mpd → config/mpd)")
+        else
+            mpd_link_failed
+        fi
     fi
 
     if systemctl is-enabled --quiet mpd.service 2>/dev/null || systemctl is-active --quiet mpd.service 2>/dev/null; then

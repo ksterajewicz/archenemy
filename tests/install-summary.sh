@@ -133,6 +133,46 @@ check "kod 2: wpisy bootowania do ręcznej poprawy" '[[ $(grep -c "^SKIPPED=.*bo
 out=$(MOCK_CPUDRIVERS_RC=1 run_step "$T/step65.sh" $'n\nn\nn\n')
 check "odmowa: instalatory nie wołane"           '[[ ! -s "$MOCK_LOG" ]] && ! grep -q "^SKIPPED=." "$T/summary"'
 
+# ─── [8l] mpd: ✓ dopiero, gdy ~/.config/mpd naprawdę wskazuje config/mpd (Z11) ─
+echo "== [8l] link ~/.config/mpd"
+cut_step '^# 8l\. Music stack' '^if command -v ncmpcpp' "$T/step8l.sh"
+check "wycinek [8l] (mpd) znaleziony"            '[[ -s "$T/step8l.sh" ]]'
+# Atrapy: mpd jest zainstalowany; systemctl — nic nie jest włączone.
+printf '#!/bin/bash\nexit 0\n' > "$T/bin/mpd"
+printf '#!/bin/bash\nexit 1\n' > "$T/bin/systemctl"
+chmod +x "$T/bin/mpd" "$T/bin/systemctl"
+mkdir -p "$A/config/mpd" "$HOME/.config"
+MPD_PRE='CONFIG_DIR="$HOME/.config"; DATA_DIR="$ARCHENEMY_DIR/data"; seed_dat() { :; }'
+MPD_LINK="$HOME/.config/mpd"
+mpd_reset() { rm -rf "$MPD_LINK" "$MPD_LINK".bak-*; }
+mpd_linked() { [[ -L "$MPD_LINK" && "$(readlink -f "$MPD_LINK")" == "$(readlink -f "$A/config/mpd")" ]]; }
+
+mpd_reset
+out=$(run_step "$T/step8l.sh" $'n\n' "$MPD_PRE")
+check "brak configu: link do config/mpd, ✓ i DONE" 'mpd_linked && [[ "$out" == *"✓ ~/.config/mpd → config/mpd"* ]] && grep -q "^DONE=mpd config linked" "$T/summary"'
+
+# Wiszący link (np. po przeniesieniu repo): -e go nie widzi, ln padał,
+# a ✓ i SUMMARY_DONE i tak leciały (audyt 2026-11-05, Z11).
+mpd_reset; ln -s "$T/nonexistent/mpd" "$MPD_LINK"
+out=$(run_step "$T/step8l.sh" $'n\nn\n' "$MPD_PRE")
+check "wiszący link, odmowa: link nietknięty, bez ✓" '[[ "$(readlink "$MPD_LINK")" == "$T/nonexistent/mpd" && "$out" != *"✓ ~/.config/mpd"* ]] && ! grep -q "^DONE=mpd config linked" "$T/summary"'
+check "wiszący link, odmowa: pytanie i wpis w SKIPPED" '[[ "$out" == *"broken link"* ]] && grep -q "^SKIPPED=mpd: existing user config kept" "$T/summary"'
+mpd_reset; ln -s "$T/nonexistent/mpd" "$MPD_LINK"
+out=$(run_step "$T/step8l.sh" $'y\nn\n' "$MPD_PRE")
+check "wiszący link, y: link podmieniony, stary jako .bak" 'mpd_linked && compgen -G "$MPD_LINK.bak-*" >/dev/null && [[ "$(readlink "$MPD_LINK".bak-*)" == "$T/nonexistent/mpd" ]] && grep -q "^DONE=mpd config linked" "$T/summary"'
+
+# ln, który pada (np. pełny dysk): ✗ i SKIPPED zamiast ✓.
+mkdir -p "$T/bin-noln"
+printf '#!/bin/bash\necho "ln: failed" >&2\nexit 1\n' > "$T/bin-noln/ln"
+chmod +x "$T/bin-noln/ln"
+mpd_reset
+out=$(PATH="$T/bin-noln:$PATH" run_step "$T/step8l.sh" $'n\n' "$MPD_PRE")
+check "nieudany ln: ✗, SKIPPED, bez DONE"        '[[ "$out" == *"✗"*"mpd"* && "$out" != *"✓ ~/.config/mpd"* ]] && grep -q "^SKIPPED=mpd config NOT linked" "$T/summary" && ! grep -q "^DONE=mpd config linked" "$T/summary"'
+mpd_reset; mkdir -p "$MPD_LINK"
+out=$(PATH="$T/bin-noln:$PATH" run_step "$T/step8l.sh" $'y\nn\n' "$MPD_PRE")
+check "y, nieudany ln: ✗, SKIPPED, bez DONE"     '[[ "$out" == *"✗"*"mpd"* ]] && grep -q "^SKIPPED=mpd config NOT linked" "$T/summary" && ! grep -q "^DONE=mpd config linked" "$T/summary"'
+mpd_reset
+
 # ─── [9.5] tapeta: ✓ dopiero, gdy hyprpaper ją pokazał (Z10) ────────────────
 echo "== [9.5] tapeta startowa"
 cut_step '^# ─── 9\.5 SCRIPTS' '^# ─── 9\.6 FLUX-WALL' "$T/step95.sh"
