@@ -4,6 +4,7 @@
 #             zmienione względem eDP-2/HDMI-A-1 z dnia instalacji)
 #           | edp   (tylko panel — HDMI odpięty)
 #           | twins (dwa identyczne monitory bez numeru seryjnego)
+#           | edpdp (panel eDP-1 + DP-1: nazwa jednego złącza kończy nazwę drugiego)
 # Formaty tekstowe wg src/ipc/s1/Commands.cpp v0.57.1 (nagłówek `workspace N`);
 # MOCK_HYPRLAND=0.56 = stary nagłówek `workspace ID N` (src/debug/HyprCtl.cpp
 # v0.56.2 — reszta pól bez zmian). dispatch → $MOCK_LOG.
@@ -35,6 +36,7 @@ mock_live_names() {
     case "${MOCK_MONS:-both}" in
         twins) printf 'DP-1\nDP-2\n' ;;
         edp)   printf 'eDP-1\n' ;;
+        edpdp) printf 'eDP-1\nDP-1\n' ;;
         three) printf 'HDMI-A-3\neDP-1\nDP-3\n' ;;
         *)     printf 'HDMI-A-3\neDP-1\n' ;;
     esac
@@ -135,6 +137,21 @@ Monitor eDP-1 (ID 1):
 	disabled: false
 
 M
+    if [[ "${MOCK_MONS:-both}" == edpdp ]]; then
+cat <<'M'
+Monitor DP-1 (ID 2):
+	1920x1080@60.00000 at 2560x0
+	description: Acme Twin 24
+	make: Acme
+	model: Twin 24
+	serial: 
+	active workspace: 11 (1)
+	scale: 1.00
+	focused: no
+	disabled: false
+
+M
+    fi
     if [[ "${MOCK_MONS:-both}" == three ]]; then
 cat <<'M'
 Monitor DP-3 (ID 2):

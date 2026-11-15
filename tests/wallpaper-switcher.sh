@@ -133,8 +133,11 @@ boot_daemon_with() {
     hyprpaper
 }
 
-active_of() {   # co hyprpaper POKAZUJE na monitorze $1
-    hyprctl hyprpaper listactive | grep -m1 -F "$1: " | sed "s/^$1: //"
+active_of() {   # co hyprpaper POKAZUJE na monitorze $1 (nazwa od początku linii: DP-1 ≠ eDP-1)
+    local line
+    while IFS= read -r line; do
+        [[ "$line" == "$1: "* ]] && { printf '%s\n' "${line#"$1": }"; return; }
+    done < <(hyprctl hyprpaper listactive)
 }
 
 echo "== A: opis EDID (desc:) — zmiana tapety musi być widoczna"
@@ -216,6 +219,28 @@ printf 'DP-1=%s\nDP-2=%s\n' "$WP/stara-v1.png" "$WP/stara-v2.png" > "$A/data/wal
 : > "$MOCK_LOG"
 MOCK_MONS=twins bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
 check "każdy bliźniak dostaje swoją połowę pary" '[[ "$(MOCK_MONS=twins active_of DP-1)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=twins active_of DP-2)" == "$WP/nowa-v2.png" ]]'
+
+echo "== C2: eDP-1 i DP-1 naraz — nazwa złącza to przyrostek drugiej (A1, audyt 2026-11-05)"
+# listactive wypisuje eDP-1 przed DP-1; dopasowanie „DP-1: ” bez kotwicy brało
+# linię eDP-1, więc zgodny ekran wyglądał na rozjazd: restart demona i fałszywe
+# „failed to apply”.
+printf 'MONITOR=eDP-1\nROLE=secondary\nORDER=1\n' > "$A/data/monitors/eDP-1.dat"
+printf 'MONITOR=DP-1\nROLE=primary\nORDER=2\n'   > "$A/data/monitors/DP-1.dat"
+rm -f "$A/data/monitors/DP-2.dat"
+boot_daemon_with "wallpaper {
+    monitor = eDP-1
+    path = $WP/stara-v2.png
+}
+wallpaper {
+    monitor = DP-1
+    path = $WP/stara-v1.png
+}"
+printf 'eDP-1=%s\nDP-1=%s\n' "$WP/stara-v2.png" "$WP/stara-v1.png" > "$A/data/wallpaper.dat"
+: > "$MOCK_LOG"
+MOCK_MONS=edpdp bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
+check "DP-1 (primary) pokazuje v1, eDP-1 v2"    '[[ "$(MOCK_MONS=edpdp active_of DP-1)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=edpdp active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
+check "zgodny ekran: bez restartu demona"     '! grep -q "DAEMON kill" "$MOCK_LOG"'
+check "zgodny ekran: sukces, nie 'failed'"    'grep -q "NOTIFY: .*applied" "$MOCK_LOG" && ! grep -q "failed to apply" "$MOCK_LOG"'
 
 echo "== D: monitor odpięty — jego wpis zostaje w configu, IPC go pomija"
 setup_dat a

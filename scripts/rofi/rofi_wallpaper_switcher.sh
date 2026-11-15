@@ -353,7 +353,7 @@ same_path() {
 # protokołu v2 albo brak odpowiedzi) — wołający traktuje 2 jak dawniej, czyli
 # ufa kodowi wyjścia IPC.
 wallpaper_shown_matches() {
-    local tries="${1:-5}" out mon live have all_ok answered=0
+    local tries="${1:-5}" out mon live have line all_ok answered=0
     while (( tries-- > 0 )); do
         # Demon po restarcie podnosi gniazdo chwilę po procesie — brak
         # odpowiedzi jest powodem do ponowienia, nie do werdyktu.
@@ -363,9 +363,14 @@ wallpaper_shown_matches() {
             for mon in "${!STATE[@]}"; do
                 live=$(monitor_live_name "$mon")
                 [[ -n "$live" ]] || continue
-                # ścieżka może zawierać ": ", więc ucinamy tylko pierwszy prefiks
-                have=$(grep -m1 -F "$live: " <<< "$out")
-                have="${have#"$live": }"
+                # Nazwa złącza od POCZĄTKU linii: „DP-1: ” jest też w środku
+                # „eDP-1: …”, więc grep -F bez kotwicy brał linię panelu i zgodny
+                # ekran wyglądał na rozjazd (restart demona, fałszywe „failed”).
+                # Ścieżka może zawierać ": ", więc ucinamy tylko pierwszy prefiks.
+                have=""
+                while IFS= read -r line; do
+                    [[ "$line" == "$live: "* ]] && { have="${line#"$live": }"; break; }
+                done <<< "$out"
                 same_path "$have" "${STATE[$mon]}" || all_ok=0
             done
             (( all_ok == 1 )) && return 0
