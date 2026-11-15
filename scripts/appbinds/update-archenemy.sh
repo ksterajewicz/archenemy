@@ -76,6 +76,7 @@ fi
 # instalatora albo listy pakietów — to one pójdą potem przez sudo/yay.
 # Krótki HEAD sprzed aktualizacji = droga powrotu wypisywana na końcu.
 old_head="$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)"
+risky=""
 new_count="$(git -C "$ARCHENEMY_DIR" rev-list --count "HEAD..origin/$target" 2>/dev/null)"
 if [[ "${new_count:-0}" -eq 0 ]]; then
     echo -e "  No new commits on origin/${target}."
@@ -120,15 +121,31 @@ fi
 # wpis w `git stash list`, więc zmiany nie giną — mówimy, gdzie są.
 # Kod 1 = konflikt: drzewo ma znaczniki konfliktu, więc wołający nie melduje
 # „✓” i nie proponuje install.sh (audyt bezpieczeństwa 2026-11-14, K3).
+# Rada zależy od stanu (A7, przegląd 2026-11-15): po konflikcie zmiany SĄ
+# już w drzewie (ze znacznikami), a wpis w schowku to kopia — kolejny
+# `git stash pop` daje „needs merge”, a po `git add` nakłada schowek drugi
+# raz; działa: rozwiąż, `git add`, `git stash drop` (man git-stash). Gdy pop
+# padł bez konfliktu, nic nie weszło do drzewa — wtedy `drop` zgubiłby
+# zmiany, więc radzimy samo `git stash pop` po usunięciu przyczyny.
 restore_stash() {
     [[ $stashed -eq 1 ]] || return 0
     echo -e "  ${CYAN}→ Restoring your local changes...${NC}"
     if git -C "$ARCHENEMY_DIR" stash pop 2>&1 | sed 's/^/    /'; then
         echo -e "  ${GREEN}✓ Local changes restored.${NC}"
-    else
-        echo -e "  ${RED}✗ Could not restore automatically — your changes are in the stash (git stash list); resolve the conflict and run git stash pop.${NC}"
-        return 1
+        return 0
     fi
+    local conflicted
+    conflicted="$(git -C "$ARCHENEMY_DIR" diff --name-only --diff-filter=U 2>/dev/null)"
+    if [[ -n "$conflicted" ]]; then
+        echo -e "  ${RED}✗ Could not restore automatically — conflict in:${NC}"
+        head -n 10 <<< "$conflicted" | sed 's/^/    /'
+        echo -e "  ${RED}  A copy of your changes stays in the stash (git stash list). To finish, in ~/archenemy:${NC}"
+        echo -e "  ${RED}  fix the conflict markers, git add those files, then git stash drop (not git stash pop).${NC}"
+    else
+        echo -e "  ${RED}✗ Could not restore automatically — your changes are still in the stash (git stash list).${NC}"
+        echo -e "  ${RED}  Fix the error above, then run git stash pop in ~/archenemy.${NC}"
+    fi
+    return 1
 }
 
 echo -e "  ${CYAN}→ Switching to ${target}...${NC}"
@@ -148,7 +165,7 @@ if ! git -C "$ARCHENEMY_DIR" pull --ff-only origin "$target" 2>&1 | sed 's/^/   
 fi
 
 if ! restore_stash; then
-    echo -e "  ${YELLOW}⚠ The code is at origin/${target}, but the update is not finished: resolve the conflict first.${NC}"
+    echo -e "  ${YELLOW}⚠ The code is at origin/${target}, but the update is not finished: bring your local changes back first (see above).${NC}"
     echo -e "  ${YELLOW}  Afterwards start the installer yourself: bash ~/archenemy/install/install.sh${NC}"
     pause
     exit 0
@@ -176,6 +193,26 @@ echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
 echo -e "  git — ${GREEN}they stay unchanged${NC}."
 echo ""
+# Podsumowanie TUŻ nad pytaniem o instalator (A3, przegląd 2026-11-15): lista
+# i ⚠ z K5 stoją przed pull, więc wyjście pulla przewija je poza okno Super+A
+# (ok. 27 wierszy). Liczone po pull z <old_head>..HEAD, czyli to, co naprawdę
+# weszło (przy dev → main: cofnięte commity). ⚠ powtarza listę sprzed pull —
+# ten sam zakres install/ packages/, bez nowego liczenia.
+plural() { if [[ "$1" == 1 ]]; then echo "1 $2"; else echo "$1 $2s"; fi; }
+if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)" != "$old_head" ]]; then
+    added="$(git -C "$ARCHENEMY_DIR" rev-list --count "$old_head..HEAD" 2>/dev/null)"
+    removed="$(git -C "$ARCHENEMY_DIR" rev-list --count "HEAD..$old_head" 2>/dev/null)"
+    stat="$(git -C "$ARCHENEMY_DIR" diff --shortstat "$old_head" HEAD 2>/dev/null)"
+    stat="${stat# }"
+    summary=""
+    [[ "${added:-0}" -gt 0 ]] && summary+="$(plural "$added" "new commit"), "
+    [[ "${removed:-0}" -gt 0 ]] && summary+="$(plural "$removed" commit) rolled back, "
+    echo -e "  This update: ${summary}${stat:-no file changes}."
+    if [[ -n "$risky" ]]; then
+        echo -e "  ${YELLOW}⚠ install/ or packages/ changed ($(plural "$(grep -c . <<< "$risky")" file)) — review before running install.sh:${NC}"
+        echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages"
+    fi
+fi
 # Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
 # z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go
 # uruchomić. Przypomnienie o zaległym biegu daje machine-layer-check.sh.

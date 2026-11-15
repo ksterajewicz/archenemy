@@ -24,9 +24,16 @@ set -uo pipefail
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 # Haki testowe (tests/virtualbox.sh): katalog modułów jądra i /sys/module
-# podmieniane na atrapę w mktemp. W normalnym biegu nieustawione = system.
-KMOD_DIR="${ARCHENEMY_MODULES_DIR:-/usr/lib/modules}"
-SYSMOD_DIR="${ARCHENEMY_SYSMODULE_DIR:-/sys/module}"
+# podmieniane na atrapę w mktemp — TYLKO przy ARCHENEMY_TEST=1, tak jak
+# w gpudrivers-installation.sh (K10): zmienna odziedziczona przypadkiem ze
+# środowiska nie zmieni listy nagłówków do `sudo pacman -S` ani nie da
+# fałszywego „vboxdrv loaded” (I6 z przeglądu 2026-11-15).
+KMOD_DIR=/usr/lib/modules
+SYSMOD_DIR=/sys/module
+if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
+    KMOD_DIR="${ARCHENEMY_MODULES_DIR:-/usr/lib/modules}"
+    SYSMOD_DIR="${ARCHENEMY_SYSMODULE_DIR:-/sys/module}"
+fi
 
 # ─── PAKIETY ──────────────────────────────────────────────────────────────────
 

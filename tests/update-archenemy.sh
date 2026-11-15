@@ -98,6 +98,37 @@ upstream_commit dev f.txt upstream-wersja-k3
 out=$(run_upd '1yy\n\n')
 check "konflikt schowka + „y”: install.sh się nie uruchamia" '[[ "$out" != *INSTALL-RAN* ]]'
 
+# A7 (przegląd 2026-11-15): dawna rada „resolve the conflict and run git
+# stash pop” nie działa — pop na pliku z konfliktem kończy się „needs merge”
+# (rc 128), a po `git add` nakłada schowek drugi raz (nowy konflikt). Działa
+# to, co mówi man git-stash: rozwiąż, `git add`, `git stash drop`. Test robi
+# dokładnie to, co wypisuje aktualizator.
+echo "== A7: rada po konflikcie schowka (rozwiąż, git add, git stash drop) działa"
+fresh_clone dev
+echo lokalna-wersja > "$A/f.txt"; echo lokalna-g > "$A/g.txt"   # f.txt: konflikt, g.txt: bez
+upstream_commit dev f.txt upstream-wersja-a7
+out=$(run_upd '1yn\n\n')
+check "A7: rada mówi git add i git stash drop, nie „run git stash pop”" '[[ "$out" == *"git add those files, then git stash drop"* && "$out" != *"run git stash pop"* ]]'
+check "A7: po konflikcie: f.txt nierozwiązany, wpis w schowku" '[[ "$(git -C "$A" diff --name-only --diff-filter=U)" == f.txt && -n "$(git -C "$A" stash list)" ]]'
+want_f=$'upstream-wersja-a7\nlokalna-wersja'
+printf '%s\n' "$want_f" > "$A/f.txt"                              # rozwiązanie: obie zmiany
+check "A7: dawna rada (stash pop po poprawce pliku) odmawia, wpis zostaje" '! git -C "$A" stash pop >/dev/null 2>&1 && [[ -n "$(git -C "$A" stash list)" ]]'
+check "A7: git add + git stash drop → rc 0" 'git -C "$A" add f.txt && git -C "$A" stash drop >/dev/null 2>&1'
+check "A7: schowek pusty, bez konfliktów, obie zmiany i g.txt na miejscu" '[[ -z "$(git -C "$A" stash list)" && -z "$(git -C "$A" diff --name-only --diff-filter=U)" && "$(<"$A/f.txt")" == "$want_f" && "$(<"$A/g.txt")" == lokalna-g ]]'
+out=$(run_upd '1yn\n')
+check "A7: następna aktualizacja po radzie przechodzi" '[[ "$out" == *"✓ Local changes restored"* && "$out" == *"✓ Updated"* ]]'
+# Pop nieudany BEZ konfliktu (atrapa gita odmawia `stash pop`): nic nie weszło
+# do drzewa, więc rada „git stash drop” zgubiłaby zmiany — ma paść samo pop.
+mkdir -p "$T/fakegit"
+printf '#!/bin/bash\nfor a in "$@"; do [[ "$a" == pop ]] && { echo "error: TEST simulated failure" >&2; exit 1; }; done\nexec %q "$@"\n' "$(command -v git)" > "$T/fakegit/git"
+chmod +x "$T/fakegit/git"
+fresh_clone dev
+echo lokalna-g > "$A/g.txt"
+upstream_commit dev f.txt upstream-a7-bez-konfliktu
+out=$(printf '%b' '1yn\n\n' | PATH="$T/fakegit:$PATH" bash "$UPD" 2>&1)
+check "A7: pop bez konfliktu — rada „git stash pop”, nigdy „drop”" '[[ "$out" == *"✗ Could not restore"* && "$out" == *"then run git stash pop"* && "$out" != *"stash drop"* && "$out" != *"✓ Updated"* ]]'
+check "A7: pop bez konfliktu — po radzie zmiany wracają" 'git -C "$A" stash pop >/dev/null 2>&1 && [[ "$(<"$A/g.txt")" == lokalna-g && -z "$(git -C "$A" stash list)" ]]'
+
 echo "== K4: pytanie o install.sh domyślnie N i z ostrzeżeniem o sudo"
 fresh_clone dev
 upstream_commit dev f.txt v4-k4
@@ -206,6 +237,37 @@ fresh_clone dev
 git -C "$A" fetch -q origin dev; git -C "$A" reset -q --hard "$(git -C "$A" rev-parse 'origin/dev~32')"
 out=$(run_upd '1n\n'); NL=$'\n'
 check "limit 30 commitów + licznik reszty"          '[[ "$out" == *"seria-32"* && "$out" == *"seria-3"* && "$out" != *"seria-2$NL"* && "$out" == *"2 more"* ]]'
+
+# A3 (przegląd 2026-11-15): lista i ⚠ K5 stoją PRZED pull, więc wyjście
+# pulla przewija je poza okno Super+A (ok. 27 wierszy), zanim padnie pytanie
+# o install.sh. Podsumowanie musi stać w wierszach tuż nad tym pytaniem.
+echo "== A3: podsumowanie tuż przed pytaniem o install.sh"
+before_question() {   # 3 wiersze tuż nad pytaniem o install.sh
+    sed -n '/Run install.sh now/q;p' <<< "$out" | tail -n 3
+}
+fresh_clone dev
+old7=$(git -C "$A" rev-parse --short=7 HEAD)
+w="$T/wa3"; rm -rf "$w"; git clone -q -b dev "$T/origin.git" "$w"
+mkdir -p "$w/install" "$w/packages"
+for i in 1 2 3 4 5 6 7 8; do echo "$i" > "$w/a3-$i.txt"; done
+echo a3 > "$w/install/a3.sh"; echo a3 > "$w/packages/a3.txt"
+g "$w" add -A; g "$w" commit -m a3-pierwszy
+echo a3-zmiana > "$w/a3-1.txt"; g "$w" commit -am a3-drugi; g "$w" push origin dev
+out=$(run_upd '1n\n'); pre=$(before_question)
+check "A3: liczba commitów i plików tuż nad pytaniem"  '[[ "$pre" == *"This update: 2 new commits, 10 files changed, 10 insertions(+)"* ]]'
+check "A3: ⚠ install/ packages/ tuż nad pytaniem"      '[[ "$pre" == *"⚠ install/ or packages/ changed (2 files)"* ]]'
+check "A3: komenda przeglądu z poprzednim HEAD"        '[[ "$pre" == *"git -C ~/archenemy diff $old7 HEAD -- install packages"* ]]'
+check "A3: ⚠ przed pull zostaje (zakres K5 bez zmian)" '[[ "$out" == *"⚠ This update changes the installer or package lists"* && "$out" == *"packages/a3.txt"* ]]'
+fresh_clone dev
+upstream_commit dev f.txt a3-zwykly
+out=$(run_upd '1n\n'); pre=$(before_question)
+check "A3: zwykła zmiana — podsumowanie bez ⚠"         '[[ "$pre" == *"This update: 1 new commit, 1 file changed"* && "$pre" != *"⚠"* ]]'
+fresh_clone dev
+out=$(run_upd '1n\n')
+check "A3: bez nowych commitów — bez podsumowania"     '[[ "$out" != *"This update:"* && "$out" == *"Run install.sh now"* ]]'
+fresh_clone dev
+out=$(run_upd '2yn\n'); pre=$(before_question)
+check "A3: dev → main — podsumowanie mówi o cofniętych commitach" '[[ "$pre" == *"This update: "*" commits rolled back, "*"changed"* && "$pre" != *"new commit"* ]]'
 
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev

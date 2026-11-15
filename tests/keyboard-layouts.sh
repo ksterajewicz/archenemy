@@ -25,8 +25,10 @@ source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 ok() { if [[ "$2" == 1 ]]; then PASS=$((PASS+1)); echo "OK   $1"; else FAIL=$((FAIL+1)); echo "FAIL $1 ${3:-}"; fi; }
+# Pominięcie nigdy nie liczy się jako OK; liczba trafia do wiersza WYNIK (run-all pokazuje tylko ostatni).
+skip() { SKIP=$((SKIP+1)); echo "? skip: $1"; }
 
 export HOME="$T/home"
 mkdir -p "$HOME/archenemy/config/hypr" "$T/bin"
@@ -115,6 +117,8 @@ dofile(arg[1]); print(table.concat(klucze, ","))
 EOF
     wynik="$(lua5.4 "$T/harness.lua" "$LUA" 2>&1)"
     ok "Lua: jedyny klucz input.kb_layout=de,si" "$([[ "$wynik" == "input.kb_layout=de,si" ]] && echo 1)" "$wynik"
+else
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — generated Lua not executed"
 fi
 
 # --- gotowe układy w prawdziwym evdev.lst -----------------------------------
@@ -235,9 +239,9 @@ if command -v python3 >/dev/null 2>&1; then
     ok "terminal: wpisana permutacja '2 1' → pl,us" "$([[ "$(cat "$DAT")" == pl,us ]] && echo 1)" "$(cat "$DAT")"
     ok "terminal: wpisany wiersz widać w całości" "$([[ "$(sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' <<<"$out")" == *"    2 1"* ]] && echo 1)"
 else
-    echo "POMINIĘTE: brak python3, bez testu pty"
+    skip "python3 is not installed — pty menu test not run"
 fi
 
 echo ""
-echo "WYNIK keyboard-layouts: $PASS ok, $FAIL fail"
+echo "WYNIK keyboard-layouts: $PASS ok, $FAIL fail, $SKIP skip"
 [[ $FAIL == 0 ]]

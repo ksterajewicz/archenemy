@@ -92,7 +92,8 @@ archenemy/
 │   │                                 #   replaces AUR variants, starts asusd (exit codes are a contract with step [6]).
 │   ├── bluetooth-installation.sh     # Optional Bluetooth + bluetui: verified service and bar visibility flag.
 │   ├── lib/aur.sh                    # Library (sourced by install.sh): builds yay in a fresh mktemp dir with an
-│   │                                 #   optional PKGBUILD review; AUR installs with an opt-in `--answerdiff All`.
+│   │                                 #   optional PKGBUILD review; AUR installs with opt-in `--diffmenu --answerdiff All`;
+│   │                                 #   reviews fall back to more/cat when `less` is missing.
 │   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
 │                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
@@ -329,7 +330,9 @@ archenemy/
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
 │                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language;
-│                                     #   no machine data (interface names such as network=wlo1, /home/<login>).
+│                                     #   no machine data (interface names such as network=wlo1, /home/<login>);
+│                                     #   suites that execute generated Lua in lua5.4 report "? skip" without it
+│                                     #   (their lua5.4 block is run with lua5.4 hidden from PATH).
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
 │                                     #   appbinds-menu.sh also forces a failed write, a dead Hyprland, a dead waybar
@@ -346,6 +349,8 @@ archenemy/
 │                                     #   codes, reload + read-back, switch N, the TUI menu driven via stdin.
 │                                     #   mouse-settings.sh — [m] on a fake HOME/hyprctl/ratbagctl: range checks,
 │                                     #   reload + read-back, generated Lua, emulated and hardware DPI, the menu.
+│                                     #   Without lua5.4 (package lua54) mouse-settings, keyboard-layouts and
+│                                     #   machine-layer print "? skip" and count it in their last line — never OK.
 │                                     #   asus-installation.sh — ASUS installer on a fake pacman: AUR variants
 │                                     #   replaced, success = the package named asusctl, supergfxctl guard.
 │                                     #   power-profile.sh — profile get/next on a fake asusctl with the 6.5.0
@@ -357,16 +362,25 @@ archenemy/
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
 │                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
 │                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
-│                                     #   sudo, GPU installer test hooks only with ARCHENEMY_TEST=1.
+│                                     #   sudo and on every exit (Ctrl+C, step [2]), GPU and VirtualBox installer
+│                                     #   test hooks only with ARCHENEMY_TEST=1.
 │                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
-│                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
+│                                     #   mktemp build dir, cleanup, review on request (also without `less`),
+│                                     #   ✓ only with yay in PATH, Ctrl+C in step [4] stops install.sh,
+│                                     #   yay always cloned from the fixed AUR URL (no environment override).
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;
-│                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip".
+│                                     #   fails only on findings not in tests/shellcheck.baseline; no shellcheck → "skip";
+│                                     #   a broken or killed shellcheck (output not in gcc format, xargs exit
+│                                     #   other than 0/123) → ✗; `--selftest` runs only its fake-shellcheck autotest;
+│                                     #   `--update-baseline` only removes fixed entries — new findings are fixed in
+│                                     #   code (a deliberate exception is added to the baseline by hand, with a comment).
 │                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
 │                                     #   over the whole history (when installed; otherwise "skip").
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
-│                                     #   installed from (pacman sync DB / AUR RPC v5), no -git in requirements;
-│                                     #   offline or without [multilib] → "skip", never ✓.
+│                                     #   installed from (official repos core/extra/multilib in the pacman sync DB /
+│                                     #   AUR RPC v5), no -git in requirements;
+│                                     #   offline → "skip", never ✓; without a synced [multilib] only steam and
+│                                     #   lib32-* skip, any other unknown name → ✗.
 │                                     #   run-all.sh — every suite at once: `bash tests/run-all.sh`.
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
@@ -766,19 +780,19 @@ Hyprland. No new settings-menu entry is added.
 
 The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetches the chosen branch, pulls it with `--ff-only` and reports success only when `HEAD` equals `origin/<branch>`.
 
-- **AUR:** when yay is missing, the installer builds it in a fresh `mktemp -d` directory (removed afterwards, never a fixed `/tmp/yay` that another user could plant), offers to show its PKGBUILD first and reports ✓ only when `yay` is actually on `PATH`. Before every `yay -S` it says that AUR packages are user-submitted and offers `--answerdiff All` (yay shows each PKGBUILD diff before building); the default is a plain `yay -S --needed`.
-- **Root and sudo:** `install.sh` refuses to run as root or under `sudo` (it asks for sudo itself where needed, and AUR packages must never be built as root) and ends with `sudo -k`, so the cached sudo password does not outlive the installer. The GPU installer's test hooks (`ARCHENEMY_ETC_DIR`, `ARCHENEMY_MODULES_DIR`) work only together with `ARCHENEMY_TEST=1`; a variable left in your environment cannot redirect its `sudo` writes.
-- **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`.
-- **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: the tree contains conflict markers, so resolve them (`git stash list`, `git stash pop`) and start `install.sh` yourself.
+- **AUR:** when yay is missing, the installer clones it from `https://aur.archlinux.org/yay.git` (fixed; no environment variable can change the source) and builds it in a fresh `mktemp -d` directory (removed afterwards, never a fixed `/tmp/yay` that another user could plant; Ctrl+C during this step removes it too and stops the installer), offers to show its PKGBUILD first and reports ✓ only when `yay` is actually on `PATH`. Before every `yay -S` it says that AUR packages are user-submitted and offers `--diffmenu --answerdiff All` (yay shows each PKGBUILD diff before building, even if you turned its diff menu off with `yay --diffmenu=false --save`); the default is a plain `yay -S --needed`. A fresh Arch has no `less`, so both reviews use the first pager that exists: `$PAGER` (arguments allowed, e.g. `less -R`), `less`, `more` (util-linux, part of `base`), `cat`; yay gets the same pager as `GIT_PAGER` unless you set `GIT_PAGER` or git's `core.pager` yourself. No pager package is installed for this.
+- **Root and sudo:** `install.sh` refuses to run as root or under `sudo` (it asks for sudo itself where needed, and AUR packages must never be built as root) and runs `sudo -k` on every exit — before the last question of a normal run, and from an `EXIT` trap after Ctrl+C, the early exit in step [2] or an error — so the cached sudo password does not outlive the installer. The GPU installer's test hooks (`ARCHENEMY_ETC_DIR`, `ARCHENEMY_MODULES_DIR`) work only together with `ARCHENEMY_TEST=1`; a variable left in your environment cannot redirect its `sudo` writes. The VirtualBox installer's hooks (`ARCHENEMY_MODULES_DIR`, `ARCHENEMY_SYSMODULE_DIR`) have the same gate, so they cannot change which kernel headers it installs or fake a loaded `vboxdrv`.
+- **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`. By then the pull output has usually scrolled the list out of the Super+A window, so right above the "Run install.sh now?" question the updater repeats a summary: new commits (or commits rolled back, when you switched to an older branch), files changed and — when the warning was shown — how many `install/`/`packages/` files changed, with `git -C ~/archenemy diff <old commit> HEAD -- install packages` to review them.
+- **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: it lists the conflicting files, which now contain conflict markers, and a copy of your changes stays in the stash (`git stash list`). In `~/archenemy`, fix the markers, `git add` those files and run `git stash drop`, then start `install.sh` yourself. Do not run `git stash pop` again: on a file with conflict markers it fails with "needs merge", and after `git add` it applies the same changes a second time. If restoring fails without a conflict (nothing was applied), the updater says so and the right command is `git stash pop` once the error it printed is fixed.
 - **Installer prompt:** "Run install.sh now?" defaults to **No** and says that the installer will ask for sudo — the installer comes from code fetched a moment earlier, so a single Enter must not run it as root. The machine-layer check reminds you when the installed version is behind the code.
 
 ## Verification
 
 CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
 
-`bash tests/secrets.sh` looks for private keys and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
+`bash tests/secrets.sh` looks for private keys (including armored PGP `PRIVATE KEY BLOCK` headers) and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
 
-`bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the synced repos (one read-only `pacman -Slq`), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network, without pacman or without a synced `[multilib]` database the affected names are reported as `skip`, never as passed.
+`bash tests/packages-exist.sh` is the supply-chain check for the package lists: a name on a pacman list must be in the official repos (read-only `pacman -Slq core extra` and `pacman -Slq multilib`; third-party repos in `pacman.conf` do not count), a name on an AUR list must exist in the AUR (one AUR RPC v5 `info` request) and must not be in the official repos, and required lists must not contain `-git` packages. An AUR name that disappears can be registered by anyone, and `yay -S` would then build that stranger's PKGBUILD. Without network, or without pacman or its synced `core`/`extra` databases, the affected names are reported as `skip`, never as passed; the one exception is an AUR name on a machine without pacman, which is checked against the AUR only (its "not in the official repos" rule needs pacman). Without a synced `[multilib]` database (CI, servers) only the multilib names — `steam` and `lib32-*`, the same pattern step [5] of `install.sh` warns about — are skipped; any other name that is not in the repos fails, so a typo cannot pass as a skip.
 
 **Live-only — a real Arch + Hyprland session is required:**
 

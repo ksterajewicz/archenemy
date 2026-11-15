@@ -3,8 +3,9 @@
 #   archenemy - tests/secrets.sh
 #   Sekrety w publicznym repo (K14 z audytu bezpieczeństwa 2026-11-14):
 #     1. zawsze: wzorce o wysokiej pewności (nagłówek klucza prywatnego,
-#        tokeny GitHuba, klucz AWS, token Slacka) w plikach śledzonych —
-#        `git grep`, bez sieci i bez dodatkowych narzędzi;
+#        także PGP „PRIVATE KEY BLOCK”, tokeny GitHuba, klucz AWS, token
+#        Slacka) w plikach śledzonych — `git grep`, bez sieci i bez
+#        dodatkowych narzędzi;
 #     2. gitleaks (za `command -v`) na CAŁEJ historii gita — brak narzędzia
 #        = „skip”, nigdy ✓.
 #   Autotest: repo w mktemp z fałszywym kluczem musi dać ✗ (fałszywy klucz
@@ -26,7 +27,7 @@ fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 skip() { SKIP=$((SKIP + 1)); echo "  ? skip: $1"; }
 
 PATTERNS=(
-    -e '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'
+    -e '-----BEGIN ([A-Z]+ )?PRIVATE KEY( BLOCK)?-----'   # BLOCK: pancerny klucz PGP
     -e 'gh[pousr]_[A-Za-z0-9]{36}'
     -e 'github_pat_[A-Za-z0-9_]{60,}'
     -e 'AKIA[0-9A-Z]{16}'
@@ -43,9 +44,14 @@ echo "== autotest: repo z fałszywym kluczem"
 F="$T/fake"; git init -q "$F"
 printf '%s\n' "-----BEGIN ""OPENSSH PRIVATE KEY-----" "b3BlbnNzaC1rZXktdjEAAAAA" "-----END ""OPENSSH PRIVATE KEY-----" > "$F/id_test"
 printf 'token=%s%s\n' "ghp_" "abcdefghijklmnopqrstuvwxyz0123456789" > "$F/conf"
+# Pancerny klucz PGP ma w nagłówku „BLOCK” (R1 C4); publiczny nie jest sekretem.
+printf '%s\n' "-----BEGIN ""PGP PRIVATE KEY BLOCK-----" "TESTnotakey" "-----END ""PGP PRIVATE KEY BLOCK-----" > "$F/key_test.asc"
+printf '%s\n' "-----BEGIN ""PGP PUBLIC KEY BLOCK-----" "TESTnotakey" "-----END ""PGP PUBLIC KEY BLOCK-----" > "$F/pub_test.asc"
 git -C "$F" add -A; git -C "$F" commit -qm fake
 found="$(tracked_secrets "$F")"
 if [[ "$found" == *id_test* && "$found" == *conf* ]]; then ok "wzorce łapią klucz prywatny i token GitHuba"; else fail "wzorce przepuszczają fałszywy klucz/token"; fi
+if [[ "$found" == *key_test.asc* ]]; then ok "wzorce łapią prywatny klucz PGP (PRIVATE KEY BLOCK)"; else fail "wzorce przepuszczają prywatny klucz PGP (PRIVATE KEY BLOCK)"; fi
+if [[ "$found" != *pub_test.asc* ]]; then ok "publiczny klucz PGP nie jest zgłaszany"; else fail "publiczny klucz PGP zgłoszony jako sekret"; fi
 
 echo "== pliki śledzone archenemy"
 found="$(tracked_secrets "$REPO")"

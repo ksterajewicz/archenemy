@@ -9,7 +9,8 @@
 #   .dat i mouse.lua, reset, odczyt `show`, reload + potwierdzenie odczytem
 #   (`hyprctl getoption`), rozjazd odczytu = kod 2, brak Hyprlanda = zapis
 #   bez reloadu; wygenerowany Lua wykonany w lua5.4 z atrapą `hl.config`
-#   ustawia WYŁĄCZNIE input.sensitivity; każdy realny rice (bez bety)
+#   ustawia WYŁĄCZNIE input.sensitivity (bez lua5.4: „? skip”, nie OK);
+#   każdy realny rice (bez bety)
 #   wczytuje mouse.lua przez require_optional PO bloku input.
 #   Plus szybkość z docelowego DPI, DPI i polling na atrapie ratbagctl, menu.
 #   Uruchom: bash tests/mouse-settings.sh   (kod 0 = wszystko przeszło)
@@ -23,8 +24,10 @@ source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 ok() { if [[ "$2" == 1 ]]; then PASS=$((PASS+1)); echo "OK   $1"; else FAIL=$((FAIL+1)); echo "FAIL $1 ${3:-}"; fi; }
+# Pominięcie nigdy nie liczy się jako OK; liczba trafia do wiersza WYNIK (run-all pokazuje tylko ostatni).
+skip() { SKIP=$((SKIP+1)); echo "? skip: $1"; }
 
 export HOME="$T/home"
 mkdir -p "$HOME/archenemy" "$T/bin" "$T/rb"
@@ -249,7 +252,7 @@ EOF
     wynik="$(lua5.4 "$T/harness.lua" "$LUA" 2>&1)"
     ok "Lua: jedyny klucz input.sensitivity=0.55" "$([[ "$wynik" == "input.sensitivity=0.55" ]] && echo 1)" "$wynik"
 else
-    ok "lua5.4 dostępne (pominięto test wykonania)" 1
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — generated Lua not executed"
 fi
 
 # --- rice'y: require_optional mouse.lua po bloku input, beta bez ------------
@@ -263,5 +266,5 @@ ok "white-blue_beta: bez mouse.lua (legacy)" "$(grep -q 'mouse.lua' "$REPO/rices
 ok "mouse.lua w .gitignore" "$(grep -qx '/config/hypr/mouse.lua' "$REPO/.gitignore" && echo 1)"
 
 echo ""
-echo "WYNIK mouse-settings: $PASS ok, $FAIL fail"
+echo "WYNIK mouse-settings: $PASS ok, $FAIL fail, $SKIP skip"
 [[ $FAIL == 0 ]]

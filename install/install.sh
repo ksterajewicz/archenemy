@@ -18,6 +18,13 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
+# Hasło sudo unieważniane na KAŻDYM wyjściu (K18; I4 z przeglądu 2026-11-15):
+# Ctrl+C, exit z [2], przerwanie przez `set -u` — nie tylko na zwykłym końcu.
+# `trap … EXIT` zastępuje poprzednią pułapkę, więc pułapki z [3] (katalog
+# monitors.new) też kończą się `sudo -k`; zmieniasz jedną — zmień wszystkie
+# (pilnuje tests/install-guards.sh).
+trap 'sudo -k 2>/dev/null' EXIT
+
 ARCHENEMY_DIR="$HOME/archenemy"
 RICES_DIR="$ARCHENEMY_DIR/rices"
 CONFIG_DIR="$HOME/.config"
@@ -171,7 +178,8 @@ mkdir -p "$DATA_DIR/monitors"
 # Katalog po biegu zabitym bez trapa (SIGKILL) sprzątamy tu; własny — trapem.
 rm -rf "$DATA_DIR"/monitors.new.*
 MON_TMP="$(mktemp -d "$DATA_DIR/monitors.new.XXXXXX")"
-trap 'rm -rf "$MON_TMP"' EXIT
+# Ta pułapka zastępuje tę spod strażnika roota — `sudo -k` musi zostać (K18).
+trap 'rm -rf "$MON_TMP"; sudo -k 2>/dev/null' EXIT
 # Podmiana: stare .dat (także po monitorach, których już nie ma — inaczej
 # wallpaper switcher mógłby wybrać odłączony monitor jako primary/secondary)
 # znikają w tej samej chwili, w której wchodzą nowe (mv w obrębie data/ =
@@ -180,7 +188,8 @@ commit_monitor_dats() {
     rm -f "$DATA_DIR/monitors"/*.dat
     mv "$MON_TMP"/*.dat "$DATA_DIR/monitors/"
     rmdir "$MON_TMP"
-    trap - EXIT
+    # Katalog już pusty i usunięty — wraca sama pułapka sudo (K18).
+    trap 'sudo -k 2>/dev/null' EXIT
 }
 
 declare -A MON_RES
@@ -1435,6 +1444,8 @@ echo -e "${NC}"
 
 # Koniec pracy z sudo (K18): unieważnij zapamiętane hasło, żeby przez
 # następne minuty żaden inny proces użytkownika nie dostał roota bez pytania.
+# Już tutaj, przed ostatnim pytaniem; przerwane biegi łapie pułapka EXIT
+# spod strażnika roota.
 sudo -k 2>/dev/null
 
 read -rp "Reload Hyprland now? [y/N]: " ans
