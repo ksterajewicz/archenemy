@@ -11,7 +11,10 @@
 #     rofi_wallpaper_switcher.sh --init CEL   install.sh [9.5]: zapisany wybór
 #                                             wskazuje istniejący plik → jak
 #                                             --restore; inaczej jak CEL. Na
-#                                             stdout: restored | initial | none
+#                                             stdout: restored | initial | none,
+#                                             wypisane PO zastosowaniu; tapeta
+#                                             nie na ekranie → restored-failed
+#                                             albo initial-failed
 #     rofi_wallpaper_switcher.sh CEL          bez menu: plik (ścieżka względem
 #                                             wallpapers/ albo absolutna) → wszystkie
 #                                             monitory (para v1/v2 jeśli istnieje);
@@ -471,21 +474,32 @@ LOCK_STATE="off"
 [[ -f "$HYPRLOCK_DAT" ]] && LOCK_STATE="$(<"$HYPRLOCK_DAT")"
 [[ "$LOCK_STATE" != "off" ]] && MODE_LOCK=1
 
+# --init: wynik dla install.sh [9.5] po zastosowaniu; $1 = kod apply_ipc.
+INIT_RESULT=""
+report_init() {
+    [[ -n "$INIT_RESULT" ]] || return 0
+    if [[ "$1" -eq 0 ]]; then echo "$INIT_RESULT"; else echo "$INIT_RESULT-failed"; fi
+}
+
 if [[ "$1" == "--init" ]]; then
     # Ponowny bieg install.sh (zalecany po każdym pullu) nie może kasować
     # wyboru z Super+W — dawniej [9.5] zawsze ustawiał pierwszy plik z
     # wallpapers/ (audyt 2026-09-23). Stan „żywy” = choć jeden wpis wskazuje
     # istniejący plik; inaczej (brak .dat, skasowane pliki) — CEL jak dotąd.
+    # Wynik idzie na stdout dopiero po apply_ipc (report_init): dawniej
+    # „initial” leciało przed ustawieniem tapety, a install.sh meldował
+    # „✓ Initial wallpaper applied”, choć hyprpaper nic nie pokazał (audyt
+    # 2026-11-05, Z10).
     init_target="${2:-}"
     has_state=0
     for m in "${!STATE[@]}"; do
         [[ -f "${STATE[$m]}" ]] && { has_state=1; break; }
     done
     if (( has_state )); then
-        echo restored
+        INIT_RESULT=restored
         set -- --restore
     elif [[ -n "$init_target" ]]; then
-        echo initial
+        INIT_RESULT=initial
         set -- "$init_target"
     else
         echo none
@@ -500,7 +514,9 @@ if [[ "$1" == "--restore" ]]; then
     [[ ${#STATE[@]} -eq 0 ]] && exit 0
     fill_missing_state
     save_and_generate
-    apply_ipc || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    apply_ipc; rc=$?
+    (( rc == 0 )) || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    report_init "$rc"
     exit 0
 elif [[ -n "$1" ]]; then
     # Wywołanie bezpośrednie: absolutny plik / plik względem wallpapers/ / folder zestawu.
@@ -655,7 +671,9 @@ fi
 save_and_generate
 if apply_ipc; then
     notify-send "archenemy" "Wallpaper '$CHOICE' applied."
+    report_init 0
 else
     notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: ${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+    report_init 1
 fi
 exit 0

@@ -133,6 +133,28 @@ check "kod 2: wpisy bootowania do ręcznej poprawy" '[[ $(grep -c "^SKIPPED=.*bo
 out=$(MOCK_CPUDRIVERS_RC=1 run_step "$T/step65.sh" $'n\nn\nn\n')
 check "odmowa: instalatory nie wołane"           '[[ ! -s "$MOCK_LOG" ]] && ! grep -q "^SKIPPED=." "$T/summary"'
 
+# ─── [9.5] tapeta: ✓ dopiero, gdy hyprpaper ją pokazał (Z10) ────────────────
+echo "== [9.5] tapeta startowa"
+cut_step '^# ─── 9\.5 SCRIPTS' '^# ─── 9\.6 FLUX-WALL' "$T/step95.sh"
+check "wycinek [9.5] znaleziony"                 '[[ -s "$T/step95.sh" ]]'
+# Atrapa przełącznika: wypisuje MOCK_WP_RESULT (wiersze jak z prawdziwego,
+# łącznie z obcym wyjściem, np. logiem hyprpapera startowanego w tle).
+mkdir -p "$A/scripts/rofi" "$A/wallpapers"
+: > "$A/wallpapers/a.png"
+printf '#!/bin/bash\nprintf "%%s\\n" "$MOCK_WP_RESULT"\n' > "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
+out=$(MOCK_WP_RESULT=initial run_step "$T/step95.sh" '')
+check "initial: ✓ i wpis w DONE"                 '[[ "$out" == *"✓ Initial wallpaper applied"* ]] && grep -q "^DONE=Initial wallpaper" "$T/summary" && ! grep -q "^SKIPPED=." "$T/summary"'
+out=$(MOCK_WP_RESULT=initial-failed run_step "$T/step95.sh" '')
+check "initial-failed: bez ✓, ⚠ w podsumowaniu"  '[[ "$out" != *"✓ Initial wallpaper"* && "$out" == *"⚠"*"hyprpaper"* ]] && grep -q "^SKIPPED=wallpaper.*hyprpaper" "$T/summary"'
+out=$(MOCK_WP_RESULT=restored-failed run_step "$T/step95.sh" '')
+check "restored-failed: bez ✓, ⚠ w podsumowaniu" '[[ "$out" != *"✓ Wallpaper kept"* ]] && grep -q "^SKIPPED=wallpaper.*hyprpaper" "$T/summary"'
+out=$(MOCK_WP_RESULT=$'[LOG] hyprpaper starting\ninitial' run_step "$T/step95.sh" '')
+check "obcy wiersz przed wynikiem nie myli kroku" '[[ "$out" == *"✓ Initial wallpaper applied"* ]]'
+out=$(MOCK_WP_RESULT=none run_step "$T/step95.sh" '')
+check "none: brak tapet w wallpapers/"           'grep -q "^SKIPPED=initial wallpaper (none in wallpapers/)" "$T/summary"'
+out=$(MOCK_WP_RESULT='' run_step "$T/step95.sh" '')
+check "brak wyniku: bez ✓ i bez none in wallpapers" '[[ "$out" != *"✓ Initial wallpaper"* && "$out" != *"✓ Wallpaper kept"* ]] && grep -q "^SKIPPED=wallpaper" "$T/summary" && ! grep -q "none in wallpapers" "$T/summary"'
+
 # ─── [11] baner zależny od pominięć (Z8) ─────────────────────────────────────
 echo "== [11] podsumowanie i baner"
 cut_step '^# ─── 11\. DONE' EOF "$T/step11.sh"

@@ -1222,16 +1222,26 @@ FIRST_WP=$(find "$ARCHENEMY_DIR/wallpapers" -type f \
     \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
     2>/dev/null | sort | head -n1)
 WP_RESULT="$(bash "$WALLPAPER_SWITCHER" --init "$FIRST_WP")"
-case "${WP_RESULT%%$'\n'*}" in
+# Przełącznik wypisuje wynik dopiero po zastosowaniu tapety (audyt 2026-11-05,
+# Z10: dawniej „initial” padało przed ustawieniem i tu leciało ✓). Szukamy
+# całego wiersza z wynikiem — na stdout może trafić też obce wyjście.
+WP_LOG="${XDG_RUNTIME_DIR:-/tmp}/archenemy-hyprpaper-err.log"
+case "$(grep -x -m1 -E 'restored|initial|none|restored-failed|initial-failed' <<< "$WP_RESULT")" in
     restored)
         echo -e "  ${GREEN}✓ Wallpaper kept — your last choice restored.${NC}"
         SUMMARY_DONE+=("Wallpaper kept (last choice restored)") ;;
     initial)
         echo -e "  ${GREEN}✓ Initial wallpaper applied.${NC}"
         SUMMARY_DONE+=("Initial wallpaper applied") ;;
-    *)
+    restored-failed|initial-failed)
+        echo -e "  ${YELLOW}⚠ Wallpaper not shown — hyprpaper did not apply it. Log: $WP_LOG${NC}"
+        SUMMARY_SKIPPED+=("wallpaper — hyprpaper did not show it (log: $WP_LOG); pick one with Super+W after logging back in") ;;
+    none)
         echo -e "  ${YELLOW}⚠ No wallpapers found in wallpapers/ — use Super+W after adding some.${NC}"
         SUMMARY_SKIPPED+=("initial wallpaper (none in wallpapers/)") ;;
+    *)
+        echo -e "  ${YELLOW}⚠ Wallpaper not set — the wallpaper switcher gave no result.${NC}"
+        SUMMARY_SKIPPED+=("wallpaper — the switcher gave no result; pick one with Super+W") ;;
 esac
 echo ""
 
