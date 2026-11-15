@@ -366,6 +366,19 @@ check "wybór v2: primary dostaje v1 tej samej formy" '[[ "$(MOCK_MONS=both acti
 MOCK_MONS=both bash "$SW" "dither-flux/generated/dither-flux-samotna-v1-1920x1080.png" >/dev/null 2>&1
 check "forma bez pary: ten sam plik na obu"     '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$G/dither-flux-samotna-v1-1920x1080.png" ]]'
 rm -rf "$A/wallpapers/dither-flux"
+# Inne rozszerzenie to dalej ta sama para (przegląd A7, R1): city-v1.jpg +
+# city-v2.png. Rozszerzenie rozstrzyga tylko remis, a para musi być obrazem.
+M="$A/wallpapers/miasto"; mkdir -p "$M"
+: > "$M/city-v1.jpg"; : > "$M/city-v2.txt"
+MOCK_MONS=both bash "$SW" "miasto/city-v1.jpg" >/dev/null 2>&1
+check "plik, który nie jest obrazem, nie jest parą" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$M/city-v1.jpg" ]]'
+: > "$M/city-v2.png"
+MOCK_MONS=both bash "$SW" "miasto/city-v1.jpg" >/dev/null 2>&1
+check "para z innym rozszerzeniem: city-v1.jpg + city-v2.png" '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$M/city-v1.jpg" && "$(MOCK_MONS=both active_of eDP-1)" == "$M/city-v2.png" ]]'
+: > "$M/city-v2.jpg"
+MOCK_MONS=both bash "$SW" "miasto/city-v1.jpg" >/dev/null 2>&1
+check "remis nazw: wygrywa to samo rozszerzenie" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$M/city-v2.jpg" ]]'
+rm -rf "$M"
 
 # ─── H–J: podglądy w menu (atrapa rofi) ─────────────────────────────────────
 export MOCK_ROFI_DIR="$T/rofi" MOCK_ROFI_ANSWERS="$T/rofi.answers"

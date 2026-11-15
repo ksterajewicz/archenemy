@@ -226,15 +226,19 @@ load_state() {
 # Druga połowa pary v1/v2 dla pliku $1 — liczona z JEGO nazwy, tag docelowy $2
 # (v1|v2), rozdzielczość monitora docelowego $3 (może być pusta). Kandydaci: pliki
 # z tego samego katalogu z tym samym przedrostkiem przed tagiem i separatorem po
-# nim (dither-flux-atraktor-v1-1920x1080.png → dither-flux-atraktor-v2-*), z tym
-# samym rozszerzeniem. Wygrywa: rozdzielczość monitora w nazwie (tapety dither-flux
-# są liczone pod ekran), potem ta sama nazwa z podmienionym tagiem, potem pierwszy
-# alfabetycznie. Wielkość liter bez znaczenia (jak dawne -iname). Brak pary = pusto.
+# nim (dither-flux-atraktor-v1-1920x1080.png → dither-flux-atraktor-v2-*).
+# Wygrywa: rozdzielczość monitora w nazwie (tapety dither-flux są liczone pod
+# ekran), potem ta sama nazwa z podmienionym tagiem, potem pierwszy alfabetycznie.
+# Rozszerzenie rozstrzyga tylko remis w każdym z tych stopni: city-v1.jpg łączy się
+# z city-v2.png, ale city-v2.jpg obok wygrywa. Kandydat z innym rozszerzeniem musi
+# być obrazem z menu (jpg/jpeg/png/webp), nie np. city-v2.txt. Wielkość liter bez
+# znaczenia (jak dawne -iname). Brak pary = pusto.
 # Dawniej `find -iname "*v2*" | head -n1` brał pierwszy plik w kolejności systemu
 # plików: generated/ ma kilka form i rozdzielczości w jednym katalogu, więc drugi
 # monitor dostawał inną formę niż wybrana (audyt 2026-11-05, A7).
 wallpaper_pair() {
-    local f="$1" to="$2" want="${3,,}" from=v2 lbase pre post c lc rest exact="" first=""
+    local f="$1" to="$2" want="${3,,}" from=v2 lbase pre post c lc rest rank
+    local -a best=()   # best[stopień*2 + inne rozszerzenie] = pierwszy taki plik
     [[ "$to" == v1 ]] || from=v1
     lbase="$(basename "$f")"; lbase="${lbase,,}"
     [[ "$lbase" == *"$from"* ]] || return 0
@@ -246,12 +250,16 @@ wallpaper_pair() {
         [[ "$lc" == "$pre$to"* ]] || continue
         rest="${lc:$(( ${#pre} + ${#to} ))}"
         [[ -z "$rest" || "$rest" == [!a-z0-9]* ]] || continue     # v2 tak, v20 nie
-        [[ "${rest##*.}" == "${post##*.}" ]] || continue
-        if [[ -n "$want" && "$rest" == *[!0-9]"$want"[!0-9]* ]]; then printf '%s\n' "$c"; return 0; fi
-        [[ "$rest" == "$post" ]] && exact="$c"
-        [[ -n "$first" ]] || first="$c"
+        if [[ -n "$want" && "$rest" == *[!0-9]"$want"[!0-9]* ]]; then rank=0
+        elif [[ "${rest%.*}" == "${post%.*}" ]]; then rank=2      # ta sama nazwa
+        else rank=4; fi
+        if [[ "${rest##*.}" != "${post##*.}" ]]; then
+            [[ "$rest" =~ \.(jpe?g|png|webp)$ ]] || continue
+            rank=$(( rank + 1 ))
+        fi
+        [[ -n "${best[rank]:-}" ]] || best[rank]="$c"
     done
-    [[ -n "${exact:-$first}" ]] && printf '%s\n' "${exact:-$first}"
+    for c in "${best[@]}"; do printf '%s\n' "$c"; return 0; done   # najniższy stopień
     return 0
 }
 
