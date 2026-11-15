@@ -156,6 +156,20 @@ check "z pominięciem: ramka równa"               'box_even "$out"'
 out=$(run_step "$T/step11.sh" $'n\n' 'for i in $(seq 12); do SUMMARY_SKIPPED+=("x$i"); done')
 check "12 pominięć: liczba i równa ramka"        '[[ "$out" == *"12 item(s)"* ]] && box_even "$out"'
 
+# Z9: pasek, tapeta i powiadomienia startują w hl.on("hyprland.start") —
+# reload ich nie uruchamia, więc po pierwszej instalacji trzeba się przelogować.
+# read -p bez TTY nie drukuje promptu, więc kolejność sprawdzamy w źródle wycinka.
+relogin_before_reload() {
+    local note ask
+    note=$(grep -n -m1 'After the first install, log out and back in' "$T/step11.sh" | cut -d: -f1)
+    ask=$(grep -n -m1 'read -rp "Reload Hyprland now' "$T/step11.sh" | cut -d: -f1)
+    [[ -n "$note" && -n "$ask" && "$note" -lt "$ask" ]]
+}
+out=$(run_step "$T/step11.sh" $'n\n')
+check "informacja o ponownym logowaniu na ekranie" '[[ "$out" == *"After the first install, log out and back in"* && "$out" == *"reload does not start"* ]]'
+check "informacja przed pytaniem o reload"       'relogin_before_reload'
+check "rice uruchamia pasek przy starcie sesji (podstawa komunikatu)" 'grep -q "hl.on(\"hyprland.start\"" "$REPO/rices/white-blue/hypr/hyprland.lua" && grep -q "exec_cmd(\"waybar\")" "$REPO/rices/white-blue/hypr/hyprland.lua"'
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ $FAIL -eq 0 ]]

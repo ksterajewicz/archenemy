@@ -1480,6 +1480,13 @@ echo -e "${NC}"
 # następne minuty żaden inny proces użytkownika nie dostał roota bez pytania.
 sudo -k 2>/dev/null
 
+# Pasek, tapetę, powiadomienia, OSD i schowek rice uruchamia w
+# hl.on("hyprland.start"), a reload tego zdarzenia nie wywołuje. Po pierwszej
+# instalacji (sesja z domyślnym configiem) pełny wygląd daje dopiero ponowne
+# zalogowanie — dotąd nic o tym nie mówiło (audyt 2026-11-05, Z9).
+echo -e "${YELLOW}After the first install, log out and back in once: the bar, wallpaper,${NC}"
+echo -e "${YELLOW}notifications and clipboard start with the Hyprland session, a reload does not start them.${NC}"
+echo ""
 read -rp "Reload Hyprland now? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     # hyprctl reload wypisuje „ok" przy sukcesie; błąd configu lub brak
