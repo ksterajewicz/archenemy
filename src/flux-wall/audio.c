@@ -138,6 +138,10 @@ float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value) 
     return y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
 }
 
+float audio_sample_clean(float x) {
+    return isfinite(x) ? x : 0.0f;
+}
+
 float audio_smooth(float prev, float x, float dt, float attack, float release) {
     float tau = x > prev ? attack : release;
     if (tau <= 0.0f) return x;
@@ -293,14 +297,14 @@ static void logv(const struct audio *a, const char *fmt, ...) {
 
 /* Dosuń hop (stereo, przeplatany) do buforów przesuwanych: miks do okna FFT,
  * L/R osobno do przebiegu; przeanalizuj, wytnij okno oscyloskopu po triggerze,
- * opublikuj. */
+ * opublikuj. Próbki NaN/inf → 0 (audio_sample_clean), zanim trafią do okna. */
 static void push_hop(struct audio *a) {
     const size_t keep = (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float);
     memmove(a->ring,   a->ring   + AUDIO_HOP, keep);
     memmove(a->ring_l, a->ring_l + AUDIO_HOP, keep);
     memmove(a->ring_r, a->ring_r + AUDIO_HOP, keep);
     for (int i = 0; i < AUDIO_HOP; i++) {
-        float l = a->hop[2 * i], r = a->hop[2 * i + 1];
+        float l = audio_sample_clean(a->hop[2 * i]), r = audio_sample_clean(a->hop[2 * i + 1]);
         a->ring_l[AUDIO_FFT_N - AUDIO_HOP + i] = l;
         a->ring_r[AUDIO_FFT_N - AUDIO_HOP + i] = r;
         a->ring[AUDIO_FFT_N - AUDIO_HOP + i]   = 0.5f * (l + r);

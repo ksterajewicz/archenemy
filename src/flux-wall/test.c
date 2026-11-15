@@ -329,6 +329,11 @@ int main(void) {
     audio_features_age(&fe, 10.6, 0.25f);
     CHECK(fe.bass < 0.2f, "500 ms → zgaszone");
 
+    printf("audio_sample_clean\n");
+    CHECK(audio_sample_clean(NAN) == 0.0f && audio_sample_clean(-NAN) == 0.0f, "NaN → 0");
+    CHECK(audio_sample_clean(INFINITY) == 0.0f && audio_sample_clean(-INFINITY) == 0.0f, "±inf → 0");
+    CHECK(audio_sample_clean(0.25f) == 0.25f && audio_sample_clean(-1.5f) == -1.5f, "liczba skończona bez zmian (także ponad pełną skalę)");
+
     printf("audio_analyze (cały łańcuch)\n");
     static struct audio_state st; audio_state_init(&st);
     for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.5f * sinf(2.0f * TEST_PI * 60.0f * (float)i / AUDIO_RATE);
@@ -365,6 +370,34 @@ int main(void) {
         for (int i = 0; i < AUDIO_WAVE_N; i++) { if (fabsf(snap.wave[2*i]) > maxl) maxl = fabsf(snap.wave[2*i]); if (fabsf(snap.wave[2*i+1]) > maxr) maxr = fabsf(snap.wave[2*i+1]); }
         CHECK(maxl > 0.45f && maxr == 0.0f, "przebieg: L ma sinus 0.5, R jest ciszą (stereo rozdzielone)");
         CHECK(snap.wave[0] >= 0.0f && snap.wave[0] < 0.1f && snap.wave[2 * 30] > snap.wave[0], "trigger: okno zaczyna się na narastającym przejściu przez zero");
+        audio_stop(au);
+        remove(fpath);
+    }
+
+    /* Audyt 2026-11-05, F3: jedna próbka NaN w oknie FFT dawała level = nan
+     * na stałe (auto-gain i wygładzanie nie wychodzą z NaN) — wizualizacja
+     * muzyki stała do restartu. Ta sama ścieżka co strumień z serwera (push_hop). */
+    printf("audio_start z pliku z próbkami NaN/inf (wątek, bez serwera)\n");
+    {
+        char fpath[512]; snprintf(fpath, sizeof fpath, "%s/nan.f32", dir);
+        FILE *tf = fopen(fpath, "wb");
+        for (int i = 0; i < AUDIO_RATE; i++) {
+            float v = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE), z = 0.0f;
+            if (i == 0)   v = NAN;
+            if (i == 100) z = INFINITY;
+            if (i == 200) v = -INFINITY;
+            fwrite(&v, sizeof v, 1, tf); fwrite(&z, sizeof z, 1, tf);
+        }
+        fclose(tf);
+        struct audio *au = audio_start(NULL, fpath, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct timespec ts = { 0, 400000000L }; nanosleep(&ts, NULL);
+        struct audio_features snap; audio_snapshot(au, &snap);
+        bool finite = isfinite(snap.level) && isfinite(snap.bass) && isfinite(snap.beat) && isfinite(snap.wave_peak);
+        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) finite = finite && isfinite(snap.spectrum[i]);
+        for (int i = 0; i < AUDIO_WAVE_N * AUDIO_CHANNELS; i++) finite = finite && isfinite(snap.wave[i]);
+        CHECK(finite, "po 0.4 s: wszystkie cechy skończone (NaN/inf nie zatruwa stanu)");
+        CHECK(snap.live && snap.bass > 0.5f, "po 0.4 s: bas 80 Hz widoczny mimo uszkodzonych próbek");
         audio_stop(au);
         remove(fpath);
     }

@@ -105,6 +105,12 @@ void audio_spectro_column(const float *raw, float peak, float *out);
 /* Zanik stęchłego snapshotu: gdy `now - t` > 0.1 s, cechy gasną z `release`. */
 void audio_features_age(struct audio_features *f, double now, float release);
 
+/* Próbka wejściowa (serwer dźwięku, plik): NaN i ±inf → 0, reszta bez zmian.
+ * Jedna taka próbka w oknie FFT zatruwała auto-gain, wygładzanie i średnią
+ * beatu na stałe (NaN nie wychodzi z rekurencji) — wizualizacja stała do
+ * restartu. Wołają ją wszyscy, którzy dosuwają próbki do okna analizy. */
+float audio_sample_clean(float x);
+
 /* Pełna analiza jednego okna (N próbek) → cechy; stan między wywołaniami w `st`.
  * To jest to, co wątek robi co hop — wystawione, żeby testy szły bez wątku. */
 struct audio_state {

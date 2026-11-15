@@ -135,7 +135,7 @@ static void feeder_advance(struct feeder *fd, double t) {
             if (fd->file) {
                 float p[2];
                 if (fread(p, sizeof(float), 2, fd->file) < 2) { rewind(fd->file); if (fread(p, sizeof(float), 2, fd->file) < 2) p[0] = p[1] = 0; }
-                l = p[0]; r = p[1];
+                l = audio_sample_clean(p[0]); r = audio_sample_clean(p[1]);   /* NaN/inf → 0, jak push_hop na żywo */
             } else if (!fd->silence) {
                 synth((double)(fd->next_sample + i) / AUDIO_RATE, &l, &r);
             }
