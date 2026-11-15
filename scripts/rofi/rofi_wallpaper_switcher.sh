@@ -446,7 +446,10 @@ apply_ipc() {
         pkill -9 -x hyprpaper 2>/dev/null
         sleep 0.2
     fi
-    hyprpaper & disown
+    # setsid -f: nowa sesja bez terminala sterującego. Restart idzie też z TUI
+    # (Super+A → monitory woła --restore), a `& disown` zostawiał demona w grupie
+    # procesów okna terminala — zamknięcie okna (SIGHUP) zabijało tapetę.
+    setsid -f hyprpaper </dev/null >/dev/null 2>&1
     for _ in $(seq 1 20); do
         pgrep -x hyprpaper >/dev/null && break
         sleep 0.1

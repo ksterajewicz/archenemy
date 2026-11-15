@@ -49,6 +49,11 @@ cat > "$T/bin/hyprpaper" <<'EOF'
 # Atrapa DEMONA: start = wczytanie hyprpaper.conf do stanu, w kolejności pliku
 # (hyprpaper dodaje wpisy configu w tej samej kolejności — patrz mock/hyprctl).
 conf="$HOME/archenemy/config/hypr/hyprpaper.conf"
+# Log przed stanem: wołający widzi demona (pgrep) dopiero, gdy stan istnieje.
+echo "DAEMON start" >> "${MOCK_LOG:-/dev/null}"
+# Własna sesja (SID = PID) = brak terminala sterującego, więc zamknięcie okna
+# TUI, z którego poszedł restart, nie zabije demona (SIGHUP).
+[[ "$(awk '{print $6}' "/proc/$$/stat")" == "$$" ]] && echo "DAEMON own-session" >> "${MOCK_LOG:-/dev/null}"
 : > "$MOCK_HYPRPAPER_STATE"
 mon=""
 while IFS= read -r line; do
@@ -57,7 +62,6 @@ while IFS= read -r line; do
         printf '%s\t%s\n' "$mon" "${BASH_REMATCH[1]}" >> "$MOCK_HYPRPAPER_STATE"
     fi
 done < "$conf"
-echo "DAEMON start" >> "${MOCK_LOG:-/dev/null}"
 EOF
 cat > "$T/bin/pkill" <<'EOF'
 #!/bin/bash
@@ -262,6 +266,7 @@ rm -f "$MOCK_HYPRPAPER_STATE"    # hyprpaper padł
 : > "$MOCK_LOG"
 MOCK_MONS=both bash "$SW" "zestaw/nowa-v1.png" >/dev/null 2>&1
 check "demon wystartował ponownie"            'grep -q "DAEMON start" "$MOCK_LOG"'
+check "restart we własnej sesji (A3: przeżyje zamknięcie okna TUI)" 'grep -q "DAEMON own-session" "$MOCK_LOG"'
 check "po restarcie ekran ma nową tapetę"     '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/nowa-v1.png" ]]'
 check "sukces, nie fałszywy alarm"            'grep -q "NOTIFY: .*applied" "$MOCK_LOG" && ! grep -q "failed to apply" "$MOCK_LOG"'
 
