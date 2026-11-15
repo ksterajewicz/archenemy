@@ -194,7 +194,46 @@ declare -A MON_ORDER
 echo -e "${CYAN}[3.5] Configure monitor layout...${NC}"
 echo ""
 
-mon_idx=0
+# Obecna rola monitora = ROLE z .dat, którego selektor (desc: albo nazwa złącza,
+# lib/monitor-id.sh) wskazuje TERAZ ten monitor — tak samo rozwiązują go tapety.
+# Stare data/monitors/*.dat leżą na miejscu do [3.7]. Enter w pytaniu o rolę =
+# ta rola: nagłówek obiecuje „keep current setting”, a rola szła z kolejności
+# monitora i ponowny bieg zamieniał primary/secondary, czyli tapety v1/v2
+# (audyt 2026-11-05, Z4). Trafienie po desc: wygrywa z trafieniem po nazwie
+# (dwa przebiegi). ORDER nadal z pozycji X w [3.6] (DECYZJE 2026-07-17 D3).
+declare -A PREV_ROLE=()
+declare -A MON_ROLE=()
+for pass in name desc; do
+    for f in "$DATA_DIR/monitors"/*.dat; do
+        [[ -f "$f" ]] || continue
+        sel="$(monitor_selector_from_dat "$f")"
+        if [[ "$sel" == desc:* ]]; then kind=desc; else kind=name; fi
+        [[ "$kind" == "$pass" ]] || continue
+        role="$(grep -m1 '^ROLE=' "$f" | cut -d= -f2-)"
+        [[ "$role" == primary || "$role" == secondary || "$role" == other ]] || continue
+        live="$(monitor_live_name "$sel")"
+        [[ -n "$live" ]] && PREV_ROLE[$live]="$role"
+    done
+done
+
+# Monitor bez obecnej roli (nowy albo .dat z dawną nazwą złącza): pierwsza rola,
+# której nie ma żaden inny podłączony monitor — wybór z tego biegu, a dla
+# monitorów jeszcze przed pytaniem ich obecna rola. Jak default_role
+# w monitor-settings.sh; świeża instalacja = dawne „pierwszy primary, drugi
+# secondary, reszta other”.
+first_free_role() {
+    local m r taken=" "
+    for m in "${MONITOR_NAMES[@]}"; do
+        [[ "$m" == "$1" ]] && continue
+        r="${MON_ROLE[$m]:-${PREV_ROLE[$m]:-}}"
+        taken+="$r "
+    done
+    if [[ "$taken" != *" primary "* ]]; then echo primary
+    elif [[ "$taken" != *" secondary "* ]]; then echo secondary
+    else echo other
+    fi
+}
+
 for mon in "${MONITOR_NAMES[@]}"; do
     echo -e "${YELLOW}Monitor: ${BLUE}$mon${NC}  ${NC}(Enter = keep current setting)${NC}"
 
@@ -239,22 +278,20 @@ for mon in "${MONITOR_NAMES[@]}"; do
         echo -e "  ${YELLOW}⚠ Enter a number (e.g. 1, 1.33, 2) or 'auto'.${NC}"
     done
 
-    # Sensible default: first monitor = primary, second = secondary, rest = other.
+    # Domyślna rola: obecna (PREV_ROLE), inaczej pierwsza wolna.
     # (rofi_wallpaper_switcher.sh maps primary→v1, secondary→v2.)
-    case "$mon_idx" in
-        0) def_role="primary" ;;
-        1) def_role="secondary" ;;
-        *) def_role="other" ;;
-    esac
+    def_role="${PREV_ROLE[$mon]:-$(first_free_role "$mon")}"
     while :; do
         read -rp "  Role (primary/secondary/other) [${def_role}]: " role
         role="${role:-$def_role}"
         [[ "$role" == "primary" || "$role" == "secondary" || "$role" == "other" ]] && break
         echo -e "  ${YELLOW}⚠ Choose: primary, secondary or other.${NC}"
     done
+    MON_ROLE[$mon]="$role"
 
-    # Rola NIE trafia do tablicy — od 2026-07-17 [8b] nie czyta ról (workspace'y
-    # rządzi ORDER+tryb); rola żyje tylko w .dat (czyta ją wallpaper switcher).
+    # Poza [3.5] (MON_ROLE = tylko domyślne następnych monitorów) rola żyje
+    # wyłącznie w .dat (czyta ją wallpaper switcher) — od 2026-07-17 [8b] nie
+    # czyta ról, workspace'ami rządzi ORDER+tryb.
     MON_RES[$mon]="$res"
     MON_RATE[$mon]="$rate"
     MON_POS[$mon]="$pos"
@@ -272,7 +309,6 @@ for mon in "${MONITOR_NAMES[@]}"; do
 
     echo -e "  ${GREEN}✓ $mon.dat ready (saved to data/monitors/ after [3.7])${NC}"
     echo ""
-    mon_idx=$((mon_idx + 1))
 done
 
 # ─── 3.6 MONITOR NUMBERING (lewa→prawa) ──────────────────────────────────────
