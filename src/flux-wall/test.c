@@ -1,5 +1,7 @@
 /*
- * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL).
+ * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL)
+ * i jedna sekcja GL na EGL surfaceless (silnik bez Waylanda; bez EGL —
+ * „POMINIĘTO” w wyjściu, nie błąd).
  * Budowane przez `make test`: main.c wchodzi z main() przemianowanym na
  * flux_wall_main, więc tu jest własny main(). libpulse-simple zastępuje
  * atrapa niżej (pa_simple_*) — testy nie łączą się z serwerem dźwięku.
@@ -86,6 +88,90 @@ static int run_cli(const char *dir, char **args, char *log, size_t loglen) {
     remove(lpath);
     return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 }
+
+/* ── GL: silnik na EGL surfaceless (jak tools/offscreen.c) ──────────────────
+ * Kilka testów potrzebuje prawdziwego GL (cel silnika, akumulator). Brak EGL
+ * albo GLES 3.0 (np. kontener bez Mesy) = jawne „POMINIĘTO” w wyjściu, nie
+ * błąd — reszta testów jest czysta. */
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+
+static bool test_egl_init(void) {
+    EGLDisplay dpy = EGL_NO_DISPLAY;
+    PFNEGLGETPLATFORMDISPLAYEXTPROC gpd = (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
+#ifdef EGL_PLATFORM_SURFACELESS_MESA
+    if (gpd) dpy = gpd(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
+#else
+    (void)gpd;
+#endif
+    if (dpy == EGL_NO_DISPLAY) dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (dpy == EGL_NO_DISPLAY) return false;
+    EGLint maj, min;
+    if (!eglInitialize(dpy, &maj, &min) || !eglBindAPI(EGL_OPENGL_ES_API)) return false;
+    /* domyślne EGL_SURFACE_TYPE to EGL_WINDOW_BIT — surfaceless takich nie ma */
+    const EGLint cfg_attr[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL_NONE };
+    EGLConfig cfg; EGLint n = 0;
+    if (!eglChooseConfig(dpy, cfg_attr, &cfg, 1, &n) || n < 1) return false;
+    const EGLint ctx_attr[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE };
+    EGLContext ctx = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, ctx_attr);
+    if (ctx == EGL_NO_CONTEXT) return false;
+    if (eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx)) return true;
+    const EGLint pb[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+    EGLSurface s = eglCreatePbufferSurface(dpy, cfg, pb);
+    return s != EGL_NO_SURFACE && eglMakeCurrent(dpy, s, s, ctx);
+}
+
+/* Docelowy FBO RGBA8 w×h — to, co na żywo jest powierzchnią monitora. */
+static GLuint test_dest_fbo(int w, int h, GLuint *tex) {
+    GLuint fbo;
+    glGenTextures(1, tex); glBindTexture(GL_TEXTURE_2D, *tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glGenFramebuffers(1, &fbo); glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, *tex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return fbo;
+}
+
+/* Średnia kanału R klatki (0..255). */
+static double test_fbo_mean(GLuint fbo, int w, int h) {
+    unsigned char *px = malloc((size_t)w * h * 4);
+    if (!px) { perror("malloc"); exit(1); }
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    double sum = 0;
+    for (int i = 0; i < w * h; i++) sum += px[i * 4];
+    free(px);
+    return sum / (w * h);
+}
+
+/* Najprostsza animacja cząstkowa: cząstki stoją w losowych punktach, każdy
+ * krok dokłada ślad. Bez rozgrzewki (`--once`) akumulator jest prawie pusty
+ * (najwyżej 4 kroki na klatkę), po rozgrzewce 2 s × 60 kroków — nasycony. */
+static const char *ONCE_UPDATE =
+    "#pragma flux particles 16384\n"
+    "#pragma flux life 10\n"
+    "#pragma flux rate 60\n"
+    "#pragma flux inc 0.001\n"
+    "#pragma flux gain 2\n"
+    "#pragma flux warmup 2\n"
+    "void main() {\n"
+    "    ivec2 idx = ivec2(gl_FragCoord.xy);\n"
+    "    vec4 s = texelFetch(pos, idx, 0);\n"
+    "    if (s.z < 0.5) { o = vec4(h2(idx.x, idx.y, seed), h2(idx.x + 911, idx.y + 7, seed), 1.0, 1.0); return; }\n"
+    "    o = vec4(s.xy, s.z + 1.0, s.w);\n"
+    "}\n";
+static const char *ONCE_FRAG =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "precision highp sampler2D;\n"
+    "uniform sampler2D accum;\n"
+    "uniform float gain;\n"
+    "out vec4 fragColor;\n"
+    "void main() {\n"
+    "    float a = texelFetch(accum, ivec2(gl_FragCoord.xy), 0).r;\n"
+    "    fragColor = vec4(vec3(clamp(a * gain, 0.0, 1.0)), 1.0);\n"
+    "}\n";
 
 int main(void) {
     float c[3];
@@ -515,6 +601,42 @@ int main(void) {
         rc = run_cli(dir, a_out, log, sizeof log);
         CHECK(rc == 1, "-d 1.5 → kod 1");
         remove(shader);
+    }
+
+    /* --once (tapeta statyczna) liczy rozgrzewkę przed jedyną klatką. Zmiana
+     * skali albo rozdzielczości odtwarza i czyści akumulator, więc kolejna
+     * klatka też potrzebuje rozgrzewki — inaczej z obrazu zostawało samo tło
+     * do restartu (audyt 2026-11-05, F2). */
+    printf("GL: --once po zmianie rozmiaru celu (EGL surfaceless)\n");
+    if (!test_egl_init()) {
+        printf("  POMINIĘTO: brak EGL surfaceless / GLES 3.0 — test wymaga Mesy albo GPU\n");
+    } else {
+        char gerr[2560];
+        struct flux_engine *ge = flux_engine_create(ONCE_FRAG, "test-once.frag", ONCE_UPDATE, "test-once.update.glsl",
+                                                    gerr, sizeof gerr);
+        struct flux_target *gt = ge ? flux_target_create(ge, 32, 32, gerr, sizeof gerr) : NULL;
+        CHECK(ge && gt, "silnik i cel 32x32 (tryb cząstkowy)");
+        if (!ge || !gt) printf("       %s\n", gerr);
+        if (ge && gt) {
+            struct palette gpal = { {0, 0, 0}, {1, 1, 1}, {1, 1, 1} };
+            char msg[160];
+            GLuint tex1, fbo1 = test_dest_fbo(32, 32, &tex1);
+            flux_engine_render(ge, gt, fbo1, 0.0, &gpal, 1.0f, 0.0f, NULL, 0.0f, true);
+            double m1 = test_fbo_mean(fbo1, 32, 32);
+            snprintf(msg, sizeof msg, "--once: pierwsza klatka po rozgrzewce (średnia %.1f/255)", m1);
+            CHECK(m1 > 128.0, msg);
+            /* skala 1 → 1.5: bufor 32x32 → 48x48, nowy akumulator; klatka 5 s później */
+            bool resized = flux_target_resize(gt, 48, 48, gerr, sizeof gerr);
+            GLuint tex2, fbo2 = test_dest_fbo(48, 48, &tex2);
+            flux_engine_render(ge, gt, fbo2, 5.0, &gpal, 1.0f, 0.0f, NULL, 0.0f, true);
+            double m2 = test_fbo_mean(fbo2, 48, 48);
+            snprintf(msg, sizeof msg, "--once po zmianie rozmiaru: rozgrzewka od nowa (średnia %.1f/255, przed %.1f)", m2, m1);
+            CHECK(resized && m2 > 0.5 * m1, msg);
+            glDeleteFramebuffers(1, &fbo1); glDeleteTextures(1, &tex1);
+            glDeleteFramebuffers(1, &fbo2); glDeleteTextures(1, &tex2);
+        }
+        flux_target_destroy(gt);
+        if (ge) flux_engine_destroy(ge);
     }
 
     /* sprzątanie */

@@ -500,7 +500,9 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
  * więc zostają — cząstki nie skaczą). Nowy akumulator powstaje PRZED
  * zwolnieniem starego: gdy sterownik odmówi (brak pamięci przy dużym
  * buforze), cel zostaje w starym rozmiarze z działającym FBO — fade/splat
- * nigdy nie rysują do okna przez acc_fbo = 0. */
+ * nigdy nie rysują do okna przez acc_fbo = 0. Pusty akumulator kasuje też
+ * `warmed`: przy --once (jedna klatka, bez kolejnych) następna klatka liczy
+ * rozgrzewkę od nowa — inaczej po zmianie skali zostawało samo tło. */
 bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t errlen) {
     if (w == t->w && h == t->h) return true;
     if (!t->e->particle) { t->w = w; t->h = h; return true; }
@@ -510,6 +512,7 @@ bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t e
     if (t->acc_tex) glDeleteTextures(1, &t->acc_tex);
     t->acc_tex = tex; t->acc_fbo = fbo;
     t->w = w; t->h = h;
+    t->warmed = false;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return true;
 }

@@ -5,7 +5,8 @@
 #   pakietów wayland-protocols / wlr-protocols.
 #
 #   make            zbuduj build/flux-wall
-#   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio)
+#   make test       testy jednostkowe części bez Waylanda (paleta, bateria, #pragma flux, DSP audio;
+#                   sekcja GL silnika na EGL surfaceless — bez EGL pomijana)
 #   make tools      build/offscreen — klatki animacji do PNG bez ekranu (narzędzie dev)
 #   make clean
 # =============================================
@@ -42,7 +43,8 @@ $(BUILD)/%-client-protocol.h: $(PROTO)/%.xml | $(BUILD)
 $(BUILD)/flux-wall: main.c engine.c engine.h audio.c audio.h util.h $(PROTO_C) $(PROTO_H) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(BUILD) -o $@ main.c engine.c audio.c $(PROTO_C) $(LDLIBS) -lm -lpthread
 
-# Testy funkcji czystych (paleta, bateria) bez Waylanda/EGL — patrz test.c.
+# Testy funkcji czystych (paleta, bateria) bez Waylanda; jedna sekcja GL na EGL
+# surfaceless (bez EGL pomijana) — patrz test.c.
 # main.c kompilowany OSOBNO z main() przemianowanym na flux_wall_main; test.c
 # ma własny main(). Jedna komenda z -Dmain dla obu plików przemianowałaby oba.
 $(BUILD)/main-under-test.o: main.c engine.h audio.h util.h $(PROTO_H) | $(BUILD)
