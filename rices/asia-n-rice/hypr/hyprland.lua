@@ -241,7 +241,9 @@ hl.window_rule({ match = { class = "^(xdg-desktop-portal-gtk)$" }, float = true 
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, float = true })
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, pin = true })
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, size = { 480, 270 } })
-hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, move = { "100%-490", "100%-280" } })
+-- move liczy muParser Hyprlanda: "%" nie jest operatorem, a błąd wyrażenia
+-- tylko centruje okno (bez configerrors). Prawy dolny róg, 10 px od krawędzi.
+hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, move = { "monitor_w-window_w-10", "monitor_h-window_h-10" } })
 hl.window_rule({ match = { class = "^(archenemy-appbinds)$" }, float = true })
 hl.window_rule({ match = { class = "^(archenemy-appbinds)$" }, size = { 860, 560 } })
 hl.window_rule({ match = { class = "^(archenemy-appbinds)$" }, center = true })

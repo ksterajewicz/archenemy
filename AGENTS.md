@@ -238,6 +238,11 @@ Rules that follow directly from the table:
   inactive ones while the cursor is on another monitor. It changes the look
   only: keyboard focus stays in the window. Palette is read once per Lua state,
   because Hyprland truncates colours when returning them. `tests/focus-highlight.sh`.
+- **Window rule `move` is a muParser expression**, e.g.
+  `move = { "monitor_w-window_w-10", "monitor_h-window_h-10" }`. `%` is not an
+  operator there: `"100%-490"` fails to parse, Hyprland just centres the window
+  and `configerrors` stays empty. `bash tests/rice-autostart.sh` evaluates every
+  `move` rule and checks that the Picture-in-Picture window lands in the corner.
 - **Shared autostart lives in `config/hypr/autostart-common.lua`**, required
   by every rice — today the flux-wall animation (the `Super+W` choice is
   global). Don't add `flux-wall.sh autostart` to a rice's `hyprland.lua`

@@ -324,7 +324,8 @@ archenemy/
 │                                     #   appbinds.sh — Super+A list vs [d]: a hand-written bind between
 │                                     #   TUI binds doesn't shift the numbering.
 │                                     #   rice-autostart.sh — runs every rice's hyprland.lua on a fake
-│                                     #   `hl` API (lua5.4) and checks what starts with the session.
+│                                     #   `hl` API (lua5.4) and checks what starts with the session;
+│                                     #   window `move` rules must evaluate (PiP lands in the corner).
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
