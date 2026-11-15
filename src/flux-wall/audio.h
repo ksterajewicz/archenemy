@@ -79,11 +79,14 @@ void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out);
 
 /* Auto-gain: dzieli przez bieżące maksimum (zanik ~2 s), podłoga chroni ciszę
- * przed wzmocnieniem do pełnej reakcji. Zwraca x/peak przycięte do 0..1. */
+ * przed wzmocnieniem do pełnej reakcji. Zwraca x/peak przycięte do 0..1.
+ * x NaN/inf (moc FFT przepełniona olbrzymią próbką) liczy się jak 0,
+ * a szczyt NaN/inf wraca do podłogi — wynik zawsze skończony. */
 struct audio_agc { float peak; };
 float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value);
 
-/* Wygładzanie asymetryczne: szybki atak, wolne opadanie (stałe w sekundach). */
+/* Wygładzanie asymetryczne: szybki atak, wolne opadanie (stałe w sekundach).
+ * x NaN/inf → zostaje prev; prev NaN/inf → liczy od 0 (stan wychodzi z NaN). */
 float audio_smooth(float prev, float x, float dt, float attack, float release);
 
 /* Detektor uderzenia: onset basu względem średniej kroczącej (~1 s), nie
@@ -111,7 +114,9 @@ void audio_features_age(struct audio_features *f, double now, float release);
 /* Próbka wejściowa (serwer dźwięku, plik): NaN i ±inf → 0, reszta bez zmian.
  * Jedna taka próbka w oknie FFT zatruwała auto-gain, wygładzanie i średnią
  * beatu na stałe (NaN nie wychodzi z rekurencji) — wizualizacja stała do
- * restartu. Wołają ją wszyscy, którzy dosuwają próbki do okna analizy. */
+ * restartu. Wołają ją wszyscy, którzy dosuwają próbki do okna analizy.
+ * Skończonych olbrzymich próbek nie przycina: moc FFT = inf z nich łapią
+ * audio_agc_step i audio_smooth. */
 float audio_sample_clean(float x);
 
 /* Pełna analiza jednego okna (N próbek) → cechy; stan między wywołaniami w `st`.

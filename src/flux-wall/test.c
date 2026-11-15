@@ -625,6 +625,27 @@ int main(void) {
     float sm = audio_smooth(0.0f, 1.0f, 0.02f, 0.03f, 0.25f);
     float sd = audio_smooth(1.0f, 0.0f, 0.02f, 0.03f, 0.25f);
     CHECK(sm > 0.4f && sd > 0.9f, "atak szybki (0→0.49), opadanie wolne (1→0.92)");
+    /* Przegląd 2026-11-15, R1: skończona próbka rzędu 1e20 przepełnia moc FFT
+     * do inf. Auto-gain liczył wtedy inf/inf = NaN, klamra 0..1 go przepuszczała,
+     * a NaN w wygładzaniu zostawał na zawsze — objaw jak F3 (wizualizacja stoi
+     * do restartu), choć audio_sample_clean wpuszcza tylko liczby skończone. */
+    {
+        struct audio_agc ag = { .peak = 0.5f };
+        float yi = audio_agc_step(&ag, INFINITY, 0.02f, 0.004f);
+        float yn = audio_agc_step(&ag, NAN, 0.02f, 0.004f);
+        CHECK(yi == 0.0f && yn == 0.0f && isfinite(ag.peak) && ag.peak < 0.5f,
+              "agc: x = inf albo NaN → 0, szczyt zostaje skończony (bez inf/inf = NaN)");
+        ag.peak = INFINITY;
+        float yp = audio_agc_step(&ag, 0.002f, 0.02f, 0.004f);
+        CHECK(near(yp, 0.5f) && near(ag.peak, 0.004f), "agc: szczyt inf (stan zatruty) → wraca do podłogi");
+        ag.peak = NAN;
+        yp = audio_agc_step(&ag, 0.002f, 0.02f, 0.004f);
+        CHECK(near(yp, 0.5f) && near(ag.peak, 0.004f), "agc: szczyt NaN → wraca do podłogi");
+        CHECK(audio_smooth(0.5f, NAN, 0.02f, 0.03f, 0.25f) == 0.5f && audio_smooth(0.5f, INFINITY, 0.02f, 0.03f, 0.25f) == 0.5f,
+              "smooth: x = NaN albo inf → zostaje poprzednia wartość");
+        float rec = audio_smooth(NAN, 1.0f, 0.02f, 0.03f, 0.25f);
+        CHECK(isfinite(rec) && rec > 0.4f, "smooth: poprzednia NaN → liczy od 0 (stan wychodzi z NaN)");
+    }
 
     printf("audio_beat_step\n");
     struct audio_beat bt = {0};
@@ -705,6 +726,34 @@ int main(void) {
         CHECK(lvl[1] > 0.5f && nz[1] > 0, "−50 dBFS (nad bramką) → reaguje (level > 0.5, spektrogram niepusty)");
     }
 
+    /* Przegląd 2026-11-15, R1: okno z jedną skończoną próbką 1e20 w środku
+     * (waga Hanna ~1) → |X_k|² ponad FLT_MAX, moc FFT = inf we wszystkich binach.
+     * Po trzech takich oknach czysty bas 80 Hz ma być widoczny po 0.4 s, a nie
+     * NaN do restartu. Moc skończona, ale olbrzymia (próbka 1e18–1e19 albo na
+     * brzegu okna) to inna sprawa: szczyt auto-gain opada wtedy ~100 s —
+     * przycinanie próbek czeka na decyzję właściciela (partia 1). */
+    printf("audio_analyze: okno z mocą FFT = inf (próbka 1e20)\n");
+    {
+        static struct audio_state hs; audio_state_init(&hs);
+        for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE);
+        for (int i = 0; i < 20; i++) audio_analyze(&hs, sig, 0.02f, 1.0 + i * 0.02);
+        float clean = sig[AUDIO_FFT_N / 2];
+        sig[AUDIO_FFT_N / 2] = 1e20f;
+        audio_fft_power(&hs.fft, sig, pw);
+        CHECK(isinf(pw[3]) && isinf(pw[100]), "warunek testu: moc FFT okna z próbką 1e20 = inf");
+        for (int i = 0; i < 3; i++) audio_analyze(&hs, sig, 0.02f, 1.4 + i * 0.02);
+        sig[AUDIO_FFT_N / 2] = clean;
+        for (int i = 0; i < 20; i++) audio_analyze(&hs, sig, 0.02f, 1.46 + i * 0.02);
+        const struct audio_features *o = &hs.out;
+        bool finite = isfinite(o->level) && isfinite(o->bass) && isfinite(o->lowmid) && isfinite(o->mid)
+                   && isfinite(o->high) && isfinite(o->beat);
+        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) finite = finite && isfinite(o->spectrum[i]);
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) finite = finite && isfinite(o->spectro[i]);
+        finite = finite && isfinite(hs.agc_bass.peak) && isfinite(hs.agc_spectro.peak);
+        CHECK(finite, "po oknach z mocą inf: cechy i szczyty auto-gain skończone");
+        CHECK(o->bass > 0.5f, "0.4 s czystego basu 80 Hz po oknach z mocą inf → bass > 0.5 (nie zamarza)");
+    }
+
     printf("audio_start z pliku (wątek, bez serwera)\n");
     {
         char fpath[512]; snprintf(fpath, sizeof fpath, "%s/tone.f32", dir);
@@ -752,6 +801,36 @@ int main(void) {
         for (int i = 0; i < AUDIO_WAVE_N * AUDIO_CHANNELS; i++) finite = finite && isfinite(snap.wave[i]);
         CHECK(finite, "po 0.4 s: wszystkie cechy skończone (NaN/inf nie zatruwa stanu)");
         CHECK(snap.live && snap.bass > 0.5f, "po 0.4 s: bas 80 Hz widoczny mimo uszkodzonych próbek");
+        audio_stop(au);
+        remove(fpath);
+    }
+
+    /* Przegląd 2026-11-15, R1: ten sam scenariusz ze SKOŃCZONĄ próbką 1e20
+     * (audio_sample_clean ją przepuszcza). W pierwszym oknie moc FFT = inf —
+     * dawniej cechy NaN do restartu. W drugim oknie próbka leży na brzegu
+     * Hanna i moc jest skończona, ale olbrzymia: auto-gain ścisza wtedy bas
+     * na ~100 s (to sprawa przycinania próbek, decyzja właściciela), więc
+     * tu sprawdzamy tylko, że stan nie zostaje NaN. */
+    printf("audio_start z pliku ze skończoną próbką 1e20 (wątek, bez serwera)\n");
+    {
+        char fpath[512]; snprintf(fpath, sizeof fpath, "%s/huge.f32", dir);
+        FILE *tf = fopen(fpath, "wb");
+        for (int i = 0; i < AUDIO_RATE; i++) {
+            float v = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE), z = 0.0f;
+            if (i == 0) v = 1e20f;
+            fwrite(&v, sizeof v, 1, tf); fwrite(&z, sizeof z, 1, tf);
+        }
+        fclose(tf);
+        struct audio *au = audio_start(NULL, fpath, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct timespec ts = { 0, 400000000L }; nanosleep(&ts, NULL);
+        struct audio_features snap; audio_snapshot(au, &snap);
+        bool finite = isfinite(snap.level) && isfinite(snap.bass) && isfinite(snap.lowmid) && isfinite(snap.mid)
+                   && isfinite(snap.high) && isfinite(snap.beat) && isfinite(snap.wave_peak);
+        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) finite = finite && isfinite(snap.spectrum[i]);
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) finite = finite && isfinite(snap.spectro[i]);
+        for (int i = 0; i < AUDIO_WAVE_N * AUDIO_CHANNELS; i++) finite = finite && isfinite(snap.wave[i]);
+        CHECK(snap.live && finite, "po 0.4 s: wszystkie cechy skończone (moc FFT = inf nie zatruwa stanu)");
         audio_stop(au);
         remove(fpath);
     }

@@ -130,12 +130,18 @@ void audio_spectro_column(const float *raw, float peak, float *out) {
 
 /* ── auto-gain, wygładzanie, beat, starzenie ────────────────────────────── */
 
+/* Skończona próbka rzędu 1e20 (audio_sample_clean ją przepuszcza) przepełnia
+ * moc FFT do inf: dawniej szczyt stawał się inf, inf/inf = NaN przechodził
+ * przez klamrę (porównania z NaN są fałszywe), a NaN w audio_smooth zostawał
+ * na zawsze — wizualizacja stała do restartu (przegląd 2026-11-15, R1). */
 float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value) {
+    if (!isfinite(x)) x = 0.0f;
+    if (!isfinite(a->peak)) a->peak = floor_value;
     a->peak *= expf(-dt / 2.0f);
     if (a->peak < floor_value) a->peak = floor_value;
     if (x > a->peak) a->peak = x;
     float y = x / a->peak;
-    return y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+    return y > 0.0f ? (y < 1.0f ? y : 1.0f) : 0.0f;     /* NaN → 0 */
 }
 
 float audio_sample_clean(float x) {
@@ -143,6 +149,8 @@ float audio_sample_clean(float x) {
 }
 
 float audio_smooth(float prev, float x, float dt, float attack, float release) {
+    if (!isfinite(prev)) prev = 0.0f;
+    if (!isfinite(x)) return prev;
     float tau = x > prev ? attack : release;
     if (tau <= 0.0f) return x;
     float k = 1.0f - expf(-dt / tau);
