@@ -1079,18 +1079,40 @@ menu() {
 # Powiadomienie z hl.on("monitor.added"). Na starcie sesji każdy monitor jest
 # „dodany”, a o monitorze bez reguły mówi wtedy machine-layer-check.sh, więc młoda
 # sesja milczy. Brak .dat = system bez install.sh, tu nie ma czego ustawiać.
+#
+# Jedno powiadomienie na monitor: dock z dwoma nowymi ekranami to dwa zdarzenia,
+# a każdy bieg widzi oba nowe monitory, więc dawniej przychodziły 4 zamiast 2
+# (audyt 2026-11-05, A12). Biegi idą po kolei (flock), a monitor zgłoszony
+# w ostatnich NOTIFY_REPEAT_S sekundach pomijamy; wpięty ponownie później
+# dostaje powiadomienie jak dawniej. Bez blokady (flock padł) — dawne zachowanie.
+NOTIFIED_FILE="${XDG_RUNTIME_DIR:-/tmp}/archenemy-new-monitors.notified"
+NOTIFY_REPEAT_S=30
 notify_new() {
-    local age name
+    local age name now t n tmp
+    local -A recent=()
     age="$(ps -o etimes= -C Hyprland 2>/dev/null | sort -n | head -1 | tr -d ' ')"
     [[ "$age" =~ ^[0-9]+$ ]] && (( age < 30 )) && return 0
     command -v notify-send >/dev/null 2>&1 || return 0
+    { exec 8>"$NOTIFIED_FILE.lock"; } 2>/dev/null && flock -w 10 8
     # Opis EDID pojawia się chwilę po zdarzeniu.
     sleep 1
     load_dats
     ((${#DATS[@]})) || return 0
+    now="$(date +%s)"
+    if [[ -f "$NOTIFIED_FILE" ]]; then
+        while read -r t n; do
+            [[ "$t" =~ ^[0-9]+$ && -n "$n" ]] && (( now - t < NOTIFY_REPEAT_S )) && recent[$n]="$t"
+        done < "$NOTIFIED_FILE"
+    fi
     while IFS= read -r name; do
-        [[ -n "$name" ]] && notify-send "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
+        [[ -n "$name" && -z "${recent[$name]:-}" ]] || continue
+        notify-send "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
+        recent[$name]="$now"
     done < <(new_monitors)
+    tmp="$(mktemp "$NOTIFIED_FILE.XXXXXX")" || return 0
+    for n in "${!recent[@]}"; do printf '%s %s\n' "${recent[$n]}" "$n"; done > "$tmp"
+    mv "$tmp" "$NOTIFIED_FILE"
+    return 0
 }
 
 case "${1:-}" in

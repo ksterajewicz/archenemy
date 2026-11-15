@@ -98,7 +98,7 @@ reset() {
     cp "$D/eDP-2.dat" "$T/dat.orig"; cp "$LUA" "$T/lua.orig"; cp "$WS" "$T/ws.orig"
     : > "$T/log"; : > "$T/errors"; : > "$T/after"; : > "$T/notified"
     rm -f "$T/dead" "$T/stubborn" "$T/offline" "$T/third" "$T/vanish" "$T/twin" "$T/age" "$T/gen" "$T/pinned" "$T/rotated" "$T/twodec"
-    rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"
+    rm -f "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py" "$XDG_RUNTIME_DIR/archenemy-new-monitors.notified"
 }
 gen_all() {
     ( source "$A/scripts/hypr/lib/monitor-id.sh"; source "$A/scripts/hypr/lib/gen-monitors.sh"; source "$A/scripts/hypr/lib/gen-workspaces.sh"
@@ -481,6 +481,15 @@ reset; echo 100 > "$T/age"; notify
 check "znany monitor: cisza"                   '[[ ! -s "$T/notified" ]]'
 reset; touch "$T/third"; echo 5 > "$T/age"; notify
 check "start sesji: cisza"                     '[[ ! -s "$T/notified" ]]'
+# Dock z dwoma nowymi ekranami: dwa zdarzenia monitor.added naraz, a każdy bieg
+# widzi oba nowe monitory — dawniej 4 powiadomienia zamiast 2 (A12).
+reset; touch "$T/third"; rm "$D/HDMI-A-1.dat"; echo 100 > "$T/age"
+notify & notify & wait
+check "dock z dwoma nowymi: jedno powiadomienie na monitor" '[[ $(grep -c "Super+A → \[n\]" "$T/notified") -eq 2 && $(grep -c "HDMI-A-1: " "$T/notified") -eq 1 && $(grep -c "DP-2: " "$T/notified") -eq 1 ]]'
+notify
+check "kolejne zdarzenie zaraz potem: bez powtórki" '[[ $(grep -c "Super+A → \[n\]" "$T/notified") -eq 2 ]]'
+printf '%s DP-2\n' "$(( $(date +%s) - 100 ))" > "$XDG_RUNTIME_DIR/archenemy-new-monitors.notified"; : > "$T/notified"; notify
+check "monitor wpięty ponownie po przerwie: znowu powiadomienie" '[[ $(grep -c "DP-2: " "$T/notified") -eq 1 ]]'
 
 echo "== skrót"
 reset

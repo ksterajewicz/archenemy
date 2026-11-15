@@ -189,7 +189,10 @@ Rules that follow directly from the table:
 - **Optional CLI tools:** `[h] → 6` uses `tui_menu` for shell selection and each checklist. The trusted catalog `config/shell/cli-tools.tsv` supplies packages, commands, licenses, support and initialization; one row extends the menu without code changes. All tools default off independently for bash/zsh. Only `shell-rc.sh` writes personal `cli-tools.bash` / `cli-tools.zsh`, with marked blocks, dated backups, idempotence and custom-content/symlink refusal. The rc block loads the selected file after `shellrc`. Missing commands require `[Y/n]` before `sudo pacman -S --needed`; verify the command exists afterwards. Disabling removes only the initialization block and keeps packages. Plain PATH tools cannot be hidden per shell. zoxide must preserve `cd` (default `z`/`zi`, never `--cmd cd`). Keep README and THIRD-PARTY license tables in sync. `tests/shell-cli-tools.sh` uses isolated mocks without zsh, pacman or real tools.
 - **New monitor notification:** `hl.on("monitor.added")` in `autostart-common.lua`
   calls `monitor-settings.sh notify`, which stays quiet for known monitors and in a
-  young session, where `machine-layer-check.sh` reports it instead.
+  young session, where `machine-layer-check.sh` reports it instead. One notification
+  per monitor: a dock with two new screens fires two events and each run sees both,
+  so runs take a `flock` and skip a monitor announced in the last 30 s
+  (`$XDG_RUNTIME_DIR/archenemy-new-monitors.notified`); `tests/monitor-settings.sh`.
 - **Wallpapers cover every monitor:** primary gets v1, all others get v2. A monitor
   with no saved wallpaper takes secondary's on `--restore`.
 - **Main TUI keys (Super+A):** `[p]` opens autostart (programs), and `[u]` opens
