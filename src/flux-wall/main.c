@@ -69,26 +69,11 @@
 #include "util.h"       /* flux_now_seconds, flux_read_file — wspólne z audio.c i tools/offscreen.c */
 #include "recovery.h"   /* decyzje po błędach EGL i przerwy ponowień — testowane w test.c */
 #include "logic.h"      /* pozostałe czyste decyzje (skala, tempo klatek, audio) — testowane w test.c */
+#include "cli.h"        /* struct config, flux_parse_args — testowane w test.c */
 
 /* ── konfiguracja ─────────────────────────────────────────────────────────── */
 
-struct config {
-    const char *shader_path;
-    const char *output_name;     /* NULL = wszystkie monitory */
-    struct palette palette;
-    float detail;                /* wartość stała, gdy battery == false */
-    bool  battery;               /* detail z /sys/class/power_supply */
-    float dither;                /* uniform `dither`: 1 = raster Bayera, 0 = gładko (domyślnie) —
-                                  * cecha rice'a (FLUX_WALL_DITHER), nie animacji */
-    int   fps;                   /* 0 = każda klatka kompozytora */
-    bool  once;                  /* jedna klatka po configure, bez animacji */
-    bool  verbose;
-    uint32_t layer;              /* ZWLR_LAYER_SHELL_V1_LAYER_* — bottom = nad hyprpaperem */
-    bool  no_audio;              /* --no-audio: nie startuj wątku nawet dla wizualizacji */
-    const char *audio_device;    /* --audio-device: jawna nazwa monitora (fallback po @DEFAULT_MONITOR@) */
-    const char *audio_file;      /* --audio-file: surowy f32 mono 48 kHz zamiast serwera (debug; wymusza audio) */
-    const char *ready_file;      /* --ready-file: plik z PID-em po pierwszej klatce na ekranie (flux-wall.sh) */
-};
+/* struct config i parsowanie opcji: cli.h, flux_parse_args niżej. */
 
 /* ── stan ─────────────────────────────────────────────────────────────────── */
 
@@ -174,7 +159,7 @@ static _Noreturn void die(int code, const char *fmt, ...) {
 
 /* ── paleta i bateria (bez Waylanda — testowalne osobno) ──────────────────── */
 
-/* "0F1A24" albo "#0F1A24" → rgb 0..1; false przy śmieciach. */
+/* "0F1A24" albo "#0F1A24" → rgb 0..1; false przy śmieciach (cli.h). */
 bool parse_hex_color(const char *hex, float out[3]) {
     if (!hex) return false;
     if (*hex == '#') hex++;
@@ -876,14 +861,22 @@ static void usage(void) {
           "  --audio-device (np. z pactl get-default-sink + .monitor).\n", stderr);
 }
 
-int main(int argc, char **argv) {
-    struct state s = {0};
-    s.cfg.detail = 1.0f;
-    s.cfg.dither = 0.0f;         /* gładko; raster tylko na jawne --dither (rice dither-flux) */
+/* Zła wartość opcji: komunikat jak z die() („flux-wall: …”), kod 1 w main(). */
+static enum flux_args args_bad(FILE *errf, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    fputs("flux-wall: ", errf); vfprintf(errf, fmt, ap); fputc('\n', errf);
+    va_end(ap);
+    return FLUX_ARGS_BAD;
+}
+
+enum flux_args flux_parse_args(int argc, char **argv, struct config *cfg, FILE *errf) {
+    *cfg = (struct config){0};
+    cfg->detail = 1.0f;
+    cfg->dither = 0.0f;          /* gładko; raster tylko na jawne --dither (rice dither-flux) */
     /* bottom: zawsze NAD hyprpaperem (warstwa background) i POD oknami —
      * hyprpaper zostaje pod spodem jako fallback, gdyby flux-wall padł. */
-    s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
-    s.cfg.palette = (struct palette){ {0.059f, 0.102f, 0.141f}, {0.361f, 0.529f, 0.639f}, {0.847f, 0.902f, 0.933f} };
+    cfg->layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+    cfg->palette = (struct palette){ {0.059f, 0.102f, 0.141f}, {0.361f, 0.529f, 0.639f}, {0.847f, 0.902f, 0.933f} };
 
     static const struct option longopts[] = {
         {"shader", required_argument, 0, 's'}, {"palette", required_argument, 0, 'p'},
@@ -900,45 +893,55 @@ int main(int argc, char **argv) {
     int c;
     while ((c = getopt_long(argc, argv, "s:p:d:f:o:l:1vh", longopts, NULL)) != -1) {
         switch (c) {
-        case 's': s.cfg.shader_path = optarg; break;
-        case 'p': if (!parse_palette(optarg, &s.cfg.palette)) die(1, "zła paleta: %s (oczekiwane bg,ink,acc jako hex)", optarg); break;
+        case 's': cfg->shader_path = optarg; break;
+        case 'p': if (!parse_palette(optarg, &cfg->palette)) return args_bad(errf, "zła paleta: %s (oczekiwane bg,ink,acc jako hex)", optarg); break;
         case 'd': {
             char *end;
-            s.cfg.detail = strtof(optarg, &end);
+            cfg->detail = strtof(optarg, &end);
             /* strtof przyjmuje „nan” i „inf”; NaN przeszedłby niżej każde
              * porównanie z zakresem (zawsze fałszywe), więc najpierw isfinite */
-            if (end == optarg || *end || !isfinite(s.cfg.detail)) die(1, "detail: '%s' nie jest liczbą", optarg);
-            if (s.cfg.detail < 0 || s.cfg.detail > 1) die(1, "detail poza 0..1");
+            if (end == optarg || *end || !isfinite(cfg->detail)) return args_bad(errf, "detail: '%s' nie jest liczbą", optarg);
+            if (cfg->detail < 0 || cfg->detail > 1) return args_bad(errf, "detail poza 0..1");
             break;
         }
-        case 'B': s.cfg.battery = true; break;
+        case 'B': cfg->battery = true; break;
         case 'f': {
             char *end;
             long v = strtol(optarg, &end, 10);
-            if (end == optarg || *end) die(1, "fps: '%s' nie jest liczbą", optarg);
-            if (v < 0 || v > 1000) die(1, "fps poza 0..1000");
-            s.cfg.fps = (int)v;
+            if (end == optarg || *end) return args_bad(errf, "fps: '%s' nie jest liczbą", optarg);
+            if (v < 0 || v > 1000) return args_bad(errf, "fps poza 0..1000");
+            cfg->fps = (int)v;
             break;
         }
-        case 'o': s.cfg.output_name = optarg; break;
+        case 'o': cfg->output_name = optarg; break;
         case 'l':
-            if (strcmp(optarg, "bottom") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
-            else if (strcmp(optarg, "background") == 0) s.cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
-            else die(1, "zła warstwa: %s (bottom|background)", optarg);
+            if (strcmp(optarg, "bottom") == 0) cfg->layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+            else if (strcmp(optarg, "background") == 0) cfg->layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+            else return args_bad(errf, "zła warstwa: %s (bottom|background)", optarg);
             break;
-        case 'A': s.cfg.audio_device = optarg; break;
-        case 'N': s.cfg.no_audio = true; break;
-        case 'F': s.cfg.audio_file = optarg; break;
-        case 'R': s.cfg.ready_file = optarg; break;
-        case 'D': s.cfg.dither = 1.0f; break;
-        case 'n': s.cfg.dither = 0.0f; break;
-        case '1': s.cfg.once = true; break;
-        case 'v': s.cfg.verbose = true; break;
-        case 'h': usage(); return 0;
-        default: usage(); return 1;
+        case 'A': cfg->audio_device = optarg; break;
+        case 'N': cfg->no_audio = true; break;
+        case 'F': cfg->audio_file = optarg; break;
+        case 'R': cfg->ready_file = optarg; break;
+        case 'D': cfg->dither = 1.0f; break;
+        case 'n': cfg->dither = 0.0f; break;
+        case '1': cfg->once = true; break;
+        case 'v': cfg->verbose = true; break;
+        case 'h': return FLUX_ARGS_HELP;
+        default: return FLUX_ARGS_USAGE;
         }
     }
-    if (!s.cfg.shader_path) { usage(); return 1; }
+    return cfg->shader_path ? FLUX_ARGS_RUN : FLUX_ARGS_USAGE;
+}
+
+int main(int argc, char **argv) {
+    struct state s = {0};
+    switch (flux_parse_args(argc, argv, &s.cfg, stderr)) {
+    case FLUX_ARGS_HELP:  usage(); return 0;
+    case FLUX_ARGS_USAGE: usage(); return 1;
+    case FLUX_ARGS_BAD:   return 1;               /* komunikat już na stderr */
+    case FLUX_ARGS_RUN:   break;
+    }
     logv(&s, "dither: %s", s.cfg.dither > 0.5f ? "1 (raster Bayera)" : "0 (gładko)");
 
     s.detail_target = s.cfg.battery ? battery_detail("/sys/class/power_supply") : s.cfg.detail;

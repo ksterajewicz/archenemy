@@ -22,6 +22,8 @@
 #include "audio.h"
 #include "recovery.h"
 #include "logic.h"
+#include "cli.h"
+#include "wlr-layer-shell-unstable-v1-client-protocol.h"  /* ZWLR_LAYER_SHELL_V1_LAYER_* */
 #define TEST_PI 3.14159265f
 #include <math.h>
 #include <pthread.h>
@@ -29,8 +31,6 @@
 #include <time.h>
 #include <pulse/error.h>
 #include <pulse/simple.h>
-bool  parse_hex_color(const char *hex, float out[3]);
-bool  parse_palette(const char *spec, struct palette *p);
 float battery_detail(const char *power_supply_dir);
 bool  flux_ready_mark(const char *path);
 int   flux_wall_main(int argc, char **argv);   /* main() z main.c (-Dmain=flux_wall_main) */
@@ -180,6 +180,26 @@ static int run_cli(const char *dir, char **args, char *log, size_t loglen) {
     if (f) { size_t n = fread(log, 1, loglen - 1, f); log[n] = 0; fclose(f); }
     remove(lpath);
     return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+}
+
+/* flux_parse_args w TYM procesie: stan getopt od nowa (optind = 0 to pełny
+ * reset w glibc i musl), bez komunikatów getopt o nieznanej opcji; komunikat
+ * złej wartości (to, co main() wypisałby na stderr) trafia do `msg`. */
+static enum flux_args parse_cli(char **args, struct config *cfg, char *msg, size_t msglen) {
+    int argc = 0;
+    while (args[argc]) argc++;
+    optind = 0;
+    opterr = 0;
+    char *buf = NULL;
+    size_t len = 0;
+    FILE *m = open_memstream(&buf, &len);
+    if (!m) { perror("open_memstream"); exit(1); }
+    enum flux_args r = flux_parse_args(argc, args, cfg, m);
+    fclose(m);
+    snprintf(msg, msglen, "%s", buf ? buf : "");
+    free(buf);
+    opterr = 1;
+    return r;
 }
 
 /* ── GL: silnik na EGL surfaceless (jak tools/offscreen.c) ──────────────────
@@ -960,6 +980,71 @@ int main(void) {
         rc = run_cli(dir, a_out, log, sizeof log);
         CHECK(rc == 1, "-d 1.5 → kod 1");
         remove(shader);
+    }
+
+    /* flux_parse_args w tym procesie (bez fork): każda opcja trafia do
+     * swojego pola, wartości domyślne, kolejność i komunikaty złych wartości. */
+    printf("CLI: flux_parse_args (opcje → struct config)\n");
+    {
+        struct config cfg;
+        char msg[512];
+        char *a1[] = { "flux-wall", "-s", "a.frag", NULL };
+        CHECK(parse_cli(a1, &cfg, msg, sizeof msg) == FLUX_ARGS_RUN && msg[0] == 0 &&
+              strcmp(cfg.shader_path, "a.frag") == 0, "-s a.frag → uruchom, bez komunikatu");
+        CHECK(cfg.detail == 1.0f && cfg.dither == 0.0f && cfg.fps == 0 &&
+              cfg.layer == ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM && !cfg.battery && !cfg.once && !cfg.verbose &&
+              !cfg.no_audio && !cfg.output_name && !cfg.audio_device && !cfg.audio_file && !cfg.ready_file,
+              "domyślnie: detail 1, gładko, każda klatka, warstwa bottom (nad hyprpaperem), bez audio i -o");
+        CHECK(near(cfg.palette.bg[0], 0.059f) && near(cfg.palette.ink[1], 0.529f) && near(cfg.palette.accent[2], 0.933f),
+              "domyślna paleta");
+
+        char *a2[] = { "flux-wall", "--shader=b.frag", "-p", "000000,FFFFFF,#FF0000", "-d", "0.25", "--battery",
+                       "-f", "30", "-o", "DP-1", "-l", "background", "--audio-device=mon.monitor", "--no-audio",
+                       "--audio-file", "x.f32", "--dither", "-1v", "--ready-file", "r.pid", NULL };
+        CHECK(parse_cli(a2, &cfg, msg, sizeof msg) == FLUX_ARGS_RUN, "wszystkie opcje naraz → uruchom");
+        CHECK(strcmp(cfg.shader_path, "b.frag") == 0 && near(cfg.palette.bg[0], 0.0f) && near(cfg.palette.ink[0], 1.0f) &&
+              near(cfg.palette.accent[0], 1.0f) && near(cfg.palette.accent[1], 0.0f) && near(cfg.detail, 0.25f) &&
+              cfg.battery && cfg.fps == 30 && strcmp(cfg.output_name, "DP-1") == 0 &&
+              cfg.layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
+              "-s -p -d --battery -f -o -l → swoje pola");
+        CHECK(strcmp(cfg.audio_device, "mon.monitor") == 0 && cfg.no_audio && strcmp(cfg.audio_file, "x.f32") == 0 &&
+              cfg.dither == 1.0f && cfg.once && cfg.verbose && strcmp(cfg.ready_file, "r.pid") == 0,
+              "--audio-device --no-audio --audio-file --dither -1v --ready-file → swoje pola");
+
+        char *a3[] = { "flux-wall", "-s", "a.frag", "--dither", "--no-dither", NULL };
+        char *a4[] = { "flux-wall", "-s", "a.frag", "--no-dither", "--dither", "-l", "bottom", "--fps=1000", NULL };
+        CHECK(parse_cli(a3, &cfg, msg, sizeof msg) == FLUX_ARGS_RUN && cfg.dither == 0.0f, "--dither --no-dither → gładko (ostatnia wygrywa)");
+        CHECK(parse_cli(a4, &cfg, msg, sizeof msg) == FLUX_ARGS_RUN && cfg.dither == 1.0f &&
+              cfg.layer == ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM && cfg.fps == 1000, "--no-dither --dither → raster; -l bottom; -f 1000 (granica)");
+
+        char *h1[] = { "flux-wall", "-h", "-p", "zle", NULL };
+        char *h2[] = { "flux-wall", "-p", "zle", "-h", NULL };
+        CHECK(parse_cli(h1, &cfg, msg, sizeof msg) == FLUX_ARGS_HELP && msg[0] == 0, "-h przed złą opcją → pomoc (kod 0)");
+        CHECK(parse_cli(h2, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD, "zła opcja przed -h → błąd (pierwsza zła zatrzymuje)");
+        char *u1[] = { "flux-wall", "-v", NULL };
+        char *u2[] = { "flux-wall", "-s", "a.frag", "--bogus", NULL };
+        CHECK(parse_cli(u1, &cfg, msg, sizeof msg) == FLUX_ARGS_USAGE, "bez -s → usage (kod 1)");
+        CHECK(parse_cli(u2, &cfg, msg, sizeof msg) == FLUX_ARGS_USAGE, "nieznana opcja → usage (kod 1)");
+
+        char *b1[] = { "flux-wall", "-s", "a.frag", "-p", "zle", NULL };
+        CHECK(parse_cli(b1, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD &&
+              strcmp(msg, "flux-wall: zła paleta: zle (oczekiwane bg,ink,acc jako hex)\n") == 0,
+              "-p zle → błąd z komunikatem jak dawne die(1)");
+        char *b2[] = { "flux-wall", "-s", "a.frag", "-f", "-1", NULL };
+        char *b3[] = { "flux-wall", "-s", "a.frag", "-f", "30fps", NULL };
+        CHECK(parse_cli(b2, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD && strcmp(msg, "flux-wall: fps poza 0..1000\n") == 0,
+              "-f -1 → fps poza 0..1000");
+        CHECK(parse_cli(b3, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD && strcmp(msg, "flux-wall: fps: '30fps' nie jest liczbą\n") == 0,
+              "-f 30fps → nie jest liczbą");
+        char *b4[] = { "flux-wall", "-s", "a.frag", "-l", "top", NULL };
+        CHECK(parse_cli(b4, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD &&
+              strcmp(msg, "flux-wall: zła warstwa: top (bottom|background)\n") == 0, "-l top → zła warstwa");
+        char *b5[] = { "flux-wall", "-s", "a.frag", "-d", "inf", NULL };
+        char *b6[] = { "flux-wall", "-s", "a.frag", "-d", "1.5", NULL };
+        CHECK(parse_cli(b5, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD && strstr(msg, "detail: 'inf' nie jest liczbą"),
+              "-d inf → nie jest liczbą");
+        CHECK(parse_cli(b6, &cfg, msg, sizeof msg) == FLUX_ARGS_BAD && strcmp(msg, "flux-wall: detail poza 0..1\n") == 0,
+              "-d 1.5 → detail poza 0..1");
     }
 
     /* Błąd EGL powierzchni po starcie (np. nowo podpięty monitor) sprząta

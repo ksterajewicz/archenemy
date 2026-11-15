@@ -266,8 +266,10 @@ archenemy/
 │       ├── logic.h                   #   the other pure decisions of main.c (buffer size from the monitor scale,
 │       │                             #   frame pacing and the poll timeout, battery detail easing, -o, when the
 │       │                             #   audio thread starts), same pattern as recovery.h;
+│       ├── cli.h                     #   command-line options (struct config) and flux_parse_args (in main.c);
 │       ├── test.c                    #   pure-function tests (palette, battery, #pragma flux, warp, step cap,
-│       │                             #   audio DSP, EGL error decisions, logic.h), CLI exit codes 1 and 2,
+│       │                             #   audio DSP, EGL error decisions, logic.h, every option of
+│       │                             #   flux_parse_args), CLI exit codes 1 and 2,
 │       │                             #   the audio thread on a file and on a libpulse mock (output monitor only,
 │       │                             #   never the microphone; stream format; retry delays)
 │       │                             #   + GL checks on EGL surfaceless (--once after a resize; a shader that
