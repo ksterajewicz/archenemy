@@ -14,7 +14,9 @@
 #   Przegląd 2026-11-15 (I1): świeży Arch nie ma less (base, base-devel ani
 #   git go nie ciągną), więc pager idzie z zapasem: $PAGER → less → more
 #   (util-linux, w base) → cat; yay dostaje ten sam pager jako GIT_PAGER.
-#   Haki testowe: ARCHENEMY_YAY_URL (repo yay), PAGER (podgląd PKGBUILD).
+#   Hak testowy: tylko PAGER (podgląd PKGBUILD). Źródło yay to stały adres AUR —
+#   dawny ARCHENEMY_YAY_URL (bez bramki ARCHENEMY_TEST, nieużywany w testach)
+#   podmieniał repo instalowane przez `makepkg -si` (sudo pacman -U); R1 I4.
 #   Funkcje nie wychodzą z procesu — zwracają kod; komunikaty po angielsku.
 # =============================================
 
@@ -65,7 +67,7 @@ aur_bootstrap_yay() {
         # uznawał sygnał za obsłużony i instalator jechał dalej do [5].
         trap 'rm -rf "$build"; trap - INT; kill -INT "$BASHPID"' INT
         trap 'rm -rf "$build"; trap - TERM; kill -TERM "$BASHPID"' TERM
-        git clone "${ARCHENEMY_YAY_URL:-https://aur.archlinux.org/yay.git}" "$build/yay" || exit 1
+        git clone https://aur.archlinux.org/yay.git "$build/yay" || exit 1
         echo -e "  yay comes from the AUR (user-submitted, not checked by Arch); its PKGBUILD runs on this machine."
         read -rp "Review PKGBUILD before building? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then

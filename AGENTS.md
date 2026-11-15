@@ -330,7 +330,8 @@ so these rules are tested, not just conventions:
   `sudo -k` right after the guard. A later `trap … EXIT` (the step [3]
   `monitors.new` cleanup) replaces it, so every such trap must keep
   `sudo -k` (`bash tests/install-guards.sh`).
-- **AUR goes through `install/lib/aur.sh` only.** yay is built in a fresh
+- **AUR goes through `install/lib/aur.sh` only.** yay is cloned from the
+  fixed AUR URL (no environment override) and built in a fresh
   `mktemp -d` (never a fixed `/tmp/yay`) that is removed on every path,
   with an optional PKGBUILD review; `yay -S` offers an opt-in `--diffmenu
   --answerdiff All`. Reviews use a pager with a fallback (`$PAGER`, `less`,

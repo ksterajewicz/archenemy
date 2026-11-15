@@ -7,7 +7,8 @@
 #   przegląd PKGBUILD na żądanie, ✓ tylko gdy yay naprawdę jest w PATH,
 #   `--diffmenu --answerdiff All` wyłącznie po „y” (I3); przegląd działa bez less (pager
 #   z zapasem i GIT_PAGER dla yay, I1 z przeglądu 2026-11-15); Ctrl+C w [4]
-#   zatrzymuje install.sh (I2, wycinek [4]–[5]). Bez sieci, bez roota.
+#   zatrzymuje install.sh (I2, wycinek [4]–[5]); yay zawsze ze stałego adresu
+#   AUR, zmienna środowiska go nie podmienia (R1 I4). Bez sieci, bez roota.
 #   Uruchom: bash tests/install-aur.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -27,12 +28,12 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin" "$T/tmp" "$T/log"
 export TMPDIR="$T/tmp" LOG="$T/log"
-# git clone <url> <katalog> → katalog z PKGBUILD; MOCK_CLONE_FAIL=1 = błąd sieci.
+# git clone <url> <katalog> → katalog z PKGBUILD (adres do clone-url); MOCK_CLONE_FAIL=1 = błąd sieci.
 cat > "$T/bin/git" <<'EOF'
 #!/bin/bash
 [[ "$1" == clone ]] || exit 1
 [[ -n "${MOCK_CLONE_FAIL:-}" ]] && exit 128
-mkdir -p "$3" && echo 'pkgname=yay' > "$3/PKGBUILD" && echo "$3" > "$LOG/clone-dir"
+mkdir -p "$3" && echo 'pkgname=yay' > "$3/PKGBUILD" && echo "$3" > "$LOG/clone-dir" && echo "$2" > "$LOG/clone-url"
 EOF
 # makepkg -si → zapisuje katalog budowy; MOCK_MAKEPKG_INSTALLS=1 „instaluje” yay.
 cat > "$T/bin/makepkg" <<'EOF'
@@ -71,6 +72,14 @@ check "katalog budowy usunięty po biegu"              '[[ ! -e "$(dirname "$(ca
 check "podstawiony \$TMPDIR/yay nietknięty i nieużyty" '[[ "$(cat "$T/tmp/yay/PKGBUILD")" == podstawiony ]]'
 check "zdanie o AUR przed budową"                     '[[ "$out" == *"comes from the AUR"* ]]'
 check "✓ dopiero gdy yay jest w PATH"                 '[[ "$out" == *"✓ yay installed"* && -x "$T/bin/yay" ]]'
+
+echo "== źródło yay: stały adres AUR, bez haka ze środowiska (R1 I4)"
+# Dawny hak ARCHENEMY_YAY_URL (bez bramki ARCHENEMY_TEST) podmieniał repo, które
+# makepkg -si instaluje przez sudo pacman -U; testy go nie używały.
+reset_case; export MOCK_MAKEPKG_INSTALLS=1 ARCHENEMY_YAY_URL="file://$T/obce-yay"
+run_boot '\n'
+unset ARCHENEMY_YAY_URL
+check "ARCHENEMY_YAY_URL w środowisku nie zmienia źródła yay" '[[ "$(cat "$LOG/clone-url" 2>/dev/null)" == https://aur.archlinux.org/yay.git ]]'
 
 echo "== przegląd PKGBUILD na żądanie"
 reset_case; export MOCK_MAKEPKG_INSTALLS=1
