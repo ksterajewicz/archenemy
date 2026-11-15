@@ -15,12 +15,21 @@
 # Własne kolory (biblioteka bywa źródłowana zanim wołający je zdefiniuje).
 _BL_GREEN='\033[0;32m'; _BL_YELLOW='\033[1;33m'; _BL_RED='\033[0;31m'; _BL_NC='\033[0m'
 
+# Hak testowy (tests/bootloader.sh): katalog /boot podmieniany na atrapę
+# w mktemp — TYLKO przy ARCHENEMY_TEST=1, jak haki instalatora GPU (K10,
+# audyt bezpieczeństwa 2026-11-14): zmienna odziedziczona przypadkiem ze
+# środowiska nie przekieruje `sudo grub-mkconfig -o` w inne miejsce.
+_BL_BOOT_DIR=/boot
+if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
+    _BL_BOOT_DIR="${ARCHENEMY_BOOT_DIR:-/boot}"
+fi
+
 # Wypisuje: grub | systemd-boot | unknown
 detect_bootloader() {
-    if command -v grub-mkconfig &>/dev/null && [[ -f /boot/grub/grub.cfg ]]; then
+    if command -v grub-mkconfig &>/dev/null && [[ -f "$_BL_BOOT_DIR/grub/grub.cfg" ]]; then
         echo "grub"
     elif { command -v bootctl &>/dev/null && bootctl is-installed &>/dev/null; } \
-         || [[ -d /boot/loader/entries ]]; then
+         || [[ -d "$_BL_BOOT_DIR/loader/entries" ]]; then
         echo "systemd-boot"
     else
         echo "unknown"
@@ -37,13 +46,13 @@ regenerate_bootloader() {
 
     case "$bl" in
         grub)
-            echo -e "  GRUB detected — regenerating /boot/grub/grub.cfg..."
-            if sudo grub-mkconfig -o /boot/grub/grub.cfg; then
+            echo -e "  GRUB detected — regenerating $_BL_BOOT_DIR/grub/grub.cfg..."
+            if sudo grub-mkconfig -o "$_BL_BOOT_DIR/grub/grub.cfg"; then
                 echo -e "  ${_BL_GREEN}✓ GRUB updated ($context).${_BL_NC}"
                 return 0
             else
                 echo -e "  ${_BL_RED}✗ grub-mkconfig failed — run manually:${_BL_NC}"
-                echo -e "      sudo grub-mkconfig -o /boot/grub/grub.cfg"
+                echo -e "      sudo grub-mkconfig -o $_BL_BOOT_DIR/grub/grub.cfg"
                 return 1
             fi
             ;;
