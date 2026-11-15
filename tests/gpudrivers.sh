@@ -58,7 +58,9 @@ while read -r cls line; do
 done <<<"$pci"
 EOF
 # pacman: -Qi <pkg> = zainstalowany, jeśli jest w MOCK_INSTALLED; -S/-Syu
-# logowane, porażka instalacji na żądanie (MOCK_PACMAN_FAIL=1).
+# logowane; porażka na żądanie: instalacji sterownika (MOCK_PACMAN_FAIL=1),
+# lib32 (MOCK_PACMAN_FAIL_LIB32=1), samego -Syu ze ścieżki „1) Update”
+# (MOCK_PACMAN_FAIL_SYU=1).
 cat > "$T/bin/pacman" <<'EOF'
 #!/bin/bash
 echo "pacman $*" >> "$MOCK_LOG"
@@ -67,6 +69,7 @@ if [[ "$1" == "-Qi" ]]; then
 fi
 [[ "${MOCK_PACMAN_FAIL:-0}" == 1 && "$*" == *nvidia-open-dkms* ]] && exit 1
 [[ "${MOCK_PACMAN_FAIL_LIB32:-0}" == 1 && "$*" == *lib32-* ]] && exit 1
+[[ "${MOCK_PACMAN_FAIL_SYU:-0}" == 1 && "$*" == "-Syu" ]] && exit 1
 exit 0
 EOF
 # modinfo -k <kver> nvidia: moduł „jest”, gdy w atrapie leży <kver>/nvidia.ko
@@ -77,8 +80,18 @@ EOF
 cat > "$T/bin/mkinitcpio" <<'EOF'
 #!/bin/bash
 echo "mkinitcpio $*" >> "$MOCK_LOG"
+[[ "${MOCK_MKINIT_FAIL:-0}" != 1 ]]   # MOCK_MKINIT_FAIL=1 = przebudowa nieudana
 EOF
-chmod +x "$T/bin"/*
+# tee, które nic nie zapisze (np. system plików tylko do odczytu) — w PATH
+# tylko przypadku I, pozostałe przypadki mają prawdziwe tee.
+mkdir -p "$T/bin-tee-fail"
+cat > "$T/bin-tee-fail/tee" <<'EOF'
+#!/bin/bash
+cat >/dev/null
+echo "tee: $*: Read-only file system" >&2
+exit 1
+EOF
+chmod +x "$T/bin"/* "$T/bin-tee-fail/tee"
 export PATH="$T/bin:$PATH"
 export MOCK_LOG="$T/log"
 
@@ -168,6 +181,46 @@ gpu_kind() { MOCK_PCI="$1" HYPR_LOCAL_DIR="$T/hl" GREEN='' NC='' bash "$T/step8d
 check "wycinek [8d] znaleziony"                '[[ -s "$T/step8d.sh" ]]'
 check "[8d] AMD + sieciówka Intela na 3d: → amd" '[[ "$(gpu_kind "$PCI_AMD_NET")" == *"GPU: amd" ]]'
 check "[8d] sama sieciówka na 3d: → unknown"   '[[ "$(gpu_kind "0280 3d:00.0 Network controller: Intel Corporation Wi-Fi 6 AX201")" == *"GPU: unknown" ]]'
+
+# Przegląd 2026-11-15 (P-2): każde „✗” daje kod ≠ 0 — inaczej install.sh [6.5]
+# nie wpisze porażki do podsumowania, a baner ogłosi pełny sukces. Każdy
+# przypadek psuje DOKŁADNIE jeden krok, reszta przechodzi, więc kod ≠ 0 pochodzi
+# tylko z niego; pozostałe trzy miejsca STEP_FAILED=1 sprawdzają przypadki B, C, E.
+echo "== H: aktualizacja sterownika (pełne -Syu)"
+NV_ALL="nvidia-open-dkms nvidia-utils lib32-nvidia-utils"
+setup "linux-6.16"
+out=$(MOCK_INSTALLED="$NV_ALL" run_gpu '1\n'); rc=$?
+check "udane -Syu: ✓ i kod wyjścia 0"          '[[ "$out" == *"✓ System and NVIDIA driver updated"* && $rc -eq 0 ]]'
+setup "linux-6.16"
+out=$(MOCK_INSTALLED="$NV_ALL" MOCK_PACMAN_FAIL_SYU=1 run_gpu '1\n'); rc=$?
+check "nieudane -Syu: jawny błąd"              '[[ "$out" == *"✗ Upgrade failed"* ]]'
+check "reszta kroków przeszła (initramfs)"     'grep -q "mkinitcpio -P" "$MOCK_LOG"'
+check "nieudane -Syu: kod wyjścia ≠ 0"         '[[ $rc -ne 0 ]]'
+
+echo "== I: [multilib] nie dał się włączyć"
+setup "linux-6.16"
+printf '[options]\n' > "$T/etc/pacman.conf"   # bez bloku multilib → dopisanie przez tee -a
+PCI_AMD='0300 03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 23'
+out=$(MOCK_PCI="$PCI_AMD" PATH="$T/bin-tee-fail:$PATH" run_gpu 'y\ny\n'); rc=$?
+check "sterowniki AMD zainstalowane"           '[[ "$out" == *"✓ GPU drivers installed"* ]]'
+check "jawny błąd [multilib]"                  '[[ "$out" == *"✗ Could not enable [multilib]"* ]]'
+check "lib32 bez instalacji"                   '! grep -q "pacman -S.* lib32-" "$MOCK_LOG"'
+check "kod wyjścia ≠ 0"                        '[[ $rc -ne 0 ]]'
+
+echo "== J: mkinitcpio -P nieudane"
+setup "linux-6.16"
+out=$(MOCK_INSTALLED="" MOCK_MKINIT_FAIL=1 run_gpu '1\ny\nn\n'); rc=$?
+check "moduły NVIDIA w MODULES"                'grep -q "^MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm" "$T/etc/mkinitcpio.conf"'
+check "jawny błąd mkinitcpio"                  '[[ "$out" == *"✗ mkinitcpio -P failed"* ]]'
+check "kod wyjścia ≠ 0"                        '[[ $rc -ne 0 ]]'
+
+echo "== K: brak aktywnej linii MODULES=(…)"
+setup "linux-6.16"
+printf '#MODULES=()\nHOOKS=(base udev)\n' > "$T/etc/mkinitcpio.conf"
+out=$(MOCK_INSTALLED="" run_gpu '1\ny\nn\n'); rc=$?
+check "jawny błąd z instrukcją"                '[[ "$out" == *"✗ No active MODULES=(...) line"* ]]'
+check "initramfs NIE przebudowany"             '! grep -q mkinitcpio "$MOCK_LOG"'
+check "kod wyjścia ≠ 0"                        '[[ $rc -ne 0 ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
