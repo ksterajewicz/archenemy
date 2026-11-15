@@ -142,8 +142,10 @@ Rules that follow directly from the table:
   a symlink pointing outside `rices/` (e.g. GNU stow) where a rice folder
   goes is moved to `<name>.bak-<timestamp>`, never `rm`'d; links are made
   with `ln -sfn`. The switcher runs under `flock` (a second `Super+T` waits
-  and wins); every background process it starts gets `9>&-`, or it would
-  hold the lock for the whole session. `bash tests/switch-rice.sh`.
+  and wins; still busy after `SWITCH_RICE_LOCK_WAIT` seconds, default 30 →
+  notification, code 1, nothing changed); every background process it starts
+  gets `9>&-`, or it would hold the lock for the whole session.
+  `bash tests/switch-rice.sh`.
 - **Monitors: `scripts/hypr/monitor-settings.sh` (`Super+A → [n]`) is the only
   live way to change them**, including a new monitor, renumbering and forgetting an
   unplugged one. `lib/gen-monitors.sh` and `lib/gen-workspaces.sh` are the only

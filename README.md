@@ -296,8 +296,10 @@ archenemy/
 │                                     #   an interrupted run is re-queued and never leaves a truncated PNG.
 │                                     #   wallpaper-switcher.sh — Super+W against a fake hyprpaper daemon
 │                                     #   (settings list + first-match rule): the picked wallpaper must end up
-│                                     #   ON SCREEN in all three .dat scenarios; plus the menu previews on a
-│                                     #   fake rofi (thumbnail cache by mtime, no tool → original image).
+│                                     #   ON SCREEN in all three .dat scenarios; plus the menu on a fake rofi:
+│                                     #   all monitors vs the focused one, the hyprlock background toggle,
+│                                     #   only existing animations reach flux-wall.dat, previews (thumbnail
+│                                     #   cache by mtime, no tool → original image).
 │                                     #   `bash tests/wallpaper-switcher.sh`.
 │                                     #   rofi-inputbar.sh — static font and vertical alignment checks for every rice input bar.
 │                                     #   rofi-theme-switcher.sh — Super+T previews on a fake rofi; every rice
@@ -309,7 +311,8 @@ archenemy/
 │                                     #   (bare origin in a temp dir): no false "✓" on failure, no
 │                                     #   switching to a branch older than what you run.
 │                                     #   switch-rice.sh — rice switching on a fake ~/.config: foreign
-│                                     #   symlinks backed up, two quick Super+T don't race.
+│                                     #   symlinks backed up, two quick Super+T don't race, a lock held
+│                                     #   past the wait ends with code 1 and the old rice intact.
 │                                     #   install-link.sh — installer step [9] (link-only mode of the same
 │                                     #   lib): stow symlinks and real dirs go to .bak, never rm.
 │                                     #   install-tui-entry.sh — installer step [8m]: rofi entry with an

@@ -383,6 +383,61 @@ icon_of() { rofi_in "$1" | awk -v l="$2" 'index($0, l "|icon#") == 1 { print sub
 glycin_calls() { grep -c '^GLYCIN' "$MOCK_LOG"; }
 n_thumbs() { find "$THUMBS" -name '*.png' 2>/dev/null | wc -l; }
 
+echo '== L: menu — „Upload to all monitors” i monitor z fokusem (T7)'
+# Skutek na ekranie (listactive atrapy), nie tekst powiadomienia. W atrapie
+# fokus ma eDP-1 (secondary), primary to HDMI-A-3.
+start_old() {
+    setup_dat a
+    boot_daemon_with "wallpaper {
+    monitor = desc:$DESC_HDMI
+    path = $WP/stara-v1.png
+}
+wallpaper {
+    monitor = desc:$DESC_EDP
+    path = $WP/stara-v2.png
+}"
+    printf 'desc:%s=%s\ndesc:%s=%s\n' "$DESC_HDMI" "$WP/stara-v1.png" "$DESC_EDP" "$WP/stara-v2.png" > "$A/data/wallpaper.dat"
+}
+start_old
+menu "Wallpapers/" "zestaw/nowa-v1.png"
+check "domyślnie wszystkie: primary v1, secondary v2"  '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
+start_old
+menu "[x] Upload to all monitors" "Wallpapers/" "zestaw/nowa-v1.png"
+check "odznaczone: tylko monitor z fokusem dostaje plik" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v1.png" ]]'
+check "odznaczone: drugi monitor bez zmian"            '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]] && grep -qxF "desc:$DESC_HDMI=$WP/stara-v1.png" "$A/data/wallpaper.dat"'
+
+echo "== M: menu — tło hyprlocka bez rozmycia i powrót do zrzutu (T7)"
+LB=("$A/config/hypr/hyprlock-background-white-blue.conf" "$A/config/hypr/hyprlock-background-tron.conf")
+lock_default() {
+    local f
+    for f in "${LB[@]}"; do
+        printf 'background {\n    monitor =\n    path = screenshot\n    blur_size = 7\n    blur_passes = 3\n    brightness = 0.55\n}\n' > "$f"
+    done
+    rm -f "$A/data/hyprlock-wallpaper.dat"
+}
+# wszystkie pliki tła mają path=$1, blur_size=$2, blur_passes=$3 i nietkniętą jasność
+lock_is() {
+    local f
+    for f in "${LB[@]}"; do
+        grep -qxF "    path = $1" "$f" && grep -qxF "    blur_size = $2" "$f" && grep -qxF "    blur_passes = $3" "$f" \
+            && grep -qxF "    brightness = 0.55" "$f" || return 1
+    done
+}
+start_old; lock_default
+menu "Wallpapers/" "zestaw/nowa-v1.png"
+check "ptaszek odznaczony (domyślnie): hyprlock dalej na zrzucie" 'lock_is screenshot 7 3'
+menu "[ ] Set as hyprlock background (no blur)" "Wallpapers/" "zestaw/nowa-v2.png"
+check "zaznaczony: tło = wybrany plik, bez rozmycia, jasność rice'a zostaje" 'lock_is "$WP/nowa-v2.png" 0 0'
+check "zaznaczony: wybór zapisany w hyprlock-wallpaper.dat" '[[ "$(<"$A/data/hyprlock-wallpaper.dat")" == "$WP/nowa-v2.png" ]]'
+menu "Wallpapers/" "zestaw/stara-v1.png"
+check "ptaszek zapamiętany: kolejny wybór też idzie na hyprlock" 'lock_is "$WP/stara-v1.png" 0 0'
+for f in "${LB[@]}"; do sed -i 's|^    path = .*|    path = screenshot|' "$f"; done
+MOCK_MONS=both bash "$SW" --restore >/dev/null 2>&1
+check "--restore (Super+T) przywraca tło hyprlocka"    'lock_is "$WP/stara-v1.png" 0 0'
+menu "[x] Set as hyprlock background (no blur)" "Wallpapers/" "zestaw/nowa-v1.png"
+check "odznaczony: powrót do zrzutu z rozmyciem"       'lock_is screenshot 7 3 && [[ "$(<"$A/data/hyprlock-wallpaper.dat")" == off ]]'
+rm -f "${LB[@]}" "$A/data/hyprlock-wallpaper.dat"
+
 echo "== H: Wallpapers/ — miniatury w data/thumbs/, cache po mtime"
 setup_dat a
 boot_daemon_with ""
@@ -453,6 +508,22 @@ check "← Back bez ikony, siatka włączona"      'rofi_in 2 | grep -qx "← Ba
 echo norice > "$A/.current_rice"
 menu "Animations/" ""
 check "rice bez kadrów: zwykła lista, zero ikon" '! grep -q "$X1F" "$MOCK_ROFI_DIR/in-2" && ! grep -q -- "-theme-str" "$MOCK_ROFI_DIR/args-2" && rofi_in 2 | grep -qx "plain"'
+
+echo "== J2: Animations/ → flux-wall.sh select: do flux-wall.dat tylko istniejąca animacja (T7)"
+# rofi -dmenu oddaje też wpisany tekst bez dopasowania; nazwa staje się ścieżką
+# shadera, więc select sprawdza ją, zanim cokolwiek zapisze.
+echo plain > "$A/data/flux-wall.dat"
+menu "Animations/" "orb-spinnin'   ♪ music visualisation"
+check "wybór z menu w flux-wall.dat (apostrof, bez dopisku ♪)" '[[ "$(<"$A/data/flux-wall.dat")" == "orb-spinnin'"'"'" ]]'
+bad_kept=1
+for bad in "nie-ma-takiej" "../shaders/plain" "Plain" "plain;x"; do
+    echo plain > "$A/data/flux-wall.dat"; : > "$MOCK_LOG"
+    menu "Animations/" "$bad"
+    if [[ "$(<"$A/data/flux-wall.dat")" != plain ]] || ! grep -q "NOTIFY: .*failed to start" "$MOCK_LOG"; then
+        bad_kept=0; echo "    '$bad' → flux-wall.dat: $(<"$A/data/flux-wall.dat")"
+    fi
+done
+check "zła nazwa (brak pliku, ../, wielkie litery, ;): wybór bez zmian, krytyczne powiadomienie" '(( bad_kept == 1 ))'
 
 echo ""
 echo "passed: $PASS, failed: $FAIL"

@@ -13,6 +13,8 @@
 #   link WEWNĄTRZ rices/<rice>/<folder>/ i zostawić mieszany rice.
 #   Inwariant z INSTRUCTIONS: przełączenie usuwa WSZYSTKIE symlinki do
 #   rices/ przed podlinkowaniem nowego (brak wycieku poprzedniego rice'a).
+#   T7 (audyt 2026-11-05): zajęta blokada musi kończyć się kodem 1 bez
+#   zmiany rice'a — mutant „kod 0” przechodził cały run-all.
 #   Uruchom: bash tests/switch-rice.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -110,6 +112,25 @@ echo "== blokada nie zostaje w procesach tła (kolejne Super+T nie wisi)"
 start=$(date +%s)
 MOCK_WAYBAR_SLEEP=60 sw alfa; MOCK_WAYBAR_SLEEP=60 sw beta
 check "dwa przełączenia po sobie < 10 s"        '(( $(date +%s) - start < 10 ))'
+
+echo "== zajęta blokada: drugie Super+T czeka, a po limicie nic nie zmienia (T7)"
+# Proces trzymający blokadę: exec sleep zostawia ten sam PID z otwartym fd, więc
+# kill zwalnia blokadę od razu. Znacznik w pliku = blokada naprawdę wzięta.
+LOCK="$XDG_RUNTIME_DIR/archenemy-switch-rice.lock"
+sw beta
+( exec 8>"$LOCK"; flock 8; : > "$T/held"; exec sleep 30 ) & holder=$!
+for _ in $(seq 1 200); do [[ -e "$T/held" ]] && break; sleep 0.05; done
+: > "$MOCK_LOG"
+SWITCH_RICE_LOCK_WAIT=1 sw alfa; rc=$?
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null; rm -f "$T/held"
+check "zajęta blokada: kod 1, nie sukces"              '(( rc == 1 ))'
+check "zajęta blokada: rice bez zmian (beta)"         '[[ "$(<"$A/.current_rice")" == beta && "$(link_of hypr)" == "$A/rices/beta/hypr" ]]'
+check "zajęta blokada: powiadomienie, bez 'applied'"  'grep -q "NOTIFY: .*Another rice switch" "$MOCK_LOG" && ! grep -q "applied" "$MOCK_LOG"'
+( exec 8>"$LOCK"; flock 8; : > "$T/held"; sleep 1 ) & holder=$!
+for _ in $(seq 1 200); do [[ -e "$T/held" ]] && break; sleep 0.05; done
+SWITCH_RICE_LOCK_WAIT=10 sw alfa; rc=$?
+wait "$holder" 2>/dev/null; rm -f "$T/held"
+check "blokada zwolniona w trakcie czekania: przełącza" '(( rc == 0 )) && [[ "$(<"$A/.current_rice")" == alfa && "$(link_of hypr)" == "$A/rices/alfa/hypr" ]]'
 
 echo "== kolejność skutków: flux-wall startuje już dla nowego rice'a (T9)"
 # Flaga --dither idzie za rice'em z .current_rice — autostart przed zapisem
