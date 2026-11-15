@@ -441,7 +441,9 @@ archenemy/
 │                                     #   run-all-timeout.sh — that limit on a copy of run-all.sh with stub
 │                                     #   suites: hung, TERM-ignoring, red, exit 124 before the limit (plain ✗,
 │                                     #   not hung) and skipping (exit 0 = ✓); Ctrl+C, SIGTERM and SIGHUP
-│                                     #   (closed terminal) stop the run together with the current suite.
+│                                     #   (closed terminal) stop the run together with the current suite;
+│                                     #   suites get default INT/QUIT/HUP handling even when the run was
+│                                     #   started with SIGHUP ignored (nohup, a tool's background job).
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
     ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.

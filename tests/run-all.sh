@@ -50,7 +50,12 @@ for t in "$DIR"/*.sh; do
     # W tle, bo tylko `wait` da się przerwać pułapką; SIGINT i SIGQUIT
     # przywrócone, bo proces w tle nieinteraktywnej powłoki ma je ignorowane
     # (pułapka INT w pakiecie albo w testowanym instalatorze by nie działała).
-    env --default-signal=INT,QUIT timeout -k 10 "$LIMIT" bash "$t" < /dev/null > "$LOG" 2>&1 &
+    # SIGHUP też: bieg spod nohup (albo zadanie w tle narzędzia) dziedziczy go
+    # ignorowanego, a bash nie złapie pułapką sygnału ignorowanego na wejściu —
+    # testy SIGHUP pakietów zależałyby od tego, kto puścił bieg. Zamknięcie
+    # terminala i tak nie trafia do pakietu (osobna grupa `timeout`), więc
+    # nohup dalej chroni sam run-all.
+    env --default-signal=INT,QUIT,HUP timeout -k 10 "$LIMIT" bash "$t" < /dev/null > "$LOG" 2>&1 &
     tpid=$!
     wait "$tpid"; rc=$?
     tpid=""

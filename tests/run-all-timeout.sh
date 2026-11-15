@@ -123,6 +123,14 @@ kill -INT $$
 echo "  ✗ SIGINT zignorowany"
 exit 1
 EOF
+# To samo dla SIGHUP: sygnał ignorowany na wejściu (nohup, zadanie w tle
+# narzędzia) dziedziczy się i bash nie da go już złapać pułapką.
+cat > "$T/stubs/g-hup.sh" <<'EOF'
+trap 'echo "Wynik: pułapka HUP działa"; exit 0' HUP
+kill -HUP $$
+echo "  ✗ SIGHUP zignorowany"
+exit 1
+EOF
 # Kod 124 bez przekroczenia limitu (np. własny `timeout` w pakiecie) to zwykła
 # porażka, nie „zawieszony”.
 cat > "$T/stubs/h-124.sh" <<'EOF'
@@ -163,6 +171,11 @@ check "kod 124 przed limitem: zwykłe ✗, bez „zawieszony”"  '[[ $rc -eq 1 
 suite "$T/d" g-int.sh
 out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash "$T/d/run-all.sh" 2>&1)"; rc=$?
 check "pakiet dostaje SIGINT jak z terminala, nie ignorowany" '[[ $rc -eq 0 && "$out" == *"✓ g-int.sh — Wynik: pułapka INT działa"* ]]'
+suite "$T/g" g-hup.sh
+# run-all puszczony z SIGHUP ignorowanym (jak spod nohup): pakiet i tak ma
+# dostać domyślną obsługę, inaczej jego test SIGHUP zależy od tego, kto puścił bieg.
+out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash -c 'trap "" HUP; exec bash "$1"' _ "$T/g/run-all.sh" 2>&1)"; rc=$?
+check "pakiet dostaje SIGHUP z domyślną obsługą, także spod nohup" '[[ $rc -eq 0 && "$out" == *"✓ g-hup.sh — Wynik: pułapka HUP działa"* ]]'
 
 echo "== C: przerwanie biegu w trakcie wiszącego pakietu"
 suite "$T/c" b-hang.sh
@@ -171,11 +184,14 @@ suite "$T/c" b-hang.sh
 # własny katalog PID-ów: pliki z sekcji A zostają dla cleanup (procesy, które
 # przeżyły regresję, i tak zostaną dobite).
 # Proces w tle nieinteraktywnej powłoki ma SIGINT ignorowany (i niepodmienialny
-# pułapką) — env przywraca domyślny, jak przy Ctrl+C w terminalu.
+# pułapką) — env przywraca domyślny, jak przy Ctrl+C w terminalu. SIGHUP tak
+# samo: test puszczony spod nohup (albo jako zadanie w tle narzędzia) dziedziczy
+# go ignorowanego i pułapka HUP w run-all nie działa — dawało to 26 ✓ / 1 ✗
+# w pełnym biegu, a 27/0 w terminalu (scalenie 2026-11-15).
 interrupt() {
     local sig="$1" label="$2" guard runall_pid t0
     PIDS="$T/pids-c-$sig"; mkdir -p "$PIDS"
-    RUN_ALL_TIMEOUT=60 env --default-signal=INT timeout -k 5 30 bash "$T/c/run-all.sh" > "$T/c-$sig.out" 2>&1 &
+    RUN_ALL_TIMEOUT=60 env --default-signal=INT,HUP timeout -k 5 30 bash "$T/c/run-all.sh" > "$T/c-$sig.out" 2>&1 &
     guard=$!
     for _ in $(seq 100); do [[ -s "$PIDS/b-hang.pid" ]] && break; sleep 0.1; done
     runall_pid="$(pgrep -P "$guard" -f 'c/run-all.sh' | head -1)"
