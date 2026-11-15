@@ -365,6 +365,10 @@ archenemy/
 │                                     #   install-summary.sh — installer steps cut out of install.sh on fake
 │                                     #   sudo/pacman/yay: failed optional packages and [6.5] installer exit codes
 │                                     #   land in the summary; the banner claims full success only without them.
+│                                     #   install-main.sh — the WHOLE install.sh on a copy of the repo in a temporary
+│                                     #   HOME, in a pty (tests/lib/drive-pty.py answers only known prompts) on fake
+│                                     #   sudo/pacman/yay/systemctl/hyprctl/ufw: the effect of every step is read back
+│                                     #   (files, links, service calls) and a second run changes no file.
 │                                     #   install-aur.sh — install/lib/aur.sh on fake git/makepkg/yay: fresh
 │                                     #   mktemp build dir, cleanup, review on request, ✓ only with yay in PATH.
 │                                     #   shellcheck.sh — `shellcheck -S info -e SC1091` on every tracked script;

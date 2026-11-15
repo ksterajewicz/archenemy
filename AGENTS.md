@@ -259,6 +259,10 @@ Rules that follow directly from the table:
   report through exit codes (`install.sh` [6.5]: 0 done or declined, 1
   failed, 2 manual boot entries), and the closing banner claims full
   success only with an empty skip list (`bash tests/install-summary.sh`).
+  `bash tests/install-main.sh` runs the whole installer in a pty on fake
+  commands and reads back the effect of every step; a second run must not
+  change any file. A new prompt in `install.sh` needs a line in its answer
+  list, otherwise the suite stops on the unknown prompt.
 - **`white-blue` / `tron` parity:** every NON-visual change (functionality,
   binds, sources, window rules, script hooks) goes to BOTH at once, never
   to just one. `white-blue_beta` is legacy — bug fixes ONLY for what it
