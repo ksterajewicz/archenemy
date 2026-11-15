@@ -129,6 +129,13 @@ Rules that follow directly from the table:
   new shader, and don't encode the look in the name (`dither-*` names stay
   only because renaming would break saved `Super+W` choices).
   `bash tests/flux-wall-dither.sh` checks both the wrapper and every shader.
+- **flux-wall: every shader declares `precision highp sampler2D;`** — each
+  `.frag` and every GLSL source built into `engine.c` that uses a sampler
+  (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00
+  defaults samplers to `lowp`; Mesa honours it and rounds `texelFetch`
+  results (particle positions came back with ~8-bit precision), NVIDIA
+  ignores it, so the bug is invisible on NVIDIA. `*.update.glsl` files get
+  it from `UPDATE_PRELUDE`. `bash tests/flux-wall-shaders.sh` checks it.
 - **Machine generators are a single source of truth**:
   `scripts/hypr/lib/gen-workspaces.sh` and `gen-autostart.sh` are called
   from both `install.sh` and the live switchers (`workspace-mode-switch.sh`).

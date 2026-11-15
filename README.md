@@ -288,6 +288,8 @@ archenemy/
 │                                     #   self-check, installer step [3]. `bash tests/machine-layer.sh`.
 │                                     #   flux-wall-bars.sh — offscreen render of `bars` at both monitor sizes,
 │                                     #   peak marks must land on BOTH halves (needs `make -C src/flux-wall tools`).
+│                                     #   flux-wall-shaders.sh — static check: every flux-wall shader (.frag files and
+│                                     #   GLSL built into engine.c) declares `precision highp sampler2D` before using a sampler.
 │                                     #   flux-wall-dither.sh — flux-wall.sh passes --dither only for the active
 │                                     #   dither-flux rice (fake binary); offscreen: --dither = palette colors only,
 │                                     #   --no-dither = smooth gradient, with spectrogram unchanged by the flag (render part skips without tools).
@@ -427,7 +429,7 @@ scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump
 
 Runtime logs go to `$XDG_RUNTIME_DIR/flux-wall.log` (or `/tmp/flux-wall.log` without that variable). `doctor` reports the checkout, binary age and capabilities, shaders, saved choice, process and log.
 
-**Adding shaders.** A single-pass animation is a `.frag` file. A matching `<name>.update.glsl` enables the particle engine: positions and fading trails live in floating-point textures, with parameters from `#pragma flux` declarations. Supported uniforms and parameters are defined in `src/flux-wall/engine.h` and implemented in `engine.c`. Add previews with `src/flux-wall/tools/render-previews.sh -r <rice>` after building the tools. Dithering must follow the uniform rather than the animation name. Accumulator reads at computed columns need a small band (`bars` uses `xc-1..xc+1`), because point stamps may land one pixel to the left; `tests/flux-wall-bars.sh` checks both screen halves. `tests/flux-wall-dither.sh` checks wrapper flags and, when tools are built, rendering.
+**Adding shaders.** A single-pass animation is a `.frag` file. A matching `<name>.update.glsl` enables the particle engine: positions and fading trails live in floating-point textures, with parameters from `#pragma flux` declarations. Supported uniforms and parameters are defined in `src/flux-wall/engine.h` and implemented in `engine.c`. Every shader declares `precision highp sampler2D;` before its first sampler, because GLSL ES defaults samplers to low precision and Mesa then rounds texture reads; `tests/flux-wall-shaders.sh` checks it. Add previews with `src/flux-wall/tools/render-previews.sh -r <rice>` after building the tools. Dithering must follow the uniform rather than the animation name. Accumulator reads at computed columns need a small band (`bars` uses `xc-1..xc+1`), because point stamps may land one pixel to the left; `tests/flux-wall-bars.sh` checks both screen halves. `tests/flux-wall-dither.sh` checks wrapper flags and, when tools are built, rendering.
 
 ## Rices
 

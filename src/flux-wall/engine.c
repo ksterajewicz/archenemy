@@ -85,6 +85,7 @@ static const char *UPDATE_PRELUDE =
 static const char *VS_SPLAT =
     "#version 300 es\n"
     "precision highp float;\n"
+    "precision highp sampler2D;   /* w shaderze wierzchołków też domyślnie lowp — texelFetch pozycji jak w UPDATE_PRELUDE */\n"
     "uniform sampler2D pos;\n"
     "uniform int   P;\n"
     "uniform int   n_active;\n"
