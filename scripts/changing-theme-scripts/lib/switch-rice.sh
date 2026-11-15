@@ -51,6 +51,23 @@ fi
 # nienaprawialnym z menu — .current_rice mówił „aktywny", a stan był popsuty.
 # Ponowne nałożenie jest idempotentne i tanie.
 
+# ─── BŁĘDY CONFIGU „PRZED” ────────────────────────────────────────────────────
+# Odczyt PRZED podlinkowaniem: Hyprland z autoreloadem wczytuje zmieniony config
+# przez inotify, zanim padnie `hyprctl reload`, więc odczyt po linkowaniu mógłby
+# już zawierać nowy błąd i reload wyglądałby na czysty (lib/hypr-apply.sh).
+# Bez reloadu ani powiadomień w trybie „tylko linki” (install.sh [9]).
+HYPR_APPLY_LIB="$ARCHENEMY_DIR/scripts/hypr/lib/hypr-apply.sh"
+if [[ -f "$HYPR_APPLY_LIB" ]]; then
+    # shellcheck source=../../hypr/lib/hypr-apply.sh
+    source "$HYPR_APPLY_LIB"
+else
+    # Niepełne drzewo: dawny goły reload, bez odczytu błędów.
+    hypr_config_errors() { :; }
+    hypr_reload_checked() { hyprctl reload >/dev/null 2>&1 || return 1; }
+fi
+HYPR_ERRORS_BEFORE=""
+[[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || HYPR_ERRORS_BEFORE="$(hypr_config_errors)"
+
 # ─── SYMLINKI ─────────────────────────────────────────────────────────────────
 
 # Sprzątanie: usuń z ~/.config KAŻDY symlink wskazujący na jakikolwiek rice.
@@ -110,7 +127,10 @@ FLUX_WALL="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
 
 # ─── PRZEŁADOWANIE ───────────────────────────────────────────────────────────
 
-hyprctl reload 9>&-
+# Sukces = brak NOWYCH błędów configu po reloadzie, nie kod wyjścia hyprctl
+# (kody: lib/hypr-apply.sh). Wynik ogłasza powiadomienie na końcu.
+HYPR_RELOAD_ERRORS="$(hypr_reload_checked "$HYPR_ERRORS_BEFORE" 9>&-)"
+HYPR_RELOAD_RC=$?
 
 # Waybar nie łapie zmian configu po hyprctl reload — trzeba go zrestartować.
 # Poczekaj, aż stara instancja REALNIE zniknie: start nowej obok umierającej
@@ -150,4 +170,11 @@ fi
 # więc restart hyprpapera przy zmianie rice'a nie jest już potrzebny —
 # tapety przywraca --restore wyżej (z własnym fallbackiem restartu).
 
-notify-send "archenemy" "Rice '$RICE_NAME' applied."
+# „applied” tylko, gdy Hyprland wczytał config bez nowych błędów (albo nie ma
+# sesji: zmiana wejdzie przy starcie). Inaczej krytyczne powiadomienie z
+# pierwszym błędem — linki zostają, poprawkę wskazuje treść błędu.
+case $HYPR_RELOAD_RC in
+    0|3) notify-send "archenemy" "Rice '$RICE_NAME' applied." ;;
+    2)   notify-send -u critical "archenemy" "Rice '$RICE_NAME' switched, but Hyprland reports a config error: $(head -n1 <<<"$HYPR_RELOAD_ERRORS")" ;;
+    *)   notify-send -u critical "archenemy" "Rice '$RICE_NAME' switched, but Hyprland did not respond to reload — reload it manually." ;;
+esac

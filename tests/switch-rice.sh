@@ -32,14 +32,26 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
-for c in hyprctl makoctl pkill; do printf '#!/bin/bash\nexit 0\n' > "$T/bin/$c"; done
+for c in makoctl pkill; do printf '#!/bin/bash\nexit 0\n' > "$T/bin/$c"; done
+# hyprctl: log wywołań; plik $MOCK_BROKEN = config rice'a beta ma błąd, widoczny
+# w configerrors od chwili podlinkowania (Hyprland z autoreloadem czyta zmiany
+# przez inotify jeszcze przed `hyprctl reload`).
+cat > "$T/bin/hyprctl" <<'MOCK'
+#!/bin/bash
+echo "hyprctl $*" >> "$MOCK_LOG"
+if [[ "$1" == configerrors ]]; then
+    [[ -f "$MOCK_BROKEN" && "$(readlink "$HOME/.config/hypr")" == */rices/beta/hypr ]] && echo "hl.bind: bad rule in beta"
+    echo
+fi
+exit 0
+MOCK
 # waybar żyje w tle jak prawdziwy (MOCK_WAYBAR_SLEEP s) — sprawdza, czy nie
 # dziedziczy blokady przełącznika; PID-y do posprzątania w $T/waybar.pids.
 printf '#!/bin/bash\necho $$ >> "$MOCK_PIDS"\nexec sleep "${MOCK_WAYBAR_SLEEP:-0}"\n' > "$T/bin/waybar"
 printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"            # nic nie działa w tle
 printf '#!/bin/bash\necho "NOTIFY: $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
 chmod +x "$T/bin"/*
-export PATH="$T/bin:$PATH" MOCK_LOG="$T/log" MOCK_PIDS="$T/waybar.pids"
+export PATH="$T/bin:$PATH" MOCK_LOG="$T/log" MOCK_PIDS="$T/waybar.pids" MOCK_BROKEN="$T/beta-broken"
 
 # ─── atrapa $HOME/archenemy: dwa rice'y + prawdziwa biblioteka przełącznika ──
 export HOME="$T/home" XDG_RUNTIME_DIR="$T/run"
@@ -47,6 +59,7 @@ A="$HOME/archenemy"; C="$HOME/.config"
 mkdir -p "$A/rices/alfa/hypr" "$A/rices/alfa/mako" "$A/rices/beta/hypr" "$A/rices/beta/waybar" \
          "$A/scripts/changing-theme-scripts" "$C" "$XDG_RUNTIME_DIR"
 ln -s "$REPO/scripts/changing-theme-scripts/lib" "$A/scripts/changing-theme-scripts/lib"
+ln -s "$REPO/scripts/hypr" "$A/scripts/hypr"    # lib/hypr-apply.sh (reload z odczytem błędów)
 for r in alfa beta; do
     printf '#!/bin/bash\nRICE_NAME="%s"\nsource "$(dirname "$(readlink -f "$0")")/lib/switch-rice.sh"\n' "$r" \
         > "$A/scripts/changing-theme-scripts/$r.sh"
@@ -94,6 +107,15 @@ echo "== blokada nie zostaje w procesach tła (kolejne Super+T nie wisi)"
 start=$(date +%s)
 MOCK_WAYBAR_SLEEP=60 sw alfa; MOCK_WAYBAR_SLEEP=60 sw beta
 check "dwa przełączenia po sobie < 10 s"        '(( $(date +%s) - start < 10 ))'
+
+echo "== Super+T: 'applied' tylko po reloadzie bez nowych błędów configu (A15)"
+HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw alfa; : > "$MOCK_LOG"; touch "$MOCK_BROKEN"
+HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw beta; rm -f "$MOCK_BROKEN"
+check "błąd configu: reload przez hyprctl"                'grep -q "^hyprctl reload" "$MOCK_LOG"'
+check "błąd configu: bez 'applied'"                       '! grep -q "applied" "$MOCK_LOG"'
+check "błąd configu: treść błędu w powiadomieniu"         'grep -q "NOTIFY: .*config error.*bad rule in beta" "$MOCK_LOG"'
+: > "$MOCK_LOG"; HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw alfa
+check "czysty config: reload i Rice applied"              'grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Rice .alfa. applied" "$MOCK_LOG"'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

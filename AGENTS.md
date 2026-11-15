@@ -222,7 +222,12 @@ Rules that follow directly from the table:
   `pgrep`, `pkill`, `setsid` mocks in `tests/appbinds-menu.sh`.
 - **After changing a Hyprland config from a script, use
   `scripts/hypr/lib/hypr-apply.sh`** (`hypr_reload_checked`): success means no
-  new `hyprctl configerrors`, not the exit code of `hyprctl reload`.
+  new `hyprctl configerrors`, not the exit code of `hyprctl reload`. Read
+  `hypr_config_errors` BEFORE writing the file and pass it as the first
+  argument: Hyprland's autoreload picks the file up through inotify before
+  `hyprctl reload`, so errors read after the write already contain the new
+  error and the reload looks clean. Super+T (`lib/switch-rice.sh`) reloads the
+  same way and only says "applied" after a clean reload.
 - **App launcher: `scripts/rofi/rofi_drun.sh` is the only way to open
   `rofi -show drun`.** On Enter with no match rofi runs the typed text as a
   command and has no option to disable that in drun mode, so the script sets
