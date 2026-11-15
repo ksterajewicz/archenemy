@@ -362,6 +362,8 @@ archenemy/
 │                                     #   without `performance` still cycles (only listed profiles, failed step skipped).
 │                                     #   volume-bar.sh — waybar volume module on fake pactl/wpctl: headphones in any locale.
 │                                     #   timer.sh — waybar timer: running → finished, one notification with two bars at once.
+│                                     #   rofi-power-menu.sh — Super+RShift power menu on fake rofi/pidof/systemctl (nothing
+│                                     #   is shut down): poweroff under hyprlock, confirm with Yes, Esc/No do nothing.
 │                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
 │                                     #   fake /sys/module: success only with vboxdrv loaded, reboot code 2.
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
