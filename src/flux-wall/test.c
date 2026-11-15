@@ -1,7 +1,8 @@
 /*
- * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL)
- * i jedna sekcja GL na EGL surfaceless (silnik bez Waylanda; bez EGL —
- * „POMINIĘTO” w wyjściu, nie błąd).
+ * archenemy - flux-wall: testy jednostkowe funkcji czystych (bez Waylanda/EGL),
+ * CLI binarki (kody wyjścia 1 i 2 — run_cli niżej), wątek audio z pliku
+ * i sekcje GL na EGL surfaceless (silnik bez Waylanda: --once po zmianie
+ * rozmiaru, błędny shader; bez EGL — „POMINIĘTO” w wyjściu, nie błąd).
  * Budowane przez `make test`: main.c wchodzi z main() przemianowanym na
  * flux_wall_main, więc tu jest własny main(). libpulse-simple zastępuje
  * atrapa niżej (pa_simple_*) — testy nie łączą się z serwerem dźwięku.
@@ -382,6 +383,29 @@ int main(void) {
         if (raw.spectrum[i] < 0.05f || abs(kmax - i) > 1) dead++;
     }
     CHECK(dead == 0, "każde z 32 pasm log reaguje na sinus w swoim środku (żadnych martwych słupków)");
+    /* Ułamkowe pokrycie (ta sama naprawa 2026-09-17): bin FFT na granicy dwóch
+     * pasm dzieli moc między nie proporcjonalnie do nakładania się — nic nie
+     * ginie, nic nie liczy się podwójnie. RMS pasma = sqrt(suma / szerokość
+     * w binach), więc Σ rms² · szerokość = moc wszystkich binów. Sinusy w środku
+     * binów 6, 21 i 85 — każdy z nich leży na granicy 150, 500 albo 2000 Hz.
+     * Bin brany w całości (waga 1) liczy taki bin w obu pasmach. */
+    {
+        const float hz = (float)AUDIO_RATE / AUDIO_FFT_N;
+        const int edge_bins[] = { 6, 21, 85 };
+        int bad = 0;
+        for (int e = 0; e < 3; e++) {
+            for (int j = 0; j < AUDIO_FFT_N; j++)
+                sig[j] = 0.5f * sinf(2.0f * TEST_PI * (float)edge_bins[e] * hz * (float)j / AUDIO_RATE);
+            audio_fft_power(&fft, sig, pw);
+            audio_bands(pw, AUDIO_FFT_N / 2 + 1, AUDIO_RATE, sig, AUDIO_FFT_N, &raw);
+            float e_bands = (raw.bass * raw.bass * (150.0f - 20.0f) + raw.lowmid * raw.lowmid * (500.0f - 150.0f) +
+                             raw.mid * raw.mid * (2000.0f - 500.0f) + raw.high * raw.high * (10000.0f - 2000.0f)) / hz;
+            float e_all = 0.0f;
+            for (int k = 0; k <= AUDIO_FFT_N / 2; k++) e_all += pw[k];
+            if (fabsf(e_bands / e_all - 1.0f) > 0.01f) { bad++; printf("       bin %d: pasma %.4f, całość %.4f\n", edge_bins[e], e_bands, e_all); }
+        }
+        CHECK(bad == 0, "bin na granicy pasm dzielony proporcjonalnie (Σ energii pasm = energia widma ±1%)");
+    }
 
     printf("audio_spectro_column / pasma spektrogramu\n");
     {
@@ -454,6 +478,22 @@ int main(void) {
     struct audio_beat bt2 = {0}; int onsets = 0;
     for (int i = 0; i < 100; i++) if (audio_beat_step(&bt2, 0.8f, 0.02f) >= 0.99f) onsets++;
     CHECK(onsets == 1, "ton ciągły → dokładnie jeden onset, bez serii");
+    /* Odstęp 150 ms między uderzeniami: drugie, mocniejsze uderzenie 100 ms po
+     * pierwszym (ponad progiem 1.5 × średnia) się nie liczy, trzecie 200 ms po
+     * pierwszym — tak. */
+    {
+        struct audio_beat b3 = {0};
+        float o1 = 0, o2 = 0, o3 = 0;
+        for (int i = 0; i <= 20; i++) {                            /* krok 20 ms; tło 0.1 */
+            float in = i == 10 ? 1.0f : (i == 15 || i == 20) ? 2.0f : 0.1f;
+            float o = audio_beat_step(&b3, in, 0.02f);
+            if (i == 10) o1 = o;
+            if (i == 15) o2 = o;                                   /* 100 ms po pierwszym */
+            if (i == 20) o3 = o;                                   /* 200 ms po pierwszym */
+        }
+        CHECK(o1 >= 0.99f && o2 < 0.99f, "uderzenie 100 ms po poprzednim → bez detekcji (odstęp 150 ms)");
+        CHECK(o3 >= 0.99f, "uderzenie 200 ms po poprzednim → detekcja");
+    }
 
     printf("audio_features_age\n");
     struct audio_features fe = { .level = 1.0f, .bass = 1.0f, .t = 10.0 };
@@ -483,6 +523,27 @@ int main(void) {
       int expect = (int)floorf(logf(1000.0f / AUDIO_SPECTRO_LO) / logf(AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO) * AUDIO_SPECTRO_BINS);
       /* szczyt AGC z basu 60 Hz jeszcze nie opadł (zanik ~2 s) → ton 1 kHz kilka dB pod 0 dB, ale > 0.9 */
       CHECK(abs(smax - expect) <= 1 && st.out.spectro[smax] > 0.9f, "ton 1 kHz w łańcuchu → szczyt spektrogramu > 0.9 we właściwym paśmie"); }
+
+    /* Bramka szumu −60 dBFS (AUDIO_GATE 0.001 RMS): cichy szum toru nie może
+     * zostać wzmocniony przez auto-gain do pełnej reakcji. Sinus 60 Hz o RMS
+     * 0.0005 (−66 dBFS) → wszystko dokładnie 0; RMS 0.003 (−50 dBFS) → reaguje
+     * (level = 0.003 / podłoga 0.004 ≈ 0.75). Sama cisza cyfrowa (zera) tego
+     * nie sprawdza — zera dają 0 także bez bramki. */
+    printf("audio_analyze: bramka ciszy\n");
+    {
+        static struct audio_state gs;
+        const float amp[2] = { 0.0005f * 1.41421356f, 0.003f * 1.41421356f };
+        float lvl[2], bas[2]; int nz[2];
+        for (int g = 0; g < 2; g++) {
+            audio_state_init(&gs);
+            for (int i = 0; i < AUDIO_FFT_N; i++) sig[i] = amp[g] * sinf(2.0f * TEST_PI * 60.0f * (float)i / AUDIO_RATE);
+            for (int i = 0; i < 20; i++) audio_analyze(&gs, sig, 0.02f, 1.0 + i * 0.02);
+            lvl[g] = gs.out.level; bas[g] = gs.out.bass; nz[g] = 0;
+            for (int k = 0; k < AUDIO_SPECTRO_BINS; k++) if (gs.out.spectro[k] != 0.0f) nz[g]++;
+        }
+        CHECK(lvl[0] == 0.0f && bas[0] == 0.0f && nz[0] == 0, "−66 dBFS (pod bramką) → level, bass i spektrogram dokładnie 0");
+        CHECK(lvl[1] > 0.5f && nz[1] > 0, "−50 dBFS (nad bramką) → reaguje (level > 0.5, spektrogram niepusty)");
+    }
 
     printf("audio_start z pliku (wątek, bez serwera)\n");
     {
@@ -535,6 +596,47 @@ int main(void) {
         remove(fpath);
     }
 
+    /* Miks do analizy to (L+R)/2, nie jeden kanał: sam R ma bas (pierwszy
+     * test pliku ma sam L). Plik ma dokładnie 10 hopów (0.2 s): fread
+     * kończy się wtedy równo na końcu pliku (got == 0 przy ftell ≠ 0)
+     * i plik ma się zapętlić — stop jest tylko dla pustego pliku. */
+    printf("audio_start z pliku: kanał R, plik krótszy niż bieg (zapętlenie)\n");
+    {
+        char fpath[512]; snprintf(fpath, sizeof fpath, "%s/right.f32", dir);
+        FILE *tf = fopen(fpath, "wb");
+        for (int i = 0; i < 10 * AUDIO_HOP; i++) {
+            float v = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)i / AUDIO_RATE), z = 0.0f;
+            fwrite(&z, sizeof z, 1, tf); fwrite(&v, sizeof v, 1, tf);
+        }
+        fclose(tf);
+        struct audio *au = audio_start(NULL, fpath, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct timespec ts = { 0, 600000000L }; nanosleep(&ts, NULL);
+        struct audio_features snap; audio_snapshot(au, &snap);
+        CHECK(snap.live, "po 0.6 s (trzeci obieg pliku 0.2 s): nadal live — plik się zapętla");
+        CHECK(snap.bass > 0.5f, "bas 80 Hz tylko w kanale R → widoczny w analizie (miks L+R)");
+        float maxl = 0, maxr = 0;
+        for (int i = 0; i < AUDIO_WAVE_N; i++) { if (fabsf(snap.wave[2*i]) > maxl) maxl = fabsf(snap.wave[2*i]); if (fabsf(snap.wave[2*i+1]) > maxr) maxr = fabsf(snap.wave[2*i+1]); }
+        CHECK(maxl == 0.0f && maxr > 0.45f, "przebieg: L cisza, R sinus 0.5");
+        audio_stop(au);
+        remove(fpath);
+    }
+
+    /* Pusty plik: wątek kończy pracę (live = false), zamiast kręcić się
+     * w kółko na pustym odczycie i meldować ciszę jako dźwięk na żywo. */
+    printf("audio_start z pustego pliku\n");
+    {
+        char fpath[512]; snprintf(fpath, sizeof fpath, "%s/empty.f32", dir);
+        write_file(fpath, "");
+        struct audio *au = audio_start(NULL, fpath, false);
+        CHECK(au != NULL, "wątek wystartował");
+        struct timespec ts = { 0, 200000000L }; nanosleep(&ts, NULL);
+        struct audio_features snap; audio_snapshot(au, &snap);
+        CHECK(!snap.live, "po 0.2 s: live = false (pusty plik nie jest pętlą ciszy)");
+        audio_stop(au);
+        remove(fpath);
+    }
+
     /* Audyt 2026-11-05, F8: po udanym otwarciu backoff wracał do 1, a po
      * zerwanym odczycie pętla od razu otwierała strumień ponownie — serwer,
      * który zrywa strumień zaraz po połączeniu, dostawał próby bez przerwy.
@@ -555,6 +657,51 @@ int main(void) {
         struct audio_features snap; audio_snapshot(au, &snap);
         CHECK(!snap.live, "zerwany strumień → live = false");
         audio_stop(au);
+    }
+
+    /* Kody wyjścia to kontrakt z flux-wall.sh (DECYZJE 2026-09-07h): 1 =
+     * argumenty albo plik shadera, 2 = brak Waylanda/layer-shell, 3 = EGL/
+     * shader. Bez kompozytora sprawdzalne są 1 i 2: kod 2 = argumenty
+     * przyjęte, plik wczytany, dopiero brak Waylanda. Kod 3 wymaga
+     * połączenia z kompozytorem (atrapa kompozytora: audyt T4) — decyzje
+     * przed kodem 3 sprawdza sekcja „recovery:” niżej, a błędny shader
+     * (NULL z flux_engine_create) sekcja GL na końcu. */
+    printf("CLI: kody wyjścia (1 = argumenty/plik, 2 = brak Waylanda)\n");
+    {
+        char shader[600], missing[600], log[4096];
+        snprintf(shader, sizeof shader, "%s/cli.frag", dir);
+        snprintf(missing, sizeof missing, "%s/brak.frag", dir);
+        write_file(shader, "#version 300 es\nvoid main(){}\n");
+        struct { char *args[8]; int rc; const char *what; } cases[] = {
+            { { "flux-wall", "-s", shader, NULL }, 2, "poprawny shader → kod 2 (brak Waylanda), nie 1" },
+            { { "flux-wall", "-s", missing, NULL }, 1, "brak pliku shadera → kod 1 (nie 3: wrapper nie myli go z EGL)" },
+            { { "flux-wall", "-s", dir, NULL }, 1, "katalog zamiast shadera → kod 1" },
+            { { "flux-wall", NULL }, 1, "bez -s → kod 1" },
+            { { "flux-wall", "-s", shader, "--bez-takiej-opcji", NULL }, 1, "nieznana opcja → kod 1" },
+            { { "flux-wall", "-s", shader, "-p", "0F1A24,5C87A3,D8E6EE", NULL }, 2, "-p trzy hexy → przyjęte" },
+            { { "flux-wall", "-s", shader, "-p", "0F1A24,5C87A3", NULL }, 1, "-p dwa hexy → kod 1" },
+            { { "flux-wall", "-s", shader, "-f", "0", NULL }, 2, "-f 0 → przyjęte" },
+            { { "flux-wall", "-s", shader, "-f", "1000", NULL }, 2, "-f 1000 (górna granica) → przyjęte" },
+            { { "flux-wall", "-s", shader, "-f", "1001", NULL }, 1, "-f 1001 → kod 1" },
+            { { "flux-wall", "-s", shader, "-f", "-1", NULL }, 1, "-f -1 → kod 1" },
+            { { "flux-wall", "-s", shader, "-f", "abc", NULL }, 1, "-f abc → kod 1" },
+            { { "flux-wall", "-s", shader, "-f", "60x", NULL }, 1, "-f 60x (śmieć po liczbie) → kod 1" },
+            { { "flux-wall", "-s", shader, "-d", "0", NULL }, 2, "-d 0 (dolna granica) → przyjęte" },
+            { { "flux-wall", "-s", shader, "-d", "1", NULL }, 2, "-d 1 (górna granica) → przyjęte" },
+            { { "flux-wall", "-s", shader, "-d", "-0.01", NULL }, 1, "-d -0.01 → kod 1" },
+            { { "flux-wall", "-s", shader, "-d", "abc", NULL }, 1, "-d abc → kod 1" },
+            { { "flux-wall", "-s", shader, "-d", "0.5x", NULL }, 1, "-d 0.5x (śmieć po liczbie) → kod 1" },
+            { { "flux-wall", "-s", shader, "-l", "bottom", NULL }, 2, "-l bottom → przyjęte" },
+            { { "flux-wall", "-s", shader, "-l", "background", NULL }, 2, "-l background → przyjęte" },
+            { { "flux-wall", "-s", shader, "-l", "top", NULL }, 1, "-l top → kod 1" },
+        };
+        for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+            int rc = run_cli(dir, cases[i].args, log, sizeof log);
+            char msg[200];
+            snprintf(msg, sizeof msg, "%s (kod %d)", cases[i].what, rc);
+            CHECK(rc == cases[i].rc, msg);
+        }
+        remove(shader);
     }
 
     printf("CLI: --dither / --no-dither (uniform dither)\n");
@@ -711,7 +858,8 @@ int main(void) {
      * klatka też potrzebuje rozgrzewki — inaczej z obrazu zostawało samo tło
      * do restartu (audyt 2026-11-05, F2). */
     printf("GL: --once po zmianie rozmiaru celu (EGL surfaceless)\n");
-    if (!test_egl_init()) {
+    bool gl_ok = test_egl_init();
+    if (!gl_ok) {
         printf("  POMINIĘTO: brak EGL surfaceless / GLES 3.0 — test wymaga Mesy albo GPU\n");
     } else {
         char gerr[2560];
@@ -740,6 +888,38 @@ int main(void) {
         }
         flux_target_destroy(gt);
         if (ge) flux_engine_destroy(ge);
+    }
+
+    /* Kod 3 = EGL/shader: main.c (build_engine) kończy kodem 3, gdy
+     * flux_engine_create zwróci NULL, i wypisuje `err`. Sam kod 3 wymaga
+     * kompozytora (atrapa kompozytora: audyt T4), tu jest połowa silnika:
+     * shader, który się nie kompiluje albo nie linkuje, daje NULL, a komunikat
+     * mówi, który plik i który etap zawiódł. */
+    printf("GL: błędny shader → flux_engine_create = NULL i komunikat z nazwą pliku (podstawa kodu 3)\n");
+    if (!gl_ok) {
+        printf("  POMINIĘTO: brak EGL surfaceless / GLES 3.0 — test wymaga Mesy albo GPU\n");
+    } else {
+        static const char *BAD_COMPILE =
+            "#version 300 es\nprecision highp float;\nout vec4 c;\nvoid main() { c = vec4(nie_ma_takiej, 1.0); }\n";
+        /* kompiluje się, ale `uv` nie wychodzi z VS_QUAD → błąd linkowania */
+        static const char *BAD_LINK =
+            "#version 300 es\nprecision highp float;\nin vec2 uv;\nout vec4 c;\nvoid main() { c = vec4(uv, 0.0, 1.0); }\n";
+        static const char *BAD_UPDATE = "void main() { o = nie_ma_takiej; }\n";
+        char gerr[2560];
+        gerr[0] = 0;
+        struct flux_engine *b1 = flux_engine_create(BAD_COMPILE, "test-zly.frag", NULL, NULL, gerr, sizeof gerr);
+        CHECK(!b1 && strstr(gerr, "kompilacja shadera (test-zly.frag)"), "błąd kompilacji .frag → NULL, komunikat: kompilacja + plik");
+        gerr[0] = 0;
+        struct flux_engine *b2 = flux_engine_create(BAD_LINK, "test-link.frag", NULL, NULL, gerr, sizeof gerr);
+        CHECK(!b2 && strstr(gerr, "linkowanie programu (test-link.frag)"), "błąd linkowania .frag → NULL, komunikat: linkowanie + plik");
+        gerr[0] = 0;
+        struct flux_engine *b3 = flux_engine_create(ONCE_FRAG, "test-once.frag", BAD_UPDATE, "test-zly.update.glsl",
+                                                    gerr, sizeof gerr);
+        CHECK(!b3 && strstr(gerr, "kompilacja shadera (test-zly.update.glsl)"),
+              "błąd kompilacji .update.glsl → NULL, komunikat z nazwą .update.glsl");
+        if (b1) flux_engine_destroy(b1);
+        if (b2) flux_engine_destroy(b2);
+        if (b3) flux_engine_destroy(b3);
     }
 
     /* sprzątanie */
