@@ -214,8 +214,10 @@ resolve() {
 # Zabij i POCZEKAJ, aż proces naprawdę zniknie — do_start startuje nową
 # instancję zaraz po tym wywołaniu; bez czekania stara i nowa nakładały się
 # na tej samej powierzchni Wayland (ten sam wyścig, który miał waybar).
+# Kod: 0 = proces był i zniknął, 1 = nic nie działało (stop/off mówią wtedy
+# „nie działał”; wcześniej pętla niżej oddawała 0 także bez procesu).
 do_stop() {
-    pkill -x flux-wall 2>/dev/null
+    pkill -x flux-wall 2>/dev/null || return 1
     for _ in $(seq 1 20); do
         pgrep -x flux-wall >/dev/null || return 0
         sleep 0.1
