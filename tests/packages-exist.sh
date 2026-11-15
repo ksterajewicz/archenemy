@@ -12,7 +12,8 @@
 #     - nazwa z listy pacmana musi być w repo; jeśli jest tylko w AUR → ✗;
 #     - nazwa z listy AUR musi być w AUR i NIE w oficjalnych repo (→ ✗,
 #       przenieś na listę pacmana);
-#     - brak sieci / pacmana / bazy multilib = „skip”, NIGDY „✓”.
+#     - brak sieci / pacmana = „skip”, NIGDY „✓”; bez bazy [multilib] skip
+#       tylko dla nazw z multilib (steam, lib32-*), inne nieznane → ✗.
 #   Haki testowe: ARCHENEMY_PKG_DIR (katalog list), ARCHENEMY_AUR_RPC_JSON
 #   (plik z odpowiedzią RPC zamiast sieci; "offline" = udawany brak sieci).
 #   Najpierw autotest logiki na atrapach w mktemp, potem prawdziwe listy.
@@ -51,6 +52,12 @@ aur_json() {
     curl -fsS -m 15 "${url%&}" 2>/dev/null
 }
 
+# is_multilib_name <nazwa> — nazwy z [multilib]; ten sam wzorzec co ostrzeżenie
+# install.sh [5] (`case "$p" in steam|lib32-*)`, sprzężenie pilnuje autotest).
+# Bez zsynchronizowanej bazy [multilib] (VPS, CI) skip dostają TYLKO one —
+# każda inna nieznana nazwa to ✗ (R1 P1: literówka przechodziła jako skip).
+is_multilib_name() { case "$1" in steam|lib32-*) return 0 ;; esac; return 1; }
+
 # check_lists <katalog> — wszystkie reguły dla czterech list w katalogu.
 check_lists() {
     local dir="$1" f n json have_pacman=1 have_multilib=1 aur_ok=1
@@ -80,8 +87,9 @@ check_lists() {
         if ((!have_pacman)); then skip "$n — brak pacmana albo bazy sync (pacman -Sy robi właściciel)"; continue; fi
         if in_repo "$n"; then ok "pacman: $n"; continue; fi
         if ((aur_ok)) && in_aur "$n"; then fail "pacman: $n jest tylko w AUR — przenieś na listę *-aur.txt"
-        elif ((!have_multilib)); then skip "$n — nie ma w lokalnych repo, a baza [multilib] nie jest zsynchronizowana"
-        else fail "pacman: $n — nie istnieje w repo (pacman -Slq)"
+        elif ((!have_multilib)) && is_multilib_name "$n"; then skip "$n — pakiet z [multilib], a baza [multilib] nie jest zsynchronizowana"
+        elif ((!have_multilib)); then fail "pacman: $n — nie istnieje w repo (pacman -Slq; bez [multilib] skip tylko dla steam i lib32-*; nieaktualna baza? pacman -Sy robi właściciel)"
+        else fail "pacman: $n — nie istnieje w repo (pacman -Slq; nieaktualna baza? pacman -Sy robi właściciel)"
         fi
     done
     for n in "${aur[@]}"; do
@@ -102,15 +110,15 @@ mkdir -p "$T/bin" "$T/pkg"
 cat > "$T/bin/pacman" <<'EOF'
 #!/bin/bash
 case "$*" in
-    "-Slq") printf 'hyprland\nswayosd\n'; [[ -n "${MOCK_MULTILIB_MISSING:-}" ]] || echo steam ;;
-    "-Slq multilib") [[ -n "${MOCK_MULTILIB_MISSING:-}" ]] || echo steam ;;
+    "-Slq") printf 'hyprland\nswayosd\n'; [[ -n "${MOCK_MULTILIB_MISSING:-}" ]] || printf 'steam\nlib32-gamemode\n' ;;
+    "-Slq multilib") [[ -n "${MOCK_MULTILIB_MISSING:-}" ]] || printf 'steam\nlib32-gamemode\n' ;;
     *) exit 1 ;;
 esac
 EOF
 chmod +x "$T/bin/pacman"
 printf 'hyprland\n# komentarz\nswayosd-git\n' > "$T/pkg/requirements-pacman.txt"
 printf 'brave-bin\n' > "$T/pkg/requirements-aur.txt"
-printf 'vscodium\nsteam\n' > "$T/pkg/additional-packages-pacman.txt"
+printf 'vscodium\nsteam\nlib32-gamemode\nhyprlandd\n' > "$T/pkg/additional-packages-pacman.txt"
 printf 'omen-fan\nswayosd\n' > "$T/pkg/additional-packages-aur.txt"
 printf '{"resultcount":2,"results":[{"Name":"brave-bin"},{"Name":"vscodium"}],"type":"multiinfo","version":5}' > "$T/rpc.json"
 
@@ -132,6 +140,12 @@ selftest "pakiet z extra na liście AUR → ✗" "✗ AUR: swayosd jest w oficja
 selftest "nazwa pacmana tylko w AUR → ✗" "✗ pacman: vscodium jest tylko w AUR" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json"
 selftest "istniejąca nazwa AUR → ✓" "✓ AUR: brave-bin" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json"
 selftest "brak [multilib] lokalnie → skip, nie ✗" "? skip: steam" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_MULTILIB_MISSING=1
+selftest "brak [multilib] → skip także dla lib32-*" "? skip: lib32-gamemode" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_MULTILIB_MISSING=1
+selftest "brak [multilib]: literówka spoza multilib → ✗, nie skip" "✗ pacman: hyprlandd" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json" MOCK_MULTILIB_MISSING=1
+selftest "z [multilib]: literówka → ✗" "✗ pacman: hyprlandd" ARCHENEMY_AUR_RPC_JSON="$T/rpc.json"
+# shellcheck disable=SC2016  # dosłowny tekst z install.sh, nie rozwinięcie zmiennej
+if grep -qF 'case "$p" in steam|lib32-*)' "$REPO/install/install.sh"; then ok "autotest: wzorzec nazw [multilib] taki sam jak w install.sh [5]"
+else fail "autotest: install.sh [5] zmienił wzorzec nazw [multilib] — zsynchronizuj is_multilib_name"; fi
 selftest "brak sieci → skip dla AUR" "? skip: brave-bin — AUR RPC niedostępne" ARCHENEMY_AUR_RPC_JSON=offline
 out="$(env PATH="$T/bin:$PATH" ARCHENEMY_AUR_RPC_JSON=offline bash "${BASH_SOURCE[0]}" --lists-only "$T/pkg" 2>&1)"
 if [[ "$out" == *"✓ AUR:"* ]]; then fail "autotest: bez sieci pojawił się ✓ dla AUR"; else ok "autotest: bez sieci żadnego ✓ dla AUR"; fi
