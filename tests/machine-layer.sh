@@ -83,6 +83,8 @@ if command -v lua5.4 >/dev/null 2>&1; then
     check "gen-monitors: CR — plik Lua się wczytuje" 'lua5.4 -e "hl={monitor=function(t) assert(t.output==\"\" or t.output==\"DP-7\\r\") end}" -e "dofile(\"$T/ctl-mon.lua\")" </dev/null'
     check "lua_string: Lua czyta te same bajty"  '[[ "$(lua5.4 -e "io.write($(lua_string "$CTL"))" </dev/null)" == "$CTL" ]]'
     check "nazwa z CR: plik Lua się wczytuje"    'lua5.4 -e "hl={workspace_rule=function() end, bind=function() end, dsp={focus=function() end, window={move=function() end}}}" -e "dofile(\"$T/ctl.lua\")" </dev/null'
+else
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — Lua with control characters not executed"
 fi
 check "monitor_desc_usable odrzuca pusty/#/=" '! monitor_desc_usable "" && ! monitor_desc_usable "a#b" && ! monitor_desc_usable "a=b" && monitor_desc_usable "$DESC_EDP"'
 

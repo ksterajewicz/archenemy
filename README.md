@@ -367,7 +367,7 @@ archenemy/
 │                                     #   repo-hygiene.sh — executable bits, Lua dispatch syntax and installer/doctor language;
 │                                     #   no machine data (interface names such as network=wlo1, /home/<login>);
 │                                     #   suites that execute generated Lua in lua5.4 report "? skip" without it
-│                                     #   (their lua5.4 block is run with lua5.4 hidden from PATH).
+│                                     #   (every lua5.4 block is run on its own with lua5.4 hidden from PATH).
 │                                     #   appbinds-menu.sh, tui-keys.sh, tui-lines.sh, tui-contrast.sh — TUI
 │                                     #   dispatch, navigation, line input and palette contrast.
 │                                     #   appbinds-menu.sh also forces a failed write, a dead Hyprland, a dead waybar
@@ -384,8 +384,9 @@ archenemy/
 │                                     #   codes, reload + read-back, switch N, the TUI menu driven via stdin.
 │                                     #   mouse-settings.sh — [m] on a fake HOME/hyprctl/ratbagctl: range checks,
 │                                     #   reload + read-back, generated Lua, emulated and hardware DPI, the menu.
-│                                     #   Without lua5.4 (package lua54) mouse-settings, keyboard-layouts and
-│                                     #   machine-layer print "? skip" and count it in their last line — never OK.
+│                                     #   Without lua5.4 (package lua54) mouse-settings, keyboard-layouts,
+│                                     #   machine-layer and autostart-picker print "? skip" and count it in their
+│                                     #   last line — never OK.
 │                                     #   asus-installation.sh — ASUS installer on a fake pacman: AUR variants
 │                                     #   replaced, success = the package named asusctl, supergfxctl guard.
 │                                     #   power-profile.sh — profile get/next on a fake asusctl with the 6.5.0

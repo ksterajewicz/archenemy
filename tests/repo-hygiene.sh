@@ -105,10 +105,12 @@ echo "== testy wykonania Lua: brak lua5.4 = widoczny skip, nie OK ani cisza"
 # bez śladu. Pakiet, który sprawdza `command -v lua5.4`, ma w gałęzi bez
 # interpretera wywołać skip z tym tekstem i liczyć go w wierszu wyniku.
 # Sam tekst skip w pliku nie wystarcza (przegląd P3-4: `false && skip …`
-# przechodził), więc strażnik WYKONUJE blok `if command -v lua5.4 … fi` każdego
-# takiego pakietu z PATH bez lua5.4 (dowiązania w mktemp) razem z jego skip()
-# i ostatnim echo (wiersz wyniku — jedyny, który pokazuje run-all): blok ma
-# wywołać skip, a wiersz wyniku pokazać 1 pominięcie. Całych pakietów nie
+# przechodził), więc strażnik WYKONUJE każdy blok `if command -v lua5.4 … fi`
+# każdego takiego pakietu, osobno, z PATH bez lua5.4 (dowiązania w mktemp) razem
+# z jego skip() i ostatnim echo (wiersz wyniku — jedyny, który pokazuje run-all):
+# blok ma wywołać skip, a wiersz wyniku pokazać 1 pominięcie (scalenie
+# 2026-11-15: drugi blok bez skip przechodził, bo czytany był tylko pierwszy;
+# warunek wcięty albo w innej formie = ✗, bo nie da się go wyciąć). Całych pakietów nie
 # uruchamia (trzy to ok. 4 min na 1 rdzeniu pod obciążeniem). Gałąź z lua5.4
 # nie biegnie; gdyby warunek się zepsuł, `bash -u` przerywa ją na pierwszej
 # nieustawionej zmiennej, a HOME leży w mktemp.
@@ -128,24 +130,38 @@ for d in "${path_dirs[@]}"; do
     done
 done
 ((${#links[@]})) && ln -s -t "$NOLUA" -- "${links[@]}"
-# lua_skip_ok <plik> — blok lua5.4 wykonany bez lua5.4 woła skip, a ostatnie echo
-# pliku (wiersz wyniku) pokazuje 1 pominięcie.
+# lua_skip_ok <plik> — KAŻDY blok lua5.4 (od `if command -v lua5.4 >/dev/null`
+# na początku wiersza do `fi` na początku wiersza), wykonany osobno bez lua5.4,
+# woła skip, a ostatnie echo pliku (wiersz wyniku) pokazuje 1 pominięcie.
+# Każde niekomentowane wystąpienie warunku musi być takim blokiem: wcięty blok
+# albo inna forma warunku to ✗, nie cichy brak sprawdzenia. Powód porażki
+# w LUA_WHY, liczba sprawdzonych bloków dopisywana do LUA_BLOCKS.
+LUA_BLOCKS=0
 lua_skip_ok() {
-    local blk def res out
-    blk="$(awk '/^if command -v lua5\.4 >\/dev\/null/ {on = 1} on {print} on && /^fi$/ {exit}' "$1")"
+    local blk def res out n_blk n_all k
+    LUA_WHY=""
     def="$(grep -m1 -E '^skip\(\) *\{' "$1")"
     res="$(grep -E '^echo ' "$1" | tail -n 1)"
-    [[ -n "$blk" && -n "$def" && -n "$res" ]] || return 1
-    out="$(cd "$T" && env -i HOME="$HOME" PATH="$NOLUA" LC_ALL=C.UTF-8 \
-        bash -u -c "PASS=0 FAIL=0 SKIP=0"$'\n'"$def"$'\n'"$blk"$'\n'"$res" 2>&1)"
-    [[ "$out" == *'skip: lua5.4 is not installed'* && "$(tail -n 1 <<< "$out")" =~ (skipped:\ 1|\ 1\ skip)$ ]]
+    [[ -n "$def" ]] || { LUA_WHY="brak skip()"; return 1; }
+    [[ -n "$res" ]] || { LUA_WHY="brak wiersza wyniku"; return 1; }
+    n_blk="$(grep -c '^if command -v lua5\.4 >/dev/null' "$1")"
+    n_all="$(grep -vE '^[[:space:]]*#' "$1" | grep -cF 'command -v lua5.4 >/dev/null')"
+    (( n_blk > 0 && n_blk == n_all )) || { LUA_WHY="blok niewycinalny ($n_blk z $n_all)"; return 1; }
+    for ((k = 1; k <= n_blk; k++)); do
+        blk="$(awk -v k="$k" '/^if command -v lua5\.4 >\/dev\/null/ {on = (++i == k)} on {print} on && /^fi$/ {exit}' "$1")"
+        out="$(cd "$T" && env -i HOME="$HOME" PATH="$NOLUA" LC_ALL=C.UTF-8 \
+            bash -u -c "PASS=0 FAIL=0 SKIP=0"$'\n'"$def"$'\n'"$blk"$'\n'"$res" 2>&1)"
+        [[ "$out" == *'skip: lua5.4 is not installed'* && "$(tail -n 1 <<< "$out")" =~ (skipped:\ 1|\ 1\ skip)$ ]] \
+            || { LUA_WHY="blok $k z $n_blk bez skip"; return 1; }
+    done
+    LUA_BLOCKS=$((LUA_BLOCKS + n_blk))
 }
 mapfile -t lua_tests < <(git -C "$REPO" grep -lF 'command -v lua5.4 >/dev/null' -- 'tests/*.sh' ':!tests/repo-hygiene.sh')
 bad=""
 for f in "${lua_tests[@]}"; do
-    lua_skip_ok "$REPO/$f" || bad+=" $f"
+    lua_skip_ok "$REPO/$f" || bad+=" $f ($LUA_WHY)"
 done
-if [[ -z "$bad" ]]; then ok "${#lua_tests[@]} pakiety z lua5.4: bez lua5.4 blok woła skip, wiersz wyniku liczy pominięcie"
+if [[ -z "$bad" ]]; then ok "${#lua_tests[@]} pakiety z lua5.4 ($LUA_BLOCKS bloków): bez lua5.4 każdy blok woła skip, wiersz wyniku liczy pominięcie"
 else fail "bez skip przy braku lua5.4 (blok wykonany z PATH bez lua5.4):$bad"; fi
 # Kontrola strażnika: gałąź bez lua5.4, która nie woła skip (mutacja z przeglądu).
 sed 's/^\( *\)skip "lua5.4 is not installed/\1false \&\& skip "lua5.4 is not installed/' \
@@ -155,6 +171,36 @@ if ! cmp -s "$REPO/tests/machine-layer.sh" "$T/mutant.sh" && ! lua_skip_ok "$T/m
 else
     fail "strażnik przepuszcza gałąź bez lua5.4 bez skip (albo machine-layer.sh nie ma już skip lua5.4)"
 fi
+# Kontrola strażnika na atrapach pakietów (scalenie 2026-11-15: tui dopisało
+# w machine-layer.sh drugi blok lua5.4 bez skip, a strażnik czytał tylko
+# pierwszy): każdy blok osobno, plik bez skip() i blok, którego nie da się
+# wyciąć (wcięty), to ✗; poprawny pakiet z dwoma blokami to ✓.
+# Atrapy to tekst pakietów: $PASS, $SKIP i $1 mają trafić do plików dosłownie.
+# shellcheck disable=SC2016
+{
+    SK='skip "lua5.4 is not installed (atrapa)"'
+    DEF='skip() { SKIP=$((SKIP + 1)); echo "  ? skip: $1"; }'
+    mk_fx() {   # mk_fx <plik> <gałąź else bloku 1> <gałąź else bloku 2> <definicja skip()>
+        printf '%s\n' '#!/bin/bash' 'PASS=0; FAIL=0; SKIP=0' "$4" \
+            'if command -v lua5.4 >/dev/null 2>&1; then' '    PASS=$((PASS + 1))' 'else' "    $2" 'fi' \
+            'echo "== druga sekcja"' \
+            'if command -v lua5.4 >/dev/null 2>&1; then' '    PASS=$((PASS + 1))' 'else' "    $3" 'fi' \
+            'echo "Wynik: $PASS ✓ / $FAIL ✗ / $SKIP skip"' > "$1"
+    }
+    mk_fx "$T/fx-ok.sh" "$SK" "$SK" "$DEF"
+    mk_fx "$T/fx-second.sh" "$SK" 'echo "  - pominięte"' "$DEF"
+    mk_fx "$T/fx-nodef.sh" "$SK" "$SK" ''
+    printf '%s\n' '#!/bin/bash' 'PASS=0; FAIL=0; SKIP=0' "$DEF" 'run() {' \
+        '    if command -v lua5.4 >/dev/null 2>&1; then :; else' "        $SK" '    fi' '}' 'run' \
+        'echo "Wynik: $PASS ✓ / $FAIL ✗ / $SKIP skip"' > "$T/fx-indent.sh"
+}
+fx_bad=""
+lua_skip_ok "$T/fx-ok.sh" || fx_bad+=" poprawny-odrzucony"
+lua_skip_ok "$T/fx-second.sh" && fx_bad+=" drugi-blok-bez-skip"
+lua_skip_ok "$T/fx-nodef.sh" && fx_bad+=" bez-skip()"
+lua_skip_ok "$T/fx-indent.sh" && fx_bad+=" wcięty-blok"
+if [[ -z "$fx_bad" ]]; then ok "strażnik na atrapach: każdy blok osobno, bez skip() i wcięty blok = ✗, poprawny = ✓"
+else fail "strażnik na atrapach przepuszcza albo odrzuca źle:$fx_bad"; fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

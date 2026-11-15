@@ -18,9 +18,10 @@ T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
+skip() { SKIP=$((SKIP + 1)); echo "  ? skip: $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 H="$T/home"; A="$H/archenemy"; DAT="$A/data/autostart-apps.dat"; LUA="$A/config/hypr/autostart-apps.lua"
@@ -136,7 +137,7 @@ if command -v lua5.4 >/dev/null 2>&1; then
     launched_expected="$(printf '1|%s\n' dobra.app 'Space Game' 'zła"nazwa' "it's\\back" padded.app)"
     check "każde ID dociera do gtk-launch jako jeden argument" '[[ ! -s "$T/lua.err" && "$(<"$T/launched")" == "$launched_expected" ]]'
 else
-    echo "  - pominięte: brak lua5.4 (wykonanie autostart-apps.lua)"
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — autostart-apps.lua not executed"
 fi
 
 # Rzeczywisty terminal: etykiety i wpisywane numery muszą wskazywać tę samą aplikację.
@@ -178,5 +179,5 @@ then ok "TTY: globalny numer 11 na drugiej stronie zaznacza app11"
 else fail "TTY: globalny numer 11 na drugiej stronie zaznacza app11"; fi
 
 echo ""
-echo "Wynik: $PASS ✓ / $FAIL ✗"
+echo "Wynik: $PASS ✓ / $FAIL ✗ / $SKIP skip"
 [[ $FAIL -eq 0 ]]
