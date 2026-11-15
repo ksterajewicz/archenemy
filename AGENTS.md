@@ -319,6 +319,55 @@ More architectural context (the full file tree, workspaces, keyboard
 shortcuts) is in `README.md` — that's the source of truth for the repo's
 structure, this file only adds behavioral rules.
 
+## Security rules — installer, AUR, updater
+
+The installer runs code fetched from git with sudo and builds AUR packages,
+so these rules are tested, not just conventions:
+
+- **`install.sh` never runs as root** (EUID guard at the top): it asks for
+  sudo itself, and makepkg/yay must never build AUR packages as root. It
+  drops the cached sudo password on every exit: an `EXIT` trap with
+  `sudo -k` right after the guard. A later `trap … EXIT` (the step [3]
+  `monitors.new` cleanup) replaces it, so every such trap must keep
+  `sudo -k` (`bash tests/install-guards.sh`).
+- **AUR goes through `install/lib/aur.sh` only.** yay is built in a fresh
+  `mktemp -d` (never a fixed `/tmp/yay`) that is removed on every path,
+  with an optional PKGBUILD review; `yay -S` offers an opt-in `--diffmenu
+  --answerdiff All`. Reviews use a pager with a fallback (`$PAGER`, `less`,
+  `more`, `cat`) — a fresh Arch has no `less`. Ctrl+C in the build subshell
+  must stop the installer: clean up, then re-raise the signal (`trap - INT;
+  kill -INT "$BASHPID"`), never `exit 130` (`bash tests/install-aur.sh`).
+- **Test hooks never redirect real `sudo` writes.** The GPU and VirtualBox
+  installers read `ARCHENEMY_ETC_DIR`, `ARCHENEMY_MODULES_DIR` and
+  `ARCHENEMY_SYSMODULE_DIR` only with `ARCHENEMY_TEST=1`; a new hook of
+  that kind gets the same gate and a check in `tests/install-guards.sh`.
+- **Package lists:** `requirements-*.txt` never contain `-git` packages
+  (they build an unreviewed HEAD); a pacman name must be in the official
+  repos, an AUR name in the AUR and not in the official repos
+  (`bash tests/packages-exist.sh`, one AUR RPC request; offline → `skip`).
+  Step [5] counts a package as installed only under its own name
+  (`pacman -Qq <name>` must print that name), never through a provider such
+  as `swayosd-git` (`bash tests/install-requirements.sh`).
+- **Updater (`scripts/appbinds/update-archenemy.sh`):** before the pull it
+  lists the incoming commits and warns when `install/` or `packages/`
+  change, and repeats a short summary right above "Run install.sh now?",
+  which defaults to No. A stash conflict means no ✓ and no installer
+  offer. Its git advice must work as printed: after a `stash pop` conflict
+  `git add` + `git stash drop`, and never `drop` when nothing was applied
+  (`bash tests/update-archenemy.sh` runs the advice on real git).
+- **shellcheck with a baseline:** `bash tests/shellcheck.sh` runs
+  `shellcheck -S info -e SC1091` on every tracked script and fails only on
+  findings that are not in `tests/shellcheck.baseline`. Fix new findings in
+  the code instead of adding them to the baseline: `--update-baseline` only
+  removes fixed entries, and a deliberate exception goes in by hand with a
+  `#` comment. A broken or killed shellcheck is a ✗, never a pass. Run it
+  with `LC_ALL=C.UTF-8`; a comment line starting with the word `shellcheck`
+  is a directive, so don't wrap prose onto such a line.
+- **Secrets and machine data:** `bash tests/secrets.sh` (private keys and
+  tokens in tracked files; the git history through `gitleaks` when it is
+  installed) and `bash tests/repo-hygiene.sh` (interface names,
+  `/home/<login>` paths) — the repository is public.
+
 ## How to write code here
 
 - Don't guess Hyprland/waybar API, flags, or option names — open the source
@@ -338,7 +387,11 @@ structure, this file only adds behavioral rules.
 
 ## Testing — what "CI" means here
 
-There's no pipeline. Verification has three levels:
+CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an
+`archlinux` container on pushes to `dev`/`main` and on pull requests, with
+read-only permissions and no third-party actions. It only complements the
+levels below: installation, sudo, Hyprland and hardware are still checked
+on a real machine. Verification has three levels:
 
 1. **Syntax** — `bash -n <script>` for every touched script; for `.lua`
    files, check via `lua5.4`/`loadfile` (if available in your environment).
@@ -368,9 +421,9 @@ There's no pipeline. Verification has three levels:
 
 A task isn't done until:
 
-- touched scripts pass `bash -n` and `shellcheck -x` (logic verified on a
-  dummy where possible; `bash tests/machine-layer.sh` green when the
-  machine layer was touched);
+- touched scripts pass `bash -n` and add no new shellcheck findings
+  (`bash tests/shellcheck.sh`; logic verified on a dummy where possible;
+  `bash tests/machine-layer.sh` green when the machine layer was touched);
 - things testable only on a live machine are named explicitly as
   "live-only", with concrete steps to check;
 - `README.md` is updated (file tree and descriptions match reality);
@@ -406,11 +459,11 @@ verified — and why.
 
 ## Pull requests
 
-The repo has no CI. If you're working through a pull request (rather than
-directly on `dev`), state explicitly in it: what was verified
-automatically (`bash -n`, dummy tests) and what remains "live-only" for
-the reviewer to check on a real Arch + Hyprland machine — the reviewer has
-no other way to find out.
+CI runs only the shell suites (see "Testing"). If you're working through a
+pull request (rather than directly on `dev`), state explicitly in it: what
+was verified automatically (`bash -n`, dummy tests) and what remains
+"live-only" for the reviewer to check on a real Arch + Hyprland machine —
+the reviewer has no other way to find out.
 
 ## When you don't know
 
