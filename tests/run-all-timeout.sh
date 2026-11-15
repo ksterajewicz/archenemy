@@ -32,10 +32,40 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
-alive() { [[ -f "$1" ]] && kill -0 "$(<"$1")" 2>/dev/null; }
+# proc_state <pid> — litera stanu z /proc/<pid>/stat: pole po ostatnim „) ”,
+# bo nazwa procesu w nawiasie może mieć spacje. Brak procesu = kod 1.
+proc_state() {
+    local s
+    [[ "$1" =~ ^[0-9]+$ ]] || return 1
+    { read -r s < "/proc/$1/stat"; } 2>/dev/null || return 1
+    s="${s##*) }"
+    echo "${s%% *}"
+}
+# alive <plik z PID-em> — proces istnieje i nie jest zombie. Sam `kill -0`
+# nie wystarcza: w kontenerze joba GitHub Actions PID 1 to `tail -f /dev/null`
+# (bez --init), który nie zbiera osieroconych procesów, więc pakiet dobity
+# SIGKILL-em zostaje tam zombie na zawsze.
+alive() {
+    local st
+    [[ -f "$1" ]] && st="$(proc_state "$(<"$1")")" && [[ "$st" != Z ]]
+}
 
 export PIDS="$T/pids" RAN="$T/ran"
 mkdir -p "$PIDS"
+
+echo "== 0: alive() a zombie (kontener CI bez --init)"
+# Zombie na zawołanie: rodzic po exec (sleep 5) nigdy nie woła wait na dziecko.
+( sleep 0.1 & echo $! > "$T/zombie.pid"; exec sleep 5 ) &
+zparent=$!
+echo "$zparent" > "$T/zparent.pid"
+zst=""
+for _ in $(seq 50); do
+    [[ -s "$T/zombie.pid" ]] && zst="$(proc_state "$(<"$T/zombie.pid")")" && [[ "$zst" == Z ]] && break
+    sleep 0.1
+done
+check "zombie (kill -0 nadal go widzi) to proces martwy"   '[[ "$zst" == Z ]] && kill -0 "$(<"$T/zombie.pid")" && ! alive "$T/zombie.pid"'
+check "działający proces to proces żywy"                   'alive "$T/zparent.pid"'
+kill "$zparent" 2>/dev/null; wait "$zparent" 2>/dev/null
 
 # suite <katalog> <pakiet…> — kopia run-all.sh i wybrane atrapy pakietów.
 suite() {
