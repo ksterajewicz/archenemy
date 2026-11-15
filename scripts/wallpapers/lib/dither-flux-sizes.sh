@@ -7,6 +7,14 @@
 #   Nie uruchamiaj bezpośrednio — to biblioteka funkcji.
 # =============================================
 
+# Znacznik kompletu: OSTATNIA forma z FORMS w gen_dither_flux_wallpaper.py.
+# Generator rysuje formy po kolei i każdy plik zapisuje atomowo, więc gdy jest
+# plik tej formy, są i wcześniejsze. Przerwany bieg (reboot w trakcie generowania
+# w tle) zostawia tylko pierwsze formy i rozmiar wraca do kolejki. Dawniej
+# znacznikiem była PIERWSZA forma: po przerwie reszta form nigdy się nie
+# dorabiała (audyt 2026-11-05, A10). Zgodność z FORMS: tests/dither-flux-sizes.sh.
+DITHER_FLUX_LAST_FORM="przeplyw2"
+
 # Wynik w zmiennych globalnych:
 #   FLUX_SIZES         "tag:rozdzielczość" do wygenerowania
 #   FLUX_READY         "monitor rozdzielczość (tag)" już gotowe
@@ -51,8 +59,8 @@ except Exception:
             secondary) tag="v2" ;;
             *)         tag="m-${mon//[^A-Za-z0-9-]/-}" ;;
         esac
-        # gotowe? (pierwsza forma jako wskaźnik kompletu tej rozdzielczości)
-        if [[ -f "$out_dir/dither-flux-przeplyw-$tag-$res.png" ]]; then
+        # gotowe? (ostatnia forma jako znacznik kompletu tej rozdzielczości)
+        if [[ -f "$out_dir/dither-flux-$DITHER_FLUX_LAST_FORM-$tag-$res.png" ]]; then
             FLUX_READY+=("$mon $res ($tag)")
             continue
         fi

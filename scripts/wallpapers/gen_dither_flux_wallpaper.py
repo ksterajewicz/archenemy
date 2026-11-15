@@ -70,8 +70,22 @@ def write_png(path, bits, w, h, bg, ink, acc):
            + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
            + chunk(b'IDAT', zlib.compress(raw, 9))
            + chunk(b'IEND', b''))
-    with open(path, 'wb') as f:
-        f.write(png)
+    # Zapis atomowy: plik tymczasowy w tym samym katalogu + os.replace. Bieg
+    # przerwany w trakcie zapisu (reboot zaraz po instalacji, generowanie idzie
+    # w tle) nie zostawia uciętego PNG pod docelową nazwą — w Super+W jest albo
+    # cały plik, albo żaden. Ukryta nazwa z końcówką .part nie jest obrazem, więc
+    # przełącznik tapet jej nie pokaże; następny bieg ją nadpisze.
+    tmp = os.path.join(os.path.dirname(path) or '.', '.' + os.path.basename(path) + '.part')
+    try:
+        with open(tmp, 'wb') as f:
+            f.write(png)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 # ── dither: uporządkowana macierz Bayera 8x8 ─────────────────────────────────
 
@@ -350,6 +364,9 @@ def engine_warp(w, h, seed):
 # (nazwa pliku, silnik, offset ziarna, poziom tonowania, gamma tonowania)
 # Silniki fal i domain warpingu zostają wyżej i są sprawne — po prostu nie weszły
 # do pierwszego zestawu tapet; dopisanie ich tutaj wystarczy, by wróciły.
+# Formy powstają po kolei, a OSTATNIA jest znacznikiem kompletu danej
+# rozdzielczości (DITHER_FLUX_LAST_FORM w lib/dither-flux-sizes.sh). Nową formę
+# dopisz na końcu i przenieś tam znacznik — pilnuje tests/dither-flux-sizes.sh.
 FORMS = [
     ('przeplyw',  engine_flow,      1,  0.62, 1.9),
     ('atraktor',  engine_attractor, 2,  0.62, 1.9),
