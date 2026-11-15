@@ -421,35 +421,17 @@ echo ""
 echo -e "${CYAN}[5] Checking requirements...${NC}"
 echo ""
 
-# req_installed <pakiet> — 0 = zainstalowany pod DOKŁADNIE tą nazwą; wypisuje
-# ✓ albo ✗. I5 z przeglądu 2026-11-15: `pacman -Qi <nazwa>` (i `-Qq`)
-# znajduje też pakiet, który tylko tę nazwę dostarcza (provides), więc
-# swayosd-git uchodził za swayosd, [5] pisało ✓, a extra/swayosd nigdy nie
-# trafiał do instalacji. Teraz taki pakiet idzie do transakcji jak każdy
-# brakujący; jeśli dostawca deklaruje konflikt (konwencja pakietów -git),
-# pacman sam pyta o jego usunięcie. Tak samo sprawdza `asus-installation.sh`.
-req_installed() {
-    local got
-    got="$(pacman -Qq "$1" 2>/dev/null)"
-    got="${got%%$'\n'*}"
-    if [[ "$got" == "$1" ]]; then
-        echo -e "  ${GREEN}✓ $1${NC}"
-        return 0
-    fi
-    if [[ -n "$got" ]]; then
-        echo -e "  ${RED}✗ missing: $1${NC} (installed: $got, which only provides it)"
-    else
-        echo -e "  ${RED}✗ missing: $1${NC}"
-    fi
-    return 1
-}
-
 MISSING_PACMAN=()
 if [[ -f "$PACMAN_REQ" ]]; then
     while IFS= read -r pkg || [[ -n "$pkg" ]]; do
         pkg="${pkg%%[[:space:]]*}"
         [[ -z "$pkg" || "$pkg" == \#* ]] && continue
-        req_installed "$pkg" || MISSING_PACMAN+=("$pkg")
+        if ! pacman -Qi "$pkg" &>/dev/null; then
+            MISSING_PACMAN+=("$pkg")
+            echo -e "  ${RED}✗ missing: $pkg${NC}"
+        else
+            echo -e "  ${GREEN}✓ $pkg${NC}"
+        fi
     done < "$PACMAN_REQ"
 fi
 
@@ -477,7 +459,12 @@ if [[ -f "$AUR_REQ" ]]; then
     while IFS= read -r pkg || [[ -n "$pkg" ]]; do
         pkg="${pkg%%[[:space:]]*}"
         [[ -z "$pkg" || "$pkg" == \#* ]] && continue
-        req_installed "$pkg" || MISSING_AUR+=("$pkg")
+        if ! pacman -Qi "$pkg" &>/dev/null; then
+            MISSING_AUR+=("$pkg")
+            echo -e "  ${RED}✗ missing: $pkg${NC}"
+        else
+            echo -e "  ${GREEN}✓ $pkg${NC}"
+        fi
     done < "$AUR_REQ"
 fi
 
