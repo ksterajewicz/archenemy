@@ -1423,7 +1423,32 @@ echo ""
 
 echo -e "${CYAN}[10] Optional configuration...${NC}"
 
-read -rp "Auto-configure UFW firewall? [y/N]: " ans
+# Działającej zapory nie ruszamy: ponowny bieg (zalecany po każdym pullu) po
+# „y” znów wołał `ufw default deny incoming` / `allow outgoing` i po cichu
+# nadpisywał polityki ustawione przez użytkownika (audyt 2026-11-05, S7).
+# Stan czyta `ufw status` (wymaga roota); bez ufw albo bez odczytu = pytanie.
+UFW_STATUS=""
+command -v ufw >/dev/null 2>&1 && UFW_STATUS="$(sudo ufw status verbose 2>/dev/null)"
+if grep -q '^Status: active' <<< "$UFW_STATUS"; then
+    echo -e "  ${GREEN}✓ UFW firewall already active — your policies and rules are left as they are.${NC}"
+    UFW_DEFAULTS="$(sed -n 's/^Default: //p' <<< "$UFW_STATUS")"
+    [[ -n "$UFW_DEFAULTS" ]] && echo "    Default: $UFW_DEFAULTS"
+    if ! systemctl is-enabled --quiet ufw 2>/dev/null; then
+        echo -e "  ${YELLOW}⚠ ufw.service is not enabled — the firewall will be off after a reboot.${NC}"
+        SUMMARY_SKIPPED+=("UFW is active now but does not start at boot: sudo systemctl enable ufw")
+    fi
+    ans=n
+else
+    # Skutki włączenia wprost: domyślne polityki ORAZ /etc/ufw/sysctl.conf,
+    # który ufw nakłada przy starcie (rp_filter=1 zamiast 2 z systemd,
+    # accept_redirects=0) — plan bezpieczeństwa 2026-11-14 (Y1).
+    echo "  UFW firewall: blocks incoming connections, outgoing stay allowed. Starting it"
+    echo "  also applies /etc/ufw/sysctl.conf (strict reverse-path filtering rp_filter=1,"
+    echo "  ICMP redirects ignored), which some VPN setups do not like. Serving anything"
+    echo "  to your LAN (Steam Remote Play and LAN game transfers, KDE Connect, LocalSend)"
+    echo "  stops working until you allow it with: sudo ufw allow ..."
+    read -rp "Enable the UFW firewall with these defaults? [y/N]: " ans
+fi
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     # Każdy krok sprawdzany osobno — dotąd „✓ UFW configured" leciało nawet
     # gdy pacman/ufw/systemctl zawiodły (audyt 2026-09-25). Sukces = ufw

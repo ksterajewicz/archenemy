@@ -205,6 +205,7 @@ check "[9.5] tapeta wysłana do obu monitorów (IPC)" '[[ "$(grep -c . "$MOCK_HY
 check "[9.6] flux-wall zbudowany make -C src/flux-wall" 'called "make -C $A/src/flux-wall" && [[ -x "$A/src/flux-wall/build/flux-wall" ]]'
 check "[9.7] generator tapet: v1 1920x1080, v2 2560x1600" 'grep -qE "^python3 .*/gen_dither_flux_wallpaper.py .* (v1:1920x1080 v2:2560x1600|v2:2560x1600 v1:1920x1080)$" "$T/log.1"'
 check "[10] ufw: polityki, enable, usługa"     'called "ufw default deny incoming" && called "ufw enable" && called "systemctl enable ufw"'
+check "[10] pytanie o ufw mówi, co włączenie zmienia" '[[ "$OUT" == *"blocks incoming connections"* && "$OUT" == *"rp_filter"* && "$OUT" == *"Remote Play"* ]] && asked "UFW.*\[y/N\]"'
 check "[10] NetworkManager i pipewire-pulse włączone" 'called "systemctl enable --now NetworkManager" && called "systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service"'
 check "[11] installed-head.dat = HEAD kopii"   '[[ "$(sed -n "s/^COMMIT=//p" "$A/data/installed-head.dat")" == "$COPY_HEAD" ]]'
 check "[11] baner pełnego sukcesu, jedyny czerwony wiersz = brakujący pakiet" '[[ "$OUT" == *"Everything is set up. Have fun!"* && "$(grep "✗" <<< "$OUT")" == "  ✗ missing: swayosd" ]]'
@@ -229,6 +230,9 @@ fi
 
 echo "== bieg 2: ponowny bieg (Enter = zostaw) nie zmienia plików"
 snapshot > "$T/snap.1"
+# Użytkownik po biegu 1 zaostrzył zaporę (ufw default deny outgoing); lista
+# odpowiedzi nadal ma „y” dla ufw — ponowny bieg nie może ruszyć polityk (S7).
+echo deny > "$MOCK_STATE/ufw.out"
 run_install "$ANS" 2
 snapshot > "$T/snap.2"
 check "kod 0, bez zawieszenia i pytań spoza listy" '[[ $RC -eq 0 ]]'
@@ -236,6 +240,8 @@ check "pliki w \$HOME bez zmian względem biegu 1" 'diff -q "$T/snap.1" "$T/snap
 diff "$T/snap.1" "$T/snap.2" | head -10 | sed 's/^/      /'
 check "nie pyta o rzeczy już zrobione (mpd, alias, NetworkManager)" '! asked "Enable mpd as your user service" && ! asked "archenemy. command" && ! asked "Enable NetworkManager"'
 check "[9.5] tapeta odtworzona, nie nadpisana"  '[[ "$OUT" == *"Wallpaper kept"* ]]'
+check "[10] aktywny ufw: bez pytania, polityki nietknięte (S7)" '! asked "UFW" && ! grep -q "^ufw default" "$T/log.2" && [[ "$(<"$MOCK_STATE/ufw.out")" == deny ]]'
+check "[10] aktywny ufw: komunikat z obecnymi politykami" '[[ "$OUT" == *"UFW firewall already active"* && "$OUT" == *"deny (incoming), deny (outgoing)"* ]]'
 check "[5] nic nie doinstalowuje"               '! grep -q "^pacman -S --needed swayosd" "$T/log.2"'
 check "hyprlock-wallpaper.dat (jeśli powstał) = off" '[[ ! -e "$A/data/hyprlock-wallpaper.dat" || "$(<"$A/data/hyprlock-wallpaper.dat")" == off ]]'
 
