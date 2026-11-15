@@ -395,7 +395,11 @@ doctor() {
     else
         echo "flux-wall nie działa"
     fi
-    if [[ -f "$LOG" ]]; then
+    # Bez prywatnego katalogu sesji LOG to /dev/null — powiedz to wprost, zamiast
+    # „brak /dev/null (proces nigdy nie wystartował…)”.
+    if [[ -z "$RUN_DIR" ]]; then
+        echo "== log: brak prywatnego katalogu sesji (scripts/lib/runtime-dir.sh), więc log nie jest zapisywany"
+    elif [[ -f "$LOG" ]]; then
         echo "== log ($LOG, ostatnie 10 linii)"
         tail -10 "$LOG"
     else

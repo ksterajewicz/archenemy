@@ -269,6 +269,12 @@ pid11="$(alive)"
 if [[ $RC -eq 0 && "$OUT" == *"flux-wall działa: alpha"* && -n "$pid11" ]]; then ok "bez prywatnego katalogu, binarka sprzed --ready-file: jak dawniej"
 else fail "bez katalogu, stara binarka: rc=$RC, wyjście: $OUT"; fi
 bash "$WRAP" stop >/dev/null 2>&1
+# doctor bez katalogu mówi, dlaczego logu nie ma — dawniej „brak /dev/null
+# (proces nigdy nie wystartował…)”, choć proces startował, a log szedł donikąd.
+nodir doctor
+if [[ $RC -eq 0 && "$OUT" == *"== log: brak prywatnego katalogu sesji"* && "$OUT" != *"/dev/null"* \
+      && -z "$(ls -A "$T/evil")" ]]; then ok "doctor bez prywatnego katalogu: „log: brak prywatnego katalogu sesji”, nic w podstawionym"
+else fail "doctor bez katalogu: rc=$RC, w podstawionym: $(ls -A "$T/evil"), wyjście: $OUT"; fi
 
 echo "start nieudany i brak binarki"
 FW_MOCK=fail-fast wrap start
