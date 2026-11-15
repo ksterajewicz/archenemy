@@ -207,6 +207,37 @@ git -C "$A" fetch -q origin dev; git -C "$A" reset -q --hard "$(git -C "$A" rev-
 out=$(run_upd '1n\n'); NL=$'\n'
 check "limit 30 commitów + licznik reszty"          '[[ "$out" == *"seria-32"* && "$out" == *"seria-3"* && "$out" != *"seria-2$NL"* && "$out" == *"2 more"* ]]'
 
+# A3 (przegląd 2026-11-15): lista i ⚠ K5 stoją PRZED pull, więc wyjście
+# pulla przewija je poza okno Super+A (ok. 27 wierszy), zanim padnie pytanie
+# o install.sh. Podsumowanie musi stać w wierszach tuż nad tym pytaniem.
+echo "== A3: podsumowanie tuż przed pytaniem o install.sh"
+before_question() {   # 3 wiersze tuż nad pytaniem o install.sh
+    sed -n '/Run install.sh now/q;p' <<< "$out" | tail -n 3
+}
+fresh_clone dev
+old7=$(git -C "$A" rev-parse --short=7 HEAD)
+w="$T/wa3"; rm -rf "$w"; git clone -q -b dev "$T/origin.git" "$w"
+mkdir -p "$w/install" "$w/packages"
+for i in 1 2 3 4 5 6 7 8; do echo "$i" > "$w/a3-$i.txt"; done
+echo a3 > "$w/install/a3.sh"; echo a3 > "$w/packages/a3.txt"
+g "$w" add -A; g "$w" commit -m a3-pierwszy
+echo a3-zmiana > "$w/a3-1.txt"; g "$w" commit -am a3-drugi; g "$w" push origin dev
+out=$(run_upd '1n\n'); pre=$(before_question)
+check "A3: liczba commitów i plików tuż nad pytaniem"  '[[ "$pre" == *"This update: 2 new commits, 10 files changed, 10 insertions(+)"* ]]'
+check "A3: ⚠ install/ packages/ tuż nad pytaniem"      '[[ "$pre" == *"⚠ install/ or packages/ changed (2 files)"* ]]'
+check "A3: komenda przeglądu z poprzednim HEAD"        '[[ "$pre" == *"git -C ~/archenemy diff $old7 HEAD -- install packages"* ]]'
+check "A3: ⚠ przed pull zostaje (zakres K5 bez zmian)" '[[ "$out" == *"⚠ This update changes the installer or package lists"* && "$out" == *"packages/a3.txt"* ]]'
+fresh_clone dev
+upstream_commit dev f.txt a3-zwykly
+out=$(run_upd '1n\n'); pre=$(before_question)
+check "A3: zwykła zmiana — podsumowanie bez ⚠"         '[[ "$pre" == *"This update: 1 new commit, 1 file changed"* && "$pre" != *"⚠"* ]]'
+fresh_clone dev
+out=$(run_upd '1n\n')
+check "A3: bez nowych commitów — bez podsumowania"     '[[ "$out" != *"This update:"* && "$out" == *"Run install.sh now"* ]]'
+fresh_clone dev
+out=$(run_upd '2yn\n'); pre=$(before_question)
+check "A3: dev → main — podsumowanie mówi o cofniętych commitach" '[[ "$pre" == *"This update: "*" commits rolled back, "*"changed"* && "$pre" != *"new commit"* ]]'
+
 echo "== install.sh bez prawa wykonywania nadal się uruchamia"
 fresh_clone dev
 check "install.sh w klonie jest 100644"        '[[ ! -x "$A/install/install.sh" ]]'

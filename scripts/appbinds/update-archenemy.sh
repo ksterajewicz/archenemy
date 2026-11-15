@@ -76,6 +76,7 @@ fi
 # instalatora albo listy pakietów — to one pójdą potem przez sudo/yay.
 # Krótki HEAD sprzed aktualizacji = droga powrotu wypisywana na końcu.
 old_head="$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)"
+risky=""
 new_count="$(git -C "$ARCHENEMY_DIR" rev-list --count "HEAD..origin/$target" 2>/dev/null)"
 if [[ "${new_count:-0}" -eq 0 ]]; then
     echo -e "  No new commits on origin/${target}."
@@ -176,6 +177,26 @@ echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
 echo -e "  git — ${GREEN}they stay unchanged${NC}."
 echo ""
+# Podsumowanie TUŻ nad pytaniem o instalator (A3, przegląd 2026-11-15): lista
+# i ⚠ z K5 stoją przed pull, więc wyjście pulla przewija je poza okno Super+A
+# (ok. 27 wierszy). Liczone po pull z <old_head>..HEAD, czyli to, co naprawdę
+# weszło (przy dev → main: cofnięte commity). ⚠ powtarza listę sprzed pull —
+# ten sam zakres install/ packages/, bez nowego liczenia.
+plural() { if [[ "$1" == 1 ]]; then echo "1 $2"; else echo "$1 $2s"; fi; }
+if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)" != "$old_head" ]]; then
+    added="$(git -C "$ARCHENEMY_DIR" rev-list --count "$old_head..HEAD" 2>/dev/null)"
+    removed="$(git -C "$ARCHENEMY_DIR" rev-list --count "HEAD..$old_head" 2>/dev/null)"
+    stat="$(git -C "$ARCHENEMY_DIR" diff --shortstat "$old_head" HEAD 2>/dev/null)"
+    stat="${stat# }"
+    summary=""
+    [[ "${added:-0}" -gt 0 ]] && summary+="$(plural "$added" "new commit"), "
+    [[ "${removed:-0}" -gt 0 ]] && summary+="$(plural "$removed" commit) rolled back, "
+    echo -e "  This update: ${summary}${stat:-no file changes}."
+    if [[ -n "$risky" ]]; then
+        echo -e "  ${YELLOW}⚠ install/ or packages/ changed ($(plural "$(grep -c . <<< "$risky")" file)) — review before running install.sh:${NC}"
+        echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages"
+    fi
+fi
 # Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
 # z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go
 # uruchomić. Przypomnienie o zaległym biegu daje machine-layer-check.sh.
