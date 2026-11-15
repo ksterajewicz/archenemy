@@ -651,13 +651,15 @@ int main(void) {
      * te decyzje; sam kompozytor + EGL tylko na żywo. */
     printf("recovery: błąd EGL powierzchni (flux_egl_action, flux_retry)\n");
     {
-        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, false) == FLUX_EGL_EXIT,
+        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, EGL_BAD_ALLOC, false) == FLUX_EGL_EXIT,
               "przed pierwszą klatką: błąd powierzchni → kod 3 (kontrakt, hyprpaper zostaje)");
-        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, true) == FLUX_EGL_RETRY_SURFACE,
+        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, EGL_BAD_ALLOC, true) == FLUX_EGL_RETRY_SURFACE,
               "po starcie: błąd powierzchni nowego monitora → tylko ona, ponowienie (nie kod 3)");
-        CHECK(flux_egl_action(FLUX_STAGE_FRAME, true) == FLUX_EGL_SKIP_FRAME,
+        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, EGL_SUCCESS, true) == FLUX_EGL_RETRY_SURFACE,
+              "po starcie: błąd celu silnika (poza EGL) → też tylko ta powierzchnia");
+        CHECK(flux_egl_action(FLUX_STAGE_FRAME, EGL_BAD_SURFACE, true) == FLUX_EGL_SKIP_FRAME,
               "po starcie: pojedyncza odmowa klatki → klatka później");
-        CHECK(flux_egl_action(FLUX_STAGE_FRAME, false) == FLUX_EGL_SKIP_FRAME,
+        CHECK(flux_egl_action(FLUX_STAGE_FRAME, EGL_BAD_SURFACE, false) == FLUX_EGL_SKIP_FRAME,
               "przed pierwszą klatką: odmowa klatki → też klatka później (jak dawniej)");
 
         struct flux_retry r = {0};
@@ -673,6 +675,35 @@ int main(void) {
         flux_retry_reset(&r);
         CHECK(flux_retry_wait(&r, 0.0) <= 0 && near((float)flux_retry_failed(&r, 5.0), 1.0f),
               "po udanej powierzchni → następny błąd znów od 1 s");
+    }
+
+    /* EGL_CONTEXT_LOST (np. wybudzenie GPU) nie mija: pomijanie klatek
+     * zamrażało tapetę na zawsze przy żywym procesie i statusie „działa”
+     * (audyt 2026-11-05, F5). Po starcie nowy kontekst, przed startem kod 3;
+     * utrata za utratą (więcej niż FLUX_CTX_LOST_MAX w FLUX_CTX_LOST_WINDOW s)
+     * = kod 3. Glue: egl_context_lost / output_frame_failed w main.c. */
+    printf("recovery: utrata kontekstu EGL (EGL_CONTEXT_LOST)\n");
+    {
+        CHECK(flux_egl_action(FLUX_STAGE_FRAME, EGL_CONTEXT_LOST, true) == FLUX_EGL_NEW_CONTEXT,
+              "swap/makecurrent klatki: EGL_CONTEXT_LOST → nowy kontekst (nie „pomijam klatkę”)");
+        CHECK(flux_egl_action(FLUX_STAGE_SURFACE, EGL_CONTEXT_LOST, true) == FLUX_EGL_NEW_CONTEXT,
+              "nowa powierzchnia: EGL_CONTEXT_LOST → nowy kontekst (nie ponowienie samej powierzchni)");
+        CHECK(flux_egl_action(FLUX_STAGE_FRAME, EGL_CONTEXT_LOST, false) == FLUX_EGL_EXIT &&
+              flux_egl_action(FLUX_STAGE_SURFACE, EGL_CONTEXT_LOST, false) == FLUX_EGL_EXIT,
+              "przed pierwszą klatką: EGL_CONTEXT_LOST → kod 3");
+
+        struct flux_ctx_guard g = {0};
+        bool first = flux_ctx_lost_recover(&g, 1000.0) && flux_ctx_lost_recover(&g, 1010.0) &&
+                     flux_ctx_lost_recover(&g, 1020.0);
+        CHECK(first, "trzy utraty w minucie → za każdym razem nowy kontekst");
+        CHECK(!flux_ctx_lost_recover(&g, 1030.0), "czwarta w tej samej minucie → kod 3 (bez pętli migania)");
+        struct flux_ctx_guard h = {0};
+        bool spread = true;
+        for (int i = 0; i < 10; i++) if (!flux_ctx_lost_recover(&h, 5000.0 + i * 3600.0)) spread = false;
+        CHECK(spread, "utrata co godzinę (uśpienia) → zawsze nowy kontekst");
+        struct flux_ctx_guard k = {0};
+        flux_ctx_lost_recover(&k, 0.0); flux_ctx_lost_recover(&k, 1.0); flux_ctx_lost_recover(&k, 2.0);
+        CHECK(flux_ctx_lost_recover(&k, 60.0), "okno mija 60 s po pierwszej utracie → licznik od nowa");
     }
 
     /* --once (tapeta statyczna) liczy rozgrzewkę przed jedyną klatką. Zmiana

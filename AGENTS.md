@@ -144,9 +144,15 @@ Rules that follow directly from the table:
   EGL error on one monitor's surface (e.g. a newly connected monitor)
   tears down only that surface, and the main loop recreates it after 1 s,
   doubling up to 30 s; other monitors keep animating (audit 2026-11-05,
-  F4). The decisions live in `src/flux-wall/recovery.h` (no Wayland/EGL
-  calls, tested by `make -C src/flux-wall test`); `main.c` only carries
-  them out — don't add a new `die(3, …)` on a path reachable after start.
+  F4). `EGL_CONTEXT_LOST` is the exception to "skip the frame and try
+  again": it never passes, so skipping froze the picture forever while
+  the process (and `flux-wall.sh status`) looked alive (F5). It creates a
+  new context, engine and all surfaces; more than 3 losses in 60 s = exit
+  3. Check `eglGetError()` right after every failed `eglMakeCurrent` /
+  `eglSwapBuffers` and pass it through `flux_egl_action`. The decisions
+  live in `src/flux-wall/recovery.h` (no Wayland/EGL calls, tested by
+  `make -C src/flux-wall test`); `main.c` only carries them out — don't
+  add a new `die(3, …)` on a path reachable after start.
 - **flux-wall: every shader declares `precision highp sampler2D;`** — each
   `.frag` and every GLSL source built into `engine.c` that uses a sampler
   (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00

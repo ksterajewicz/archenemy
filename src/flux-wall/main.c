@@ -21,7 +21,9 @@
  *     1 błąd argumentów/pliku   2 brak Waylanda lub layer-shell
  *     3 błąd EGL/GLES (shader, kontekst) — do pierwszej klatki na ekranie; potem
  *       błąd powierzchni jednego monitora sprząta tylko ją i ponawia po
- *       przerwie (recovery.h), pozostałe monitory rysują dalej
+ *       przerwie (recovery.h), pozostałe monitory rysują dalej, a utrata
+ *       kontekstu (EGL_CONTEXT_LOST) daje nowy kontekst — kod 3 dopiero, gdy
+ *       to się nie uda albo kontekst ginie raz za razem
  *
  *   Skalowanie: przy wp_fractional_scale_v1 + wp_viewporter bufor ma rozmiar
  *   logiczny × skala ułamkowa (np. 1.25) zaokrąglony do pikseli fizycznych,
@@ -143,6 +145,7 @@ struct state {
     bool ready_marked;           /* --ready-file już obsłużone (raz na proces) */
     bool started;                /* pierwsza klatka już na ekranie (udany swap, jak --ready-file):
                                   * od tej chwili błąd EGL jednej powierzchni nie kończy procesu */
+    struct flux_ctx_guard ctx_guard; /* utraty kontekstu EGL w oknie czasu (recovery.h) */
     bool running;
 };
 
@@ -161,7 +164,7 @@ static void logw(const char *fmt, ...) {
     va_end(ap);
 }
 
-static void die(int code, const char *fmt, ...) {
+static _Noreturn void die(int code, const char *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     fputs("flux-wall: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
     va_end(ap);
@@ -266,6 +269,13 @@ static void build_engine(struct state *s) {
 
 /* ── EGL ──────────────────────────────────────────────────────────────────── */
 
+/* Kontekst GLES 3.0 — na starcie i po utracie kontekstu (egl_context_lost). */
+static void egl_create_context(struct state *s) {
+    const EGLint ctx_attribs[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE };
+    s->egl_context = eglCreateContext(s->egl_display, s->egl_config, EGL_NO_CONTEXT, ctx_attribs);
+    if (s->egl_context == EGL_NO_CONTEXT) die(3, "eglCreateContext (ES 3.0) nie powiodło się (0x%x)", eglGetError());
+}
+
 static void egl_init(struct state *s) {
     PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display =
         (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
@@ -291,15 +301,54 @@ static void egl_init(struct state *s) {
     if (!eglChooseConfig(s->egl_display, config_attribs, &s->egl_config, 1, &n) || n < 1)
         die(3, "brak konfiguracji EGL dla GLES 3 / RGBA8");
 
-    const EGLint ctx_attribs[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE };
-    s->egl_context = eglCreateContext(s->egl_display, s->egl_config, EGL_NO_CONTEXT, ctx_attribs);
-    if (s->egl_context == EGL_NO_CONTEXT) die(3, "eglCreateContext (ES 3.0) nie powiodło się");
+    egl_create_context(s);
 }
 
 /* ── render ───────────────────────────────────────────────────────────────── */
 
 static void output_request_frame(struct output *o);
 static void output_teardown_surface(struct output *o);
+
+/* EGL_CONTEXT_LOST (zdarzenie zasilania, np. wybudzenie GPU; specyfikacja
+ * EGL 1.5, rozdz. 3.2): kontekst i wszystkie obiekty GL przepadły, a
+ * eglMakeCurrent i eglSwapBuffers z tym kontekstem odmawiają już zawsze.
+ * Dawniej każdą klatkę „pomijaliśmy” bez końca — tapeta stała, proces żył,
+ * więc `flux-wall.sh status` i `doctor` mówiły „działa”, a hyprpaper nie
+ * wracał (audyt 2026-11-05, F5). Specyfikacja każe zniszczyć kontekst
+ * i utworzyć nowy: zwalniamy cele i silnik (bez bieżącego kontekstu
+ * wywołania GL są puste — zostaje sama pamięć), tworzymy kontekst, a
+ * powierzchnie wszystkich monitorów pętla odtwarza jak po `closed` —
+ * pierwsza zbuduje silnik od nowa. Kod 3 (hyprpaper zostaje), gdy nowego
+ * kontekstu nie ma albo kontekst ginie raz za razem (recovery.h:
+ * FLUX_CTX_LOST_MAX w FLUX_CTX_LOST_WINDOW s). Wołający kończy od razu:
+ * stanu powierzchni już nie ma. */
+static void egl_context_lost(struct state *s, const char *where) {
+    if (!flux_ctx_lost_recover(&s->ctx_guard, flux_now_seconds()))
+        die(3, "%s: kontekst EGL utracony ponad %d razy w ciągu %.0f s — kończę", where,
+            FLUX_CTX_LOST_MAX, FLUX_CTX_LOST_WINDOW);
+    logw("%s: utrata kontekstu EGL (EGL_CONTEXT_LOST) — tworzę nowy kontekst, silnik i powierzchnie", where);
+    eglMakeCurrent(s->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    for (struct output *o = s->outputs; o; o = o->next) {
+        flux_target_destroy(o->target);  /* przed teardown: bez prób eglMakeCurrent na martwym kontekście */
+        o->target = NULL;
+        if (o->surface) { output_teardown_surface(o); o->recreate = true; }
+    }
+    flux_engine_destroy(s->engine);
+    s->engine = NULL;
+    eglDestroyContext(s->egl_display, s->egl_context);
+    egl_create_context(s);
+}
+
+/* Odmowa EGL w klatce (albo configure) istniejącej powierzchni. true =
+ * kontekst przepadł i został odtworzony (egl_context_lost) — wołający kończy
+ * od razu; false = pojedyncza odmowa, wołający pomija klatkę. */
+static bool output_frame_failed(struct output *o, EGLint egl_err) {
+    switch (flux_egl_action(FLUX_STAGE_FRAME, egl_err, o->state->started)) {
+    case FLUX_EGL_NEW_CONTEXT: egl_context_lost(o->state, o->name); return true;
+    case FLUX_EGL_EXIT: die(3, "%s: kontekst EGL utracony przed pierwszą klatką (0x%x)", o->name, egl_err);
+    default: return false;
+    }
+}
 
 static void render_output(struct output *o) {
     struct state *s = o->state;
@@ -309,7 +358,9 @@ static void render_output(struct output *o) {
      * procesu: klatkę pomijamy, `needs_frame` każe pętli spróbować ponownie
      * (frame callback bez commitu by nie przyszedł). */
     if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
-        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
+        EGLint egl_err = eglGetError();
+        if (output_frame_failed(o, egl_err)) return;
+        logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam klatkę", o->name, egl_err);
         o->needs_frame = true;
         return;
     }
@@ -327,7 +378,9 @@ static void render_output(struct output *o) {
 
     if (!s->cfg.once) output_request_frame(o);   /* callback ZANIM commit (swap) */
     if (!eglSwapBuffers(s->egl_display, o->egl_surface)) {
-        logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, eglGetError());
+        EGLint egl_err = eglGetError();
+        if (output_frame_failed(o, egl_err)) return;
+        logv(s, "%s: eglSwapBuffers nie powiodło się (0x%x) — pomijam klatkę", o->name, egl_err);
         o->needs_frame = true;               /* bez commitu callback nie przyjdzie — pętla ponowi */
         o->last_render = flux_now_seconds();
         return;
@@ -381,13 +434,17 @@ static void output_request_frame(struct output *o) {
  * dawne die(3) przy podpięciu monitora, na którym EGL odmawia, gasiło
  * animację wszędzie (audyt 2026-11-05, F4). Wołający kończy od razu:
  * stanu powierzchni już nie ma. */
-static void output_surface_failed(struct output *o, const char *fmt, ...) {
+static void output_surface_failed(struct output *o, EGLint egl_err, const char *fmt, ...) {
     struct state *s = o->state;
     char what[512];
     va_list ap; va_start(ap, fmt);
     vsnprintf(what, sizeof what, fmt, ap);
     va_end(ap);
-    if (flux_egl_action(FLUX_STAGE_SURFACE, s->started) == FLUX_EGL_EXIT) die(3, "%s: %s", o->name, what);
+    switch (flux_egl_action(FLUX_STAGE_SURFACE, egl_err, s->started)) {
+    case FLUX_EGL_EXIT: die(3, "%s: %s", o->name, what);
+    case FLUX_EGL_NEW_CONTEXT: egl_context_lost(s, o->name); return;   /* sprząta też `o` */
+    default: break;
+    }
     double delay = flux_retry_failed(&o->retry, flux_now_seconds());
     logw("%s: %s — sprzątam tę powierzchnię, ponowię za %.0f s (pozostałe monitory rysują dalej)",
          o->name, what, delay);
@@ -423,15 +480,17 @@ static void output_apply_size(struct output *o) {
 
     if (!o->egl_window) {
         o->egl_window = wl_egl_window_create(o->surface, pw, ph);
-        if (!o->egl_window) { output_surface_failed(o, "wl_egl_window_create nie powiodło się"); return; }
+        if (!o->egl_window) { output_surface_failed(o, EGL_SUCCESS, "wl_egl_window_create nie powiodło się"); return; }
         o->egl_surface = eglCreateWindowSurface(s->egl_display, s->egl_config,
                                                 (EGLNativeWindowType)o->egl_window, NULL);
         if (o->egl_surface == EGL_NO_SURFACE) {
-            output_surface_failed(o, "eglCreateWindowSurface nie powiodło się (0x%x)", eglGetError());
+            EGLint egl_err = eglGetError();
+            output_surface_failed(o, egl_err, "eglCreateWindowSurface nie powiodło się (0x%x)", egl_err);
             return;
         }
         if (!eglMakeCurrent(s->egl_display, o->egl_surface, o->egl_surface, s->egl_context)) {
-            output_surface_failed(o, "eglMakeCurrent nie powiodło się (0x%x)", eglGetError());
+            EGLint egl_err = eglGetError();
+            output_surface_failed(o, egl_err, "eglMakeCurrent nie powiodło się (0x%x)", egl_err);
             return;
         }
         /* Własne frame callbacks sterują tempem — swap nie może blokować. */
@@ -449,14 +508,15 @@ static void output_apply_size(struct output *o) {
         /* nowa powierzchnia (bez celu) bez kontekstu nie narysuje nic, a drugi
          * configure może nie przyjść — błąd powierzchni; istniejąca: pojedyncza
          * odmowa = pomijamy ten configure, przyjdzie następny */
-        if (!o->target) { output_surface_failed(o, "eglMakeCurrent nie powiodło się (0x%x)", egl_err); return; }
+        if (!o->target) { output_surface_failed(o, egl_err, "eglMakeCurrent nie powiodło się (0x%x)", egl_err); return; }
+        if (output_frame_failed(o, egl_err)) return;
         logv(s, "%s: eglMakeCurrent nie powiodło się (0x%x) — pomijam configure", o->name, egl_err);
         return;
     }
     char err[256];
     if (!o->target) {
         o->target = flux_target_create(s->engine, pw, ph, err, sizeof err);
-        if (!o->target) { output_surface_failed(o, "%s", err); return; }
+        if (!o->target) { output_surface_failed(o, EGL_SUCCESS, "%s", err); return; }
     } else if (changed && !flux_target_resize(o->target, pw, ph, err, sizeof err)) {
         logv(s, "%s: zmiana rozmiaru akumulatora nie powiodła się (%s) — rysuję w starym rozmiarze", o->name, err);
     }
