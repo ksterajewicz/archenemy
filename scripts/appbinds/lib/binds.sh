@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - scripts/appbinds/lib/binds.sh
 #   Biblioteka do bindów użytkownika (config/hypr/appbinds.lua) dla TUI

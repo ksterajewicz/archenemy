@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - bluetooth-installation.sh
 #   Opcjonalny Bluetooth: flaga dopiero po weryfikacji pakietów i usługi.

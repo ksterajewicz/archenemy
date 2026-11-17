@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/rofi-power-menu.sh
 #   Menu zasilania Super+prawy Shift (scripts/rofi/rofi_power_menu.sh) na
@@ -30,13 +30,13 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin"
 # systemctl: tylko zapis wywołania.
-printf '#!/bin/bash\necho "$*" >> "%s/systemctl.log"\n' "$T" > "$T/bin/systemctl"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/systemctl.log"\n' "$T" > "$T/bin/systemctl"
 # pidof: hyprlock „działa”, gdy istnieje plik $T/locked.
-printf '#!/bin/bash\n[[ "$1" == hyprlock && -f "%s/locked" ]]\n' "$T" > "$T/bin/pidof"
+printf '#!/usr/bin/env bash\n[[ "$1" == hyprlock && -f "%s/locked" ]]\n' "$T" > "$T/bin/pidof"
 # rofi: zapisuje prompt i pozycje menu, odpowiada kolejną linią z $T/answers
 # (pusta linia = Esc).
 cat > "$T/bin/rofi" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 prompt=""; theme=""
 while ((\$#)); do
     case "\$1" in -p) prompt="\$2"; shift ;; -theme-str) theme="\$2"; shift ;; esac

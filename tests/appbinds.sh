@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/appbinds.sh
 #   Testy listy i usuwania bindów TUI Super+A (scripts/appbinds/lib/binds.sh)

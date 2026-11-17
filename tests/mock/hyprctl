@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Atrapa hyprctl do tests/machine-layer.sh i tests/wallpaper-switcher.sh.
 # MOCK_MONS = three (both + nowy DP-3) | both (eDP-1 + HDMI-A-3 — realny zrzut 2026-09-21, nazwy złączy
 #             zmienione względem eDP-2/HDMI-A-1 z dnia instalacji)

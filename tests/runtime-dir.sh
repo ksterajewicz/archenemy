@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/runtime-dir.sh
 #   Prywatny katalog sesji (scripts/lib/runtime-dir.sh) i jego wołający.

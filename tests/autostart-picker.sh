@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/autostart-picker.sh
 #   Wybór autostartu Super+A → [p] na fałszywych katalogach XDG. Bez Hyprlanda,
@@ -28,7 +28,7 @@ H="$T/home"; A="$H/archenemy"; DAT="$A/data/autostart-apps.dat"; LUA="$A/config/
 SYS="$T/sys/applications"; LOC="$H/.local/share/applications"
 mkdir -p "$A/data" "$A/config/hypr" "$A/scripts/hypr/lib" "$SYS/wine" "$LOC" "$T/bin" "$T/flat/applications"
 cp "$REPO/scripts/hypr/lib/gen-autostart.sh" "$A/scripts/hypr/lib/"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/gtk-launch"; chmod +x "$T/bin/"*
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"; printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/gtk-launch"; chmod +x "$T/bin/"*
 export HOME="$H" PATH="$T/bin:$PATH" XDG_DATA_DIRS="$T/sys:$T/flat"
 unset XDG_DATA_HOME
 
@@ -43,7 +43,7 @@ pick() { printf "$1" | timeout 10 bash "$REPO/scripts/appbinds/autostart-picker.
 
 echo "== porażka generatora"
 cat > "$T/bin/mktemp" <<'EOS'
-#!/bin/bash
+#!/usr/bin/env bash
 case "$*" in *autostart-apps.lua*) exit 1 ;; esac
 exec /usr/bin/mktemp "$@"
 EOS
@@ -130,7 +130,7 @@ check "plik bez resztek tymczasowych"     '[[ -z "$(ls "$A/config/hypr" | grep -
 # przez sh -c jak w Hyprlandzie; gtk-launch ma dostać ID jako JEDEN argument.
 if command -v lua5.4 >/dev/null 2>&1; then
     mkdir -p "$T/launch"
-    printf '#!/bin/bash\nprintf "%%s|%%s\\n" "$#" "$1" >> "%s"\n' "$T/launched" > "$T/launch/gtk-launch"
+    printf '#!/usr/bin/env bash\nprintf "%%s|%%s\\n" "$#" "$1" >> "%s"\n' "$T/launched" > "$T/launch/gtk-launch"
     chmod +x "$T/launch/gtk-launch"; : > "$T/launched"
     lua5.4 -e 'hl = { on = function(_, f) f() end, exec_cmd = function(c) io.write(c, "\0") end }' "$LUA" > "$T/cmds" 2>"$T/lua.err"
     while IFS= read -r -d '' c; do PATH="$T/launch:$PATH" sh -c "$c"; done < "$T/cmds"

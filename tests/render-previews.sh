@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/render-previews.sh
 #   src/flux-wall/tools/render-previews.sh na ATRAPIE offscreena (zapisuje
@@ -35,7 +35,7 @@ FW="$T/src/flux-wall"
 mkdir -p "$FW/tools" "$FW/build" "$FW/shaders" "$T/rices/rasta" "$T/rices/gladki"
 cp "$REPO/src/flux-wall/tools/render-previews.sh" "$FW/tools/"
 cat > "$FW/build/offscreen" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 # usage na stderr z kodem 2 — jak prawdziwy offscreen
 if [[ "$1" == --help ]]; then
     echo "offscreen <shader.frag> -o <katalog> [--audio synth|silence]${MOCK_USAGE_DITHER:+ [--dither | --no-dither]}" >&2

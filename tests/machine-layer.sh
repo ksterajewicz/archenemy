@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/machine-layer.sh
 #   Testy regresji warstwy maszynowej na ATRAPIE hyprctl (tests/mock/hyprctl
@@ -27,7 +27,7 @@ export MOCK_LOG="$T/dispatch.log"
 # Pułapki EXIT z install.sh [3] wołają `sudo -k` (K18) — atrapa tylko loguje,
 # żeby wycinki nie ruszały prawdziwego sudo.
 mkdir -p "$T/stub"
-printf '#!/bin/bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/stub/sudo"; chmod +x "$T/stub/sudo"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/stub/sudo"; chmod +x "$T/stub/sudo"
 export PATH="$T/stub:$PATH"
 
 PASS=0; FAIL=0; SKIP=0

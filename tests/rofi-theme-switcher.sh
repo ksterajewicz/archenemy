@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/rofi-theme-switcher.sh
 #   Menu Super+T (scripts/rofi/rofi_theme_switcher.sh) z podglądami
@@ -33,13 +33,13 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
 cat > "$T/bin/rofi" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 cat > "$MOCK_ROFI_DIR/in"
 printf '%s\n' "$@" > "$MOCK_ROFI_DIR/args"
 [[ -n "${MOCK_ROFI_ANSWER:-}" ]] || exit 1
 printf '%s\n' "$MOCK_ROFI_ANSWER"
 MOCK
-printf '#!/bin/bash\necho "NOTIFY: $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
+printf '#!/usr/bin/env bash\necho "NOTIFY: $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
 chmod +x "$T/bin"/*
 export PATH="$T/bin:$PATH" MOCK_LOG="$T/log" MOCK_ROFI_DIR="$T/rofi"
 mkdir -p "$MOCK_ROFI_DIR"
@@ -51,8 +51,8 @@ mkdir -p "$A/scripts/rofi" "$A/scripts/changing-theme-scripts" "$A/rices/alfa" "
 ln -s "$REPO/scripts/rofi/rofi_theme_switcher.sh" "$A/scripts/rofi/rofi_theme_switcher.sh"
 ln -s "$REPO/scripts/rofi/lib" "$A/scripts/rofi/lib"
 # Stub „Alfa Look" → folder alfa (etykieta celowo inna niż folder).
-printf '#!/bin/bash\nRICE_NAME="alfa"\necho "RAN alfa" >> "$MOCK_LOG"\n' > "$A/scripts/changing-theme-scripts/Alfa Look.sh"
-printf '#!/bin/bash\nRICE_NAME="beta"\necho "RAN beta" >> "$MOCK_LOG"\n' > "$A/scripts/changing-theme-scripts/beta.sh"
+printf '#!/usr/bin/env bash\nRICE_NAME="alfa"\necho "RAN alfa" >> "$MOCK_LOG"\n' > "$A/scripts/changing-theme-scripts/Alfa Look.sh"
+printf '#!/usr/bin/env bash\nRICE_NAME="beta"\necho "RAN beta" >> "$MOCK_LOG"\n' > "$A/scripts/changing-theme-scripts/beta.sh"
 printf 'PNG' > "$A/rices/alfa/preview.png"
 SW="$A/scripts/rofi/rofi_theme_switcher.sh"
 

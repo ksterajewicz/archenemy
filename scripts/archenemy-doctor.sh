@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - diagnostyka do publicznych zgłoszeń.
 #   Tylko odczyt; Python (już wymagany) pilnuje wspólnego limitu czasu

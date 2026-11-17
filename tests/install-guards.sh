@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/install-guards.sh
 #   Strażniki instalatora z audytu bezpieczeństwa 2026-11-14:
@@ -31,8 +31,8 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 # Atrapy dla biegów install.sh: sudo tylko loguje (pułapka EXIT woła `sudo -k`
 # także jako użytkownik — prawdziwego sudo test nie rusza), clear i sleep nic.
 mkdir -p "$T/m"
-printf '#!/bin/bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/m/sudo"
-printf '#!/bin/bash\nexit 0\n' > "$T/m/clear"; cp "$T/m/clear" "$T/m/sleep"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/m/sudo"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/m/clear"; cp "$T/m/clear" "$T/m/sleep"
 chmod +x "$T/m"/*
 
 echo "== K8: install.sh a root"

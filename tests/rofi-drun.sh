@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/rofi-drun.sh
 #   Bramka launchera scripts/rofi/rofi_drun.sh: wpisany tekst bez wpisu
@@ -26,7 +26,7 @@ unset XDG_DATA_HOME
 
 # Atrapy binarek zapisują, że się uruchomiły, razem z argumentami.
 for b in app-a app-b app-c app-d app-f forbidden; do
-    printf '#!/bin/bash\necho "%s $*" >> "$RAN"\n' "$b" > "$T/bin/$b"
+    printf '#!/usr/bin/env bash\necho "%s $*" >> "$RAN"\n' "$b" > "$T/bin/$b"
     chmod +x "$T/bin/$b"
 done
 export RAN="$T/ran.log"
@@ -71,7 +71,7 @@ XDG_DATA_DIRS="$T/nic" HOME="$T/nic" ran app-a
 [[ "$(<"$RAN")" == "app-a " ]] && ok "brak jakichkolwiek wpisów → launcher nie odcięty" || fail "bez wpisów: $(<"$RAN")"
 
 echo "== start rofi"
-printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "$RAN"\n' > "$T/bin/rofi"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "$RAN"\n' > "$T/bin/rofi"
 chmod +x "$T/bin/rofi"
 : > "$RAN"; "$GATE"
 mapfile -t ARGS < "$RAN"

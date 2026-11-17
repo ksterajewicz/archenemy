@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/secrets.sh
 #   Sekrety w publicznym repo (K14 z audytu bezpieczeństwa 2026-11-14):

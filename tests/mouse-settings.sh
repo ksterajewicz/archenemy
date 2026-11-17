@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/mouse-settings.sh
 #   Testy ustawień myszy (Super+A → [m], scripts/hypr/mouse-settings.sh)
@@ -38,7 +38,7 @@ LUA="$HOME/archenemy/config/hypr/mouse.lua"
 # oddaje wartość w formacie dispatchGetOption: „float: X”, „str: X”, „bool: X”.
 # MOCK_ZLY=1 = Hyprland ignoruje plik. MOCK_V056=1 = logiczne jako „int: 1” (v0.56.2).
 cat > "$T/bin/hyprctl" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 l="$HOME/archenemy/config/hypr/mouse.lua"
 val() { [[ -f "$MOCK_STAN" ]] && sed -n "s/.*[ {]$1 = \"\{0,1\}\([^ \",}]*\).*/\1/p" "$MOCK_STAN"; }
 case "$1" in
@@ -62,7 +62,7 @@ EOF
 # MOCK_RATBAG=none = brak myszy, =dead = bez ratbagd: kod 0 i pusto, =stuck = mysz
 # ignoruje zapis. Stan w plikach MOCK_RB.dpi i MOCK_RB.rate.
 cat > "$T/rb/ratbagctl" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 case "${MOCK_RATBAG:-}" in dead) exit 0 ;; none) echo "No devices available."; exit 0 ;; esac
 if [[ "$1" == list ]]; then
     printf '%-20s %-32s\n' "hollering-marmot:" "Logitech G Pro"
@@ -82,7 +82,7 @@ case "$2 $3" in
 esac
 EOF
 chmod +x "$T/rb/ratbagctl"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/sleep"
 chmod +x "$T/bin/hyprctl"
 export PATH="$T/bin:$PATH" MOCK_LOG="$T/log" MOCK_STAN="$T/stan" MOCK_RB="$T/rbstate"
 
@@ -186,7 +186,7 @@ out="$(rb rate-set $D 250)"; rc=$?
 ok "rate-set: spoza listy" "$([[ $rc == 1 && "$out" == *"nearest is 125"* ]] && echo 1)" "$out"
 
 # --- menu --------------------------------------------------------------------
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"
 menu() { printf "$1" | bash "$MS" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 mkdir -p "$HOME/archenemy/scripts"
 out="$(menu '\n')"

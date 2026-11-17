@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Testy wyboru fontu (Super+A → [f], scripts/appbinds/lib/fonts.sh): zapis tylko
 # poza repo, reset i cofnięcie, odrzucanie niebezpiecznych nazw, rice bez wyboru,
 # import w alacritty, -theme-str w rofi, ekran TUI. Fałszywy HOME i fc-list.
@@ -27,7 +27,7 @@ S="$A/scripts/appbinds/font-settings.sh"
 
 # fc-list: lista rodzin albo zapytanie o glif Nerd Font (charset=f303).
 cat > "$T/bin/fc-list" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 if [[ "${1:-}" == *":charset=f303" ]]; then
     [[ "$1" == JetBrainsMono* ]] && echo "JetBrainsMono Nerd Font"
     exit 0
@@ -44,7 +44,7 @@ printf '%s\n' \
     'Price$Font:spacing=100'
 MOCK
 cat > "$T/bin/rofi" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf '%s\n' "$@" > "$ROFI_ARGS"
 MOCK
 chmod +x "$T/bin/fc-list" "$T/bin/rofi"
@@ -146,7 +146,7 @@ rm -r "$A/foreign-dir"
 for tool in mv ln chmod; do
     real="$(command -v "$tool")"
     cat > "$T/bin/$tool" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 if [[ \${FONT_FAIL_TOOL:-} == $tool ]]; then
     count=0
     [[ -f \$FONT_FAIL_COUNT ]] && read -r count < "\$FONT_FAIL_COUNT"

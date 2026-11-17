@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   Zgodność menu wierszowych z potokami i strzałkami.
 # =============================================

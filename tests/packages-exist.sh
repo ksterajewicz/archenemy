@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/packages-exist.sh
 #   Czy każda nazwa z packages/*.txt naprawdę istnieje tam, skąd ją
@@ -116,7 +116,7 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
 mkdir -p "$T/bin" "$T/pkg"
 cat > "$T/bin/pacman" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 # Atrapa `pacman -Slq [repo…]`: core, extra, multilib (MOCK_MULTILIB_MISSING=1 =
 # wyłączone) i obce repo „third” (MOCK_THIRD=1 — jak repo z paczkami z AUR).
 # Bez nazw repo: wszystkie włączone; nazwa wyłączonego repo → błąd, rc 1, reszta wypisana.

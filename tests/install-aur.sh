@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/install-aur.sh
 #   Kroki AUR instalatora (install/lib/aur.sh, K6+K7 z audytu
@@ -30,20 +30,20 @@ mkdir -p "$T/bin" "$T/tmp" "$T/log"
 export TMPDIR="$T/tmp" LOG="$T/log"
 # git clone <url> <katalog> → katalog z PKGBUILD (adres do clone-url); MOCK_CLONE_FAIL=1 = błąd sieci.
 cat > "$T/bin/git" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$1" == clone ]] || exit 1
 [[ -n "${MOCK_CLONE_FAIL:-}" ]] && exit 128
 mkdir -p "$3" && echo 'pkgname=yay' > "$3/PKGBUILD" && echo "$3" > "$LOG/clone-dir" && echo "$2" > "$LOG/clone-url"
 EOF
 # makepkg -si → zapisuje katalog budowy; MOCK_MAKEPKG_INSTALLS=1 „instaluje” yay.
 cat > "$T/bin/makepkg" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 pwd > "$LOG/makepkg-cwd"
-[[ -n "${MOCK_MAKEPKG_INSTALLS:-}" ]] && printf '#!/bin/bash\necho "$*" > "$LOG/yay-args"\necho "${GIT_PAGER-<unset>}" > "$LOG/yay-git-pager"\n' > "$MOCK_BIN/yay" && chmod +x "$MOCK_BIN/yay"
+[[ -n "${MOCK_MAKEPKG_INSTALLS:-}" ]] && printf '#!/usr/bin/env bash\necho "$*" > "$LOG/yay-args"\necho "${GIT_PAGER-<unset>}" > "$LOG/yay-git-pager"\n' > "$MOCK_BIN/yay" && chmod +x "$MOCK_BIN/yay"
 exit "${MOCK_MAKEPKG_RC:-0}"
 EOF
 cat > "$T/bin/pager" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "$1" > "$LOG/paged"
 EOF
 chmod +x "$T/bin"/*
@@ -158,13 +158,13 @@ INST="$REPO/install/install.sh"
 H4="$T/home4"; mkdir -p "$H4/archenemy/rices" "$H4/archenemy/packages" "$T/bin4"
 PATH="$ORIG_PATH" ln -s "$REPO/install" "$H4/archenemy/install"
 echo testpkg > "$H4/archenemy/packages/requirements-pacman.txt"
-printf '#!/bin/bash\nexec "$MOCK_BIN/git" "$@"\n' > "$T/bin4/git"
-printf '#!/bin/bash\necho "$*" >> "$LOG/sudo"\n' > "$T/bin4/sudo"
-printf '#!/bin/bash\nexit 1\n' > "$T/bin4/pacman"
+printf '#!/usr/bin/env bash\nexec "$MOCK_BIN/git" "$@"\n' > "$T/bin4/git"
+printf '#!/usr/bin/env bash\necho "$*" >> "$LOG/sudo"\n' > "$T/bin4/sudo"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$T/bin4/pacman"
 # Jak prawdziwy makepkg (/usr/bin/makepkg:113-114): na SIGINT sprząta
 # i zgłasza ten sam sygnał ponownie. MOCK_MAKEPKG_WAIT=1 = długa budowa.
 cat > "$T/bin4/makepkg" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 trap 'echo "==> ERROR: Aborted by user!"; trap - INT; kill -INT $$' INT
 echo MOCK-MAKEPKG-RUNNING
 [[ -n "${MOCK_MAKEPKG_WAIT:-}" ]] && sleep 30

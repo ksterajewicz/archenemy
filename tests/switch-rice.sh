@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/switch-rice.sh
 #   Testy przełącznika rice'ów (scripts/changing-theme-scripts/lib/
@@ -34,12 +34,12 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
-for c in makoctl pkill; do printf '#!/bin/bash\nexit 0\n' > "$T/bin/$c"; done
+for c in makoctl pkill; do printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/$c"; done
 # hyprctl: log wywołań; plik $MOCK_BROKEN = config rice'a beta ma błąd, widoczny
 # w configerrors od chwili podlinkowania (Hyprland z autoreloadem czyta zmiany
 # przez inotify jeszcze przed `hyprctl reload`).
 cat > "$T/bin/hyprctl" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "hyprctl $*" >> "$MOCK_LOG"
 if [[ "$1" == configerrors ]]; then
     [[ -f "$MOCK_BROKEN" && "$(readlink "$HOME/.config/hypr")" == */rices/beta/hypr ]] && echo "hl.bind: bad rule in beta"
@@ -49,9 +49,9 @@ exit 0
 MOCK
 # waybar żyje w tle jak prawdziwy (MOCK_WAYBAR_SLEEP s) — sprawdza, czy nie
 # dziedziczy blokady przełącznika; PID-y do posprzątania w $T/waybar.pids.
-printf '#!/bin/bash\necho $$ >> "$MOCK_PIDS"\nexec sleep "${MOCK_WAYBAR_SLEEP:-0}"\n' > "$T/bin/waybar"
-printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"            # nic nie działa w tle
-printf '#!/bin/bash\necho "NOTIFY: $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
+printf '#!/usr/bin/env bash\necho $$ >> "$MOCK_PIDS"\nexec sleep "${MOCK_WAYBAR_SLEEP:-0}"\n' > "$T/bin/waybar"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$T/bin/pgrep"            # nic nie działa w tle
+printf '#!/usr/bin/env bash\necho "NOTIFY: $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
 chmod +x "$T/bin"/*
 export PATH="$T/bin:$PATH" MOCK_LOG="$T/log" MOCK_PIDS="$T/waybar.pids" MOCK_BROKEN="$T/beta-broken"
 
@@ -65,9 +65,9 @@ ln -s "$REPO/scripts/hypr" "$A/scripts/hypr"    # lib/hypr-apply.sh (reload z od
 ln -s "$REPO/scripts/lib" "$A/scripts/lib"   # lib/runtime-dir.sh — katalog sesji (S12)
 # Atrapa flux-walla: zapisuje, który rice widzi w .current_rice w chwili autostartu.
 mkdir -p "$A/scripts/wallpapers"
-printf '#!/bin/bash\necho "FLUXWALL $1 rice=$(cat "$HOME/archenemy/.current_rice")" >> "$MOCK_LOG"\n' > "$A/scripts/wallpapers/flux-wall.sh"
+printf '#!/usr/bin/env bash\necho "FLUXWALL $1 rice=$(cat "$HOME/archenemy/.current_rice")" >> "$MOCK_LOG"\n' > "$A/scripts/wallpapers/flux-wall.sh"
 for r in alfa beta; do
-    printf '#!/bin/bash\nRICE_NAME="%s"\nsource "$(dirname "$(readlink -f "$0")")/lib/switch-rice.sh"\n' "$r" \
+    printf '#!/usr/bin/env bash\nRICE_NAME="%s"\nsource "$(dirname "$(readlink -f "$0")")/lib/switch-rice.sh"\n' "$r" \
         > "$A/scripts/changing-theme-scripts/$r.sh"
 done
 sw() { bash "$A/scripts/changing-theme-scripts/$1.sh" >/dev/null 2>&1; }

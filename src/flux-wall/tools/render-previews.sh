@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - src/flux-wall/tools/render-previews.sh
 #   Kadry podglądu animacji do menu Super+W → Animations/:

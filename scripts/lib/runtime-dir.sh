@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - lib/runtime-dir.sh
 #   Prywatny katalog sesji na blokady, stan i logi — JEDNO miejsce wyboru.

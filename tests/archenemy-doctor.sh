@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   Diagnostyka na atrapach: prywatność, kody, odczyt i limit czasu.
 # =============================================
@@ -48,7 +48,7 @@ for name in ['monitorshyprl.lua', 'workspaces-monitors.lua', 'hardware-keys.lua'
 
 # Atrapy odrzucają każde nieznane wywołanie; żadnych mutacji gita/pacmana/IPC.
 mocks = {
-'git': '''#!/bin/bash
+'git': '''#!/usr/bin/env bash
 [[ "$GIT_OPTIONAL_LOCKS" == 0 ]] || exit 90
 shift 2
 case "$*" in
@@ -59,12 +59,12 @@ case "$*" in
  *) exit 91 ;;
 esac
 ''',
-'pacman': '''#!/bin/bash
+'pacman': '''#!/usr/bin/env bash
 [[ "$*" == -Qq ]] || exit 92
 printf 'hyprland\\n'
 [[ "${DOCTOR_CASE:-}" == packages ]] || echo waybar
 ''',
-'hyprctl': '''#!/bin/bash
+'hyprctl': '''#!/usr/bin/env bash
 [[ "${DOCTOR_CASE:-}" == hung ]] && { sleep 10; exit; }
 case "$*" in
  version) echo 'Hyprland 0.57.0' ;;
@@ -81,23 +81,23 @@ case "$*" in
  *) exit 93 ;;
 esac
 ''',
-'pgrep': '#!/bin/bash\nexit 1\n',
-'lspci': '#!/bin/bash\nprintf "%s\\n" "$DOCTOR_SECRETS"\necho "00:02.0 VGA compatible controller [0300]: example [1234:5678]"\necho "  Kernel driver in use: testdriver"\n',
-'nvidia-smi': '#!/bin/bash\necho 555.12.3\n',
-'asusctl': '#!/bin/bash\ncase "$*" in --version) echo "asusctl 6.3.8";; "profile get") echo Balanced;; *) exit 94;; esac\n',
-'notify-send': '#!/bin/bash\necho forbidden-notification > "$HOME/NOTIFIED"\nexit 95\n',
-'zsh': '#!/bin/bash\necho "zsh 5.9"\n',
+'pgrep': '#!/usr/bin/env bash\nexit 1\n',
+'lspci': '#!/usr/bin/env bash\nprintf "%s\\n" "$DOCTOR_SECRETS"\necho "00:02.0 VGA compatible controller [0300]: example [1234:5678]"\necho "  Kernel driver in use: testdriver"\n',
+'nvidia-smi': '#!/usr/bin/env bash\necho 555.12.3\n',
+'asusctl': '#!/usr/bin/env bash\ncase "$*" in --version) echo "asusctl 6.3.8";; "profile get") echo Balanced;; *) exit 94;; esac\n',
+'notify-send': '#!/usr/bin/env bash\necho forbidden-notification > "$HOME/NOTIFIED"\nexit 95\n',
+'zsh': '#!/usr/bin/env bash\necho "zsh 5.9"\n',
 }
 for name, text in mocks.items():
     path = bin_dir / name
-    text = text.replace('#!/bin/bash\n', '#!/bin/bash\n[[ "${DOCTOR_CASE:-}" == slow ]] && sleep 10\n', 1)
+    text = text.replace('#!/usr/bin/env bash\n', '#!/usr/bin/env bash\n[[ "${DOCTOR_CASE:-}" == slow ]] && sleep 10\n', 1)
     path.write_text(text)
     path.chmod(0o755)
 # Istniejące duże diagnostyki mają atrapy z jawnymi danymi prywatnymi.
 for name in ['hypr/workspace-diag.sh', 'hypr/gaming-diag.sh']:
     path = repo / 'scripts' / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('#!/bin/bash\nprintf "%s\\n" "$DOCTOR_SECRETS"\n')
+    path.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$DOCTOR_SECRETS"\n')
 secrets = [str(home), 'fixture-user-private', socket.gethostname(),
            'SERIAL-EDID-PRIVATE-123', '192.0.2.81', 'aa:bb:cc:dd:ee:ff',
            '2001:db8::1234', 'token=PRIVATE-CREDENTIAL-123', 'ARBITRARY_OPAQUE_SECRET']

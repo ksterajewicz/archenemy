@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/wallpaper-switcher.sh
 #   Testy regresji przełącznika tapet (scripts/rofi/rofi_wallpaper_switcher.sh)
@@ -45,7 +45,7 @@ DESC_DP3="Dell U2720Q ABC123"
 # ─── atrapy: demon hyprpapera (start/stop) + notify-send ─────────────────────
 mkdir -p "$T/bin"
 cat > "$T/bin/hyprpaper" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 # Atrapa DEMONA: start = wczytanie hyprpaper.conf do stanu, w kolejności pliku
 # (hyprpaper dodaje wpisy configu w tej samej kolejności — patrz mock/hyprctl).
 conf="$HOME/archenemy/config/hypr/hyprpaper.conf"
@@ -64,23 +64,23 @@ while IFS= read -r line; do
 done < "$conf"
 EOF
 cat > "$T/bin/pkill" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$*" == *hyprpaper* ]] && { rm -f "$MOCK_HYPRPAPER_STATE"; echo "DAEMON kill" >> "${MOCK_LOG:-/dev/null}"; exit 0; }
 exit 1
 EOF
 cat > "$T/bin/pgrep" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$*" == *hyprpaper* && -f "$MOCK_HYPRPAPER_STATE" ]] && { echo 1234; exit 0; }
 exit 1
 EOF
 cat > "$T/bin/notify-send" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "NOTIFY: $*" >> "${MOCK_LOG:-/dev/null}"
 EOF
 # rofi: zapisuje wejście (z bajtami \0/\x1f) i argumenty wywołania nr N,
 # odpowiada N-tą linią $MOCK_ROFI_ANSWERS; pusta linia/brak = Esc (kod 1).
 cat > "$T/bin/rofi" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 n=$(( $(cat "$MOCK_ROFI_DIR/count" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$MOCK_ROFI_DIR/count"
 cat > "$MOCK_ROFI_DIR/in-$n"
@@ -93,7 +93,7 @@ MOCK
 # go z PATH). Jak prawdziwy: przy błędzie kod 0 i brak pliku (MOCK_THUMB_FAIL=1).
 mkdir -p "$T/thumbbin"
 cat > "$T/thumbbin/glycin-thumbnailer" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "GLYCIN $*" >> "$MOCK_LOG"
 out=""
 while (( $# )); do case "$1" in --output) out="$2"; shift 2 ;; *) shift ;; esac; done
@@ -341,7 +341,7 @@ check "--init ze stanem na skasowany plik → initial" '[[ "$out" == *initial* &
 # pokazał. Demon, który nie wstaje (IPC milczy, restart nie pomaga): wynik
 # dopiero po apply_ipc, z dopiskiem -failed.
 mkdir -p "$T/bin-deadpaper"
-printf '#!/bin/bash\necho "DAEMON dead" >> "${MOCK_LOG:-/dev/null}"\nexit 1\n' > "$T/bin-deadpaper/hyprpaper"
+printf '#!/usr/bin/env bash\necho "DAEMON dead" >> "${MOCK_LOG:-/dev/null}"\nexit 1\n' > "$T/bin-deadpaper/hyprpaper"
 chmod +x "$T/bin-deadpaper/hyprpaper"
 setup_dat a
 rm -f "$MOCK_HYPRPAPER_STATE"
@@ -526,7 +526,7 @@ echo "== J: Animations/ — kadry previews/<aktywny rice>/<animacja>.png"
 SH="$A/src/flux-wall/shaders"
 mkdir -p "$A/scripts/wallpapers" "$A/src/flux-wall/build" "$SH/previews/testrice"
 ln -sf "$REPO/scripts/wallpapers/flux-wall.sh" "$A/scripts/wallpapers/flux-wall.sh"
-printf '#!/bin/bash\nexit 0\n' > "$A/src/flux-wall/build/flux-wall"; chmod +x "$A/src/flux-wall/build/flux-wall"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$A/src/flux-wall/build/flux-wall"; chmod +x "$A/src/flux-wall/build/flux-wall"
 for n in plain nopreview "orb-spinnin'"; do printf 'void main(){}\n' > "$SH/$n.frag"; done
 printf '#pragma flux audio 1\n' > "$SH/orb-spinnin'.update.glsl"
 printf 'PNG' > "$SH/previews/testrice/plain.png"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/appbinds-menu.sh
 #   Prawdziwe menu TUI Super+A sterowane z wejścia standardowego, na fałszywym
@@ -33,10 +33,10 @@ cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
 mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 mkdir -p "$A/scripts/appbinds/lib"; cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 printf 'MONITOR=DP-1\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nROLE=primary\nDESCRIPTION=\nORDER=1\n' > "$A/data/monitors/DP-1.dat"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 1\n' > "$T/bin/pgrep"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/notify-send"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/setsid"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/usr/bin/env bash\nexit 1\n' > "$T/bin/pgrep"; printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/notify-send"; printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/setsid"
 printf 'hl.bind(mainMod .. " + Q", hl.dsp.window.close())\nhl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "maximized" }))\n' > "$H/.config/hypr/hyprland.lua"
 printf '#define XKB_KEY_F5 0xffc2\n#define XKB_KEY_semicolon 0x3b\n#define XKB_KEY_Return 0xff0d\n' > "$T/keysyms.h"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"
 # Atrapa hyprctl: reload ocenia appbinds.lua; klawisz `badkey` albo plik
 # $T/failreload = błąd configu. Plik $T/autoreload = Hyprland z autoreloadem
 # (misc:disable_autoreload = false): plik wczytany przez inotify zaraz po
@@ -44,7 +44,7 @@ printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
 # `badkey` w bindach albo plik reguł workspace'ów podmieniony (inny i-węzeł niż
 # zapisany w $T/ws.inode).
 cat > "$T/bin/hyprctl" <<EOS
-#!/bin/bash
+#!/usr/bin/env bash
 echo "hyprctl \$*" >> "$T/log"
 [[ -f "$T/dead" ]] && exit 1
 case "\$1" in
@@ -60,7 +60,7 @@ EOS
 # Atrapy procesów: guard „żyje”, gdy setsid go wystartował (plik guard-alive),
 # chyba że guard-broken; waybar żyje, gdy jest plik waybar-alive.
 cat > "$T/bin/pgrep" <<EOS
-#!/bin/bash
+#!/usr/bin/env bash
 case "\$*" in
   *workspace-orphan-guard*) [[ -f "$T/guard-alive" ]] ;;
   *waybar*) [[ -f "$T/waybar-alive" ]] ;;
@@ -68,14 +68,14 @@ case "\$*" in
 esac
 EOS
 cat > "$T/bin/setsid" <<EOS
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "\$*" == *workspace-orphan-guard* && ! -f "$T/guard-broken" ]] && touch "$T/guard-alive"
 exit 0
 EOS
 # pkill trafia tylko w żywego waybara (jak prawdziwy: kod 1 bez procesu);
 # plik pkill-fails = waybar jest, ale sygnał nie dochodzi.
 cat > "$T/bin/pkill" <<EOS
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pkill \$*" >> "$T/log"
 [[ -f "$T/waybar-alive" && ! -f "$T/pkill-fails" ]]
 EOS
@@ -83,7 +83,7 @@ touch "$T/waybar-alive"
 # mv, które nie umie zapisać pliku o nazwie z mv-fails (pełny dysk).
 REAL_MV="$(command -v mv)"
 cat > "$T/bin/mv" <<EOS
-#!/bin/bash
+#!/usr/bin/env bash
 if [[ -f "$T/mv-fails" && "\${!#}" == */"\$(<"$T/mv-fails")" ]]; then echo "mv: cannot move" >&2; exit 1; fi
 exec "$REAL_MV" "\$@"
 EOS
@@ -278,7 +278,7 @@ echo decades > "$A/data/workspace-mode.dat"
 echo "== menu główne"
 cp "$REPO"/scripts/hypr/{keyboard-layouts,mouse-settings}.sh "$A/scripts/hypr/"
 mkdir -p "$A/scripts/appbinds"
-printf '#!/bin/bash\nread -r x < "%s/sink" && echo "$x"\n' "$T" > "$A/scripts/appbinds/audio-devices.sh"
+printf '#!/usr/bin/env bash\nread -r x < "%s/sink" && echo "$x"\n' "$T" > "$A/scripts/appbinds/audio-devices.sh"
 echo "Family 17h HD Audio Controller Speaker + Headphones" > "$T/sink"
 printf 'de,us\n' > "$A/data/keyboard-layouts.dat"; echo 0.3 > "$A/data/mouse-sensitivity.dat"
 printf 'firefox\n# x\n\nsteam\n' > "$A/data/autostart-apps.dat"
@@ -324,8 +324,8 @@ check "podgląd [i]: opis"                      '[[ "$out" == *"config check"* ]
 
 echo "== [p]/[u] otwierają właściwe narzędzia"
 # Atrapy zapobiegają uruchomieniu aktualizatora i zapisowi autostartu.
-printf '#!/bin/bash\necho opened-autostart\n' > "$A/scripts/appbinds/autostart-picker.sh"
-printf '#!/bin/bash\necho opened-updater\n' > "$A/scripts/appbinds/update-archenemy.sh"
+printf '#!/usr/bin/env bash\necho opened-autostart\n' > "$A/scripts/appbinds/autostart-picker.sh"
+printf '#!/usr/bin/env bash\necho opened-updater\n' > "$A/scripts/appbinds/update-archenemy.sh"
 out="$(tui 'pq')"
 check "[p] otwiera autostart"                   '[[ "$out" == *"opened-autostart"* && "$out" != *"opened-updater"* ]]'
 out="$(tui 'uq')"
@@ -361,18 +361,18 @@ out="$(tui 'n\n\nq')"
 check "[n] otwiera monitory"                   '[[ "$out" == *"archenemy  monitors"* ]]'
 
 echo "== [i] diagnostyka"
-printf '#!/bin/bash\necho report-ok\nexit 0\n' > "$A/scripts/hypr/machine-layer-check.sh"
-printf '#!/bin/bash\necho ws-dump\n' > "$A/scripts/hypr/workspace-diag.sh"
+printf '#!/usr/bin/env bash\necho report-ok\nexit 0\n' > "$A/scripts/hypr/machine-layer-check.sh"
+printf '#!/usr/bin/env bash\necho ws-dump\n' > "$A/scripts/hypr/workspace-diag.sh"
 out="$(tui 'i1\nq')"
 check "kontrola: raport i wynik"               '[[ "$out" == *"report-ok"*"Config matches"* ]]'
-printf '#!/bin/bash\necho bad\nexit 1\n' > "$A/scripts/hypr/machine-layer-check.sh"
+printf '#!/usr/bin/env bash\necho bad\nexit 1\n' > "$A/scripts/hypr/machine-layer-check.sh"
 out="$(tui 'i1\nq')"
 check "kontrola: problemy bez sukcesu"         '[[ "$out" == *"Problems found"* && "$out" != *"Config matches"* ]]'
 out="$(tui 'i2\nq')"
 check "zrzut w pliku i na ekranie"             '[[ "$out" == *"ws-dump"*"Saved to"* ]] && grep -qx ws-dump "$H"/archenemy-diag-workspaces-*.txt'
 out="$(tui 'i3\nq')"
 check "brak skryptu zgłoszony"                 '[[ "$out" == *"Missing"*"gaming-diag.sh"* ]]'
-printf '#!/bin/bash\nexit 0\n' > "$A/scripts/hypr/gaming-diag.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$A/scripts/hypr/gaming-diag.sh"
 out="$(tui 'i3\nq')"
 check "pusty zrzut to nie sukces"              '[[ "$out" == *"produced no output"* && "$out" != *"Saved to"* ]] && ! ls "$H"/archenemy-diag-gaming-* >/dev/null 2>&1'
 out="$(tui 'i\nq')"

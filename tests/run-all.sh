@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/run-all.sh
 #   Uruchamia wszystkie pakiety testów z tests/*.sh (poza sobą) i podaje

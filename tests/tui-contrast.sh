@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/tui-contrast.sh
 #   Kolory TUI Super+A (scripts/appbinds/lib/tui.sh) względem alacritty każdego

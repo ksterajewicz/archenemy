@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/flux-wall-dither.sh
 #   Raster Bayera jako cecha RICE'A, nie animacji (zgłoszenie właściciela
@@ -50,7 +50,7 @@ printf '%s\n' 'FLUX_WALL_PALETTE="000000,777777,FFFFFF"' 'FLUX_WALL_SHADER="src/
 
 # fałszywa binarka: --help jak prawdziwa (albo stara bez flagi), inaczej log argumentów
 cat > "$A/src/flux-wall/build/flux-wall" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 if [[ "${1:-}" == --help ]]; then
     if [[ -f "$HOME/old-binary" ]]; then echo "Użycie: flux-wall -s shader.frag [--no-audio]" >&2
     else echo "Użycie: flux-wall -s shader.frag [--no-audio] [--dither | --no-dither]" >&2; fi

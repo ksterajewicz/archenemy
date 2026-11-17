@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2088,SC2001  # źródła są względem SELF_DIR; ~ w UI; wcięcie listy sedem
 
 # =============================================

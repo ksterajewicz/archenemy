@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/flux-wall-bars.sh
 #   Regresja „bars": kreski szczytu (peak hold) tylko na lewej połowie

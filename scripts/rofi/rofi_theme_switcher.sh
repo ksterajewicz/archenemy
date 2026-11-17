@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - rofi_theme_switcher.sh

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/install-tui-entry.sh
 #   Test kroku [8m] install.sh: wpis „archenemy” w rofi (.desktop), wspólny
@@ -53,7 +53,7 @@ new_home() {
     local h="$T/$1"
     mkdir -p "$h/archenemy/scripts/appbinds" "$h/archenemy/scripts/shell/lib"
     cp "$REPO/scripts/shell/lib/shell-rc.sh" "$h/archenemy/scripts/shell/lib/"
-    printf '#!/bin/bash\necho "TUI-OK $*"\n' > "$h/archenemy/scripts/appbinds/appbinds.sh"
+    printf '#!/usr/bin/env bash\necho "TUI-OK $*"\n' > "$h/archenemy/scripts/appbinds/appbinds.sh"
     chmod +x "$h/archenemy/scripts/appbinds/appbinds.sh"
     printf '# bashrc użytkownika\nexport FOO=1\n' > "$h/.bashrc"
     echo "$h"

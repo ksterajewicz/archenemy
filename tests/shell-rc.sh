@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/shell-rc.sh
 #   Biblioteka wspólnego pliku powłoki (scripts/shell/lib/shell-rc.sh) na
@@ -200,7 +200,7 @@ echo "== inna ścieżka aplikacji (przeprowadzka, decyzja 2026-11-09)"
 # odświeża blok (updated), zamiast dopisać drugi.
 H2="$T/home2"; A2="$H2/.local/share/archenemy"
 mkdir -p "$A2/scripts/appbinds" "$A2/config/shell"
-printf '#!/bin/bash\necho "TUI2 $*"\n' > "$A2/scripts/appbinds/appbinds.sh"; chmod +x "$A2/scripts/appbinds/appbinds.sh"
+printf '#!/usr/bin/env bash\necho "TUI2 $*"\n' > "$A2/scripts/appbinds/appbinds.sh"; chmod +x "$A2/scripts/appbinds/appbinds.sh"
 printf '[[ $- != *i* ]] && return\n' > "$H2/.bashrc"
 OUT="$(HOME="$H2" ARCHENEMY_DIR="$A2" bash -c 'source "$1"; rc_block_ensure "$HOME/.bashrc" bash 2>/dev/null; archenemy_alias_add && echo alias-ok' _ "$REPO/scripts/shell/lib/shell-rc.sh")"
 check "blok i alias dodane"               '[[ "$OUT" == *added*alias-ok* ]]'
@@ -238,7 +238,7 @@ check "błąd z prefiksem powłoki"          '[[ "$(shellrc_check)" == bash:* ]]
 printf '/bin/sh\n/usr/bin/bash\n/usr/bin/TESTnone\n' > "$T/shells"
 check "ścieżka z /etc/shells"             '[[ "$(ARCHENEMY_SHELLS_FILE="$T/shells" shell_path_for bash)" == /usr/bin/bash ]]'
 check "brak w /etc/shells → kod 1"        '! ARCHENEMY_SHELLS_FILE="$T/shells" shell_path_for TESTnone >/dev/null'
-printf '#!/bin/bash\necho "x:x:1:1::/home/x:/usr/bin/zsh"\n' > "$T/bin/getent"; chmod +x "$T/bin/getent"
+printf '#!/usr/bin/env bash\necho "x:x:1:1::/home/x:/usr/bin/zsh"\n' > "$T/bin/getent"; chmod +x "$T/bin/getent"
 check "login_shell z passwd"              '[[ "$(PATH="$T/bin:$PATH" login_shell)" == zsh ]]'
 
 echo "== kompletność: wszystko, co ląduje u użytkownika, po angielsku (właściciel 2026-11-09)"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - install/lib/aur.sh
 #   Wspólne kroki AUR instalatora (source z install.sh): budowa yay i

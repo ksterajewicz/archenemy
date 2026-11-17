@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - lib/hypr-apply.sh
 #   Reload Hyprlanda z odczytem wyniku: sukces = brak NOWYCH błędów configu, nie

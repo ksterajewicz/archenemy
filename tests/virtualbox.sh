@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/virtualbox.sh
 #   Testy instalatora VirtualBoksa (install/virtualbox-installation.sh)
@@ -37,13 +37,13 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
 cat > "$T/bin/sudo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 exec "$@"
 EOF
 # pacman: -S logowane (porażka na żądanie MOCK_PACMAN_FAIL=1); -Qi = pakiet
 # „jest”, chyba że wymieniony w MOCK_NOT_INSTALLED.
 cat > "$T/bin/pacman" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pacman $*" >> "$MOCK_LOG"
 if [[ "$1" == "-Qi" ]]; then
     [[ " ${MOCK_NOT_INSTALLED:-} " != *" $2 "* ]]; exit
@@ -54,7 +54,7 @@ EOF
 # modinfo -k <kver> [-F version] vboxdrv: moduł „jest”, gdy w atrapie leży
 # <kver>/vboxdrv.ko; jego treść = wersja.
 cat > "$T/bin/modinfo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 f="$ARCHENEMY_MODULES_DIR/$2/vboxdrv.ko"
 [[ "$1" == "-k" && -f "$f" ]] || exit 1
 [[ "${3:-}" == "-F" ]] && cat "$f"
@@ -63,7 +63,7 @@ EOF
 # modprobe <mod>: „ładuje” = tworzy /sys/module/<mod> z wersją zbudowaną dla
 # działającego jądra; MOCK_MODPROBE_FAIL=1 → nic nie ładuje.
 cat > "$T/bin/modprobe" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "modprobe $*" >> "$MOCK_LOG"
 [[ "${MOCK_MODPROBE_FAIL:-0}" == 1 ]] && exit 1
 mkdir -p "$ARCHENEMY_SYSMODULE_DIR/$1"
@@ -71,21 +71,21 @@ cat "$ARCHENEMY_MODULES_DIR/$MOCK_KVER/vboxdrv.ko" > "$ARCHENEMY_SYSMODULE_DIR/$
 exit 0
 EOF
 cat > "$T/bin/uname" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "$MOCK_KVER"
 EOF
 # id -nG: grupy z pliku (usermod dopisuje), getent: grupa vboxusers istnieje
 cat > "$T/bin/id" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$1" == "-un" ]] && { echo tester; exit 0; }
 cat "$MOCK_GROUPS"
 EOF
 cat > "$T/bin/getent" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$*" == "group vboxusers" ]]
 EOF
 cat > "$T/bin/usermod" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "usermod $*" >> "$MOCK_LOG"
 [[ "$1" == "-aG" ]] && printf ' %s' "$2" >> "$MOCK_GROUPS"
 exit 0

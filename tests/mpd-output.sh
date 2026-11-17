@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/mpd-output.sh
 #   Wyjście audio mpd z Super+A → [o] (scripts/appbinds/lib/mpd-output.sh) na
@@ -26,8 +26,8 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin" "$T/mpd" "$T/home/archenemy/config/mpd" "$T/home/archenemy/data" "$T/home/.config"
 cp "$REPO/tests/mock/mpc" "$T/bin/mpc"
-printf '#!/bin/bash\nif [[ "$*" == *is-active* ]]; then exit "${MOCK_SYSTEM_MPD:-1}"; fi\nexit "${MOCK_RESTART:-0}"\n' > "$T/bin/systemctl"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/usr/bin/env bash\nif [[ "$*" == *is-active* ]]; then exit "${MOCK_SYSTEM_MPD:-1}"; fi\nexit "${MOCK_RESTART:-0}"\n' > "$T/bin/systemctl"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/sleep"
 chmod +x "$T/bin/"*
 export HOME="$T/home" PATH="$T/bin:$PATH" MOCK_MPD="$T/mpd"
 export MOCK_MPD_CONF="$HOME/archenemy/config/mpd/output.conf"

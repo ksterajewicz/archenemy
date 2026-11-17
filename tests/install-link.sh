@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/install-link.sh
 #   Test kroku [9] install.sh (symlinki rice'a do ~/.config) na atrapie $HOME
@@ -35,7 +35,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 #     zostawia ślad w $MOCK_LOG — w link-only log ma zostać pusty.
 mkdir -p "$T/bin"
 for c in hyprctl makoctl pkill pgrep waybar swayosd-server notify-send; do
-    printf '#!/bin/bash\necho "%s: $*" >> "$MOCK_LOG"\nexit 0\n' "$c" > "$T/bin/$c"
+    printf '#!/usr/bin/env bash\necho "%s: $*" >> "$MOCK_LOG"\nexit 0\n' "$c" > "$T/bin/$c"
 done
 chmod +x "$T/bin"/*
 export PATH="$T/bin:$PATH" MOCK_LOG="$T/log"

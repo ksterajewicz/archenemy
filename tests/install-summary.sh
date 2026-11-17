@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/install-summary.sh
 #   Czy install.sh mówi prawdę o tym, co zrobił: kroki opcjonalne, które się
@@ -49,14 +49,14 @@ run_step() {
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
 cat > "$T/bin/sudo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$1" == -k ]] && exit 0
 exec "$@"
 EOF
 # pacman: -Qi <pkg> = zainstalowany, jeśli jest w MOCK_INSTALLED; -S logowane,
 # nieznana nazwa (MOCK_PACMAN_UNKNOWN) anuluje całą transakcję jak prawdziwy.
 cat > "$T/bin/pacman" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pacman $*" >> "$MOCK_LOG"
 if [[ "$1" == "-Qi" ]]; then
     [[ " ${MOCK_INSTALLED:-} " == *" $2 "* ]]; exit
@@ -67,7 +67,7 @@ done
 exit 0
 EOF
 cat > "$T/bin/yay" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "yay $*" >> "$MOCK_LOG"
 [[ "${MOCK_YAY_FAIL:-0}" == 1 ]] && exit 1
 exit 0
@@ -127,7 +127,7 @@ check "wycinek [6.5] znaleziony"                 '[[ -s "$T/step65.sh" ]]'
 # Atrapy instalatorów: kod wyjścia z MOCK_<CPUDRIVERS|GPUDRIVERS|KERNEL>_RC.
 for n in cpudrivers-installation gpudrivers-installation kernel-install; do
     v="MOCK_$(tr 'a-z-' 'A-Z_' <<< "${n%%-*}")_RC"
-    printf '#!/bin/bash\necho "RUN %s" >> "$MOCK_LOG"\nexit "${%s:-0}"\n' "$n" "$v" > "$A/install/$n.sh"
+    printf '#!/usr/bin/env bash\necho "RUN %s" >> "$MOCK_LOG"\nexit "${%s:-0}"\n' "$n" "$v" > "$A/install/$n.sh"
 done
 : > "$MOCK_LOG"
 out=$(run_step "$T/step65.sh" $'y\ny\ny\n')
@@ -147,8 +147,8 @@ echo "== [8l] link ~/.config/mpd"
 cut_step '^# 8l\. Music stack' '^if command -v ncmpcpp' "$T/step8l.sh"
 check "wycinek [8l] (mpd) znaleziony"            '[[ -s "$T/step8l.sh" ]]'
 # Atrapy: mpd jest zainstalowany; systemctl — nic nie jest włączone.
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/mpd"
-printf '#!/bin/bash\nexit 1\n' > "$T/bin/systemctl"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/mpd"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$T/bin/systemctl"
 chmod +x "$T/bin/mpd" "$T/bin/systemctl"
 mkdir -p "$A/config/mpd" "$HOME/.config"
 MPD_PRE='CONFIG_DIR="$HOME/.config"; DATA_DIR="$ARCHENEMY_DIR/data"; seed_dat() { :; }'
@@ -172,7 +172,7 @@ check "wiszący link, y: link podmieniony, stary jako .bak" 'mpd_linked && compg
 
 # ln, który pada (np. pełny dysk): ✗ i SKIPPED zamiast ✓.
 mkdir -p "$T/bin-noln"
-printf '#!/bin/bash\necho "ln: failed" >&2\nexit 1\n' > "$T/bin-noln/ln"
+printf '#!/usr/bin/env bash\necho "ln: failed" >&2\nexit 1\n' > "$T/bin-noln/ln"
 chmod +x "$T/bin-noln/ln"
 mpd_reset
 out=$(PATH="$T/bin-noln:$PATH" run_step "$T/step8l.sh" $'n\n' "$MPD_PRE")
@@ -184,7 +184,7 @@ check "y, nieudany ln: ✗, SKIPPED, bez DONE"     '[[ "$out" == *"✗"*"mpd"* ]
 # na miejscu, a `ln -sT` odmawia — zwykłe `ln -s` utworzyłoby link W ŚRODKU
 # niego (~/.config/mpd/mpd), czyli obcy plik w configu użytkownika (przegląd P-3).
 mkdir -p "$T/bin-nomv"
-printf '#!/bin/bash\necho "mv: cannot move: Permission denied" >&2\nexit 1\n' > "$T/bin-nomv/mv"
+printf '#!/usr/bin/env bash\necho "mv: cannot move: Permission denied" >&2\nexit 1\n' > "$T/bin-nomv/mv"
 chmod +x "$T/bin-nomv/mv"
 mpd_reset; mkdir -p "$MPD_LINK"
 out=$(PATH="$T/bin-nomv:$PATH" run_step "$T/step8l.sh" $'y\nn\n' "$MPD_PRE")
@@ -201,7 +201,7 @@ check "wycinek [9.5] znaleziony"                 '[[ -s "$T/step95.sh" ]]'
 mkdir -p "$A/scripts/rofi" "$A/scripts/lib" "$A/wallpapers"
 : > "$A/wallpapers/a.png"
 cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji z logiem hyprpapera (S12)
-printf '#!/bin/bash\nprintf "%%s\\n" "$MOCK_WP_RESULT"\n' > "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$MOCK_WP_RESULT"\n' > "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
 out=$(MOCK_WP_RESULT=initial run_step "$T/step95.sh" '')
 check "initial: ✓ i wpis w DONE"                 '[[ "$out" == *"✓ Initial wallpaper applied"* ]] && grep -q "^DONE=Initial wallpaper" "$T/summary" && ! grep -q "^SKIPPED=." "$T/summary"'
 out=$(MOCK_WP_RESULT=initial-failed run_step "$T/step95.sh" '')

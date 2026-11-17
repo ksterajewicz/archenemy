@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - virtualbox-installation.sh

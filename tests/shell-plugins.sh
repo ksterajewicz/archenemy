@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/shell-plugins.sh
 #   Wtyczki zsh: stan, zapis, kopie i TUI na atrapach pacman/chsh.
@@ -26,7 +26,7 @@ check() {
 S="$ARCHENEMY_DIR/scripts/shell/shell-settings.sh"
 export MOCK_ROOT="$T"
 cat > "$T/bin/pacman" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf '%s\n' "$*" >> "$MOCK_ROOT/pacman-log"
 case "$1" in
     -Q) grep -qxF "$2" "$MOCK_ROOT/packages" ;;
@@ -38,20 +38,20 @@ case "$1" in
 esac
 MOCK
 cat > "$T/bin/sudo" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 "$@"
 MOCK
 cat > "$T/bin/getent" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf 'test:x:1000:1000::%s:%s\n' "$HOME" "$(cat "$MOCK_ROOT/passwd")"
 MOCK
 cat > "$T/bin/chsh" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ ! -e "$MOCK_ROOT/chsh-fail" ]] || exit 1
 printf '%s\n' "$2" > "$MOCK_ROOT/passwd"
 MOCK
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/zsh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/zsh"
 chmod +x "$T/bin/"*
 export PATH="$T/bin:$PATH" SHELL=/bin/bash ARCHENEMY_SHELLS_FILE="$T/shells"
 printf '/bin/bash\n%s/bin/zsh\n' "$T" > "$T/shells"

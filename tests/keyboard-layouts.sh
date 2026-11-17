@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/keyboard-layouts.sh
 #   Testy układów klawiatury (Super+A → [k], Super+Ctrl+1…4,
@@ -56,7 +56,7 @@ export ARCHENEMY_XKB_RULES="$T/evdev.lst"
 # Atrapa hyprctl: reload „wczytuje” kb_layout z keyboard-layouts.lua,
 # getoption oddaje go jak v0.56.2 („str: …”), switchxkblayout → log.
 cat > "$T/bin/hyprctl" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 case "$1" in
     reload) echo reload >> "$MOCK_LOG"
             v="pl,us"
@@ -67,7 +67,7 @@ case "$1" in
     switchxkblayout) echo "switch $*" >> "$MOCK_LOG" ;;
 esac
 EOF
-printf '#!/bin/bash\necho "notify $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
+printf '#!/usr/bin/env bash\necho "notify $*" >> "$MOCK_LOG"\n' > "$T/bin/notify-send"
 chmod +x "$T/bin/hyprctl" "$T/bin/notify-send"
 export PATH="$T/bin:$PATH" MOCK_LOG="$T/log" MOCK_STAN="$T/stan"
 

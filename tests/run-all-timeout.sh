@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/run-all-timeout.sh
 #   Limit czasu na pakiet w tests/run-all.sh (T8 z audytu 2026-11-05: jedna

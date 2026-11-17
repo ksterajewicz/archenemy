@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - audio-devices.sh
 #   Domyślne wyjście i wejście audio całego systemu: jedyna droga dla

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/asus-installation.sh
 #   Instalator narzędzi ASUS (install/asus-installation.sh) na atrapach pacman,
@@ -25,12 +25,12 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin"
 export MOCK_DB="$T/installed" MOCK_LOG="$T/log"
-printf '#!/bin/bash\nexec "$@"\n' > "$T/bin/sudo"
+printf '#!/usr/bin/env bash\nexec "$@"\n' > "$T/bin/sudo"
 
 # Baza pakietów: plik z nazwami. -Qq <nazwa> znajduje też dostawcę, jak prawdziwy
 # pacman (query.c: alpm_find_satisfier). -S podmienia pakiety w konflikcie.
 cat > "$T/bin/pacman" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pacman $*" >> "$MOCK_LOG"
 provider() {
     case "$1" in
@@ -59,7 +59,7 @@ MOCK
 
 # systemctl: is-active mówi prawdę o tym, czy start/restart się udał.
 cat > "$T/bin/systemctl" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "systemctl $*" >> "$MOCK_LOG"
 case "$1" in
     start|restart) [[ "${MOCK_ASUSD_DEAD:-0}" == 1 ]] || : > "$MOCK_LOG.active" ;;
@@ -69,7 +69,7 @@ exit 0
 MOCK
 
 cat > "$T/bin/supergfxctl" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "${MOCK_GFX_MODE:-Hybrid}"
 MOCK
 chmod +x "$T"/bin/*

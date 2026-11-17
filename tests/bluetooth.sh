@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/bluetooth.sh
 #   Atrapy BlueZ, D-Bus, pacmana i systemctl; bez sprzętu i usług hosta.
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as tmp:
                XDG_CACHE_HOME=str(root / 'cache'), XDG_STATE_HOME=str(root / 'state-home'),
                XDG_DATA_HOME=str(root / 'data'), XDG_RUNTIME_DIR=str(root / 'runtime'), TMPDIR=tmp)
     mocks = {
-        'bluetoothctl': '''#!/bin/bash
+        'bluetoothctl': '''#!/usr/bin/env bash
 printf 'bluetoothctl %s\\n' "$*" >> "$MOCK_ROOT/log"
 # Wewnętrzny timeout utrzymuje proces przy życiu, zewnętrzny jest tylko limitem.
 if [[ "$1" == --timeout ]]; then
@@ -56,17 +56,17 @@ case "$1" in
 esac
 exit 0
 ''',
-        'dbus-monitor': '''#!/bin/bash
+        'dbus-monitor': '''#!/usr/bin/env bash
 printf 'dbus-monitor %s\\n' "$*" >> "$MOCK_ROOT/log"
 [[ "${MOCK_EOF:-0}" == 0 ]] || exit 0
 exec cat "$MOCK_ROOT/events"
 ''',
-        'sudo': '#!/bin/bash\nexec "$@"\n',
-        'pacman': '''#!/bin/bash
+        'sudo': '#!/usr/bin/env bash\nexec "$@"\n',
+        'pacman': '''#!/usr/bin/env bash
 printf 'pacman %s\\n' "$*" >> "$MOCK_ROOT/log"
 if [[ "$1" == -S ]]; then [[ "${FAIL_INSTALL:-0}" == 0 ]]; else [[ "${FAIL_QUERY:-0}" == 0 ]]; fi
 ''',
-        'systemctl': '''#!/bin/bash
+        'systemctl': '''#!/usr/bin/env bash
 printf 'systemctl %s\\n' "$*" >> "$MOCK_ROOT/log"
 case "$1" in
  enable) [[ "${FAIL_ENABLE:-0}" == 0 ]] ;;
@@ -74,8 +74,8 @@ case "$1" in
  is-active) [[ "${FAIL_ACTIVE:-0}" == 0 ]] ;;
 esac
 ''',
-        'bluetui': '#!/bin/bash\nexit 0\n',
-        'alacritty': '#!/bin/bash\nprintf "alacritty %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
+        'bluetui': '#!/usr/bin/env bash\nexit 0\n',
+        'alacritty': '#!/usr/bin/env bash\nprintf "alacritty %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
     }
     for name, code in mocks.items():
         f = root / 'bin' / name

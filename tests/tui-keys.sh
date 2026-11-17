@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/tui-keys.sh
 #   Klawisze TUI Super+A (scripts/appbinds/lib/tui.sh + prawdziwe appbinds.sh
@@ -64,7 +64,7 @@ check "cyfra 1 nie zatwierdza N" '! yes_no "1\n" N'
 
 echo "== menu główne"
 H="$T/home"; mkdir -p "$H/archenemy/config/hypr" "$H/archenemy/data" "$T/bin"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; chmod +x "$T/bin/clear"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"; chmod +x "$T/bin/clear"
 tui() { printf '%b' "$1" | HOME="$H" PATH="$T/bin:$PATH" timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1; }
 out="$(tui '\e[A\e[Bq')"; rc=$?
 check "strzałki nie zamykają, q zamyka"   '[[ $rc -eq 0 ]]'
@@ -77,7 +77,7 @@ echo "== aktualizator: Esc i Enter nie uruchamiają instalatora (K2, K4)"
 g() { git -C "$1" -c user.email=t@t -c user.name=t "${@:2}" >/dev/null; }
 git init -q --bare "$T/origin.git"
 A="$H/archenemy"; rm -rf "$A"; git init -q -b dev "$A"
-mkdir -p "$A/install"; printf '#!/bin/bash\necho INSTALL-RAN\n' > "$A/install/install.sh"; echo v1 > "$A/f"
+mkdir -p "$A/install"; printf '#!/usr/bin/env bash\necho INSTALL-RAN\n' > "$A/install/install.sh"; echo v1 > "$A/f"
 g "$A" add -A; g "$A" commit -m v1
 git -C "$A" remote add origin "$T/origin.git"; git -C "$A" push -q origin dev
 upd() { printf '%b' "$1" | HOME="$H" bash "$REPO/scripts/appbinds/update-archenemy.sh" 2>&1; }

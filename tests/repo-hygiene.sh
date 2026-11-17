@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/repo-hygiene.sh
 #   Higiena repozytorium: rzeczy, które same z siebie brudzą working tree
@@ -18,7 +18,7 @@
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 
@@ -33,6 +33,41 @@ fi
 echo "== atrapy w tests/mock są wykonywalne"
 bad=$(git -C "$REPO" ls-files -s -- 'tests/mock/*' | awk '$1 != "100755" {print $4}')
 if [[ -z "$bad" ]]; then ok "tests/mock/* = 100755"; else fail "bez bitu: $bad"; fi
+
+echo "== shebang bash przez PATH: #!/usr/bin/env bash"
+# D2 (2026-11-17, przygotowanie NixOS): NixOS nie ma /bin/bash, a bash leży
+# w PATH (/run/current-system/sw/bin). Shebang ze stałą ścieżką do basha
+# (/bin/bash, /usr/bin/bash) kończy się tam „bad interpreter”, zanim skrypt
+# ruszy. Sprawdzane są WSZYSTKIE pliki śledzone (także bez rozszerzenia, np.
+# tests/mock/*) i każde miejsce pliku — atrapy w heredoc/printf/Pythonie testów
+# też są wykonywane przez jądro. Wzorzec złożony z części, żeby ten plik sam
+# siebie nie łapał.
+OLD_BASH_RE='#!/(usr/)?bin/''bash'
+bad=$(git -C "$REPO" grep -nIE "$OLD_BASH_RE" -- . || true)
+if [[ -z "$bad" ]]; then ok "brak shebangów ze stałą ścieżką do basha (także w atrapach testów)"
+else fail "shebang ze stałą ścieżką (zmień na #!/usr/bin/env bash): $bad"; fi
+# Kontrola wzorca: łapie /bin i /usr/bin także w napisie printf atrapy,
+# przepuszcza env i zwykłe ścieżki do basha (SHELL=, chsh -s) poza shebangiem.
+hits="$(printf '%s\n' '#!/bin/''bash' "printf '#!/usr/bin/""bash\\n' > x" | grep -cE "$OLD_BASH_RE")"
+miss="$(printf '%s\n' '#!/usr/bin/env bash' 'SHELL=/bin/bash' 'chsh -s /usr/bin/bash' | grep -cE "$OLD_BASH_RE")"
+if [[ "$hits" == 2 && "$miss" == 0 ]]; then ok "wzorzec łapie stały shebang (też w printf), przepuszcza env i SHELL=/bin/bash"
+else fail "wzorzec shebangu łapie źle (trafienia $hits z 2, fałszywe $miss)"; fi
+# Pierwsza linia: każdy plik śledzony z shebangiem basha (bez symlinków) ma
+# dokładnie `#!/usr/bin/env bash`; każdy *.sh ma shebang basha (bez niego
+# bezpośrednie uruchomienie zależy od powłoki wołającej).
+bash_files=(); bad=""
+while IFS= read -r -d '' rec; do
+    [[ "${rec%% *}" == 120000 ]] && continue
+    f="${rec#*$'\t'}"
+    first="$(head -n 1 -- "$REPO/$f" 2>/dev/null)"
+    case "$first" in
+        '#!/usr/bin/env bash') bash_files+=("$f") ;;
+        '#!'*bash*) bad+=" $f ($first)" ;;
+        *) [[ "$f" == *.sh ]] && bad+=" $f (brak shebangu basha)" ;;
+    esac
+done < <(git -C "$REPO" ls-files -s -z)
+if [[ -z "$bad" && ${#bash_files[@]} -gt 0 ]]; then ok "${#bash_files[@]} plików: pierwsza linia = #!/usr/bin/env bash"
+else fail "pierwsza linia skryptu bash inna niż #!/usr/bin/env bash:$bad"; fi
 
 echo "== hyprctl dispatch w składni Lua"
 # Config w Lua: `hyprctl dispatch X` = hl.dispatch(X). Stara forma
@@ -181,7 +216,7 @@ fi
     SK='skip "lua5.4 is not installed (atrapa)"'
     DEF='skip() { SKIP=$((SKIP + 1)); echo "  ? skip: $1"; }'
     mk_fx() {   # mk_fx <plik> <gałąź else bloku 1> <gałąź else bloku 2> <definicja skip()>
-        printf '%s\n' '#!/bin/bash' 'PASS=0; FAIL=0; SKIP=0' "$4" \
+        printf '%s\n' '#!/usr/bin/env bash' 'PASS=0; FAIL=0; SKIP=0' "$4" \
             'if command -v lua5.4 >/dev/null 2>&1; then' '    PASS=$((PASS + 1))' 'else' "    $2" 'fi' \
             'echo "== druga sekcja"' \
             'if command -v lua5.4 >/dev/null 2>&1; then' '    PASS=$((PASS + 1))' 'else' "    $3" 'fi' \
@@ -190,7 +225,7 @@ fi
     mk_fx "$T/fx-ok.sh" "$SK" "$SK" "$DEF"
     mk_fx "$T/fx-second.sh" "$SK" 'echo "  - pominięte"' "$DEF"
     mk_fx "$T/fx-nodef.sh" "$SK" "$SK" ''
-    printf '%s\n' '#!/bin/bash' 'PASS=0; FAIL=0; SKIP=0' "$DEF" 'run() {' \
+    printf '%s\n' '#!/usr/bin/env bash' 'PASS=0; FAIL=0; SKIP=0' "$DEF" 'run() {' \
         '    if command -v lua5.4 >/dev/null 2>&1; then :; else' "        $SK" '    fi' '}' 'run' \
         'echo "Wynik: $PASS ✓ / $FAIL ✗ / $SKIP skip"' > "$T/fx-indent.sh"
 }
@@ -202,6 +237,45 @@ lua_skip_ok "$T/fx-indent.sh" && fx_bad+=" wcięty-blok"
 if [[ -z "$fx_bad" ]]; then ok "strażnik na atrapach: każdy blok osobno, bez skip() i wcięty blok = ✗, poprawny = ✓"
 else fail "strażnik na atrapach przepuszcza albo odrzuca źle:$fx_bad"; fi
 
+echo "== test negatywny: system bez /bin/bash (atrapa NixOS)"
+# Prywatna przestrzeń nazw użytkownika i montowań (unshare -rm, bez roota):
+# /usr/bin/bash przykryty /dev/null, więc /bin/bash (na Archu symlink do
+# usr/bin) nie da się wykonać, a jedyny działający bash to kopia w katalogu
+# z PATH — jak na NixOS. W takim środowisku startuje KAŻDY shebang
+# z bash_files (pierwsza linia pliku + `echo`, treść skryptu nie biegnie),
+# a kontrolny stary shebang (stała ścieżka /bin/bash) musi paść „bad interpreter”. Bez
+# unshare/userns (np. kontener CI z domyślnym seccompem) — widoczny skip.
+NB="$T/nobinbash"; mkdir -p "$NB/bin" "$NB/sb"
+cp -- "$(command -v bash)" "$NB/bin/bash"
+i=0
+for f in "${bash_files[@]}"; do
+    i=$((i + 1))
+    { head -n 1 -- "$REPO/$f"; echo 'echo SHEBANG-OK'; } > "$NB/sb/$i"
+done
+printf '%s\n' '#!/bin/''bash' 'echo SHEBANG-OK' > "$NB/old"
+chmod +x "$NB/sb/"* "$NB/old"
+# shellcheck disable=SC2016  # skrypt dla bash -c w przestrzeni nazw
+NS_SCRIPT='mount --bind /dev/null /usr/bin/bash || exit 99
+[ -x /bin/bash ] && [ ! -c /bin/bash ] && exit 98
+export PATH="$1/bin:/usr/bin"
+ok=0; for s in "$1"/sb/*; do [ "$("$s" 2>/dev/null)" = SHEBANG-OK ] && ok=$((ok + 1)); done
+echo "ok=$ok"
+"$1/old" >/dev/null 2>"$1/old.err"; echo "old=$?"'
+if ns_out="$(unshare -rm "$NB/bin/bash" -c "$NS_SCRIPT" ns "$NB" 2>/dev/null)" && [[ "$ns_out" == ok=* ]]; then
+    if [[ "$ns_out" == *"ok=${#bash_files[@]}"$'\n'* ]]; then
+        ok "bez /bin/bash startuje każdy z ${#bash_files[@]} shebangów (bash tylko z PATH)"
+    else
+        fail "bez /bin/bash nie startują wszystkie shebangi: $ns_out (oczekiwano ok=${#bash_files[@]})"
+    fi
+    if [[ "$ns_out" == *old=126* ]] && grep -q 'bad interpreter' "$NB/old.err"; then
+        ok "kontrola: stary shebang /bin/bash w tym środowisku pada (bad interpreter) — atrapa naprawdę nie ma /bin/bash"
+    else
+        fail "kontrola: stary shebang /bin/bash nie padł — atrapa ma /bin/bash, test niczego nie dowodzi ($ns_out)"
+    fi
+else
+    SKIP=$((SKIP + 1)); echo "  ? skip: unshare -rm niedostępne (brak przestrzeni nazw użytkownika) — test bez /bin/bash pominięty"
+fi
+
 echo ""
-echo "Wynik: $PASS ✓ / $FAIL ✗"
+echo "Wynik: $PASS ✓ / $FAIL ✗ / $SKIP skip"
 [[ $FAIL -eq 0 ]]

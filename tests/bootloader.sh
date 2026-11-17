@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/bootloader.sh
 #   Testy kroków instalatora, które dotykają rozruchu (KT2 z audytu
@@ -37,7 +37,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin" "$T/nogrub"
 cat > "$T/bin/sudo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "sudo $*" >> "$MOCK_LOG"
 exec "$@"
 EOF
@@ -45,7 +45,7 @@ EOF
 # w MOCK_PACMAN_DROP (kod 0, a pakietu nie ma); MOCK_PACMAN_FAIL=1 = kod 1.
 # -Qi <pakiet> = jest w MOCK_DB.
 cat > "$T/bin/pacman" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pacman $*" >> "$MOCK_LOG"
 if [[ "$1" == -Qi ]]; then
     grep -qx -- "$2" "$MOCK_DB"; exit
@@ -62,14 +62,14 @@ EOF
 # grub-mkconfig tylko loguje — nigdy nie pisze pliku z -o (bez haka
 # wskazywałby prawdziwy /boot/grub/grub.cfg).
 cat > "$T/bin/grub-mkconfig" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "grub-mkconfig $*" >> "$MOCK_LOG"
 exit "${MOCK_GRUB_RC:-0}"
 EOF
 # bootctl: tylko is-installed (MOCK_BOOTCTL=1 = systemd-boot zainstalowany);
 # każde inne wywołanie zostaje w dzienniku i oblewa test „bez zmian”.
 cat > "$T/bin/bootctl" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "bootctl $*" >> "$MOCK_LOG"
 [[ "$1" == is-installed && "${MOCK_BOOTCTL:-0}" == 1 ]]
 EOF

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Atrapa mpc do tests/mpd-output.sh. Modeluje kontrakt MPD 0.24:
 # MultipleOutputs::Open zgłasza błąd tylko wtedy, gdy nie otworzy się ŻADNE
 # wyjście, a fifo otwiera się zawsze (src/output/MultipleOutputs.cxx,

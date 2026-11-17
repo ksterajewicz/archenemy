@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Testy przełącznika copy on select i nawigacji jego ekranu Super+A.
 # shellcheck disable=SC2016,SC2034  # check() ewaluje asercje i używa ich lokalnych zmiennych
 set -uo pipefail

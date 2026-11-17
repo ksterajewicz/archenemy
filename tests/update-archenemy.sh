@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/update-archenemy.sh
 #   Testy regresji aktualizatora (scripts/appbinds/update-archenemy.sh,
@@ -40,7 +40,7 @@ g() { git -C "$1" "${@:2}" >/dev/null 2>&1; }
 S="$T/seed"
 mkdir -p "$S/install"
 git init -q -b main "$S"
-printf '#!/bin/bash\necho INSTALL-RAN\n' > "$S/install/install.sh"   # celowo 100644
+printf '#!/usr/bin/env bash\necho INSTALL-RAN\n' > "$S/install/install.sh"   # celowo 100644
 echo v1 > "$S/f.txt"
 g "$S" add -A; g "$S" commit -m main-v1
 g "$S" checkout -b dev
@@ -120,7 +120,7 @@ check "A7: następna aktualizacja po radzie przechodzi" '[[ "$out" == *"✓ Loca
 # Pop nieudany BEZ konfliktu (atrapa gita odmawia `stash pop`): nic nie weszło
 # do drzewa, więc rada „git stash drop” zgubiłaby zmiany — ma paść samo pop.
 mkdir -p "$T/fakegit"
-printf '#!/bin/bash\nfor a in "$@"; do [[ "$a" == pop ]] && { echo "error: TEST simulated failure" >&2; exit 1; }; done\nexec %q "$@"\n' "$(command -v git)" > "$T/fakegit/git"
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == pop ]] && { echo "error: TEST simulated failure" >&2; exit 1; }; done\nexec %q "$@"\n' "$(command -v git)" > "$T/fakegit/git"
 chmod +x "$T/fakegit/git"
 fresh_clone dev
 echo lokalna-g > "$A/g.txt"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - scripts/appbinds/lib/tui.sh
 #   Wspólna obsługa klawiatury i drobiazgi TUI Super+A. Source'owana przez

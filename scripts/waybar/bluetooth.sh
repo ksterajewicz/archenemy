@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - bluetooth.sh
 #   Opcjonalny moduł strumieniowy waybara; SIGUSR1 odświeża flagę.

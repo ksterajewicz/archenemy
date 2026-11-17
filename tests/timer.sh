@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/timer.sh
 #   Timer waybara (scripts/waybar/timer.sh + lib/timer-state.sh): przejście
@@ -31,7 +31,7 @@ mkdir -p "$A/scripts/waybar/lib" "$D" "$T/bin"
 cp "$REPO/scripts/waybar/timer.sh" "$A/scripts/waybar/"
 cp "$REPO/scripts/waybar/lib/timer-state.sh" "$A/scripts/waybar/lib/"
 cat > "$T/bin/notify-send" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 echo "\$*" >> "$T/notify.log"
 sleep 1
 MOCK

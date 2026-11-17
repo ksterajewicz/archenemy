@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/monitor-settings.sh
 #   Zmiana monitora Super+A → [n] (scripts/hypr/monitor-settings.sh) na atrapie
@@ -34,13 +34,13 @@ cp "$REPO/scripts/appbinds/lib/tui.sh" "$A/scripts/appbinds/lib/"
 cp "$REPO/scripts/hypr/monitor-settings.sh" "$A/scripts/hypr/"
 mkdir -p "$A/scripts/lib"; cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji (S12)
 cp "$REPO/scripts/wallpapers/lib/dither-flux-sizes.sh" "$A/scripts/wallpapers/lib/"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"; printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/sleep"
 # Atrapy kroków po zmianie układu: log wywołań zamiast tapet i workspace'ów.
-printf '#!/bin/bash\necho "wallpaper $*" >> "%s/after"\n' "$T" > "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
-printf '#!/bin/bash\necho "guard $*" >> "%s/after"\n' "$T" > "$A/scripts/hypr/workspace-orphan-guard.sh"
+printf '#!/usr/bin/env bash\necho "wallpaper $*" >> "%s/after"\n' "$T" > "$A/scripts/rofi/rofi_wallpaper_switcher.sh"
+printf '#!/usr/bin/env bash\necho "guard $*" >> "%s/after"\n' "$T" > "$A/scripts/hypr/workspace-orphan-guard.sh"
 printf '#!/usr/bin/env python3\nimport sys\nopen("%s/gen", "w").write(" ".join(sys.argv[1:]))\n' "$T" > "$T/gen.py"
-printf '#!/bin/bash\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"
-printf '#!/bin/bash\ncat "%s/age" 2>/dev/null\n' "$T" > "$T/bin/ps"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"
+printf '#!/usr/bin/env bash\ncat "%s/age" 2>/dev/null\n' "$T" > "$T/bin/ps"
 
 # Atrapa hyprctl: `monitors` w formacie src/ipc/s1/Commands.cpp, reload stosuje
 # reguły z pliku Lua. `dead` = brak odpowiedzi, `badscale` = błąd configu,
@@ -48,7 +48,7 @@ printf '#!/bin/bash\ncat "%s/age" 2>/dev/null\n' "$T" > "$T/bin/ps"
 # podpięty nowy DP-2, `vanish` = DP-2 znika przy reloadzie, `twin` = HDMI-A-1 ma ten
 # sam opis EDID co DP-2.
 cat > "$T/bin/hyprctl" <<EOS
-#!/bin/bash
+#!/usr/bin/env bash
 echo "hyprctl \$*" >> "$T/log"
 [[ -f "$T/dead" ]] && exit 1
 rule() { sed -n "s|^hl.monitor({ output = \"\$1\", mode = \"\([^\"]*\)\", position = \"\([^\"]*\)\", scale = \([^ ]*\) })\$|\1 \2 \3|p" "$LUA"; }

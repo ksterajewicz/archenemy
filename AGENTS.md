@@ -312,6 +312,13 @@ Rules that follow directly from the table:
   `chmod +x` on `scripts/**/*.sh`; a file without the bit in the index shows
   up as modified after every install and makes `git pull` refuse
   (`bash tests/repo-hygiene.sh`).
+- **Bash shebang is `#!/usr/bin/env bash`, never a fixed path.** NixOS has
+  no `/bin/bash`; bash is found through `PATH`. This applies to every tracked
+  file (also files without an extension, such as `tests/mock/*`) and to mock
+  commands written by tests in heredocs, `printf` or Python strings, because
+  the kernel executes them too. `tests/repo-hygiene.sh` rejects any fixed bash
+  shebang and starts every shebang inside a user/mount namespace where
+  `/usr/bin/bash` is masked (skip when `unshare -rm` is unavailable).
 - **Report real state, not exit codes.** Anything that pipes a command
   through `sed`/`tee` needs `pipefail` (the updater used to print "✓
   updated" after a failed pull); success is an observed state (`HEAD ==

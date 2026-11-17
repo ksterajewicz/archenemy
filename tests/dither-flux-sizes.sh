@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/dither-flux-sizes.sh
 #   Tapety dither-flux pod monitory z data/monitors/*.dat: plan

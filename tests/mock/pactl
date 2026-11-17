@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Atrapa pactl do tests/audio-devices.sh. Stan w $MOCK_PA: default-sink,
 # default-source, log. MOCK_PA_STUCK=1 = serwer ignoruje zmianę domyślnego.
 D="$MOCK_PA"; echo "pactl $*" >> "$D/log"

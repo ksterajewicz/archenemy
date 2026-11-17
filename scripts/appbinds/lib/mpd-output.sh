@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - scripts/appbinds/lib/mpd-output.sh
 #   Wyjście audio mpd (pipewire / alsa) dla TUI Super+A. Source'owana przez

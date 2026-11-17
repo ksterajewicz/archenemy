@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   Wspólna izolacja środowiska testów na atrapach.
 #   Wczytaj przed mktemp; po ustawieniu trap wywołaj test_environment_init "$T".

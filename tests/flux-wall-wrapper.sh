@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/flux-wall-wrapper.sh
 #   Skutek komend scripts/wallpapers/flux-wall.sh: start, select, off, stop,
@@ -57,7 +57,7 @@ echo test-rice > "$A/.current_rice"
 # PID — nie może się liczyć); FW_MOCK_IGNORE_TERM=1 — ignoruje SIGTERM
 # (do_stop musi dobić -9); FW_MOCK_OLD=1 — binarka sprzed --ready-file.
 cat > "$BIN" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 if [[ "${1:-}" == --help ]]; then
     if [[ "${FW_MOCK_OLD:-0}" == 1 ]]; then
         echo "Użycie: flux-wall -s shader.frag [--no-audio] [--dither | --no-dither]" >&2
@@ -86,7 +86,7 @@ EOF
 # pgrep/pkill: tylko `-x flux-wall` (tak woła wrapper), tylko PID-y atrapy.
 # Żywy = istnieje i nie jest zombie.
 cat > "$T/bin/pgrep" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$*" == "-x flux-wall" ]] || { echo "atrapa pgrep: nieznane argumenty: $*" >&2; exit 2; }
 found=1
 while read -r pid; do
@@ -98,7 +98,7 @@ done < "$FW_STATE/pids"
 exit $found
 EOF
 cat > "$T/bin/pkill" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 sig=TERM
 [[ "${1:-}" == -9 ]] && { sig=KILL; shift; }
 [[ "$*" == "-x flux-wall" ]] || { echo "atrapa pkill: nieznane argumenty: $*" >&2; exit 2; }

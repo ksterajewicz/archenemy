@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/flux-wall-shaders.sh
 #   Precyzja samplerów we WSZYSTKICH shaderach flux-walla (decyzja

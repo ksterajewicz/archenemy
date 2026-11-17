@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/shell-cli-tools.sh
 #   Katalog, bloki i nawigacja CLI na atrapach, bez zsh/pacman/narzędzi.
@@ -28,7 +28,7 @@ for cmd in bash awk cut dirname mktemp mkdir ln rm cat grep sed date cp chmod mv
     ln -s "$real" "$T/bin/$cmd"
 done
 cat > "$T/bin/pacman" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf '%s\n' "$*" >> "$MOCK_ROOT/pacman-log"
 [[ ! -e "$MOCK_ROOT/fail" ]] || exit 1
 [[ ! -e "$MOCK_ROOT/ghost" ]] || exit 0
@@ -37,18 +37,18 @@ cp "$MOCK_ROOT/tool" "$MOCK_ROOT/bin/$command"
 chmod +x "$MOCK_ROOT/bin/$command"
 MOCK
 cat > "$T/bin/sudo" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf '%s\n' "$*" >> "$MOCK_ROOT/sudo-log"
 "$@"
 MOCK
 cat > "$T/tool" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf '%s\n' "$*" >> "$MOCK_ROOT/tool-log"
 if [[ "${1:-}" == init ]]; then
     printf 'z() { :; }; zi() { :; }\n'
 fi
 MOCK
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/clear"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/clear"
 chmod +x "$T/bin/"{sudo,pacman,clear}
 export PATH="$T/bin" SHELL=/bin/bash TERM=xterm
 S="$ARCHENEMY_DIR/scripts/shell/shell-settings.sh"

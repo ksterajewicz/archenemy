@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/rofi-clipboard.sh
 #   Atrapy bez Wayland; wszystkie zapisy wyłącznie w mktemp.
@@ -16,7 +16,7 @@ ok() { PASS=$((PASS+1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  ✗ $1"; }
 check() { local label="$1"; shift; if "$@"; then ok "$label"; else fail "$label"; fi; }
 cat > "$T/bin/cliphist" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 printf '%s\n' "$*" >> "$TEST_DIR/commands"
 case "$1" in
     list) cat "$TEST_DIR/history"; exit "${LIST_RC:-0}" ;;
@@ -33,7 +33,7 @@ case "$1" in
 esac
 MOCK
 cat > "$T/bin/wl-copy" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 : > "$TEST_DIR/copy-called"
 cat > "$TEST_DIR/copied"
 MOCK
@@ -55,7 +55,7 @@ print(a)
 MOCK
 # Miniatury są atrapami: sprawdzamy protokół i sprzątanie, nie renderowanie PNG.
 cat > "$T/bin/glycin-thumbnailer" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 while (($#)); do
     if [[ "$1" == --output ]]; then printf 'thumbnail' > "$2"; break; fi
     shift

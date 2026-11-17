@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/shellcheck.sh
 #   Uruchamia `shellcheck -x -S info -e SC1091` na każdym śledzonym skrypcie: *.sh oraz
@@ -31,7 +31,7 @@ selftest() (
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
     M="$T/repo"; mkdir -p "$M/tests" "$T/bin" "$T/fx/ok" "$T/fx/new" "$T/fx/upd"
     cp "${BASH_SOURCE[0]}" "$M/tests/shellcheck.sh"
-    for f in a b c; do printf '#!/bin/bash\necho %s\n' "$f" > "$M/$f.sh"; done
+    for f in a b c; do printf '#!/usr/bin/env bash\necho %s\n' "$f" > "$M/$f.sh"; done
     # Baza z komentarzami: linia „#…” i komentarz po dwóch polach (nie zmieniają limitu).
     printf '%s\n' '# known findings' 'a.sh SC2034  # read by eval' 'a.sh SC2034' 'b.sh SC2012' > "$T/base"
     cp "$T/base" "$M/tests/shellcheck.baseline"
@@ -44,7 +44,7 @@ selftest() (
     # upd: jedno SC2034 i SC2012 naprawione, nowe SC2086 w c.sh.
     printf 'a.sh:2:1: %s\n' "$w" > "$T/fx/upd/a.sh"; cp "$T/fx/new/c.sh" "$T/fx/upd/"
     cat > "$T/bin/shellcheck" <<'MOCK'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ -n "${MOCK_SC_ARGS:-}" ]] && printf '%s\n' "$*" >> "$MOCK_SC_ARGS"
 case "${MOCK_SC:-}" in
     broken) echo "shellcheck: error while loading shared libraries: libHSaeson-2.2.3.0-ghc9.6.6.so: cannot open shared object file: No such file or directory" >&2; exit 127 ;;

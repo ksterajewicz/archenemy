@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/install-main.sh
 #   Główna ścieżka install.sh od początku do końca (audyt 2026-11-05, T6/KT3).
@@ -85,7 +85,7 @@ export MOCK_LOG="$T/log" MOCK_STATE="$T/state" MOCK_MONS=both
 export MOCK_HYPRPAPER_STATE="$MOCK_STATE/hyprpaper" MOCK_HYPRCTL="$REPO/tests/mock/hyprctl"
 mkdir -p "$T/bin" "$MOCK_STATE"
 : > "$MOCK_HYPRPAPER_STATE"   # plik istnieje = demon hyprpapera działa
-stub() { printf '#!/bin/bash\n%s\n' "$2" > "$T/bin/$1"; chmod +x "$T/bin/$1"; }
+stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$T/bin/$1"; chmod +x "$T/bin/$1"; }
 stub sudo 'echo "sudo $*" >> "$MOCK_LOG"; [[ "$1" == -k ]] && exit 0; exec "$@"'
 # pacman: -Qi = zainstalowany, chyba że nazwa jest w $MOCK_STATE/pacman-missing;
 # -S „instaluje” (usuwa nazwy z listy brakujących).

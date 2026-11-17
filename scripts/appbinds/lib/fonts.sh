@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - scripts/appbinds/lib/fonts.sh
 #   Font użytkownika ponad fontem rice'a (Super+A → [f]). Jedyne miejsce, które

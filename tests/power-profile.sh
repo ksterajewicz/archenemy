@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/power-profile.sh
 #   Profile zasilania na ASUS-ach: scripts/waybar/profile-get.sh, asusprofile.sh
@@ -34,7 +34,7 @@ echo balanced > "$ARCHENEMY_PP_SYSFS"
 
 # Wyjście `profile get` wg asusctl/src/main.rs 6.5.0. MOCK_NOOP = kod 0 bez zmiany.
 cat > "$T/bin/asusctl" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "\$1" == profile ]] || exit 1
 case "\$2" in
     get)
@@ -49,14 +49,14 @@ case "\$2" in
 esac
 MOCK
 cat > "$T/bin/systemctl" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "\$1" == is-active && ! -f "$T/asusd-dead" ]]
 MOCK
 # ppd: profile z pliku ppd-profiles (domyślnie trzy); `set` innego = błąd jak
 # w demonie, bez zmiany. `list` w układzie powerprofilesctl (od ostatniego,
 # aktywny z „*”, pod nagłówkiem wiersze sterowników); ppd-nolist = list pada.
 cat > "$T/bin/powerprofilesctl" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 [[ -f "$T/ppd" ]] || exit 1
 avail="power-saver balanced performance"
 [[ -f "$T/ppd-profiles" ]] && avail="\$(cat "$T/ppd-profiles")"
@@ -77,9 +77,9 @@ case "\$1" in
     *) exit 1 ;;
 esac
 MOCK
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"
-printf '#!/bin/bash\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/pkill"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/notified"\n' "$T" > "$T/bin/notify-send"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/sleep"
 chmod +x "$T"/bin/*
 PATH="$T/bin:$PATH"
 export HOME="$H"

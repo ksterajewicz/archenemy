@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/rofi-inputbar.sh
 #   Statyczna kontrola metryk paska wejścia we wszystkich motywach.

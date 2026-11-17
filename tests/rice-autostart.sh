@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/rice-autostart.sh
 #   Wykonuje hyprland.lua KAŻDEGO rice'a na atrapie API Hyprlanda (Lua 5.4,

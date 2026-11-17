@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/tui-effects.sh
 #   Strażnik: funkcja TUI Super+A nie może przestać działać niezauważenie.

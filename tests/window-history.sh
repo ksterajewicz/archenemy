@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/window-history.sh
 #   Testy przywracania zamkniętych aplikacji (Super+Tab,
@@ -52,7 +52,7 @@ STATE="$XDG_RUNTIME_DIR/archenemy-window-history"
 # Atrapa hyprctl: `clients` w formacie tekstowym HyprCtl.cpp v0.56.2
 # (składany z plików okien), MOCK_FAIL=1 = kompozytor nie odpowiada.
 cat > "$T/bin/hyprctl" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "${MOCK_FAIL:-0}" == 1 ]] && { echo "HYPRLAND_INSTANCE_SIGNATURE was not set! (Is Hyprland running?)"; exit 1; }
 case "$1" in
   clients)
@@ -61,16 +61,16 @@ case "$1" in
 esac
 EOF
 cat > "$T/bin/notify-send" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "$*" >> "$NOTIFY_LOG"
 EOF
 cat > "$T/bin/steam" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "$*" >> "$STEAM_LOG"
 EOF
 # Atrapa aplikacji: zapisuje katalog i argumenty, potem żyje do zabicia.
 cat > "$T/bin/fakeapp" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "$PWD|$*" >> "$APP_LOG"
 trap 'kill $! 2>/dev/null; exit 0' TERM
 sleep 300 & wait

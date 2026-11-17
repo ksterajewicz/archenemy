@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - rofi_clipboard.sh
 #   Historia schowka Super+C; wybór kopiuje, Ctrl+V wkleja.

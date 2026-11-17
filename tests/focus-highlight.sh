@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/focus-highlight.sh
 #   config/hypr/focus-highlight.lua na atrapie API Hyprlanda (Lua 5.4):

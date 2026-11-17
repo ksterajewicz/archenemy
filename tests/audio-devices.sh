@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/audio-devices.sh
 #   Wybór wyjścia i wejścia systemu (scripts/appbinds/audio-devices.sh) na
@@ -23,7 +23,7 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin"
 cp "$REPO/tests/mock/pactl" "$T/bin/pactl"
-printf '#!/bin/bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/bin/bash\nexit 0\n' > "$T/bin/sleep"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/pkill"; printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/sleep"
 chmod +x "$T/bin/"*
 export PATH="$T/bin:$PATH" MOCK_PA="$T"
 reset() { : > "$T/log"; echo alsa_output.pci.analog > "$T/default-sink"; echo alsa_input.pci.analog > "$T/default-source"; }

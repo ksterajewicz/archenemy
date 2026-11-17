@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/volume-bar.sh
 #   Moduł głośności waybara (scripts/waybar/volume-bar.sh) na atrapach
@@ -31,7 +31,7 @@ mkdir -p "$T/bin"
 # Port aktywny domyślnego wyjścia w pliku $T/port. Drugie wyjście (HDMI) ma
 # port słuchawkowy, żeby test złapał czytanie portu nie tego wyjścia.
 cat > "$T/bin/pactl" <<MOCK
-#!/bin/bash
+#!/usr/bin/env bash
 loc="\${LC_ALL:-\${LC_MESSAGES:-\${LANG:-C}}}"
 lang=C
 case "\$loc" in C|C.*|POSIX) ;; *) lang="\${LANGUAGE:-\$loc}" ;; esac
@@ -46,7 +46,7 @@ case "\$1" in
 esac
 exit 0
 MOCK
-printf '#!/bin/bash\necho "Volume: 0.60"\n' > "$T/bin/wpctl"
+printf '#!/usr/bin/env bash\necho "Volume: 0.60"\n' > "$T/bin/wpctl"
 chmod +x "$T/bin/"*
 export PATH="$T/bin:$PATH"
 

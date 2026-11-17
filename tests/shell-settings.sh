@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/shell-settings.sh
 #   Super+A → [h] (scripts/shell/shell-settings.sh) sterowane z wejścia
@@ -39,34 +39,34 @@ S="$A/scripts/shell/shell-settings.sh"
 # passwd w pliku: getent czyta, chsh zapisuje (chyba że $T/chsh-fail).
 echo "/usr/bin/bash" > "$T/passwd"
 cat > "$BIN/getent" <<EOF
-#!/bin/bash
+#!/usr/bin/env bash
 echo "x:x:1000:1000::$H:\$(cat "$T/passwd")"
 EOF
 cat > "$BIN/chsh" <<EOF
-#!/bin/bash
+#!/usr/bin/env bash
 echo "chsh \$*" >> "$T/log"
 [[ -f "$T/chsh-fail" ]] && exit 1
 [[ "\$1" == -s ]] && echo "\$2" > "$T/passwd"
 EOF
 cat > "$BIN/sudo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 "$@"
 EOF
 # pacman „instaluje” zsh: atrapa, która przekazuje wszystko do basha (dla -n i -i).
 cat > "$BIN/pacman" <<EOF
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pacman \$*" >> "$T/log"
 [[ -f "$T/pacman-fail" ]] && exit 1
-printf '#!/bin/bash\nexec bash "\$@"\n' > "$T/zbin/zsh"; chmod +x "$T/zbin/zsh"
+printf '#!/usr/bin/env bash\nexec bash "\$@"\n' > "$T/zbin/zsh"; chmod +x "$T/zbin/zsh"
 EOF
 # nvim: wykonuje akcję z pliku (np. dopisuje linię), żeby udawać edycję.
 cat > "$BIN/nvim" <<EOF
-#!/bin/bash
+#!/usr/bin/env bash
 echo "nvim \$*" >> "$T/log"
 [[ -f "$T/nvim-action" ]] && bash "$T/nvim-action" "\$1"
 exit 0
 EOF
-printf '#!/bin/bash\nprintf "<CLEAR>\\n"\n' > "$BIN/clear"
+printf '#!/usr/bin/env bash\nprintf "<CLEAR>\\n"\n' > "$BIN/clear"
 mkdir -p "$T/zbin"
 chmod +x "$BIN"/*
 printf '/bin/sh\n/usr/bin/bash\n%s\n' "$T/zbin/zsh" > "$T/shells"
@@ -314,7 +314,7 @@ OUT="$(run $'41\x18\x19\nN\n')"
 check "bindkey z shellrc wykryty"          '[[ "$OUT" == *"^X^Y replaces the existing user-widget binding"* && "$OUT" == *"No changes made"* ]]'
 sed -i '/^bindkey -M emacs.*user-widget$/d' "$A/config/shell/shellrc"
 cat > "$BIN/zsh" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$*" == "-f -c bindkey -M emacs -L" ]] || exit 2
 printf '%s\n' 'bindkey -M emacs "^Q^Q" live-widget'
 EOF

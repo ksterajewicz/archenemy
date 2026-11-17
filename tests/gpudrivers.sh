@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/gpudrivers.sh
 #   Testy instalatora sterowników GPU (install/gpudrivers-installation.sh)
@@ -38,13 +38,13 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
 cat > "$T/bin/sudo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 exec "$@"
 EOF
 # lspci: MOCK_PCI = wiersze „<klasa PCI> <wiersz lspci>”; `-d ::<klasa>` filtruje
 # po klasie jak pciutils („x” = dowolna cyfra), bez -d drukuje wszystko.
 cat > "$T/bin/lspci" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 pci="${MOCK_PCI:-0300 01:00.0 VGA compatible controller: NVIDIA Corporation AD106M [GeForce RTX 4070 Max-Q / Mobile]}"
 want=""
 [[ "${1:-}" == -d && "${2:-}" == ::* ]] && want="${2#::}"
@@ -62,7 +62,7 @@ EOF
 # lib32 (MOCK_PACMAN_FAIL_LIB32=1), samego -Syu ze ścieżki „1) Update”
 # (MOCK_PACMAN_FAIL_SYU=1).
 cat > "$T/bin/pacman" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "pacman $*" >> "$MOCK_LOG"
 if [[ "$1" == "-Qi" ]]; then
     [[ " ${MOCK_INSTALLED:-} " == *" $2 "* ]]; exit
@@ -74,11 +74,11 @@ exit 0
 EOF
 # modinfo -k <kver> nvidia: moduł „jest”, gdy w atrapie leży <kver>/nvidia.ko
 cat > "$T/bin/modinfo" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 [[ "$1" == "-k" && -f "$ARCHENEMY_MODULES_DIR/$2/nvidia.ko" ]]
 EOF
 cat > "$T/bin/mkinitcpio" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 echo "mkinitcpio $*" >> "$MOCK_LOG"
 [[ "${MOCK_MKINIT_FAIL:-0}" != 1 ]]   # MOCK_MKINIT_FAIL=1 = przebudowa nieudana
 EOF
@@ -86,7 +86,7 @@ EOF
 # tylko przypadku I, pozostałe przypadki mają prawdziwe tee.
 mkdir -p "$T/bin-tee-fail"
 cat > "$T/bin-tee-fail/tee" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 cat >/dev/null
 echo "tee: $*: Read-only file system" >&2
 exit 1

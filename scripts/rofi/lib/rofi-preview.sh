@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================
 #   archenemy - scripts/rofi/lib/rofi-preview.sh
 #   Podglądy PNG w menu rofi (Super+W, Super+T) — biblioteka source'owana
