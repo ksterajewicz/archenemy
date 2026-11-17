@@ -691,7 +691,7 @@ removing the controller hides it. Beta remains frozen. There is no Bluetooth
 entry in `Super+A` yet. Removing the flag and reloading waybar hides the icon
 without disabling the service; stream processes also accept SIGUSR1 to reread it.
 
-Live-only: in each of the five rices inspect the icon, connect headphones,
+Live-only: in each of the six rices (beta excluded) inspect the icon, connect headphones,
 check the tooltip and both clicks, remove/replug the controller and verify
 `systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
 
