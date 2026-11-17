@@ -382,7 +382,8 @@ Rules that follow directly from the table:
   `unavailable` or `system-managed`, never a `-git` stand-in. The map is data
   — never `eval`/`source` it. `install/lib/pkg.sh` must keep Arch on the exact
   installer commands; on Fedora no `-y`/`--skip-*`/`--allowerasing`, success =
-  `rpm -q` of every name; the map is validated as a whole (split lists with
+  `rpm -q` of every name, and `fedora_source=fedora` installs only with
+  `--repo=fedora --repo=updates` (COPR/Brave without `--repo`); the map is validated as a whole (split lists with
   `read -ra`, never an unquoted `for w in $list`; known statuses/sources only,
   consistent fields, unique ids); `rpm`/`pacman` queries run with `LC_ALL=C`
   and read stdout + exit code — a query error is 2, never 0 or 1; COPR `nett00n/hyprland` and the Brave repo only via

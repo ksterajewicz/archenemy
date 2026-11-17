@@ -126,7 +126,7 @@ case "$1" in
     install)
         [[ -n "${MOCK_DNF_FAIL:-}" ]] && { echo "Curl error (6): Couldn't resolve host name" >&2; exit 1; }
         shift
-        for p in "$@"; do grep -q "^$p " "$db" || echo "$p ${MOCK_DNF_VERSION:-1.0}" >> "$db"; done ;;
+        for p in "$@"; do [[ "$p" == -* ]] && continue; grep -q "^$p " "$db" || echo "$p ${MOCK_DNF_VERSION:-1.0}" >> "$db"; done ;;
     copr|config-manager) exit "${MOCK_DNF_REPO_RC:-0}" ;;
     *) exit 2 ;;
 esac
@@ -286,8 +286,8 @@ echo "== Fedora"
 osr 'ID=fedora' 'VERSION_ID=44'
 reset_state
 run '' 'pkg_install waybar libpulse base-devel; echo "rc=$?"'
-check "jeden id → wiele RPM: sudo dnf install waybar pulseaudio-libs-devel pulseaudio-utils gcc make pkgconf-pkg-config" \
-    '[[ "$OUT" == *"rc=0"* ]] && has_call "sudo dnf install waybar pulseaudio-libs-devel pulseaudio-utils gcc make pkgconf-pkg-config"'
+check "jeden id → wiele RPM, tylko repo fedora+updates: sudo dnf install --repo=fedora --repo=updates waybar pulseaudio-libs-devel …" \
+    '[[ "$OUT" == *"rc=0"* ]] && has_call "sudo dnf install --repo=fedora --repo=updates waybar pulseaudio-libs-devel pulseaudio-utils gcc make pkgconf-pkg-config"'
 check "sukces sprawdzony rpm -q --qf %{NAME} każdej nazwy" "has_call \"rpm -q --qf %{NAME}\\\\n waybar pulseaudio-libs-devel pulseaudio-utils gcc make pkgconf-pkg-config\""
 check "Fedora: ani pacman, ani yay" 'no_call_re "^(pacman|yay|sudo pacman)"'
 reset_state; echo "pulseaudio-libs 17.0" > "$STATE/rpm-db"; echo "pulseaudio-utils 17.0" >> "$STATE/rpm-db"
@@ -309,7 +309,7 @@ check "dnf bez -y, --skip-unavailable, --skip-broken, --allowerasing" 'no_call_r
 reset_state
 run '' 'pkg_install hyprland networkmanager-dmenu discord waybar; echo "rc=$? skipped=${PKG_SKIPPED[*]}"'
 check "pkg_install: COPR, ręczne i RPM Fusion pominięte (3), instaluje tylko waybar" \
-    '[[ "$OUT" == *"rc=3 skipped=hyprland networkmanager-dmenu discord"* ]] && has_call "sudo dnf install waybar" && no_call_re "copr|config-manager|hyprland"'
+    '[[ "$OUT" == *"rc=3 skipped=hyprland networkmanager-dmenu discord"* ]] && has_call "sudo dnf install --repo=fedora --repo=updates waybar" && no_call_re "copr|config-manager|hyprland"'
 for ans in 'n\n' '\n' ''; do
     reset_state
     run "$ans" 'pkg_install_extra hyprland hyprpaper; echo "rc=$?"'
@@ -319,6 +319,7 @@ reset_state
 run 'y\n' 'pkg_install_extra hyprland hyprpaper; echo "rc=$?"'
 check "zgoda y → dnf5-plugins, copr enable nett00n/hyprland, dnf install hyprland hyprpaper" \
     '[[ "$OUT" == *"rc=0"* ]] && has_call "sudo dnf install dnf5-plugins" && has_call "sudo dnf copr enable nett00n/hyprland" && has_call "sudo dnf install hyprland hyprpaper"'
+check "COPR: dnf install bez --repo (pakiety z COPR-a, nie z fedora/updates)" 'no_call_re "[-]-repo"'
 reset_state; export MOCK_DNF_REPO_RC=1
 run 'y\n' 'pkg_install_extra hyprland; echo "rc=$?"'
 unset MOCK_DNF_REPO_RC
@@ -327,6 +328,7 @@ reset_state
 run 'y\n' 'pkg_install_extra brave-bin; echo "rc=$?"'
 check "Brave po y: config-manager addrepo --from-repofile + dnf install brave-browser" \
     '[[ "$OUT" == *"rc=0"* ]] && has_call "sudo dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo" && has_call "sudo dnf install brave-browser"'
+check "Brave (vendor): dnf install bez --repo" 'no_call_re "[-]-repo"'
 reset_state; touch "$T/repos/brave-browser.repo"
 run 'y\n' 'pkg_install_extra brave-bin; echo "rc=$?"'
 check "repo Brave już jest → bez addrepo, tylko install" '[[ "$OUT" == *"rc=0"* ]] && no_call_re "config-manager" && has_call "sudo dnf install brave-browser"'
@@ -335,7 +337,7 @@ run 'y\ny\n' 'pkg_install_extra discord steam waybar; echo "rc=$? skipped=${PKG_
 check "pkg_install_extra: RPM Fusion i repo Fedory nie są jego (3), zero poleceń" '[[ "$OUT" == *"rc=3 skipped=discord steam waybar"* && ! -s "$CALLS" ]]'
 run '' 'pkg_hint networkmanager-dmenu; pkg_hint discord; pkg_hint hyprland; pkg_hint waybar; pkg_hint ttf-iosevka-nerd'
 check "pkg_hint Fedora: ręcznie z URL, RPM Fusion, COPR, dnf, fonty" \
-    '[[ "$OUT" == *"install manually: https://github.com/firecat53/networkmanager-dmenu"* && "$OUT" == *"Enable RPM Fusion"*"sudo dnf install discord"* && "$OUT" == *"sudo dnf copr enable nett00n/hyprland && sudo dnf install hyprland"* && "$OUT" == *"sudo dnf install waybar"* && "$OUT" == *"nerd-fonts/releases"* ]]'
+    '[[ "$OUT" == *"install manually: https://github.com/firecat53/networkmanager-dmenu"* && "$OUT" == *"Enable RPM Fusion"*"sudo dnf install discord"* && "$OUT" == *"sudo dnf copr enable nett00n/hyprland && sudo dnf install hyprland"* && "$OUT" == *"sudo dnf install --repo=fedora --repo=updates waybar"* && "$OUT" == *"nerd-fonts/releases"* ]]'
 reset_state; echo "hyprland 0.57.2" > "$STATE/rpm-db"
 run '' 'pkg_version hyprland; echo "rc=$?"'
 check "pkg_version Fedora: rpm %{VERSION} 0.57.2 → 0" '[[ "$OUT" == *"0.57.2"*"rc=0"* ]] && has_call "rpm -q --qf %{VERSION}\\n hyprland"'
@@ -423,7 +425,7 @@ map_run() {
 osr 'ID=fedora' 'VERSION_ID=44'
 reset_state; variant 0 t > "$T/maps/good.tsv"
 map_run "$T/maps/good.tsv" 'pkg_install t; echo "rc=$?"'
-check "kontrola: poprawny wiersz w katalogu z pkg-safe → sudo dnf install t (0)" '[[ "$OUT" == *"rc=0"* ]] && has_call "sudo dnf install t"'
+check "kontrola: poprawny wiersz w katalogu z pkg-safe → sudo dnf install --repo=fedora --repo=updates t (0)" '[[ "$OUT" == *"rc=0"* ]] && has_call "sudo dnf install --repo=fedora --repo=updates t"'
 while IFS='|' read -r k v label; do
     reset_state; variant "$k" "$v" > "$T/maps/bad.tsv"
     map_run "$T/maps/bad.tsv" 'pkg_install t; echo "rc=$?"'

@@ -26,7 +26,7 @@
 #                            3 nie da się sprawdzić na tej platformie (brak sondy);
 #                            zapytania rpm/pacman z LC_ALL=C — wynik nie zależy od języka
 #     pkg_install <id…>      tylko domyślne źródło platformy (Arch: pacman + AUR przez yay,
-#                            Fedora: `sudo dnf install` z repozytoriów włączonych w systemie,
+#                            Fedora: `sudo dnf install --repo=fedora --repo=updates` (DNF5),
 #                            sukces = rpm -q każdej nazwy — stan, nie kod dnf: dnf ≠ 0 przy
 #                            komplecie nazw daje 0 z ostrzeżeniem). 0 wszystko zainstalowane,
 #                            1 porażka (PKG_FAILED),
@@ -345,7 +345,7 @@ pkg_hint() {
             case "${_PKG_SF[$id]}" in
                 ok)
                     case "$src" in
-                        fedora) echo "sudo dnf install $names" ;;
+                        fedora) echo "sudo dnf install ${PKG_FEDORA_REPOS[*]} $names" ;;
                         copr:*) echo "sudo dnf copr enable ${src#copr:} && sudo dnf install $names   (COPR: $url)" ;;
                         vendor:brave) echo "sudo dnf config-manager addrepo --from-repofile=$PKG_BRAVE_REPOFILE && sudo dnf install $names   ($url)" ;;
                         *) echo "Install manually: $url" ;;
@@ -439,14 +439,22 @@ _pkg_fedora_verify() {
     return 1
 }
 
-# _pkg_dnf_install <nazwa…> — `sudo dnf install` (bez -y: dnf pyta sam), wynik
-# = _pkg_fedora_verify. Sukces to odczytany stan, nie kod dnf: przy kodzie ≠ 0
+# Repozytoria dla fedora_source=fedora (decyzja właściciela „A”, 2026-11-17):
+# DNF5 `--repo` włącza w tej transakcji WYŁĄCZNIE wskazane repozytoria, więc
+# pakiet z mapy „fedora” nie przyjdzie z COPR-a ani repo producenta, które
+# użytkownik ma włączone. COPR/Brave (pkg_install_extra) — bez --repo.
+PKG_FEDORA_REPOS=(--repo=fedora --repo=updates)
+
+# _pkg_dnf_install [--fedora-repos] <nazwa…> — `sudo dnf install` (bez -y: dnf
+# pyta sam), z --fedora-repos ograniczony do PKG_FEDORA_REPOS; wynik =
+# _pkg_fedora_verify. Sukces to odczytany stan, nie kod dnf: przy kodzie ≠ 0
 # i komplecie nazw w rpm (np. błąd scriptletu, nazwy już były) wynik 0, ale
-# z ostrzeżeniem. Bez --repo: kandydat może pochodzić z każdego repozytorium
-# włączonego przez użytkownika (fedora_source opisuje mapę, nie ogranicza dnf).
+# z ostrzeżeniem.
 _pkg_dnf_install() {
     local rc
-    sudo dnf install "$@"; rc=$?
+    local -a repos=()
+    [[ "${1:-}" == --fedora-repos ]] && { repos=("${PKG_FEDORA_REPOS[@]}"); shift; }
+    sudo dnf install "${repos[@]}" "$@"; rc=$?
     _pkg_fedora_verify "$@" || return 1
     ((rc == 0)) || echo "  ⚠ dnf exited with code $rc, but rpm reports all of these installed: $*"
     return 0
@@ -505,7 +513,7 @@ pkg_install() {
             if ((${#fed[@]})); then
                 # Bez -y i bez flag maskujących braki: jedna nieznana nazwa =
                 # odmowa całej transakcji, widoczna dla użytkownika.
-                _pkg_dnf_install "${fed[@]}" || rc=1
+                _pkg_dnf_install --fedora-repos "${fed[@]}" || rc=1
             fi
             ((rc)) && return 1
             ((${#PKG_SKIPPED[@]})) && return 3

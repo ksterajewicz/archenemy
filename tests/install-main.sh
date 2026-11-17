@@ -414,10 +414,10 @@ check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Rel
 check "ani razu pacman ani yay"                 '! grep -qE "^(sudo )?(pacman|yay)( |$)" <<< "$LOG"'
 check "[4] AUR nie dotyczy Fedory"              '[[ "$OUT" == *"[4] AUR helper (yay): not used on Fedora."* ]] && ! asked "Install yay"'
 check "[5] sprawdzenie dokładnych nazw rpm"     'called "rpm -q --qf %\{NAME\}\\\\n waybar"'
-check "[5] repo Fedory: sudo dnf install waybar (bez -y i flag maskujących)" 'called "sudo dnf install waybar" && ! grep -qE "^dnf .*(--allowerasing|--skip-|(^| )-y( |$))" <<< "$LOG"'
+check "[5] repo Fedory: sudo dnf install --repo=fedora --repo=updates waybar (bez -y i flag maskujących)" 'called "sudo dnf install --repo=fedora --repo=updates waybar" && ! grep -qE "^dnf .*(--allowerasing|--skip-|(^| )-y( |$))" <<< "$LOG"'
 check "[5] COPR bez zgody: nic nie włączone, swayosd w podsumowaniu" '! grep -q "copr enable" <<< "$LOG" && [[ "$OUT" == *"COPR nett00n/hyprland not enabled at your request"* && "$OUT" == *"skipped: REQUIRED package not installed: swayosd"* ]]'
-check "[5] repo Brave po y: addrepo + dnf install brave-browser" 'called "sudo dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo" && called "sudo dnf install brave-browser"'
-check "[5] tuned-ppd: odmowa dnf widoczna, podpowiedź dnf swap, bez podmiany" 'called "sudo dnf install power-profiles-daemon" && [[ "$OUT" == *"conflicts with tuned-ppd provided by tuned-ppd"* && "$OUT" == *"sudo dnf swap tuned-ppd power-profiles-daemon"* ]] && ! grep -q "swap\|remove\|erase" <<< "$(grep "^dnf" <<< "$LOG")"'
+check "[5] repo Brave po y: addrepo + dnf install brave-browser (bez --repo)" 'called "sudo dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo" && called "sudo dnf install brave-browser"'
+check "[5] tuned-ppd: odmowa dnf widoczna, podpowiedź dnf swap, bez podmiany" 'called "sudo dnf install --repo=fedora --repo=updates power-profiles-daemon" && [[ "$OUT" == *"conflicts with tuned-ppd provided by tuned-ppd"* && "$OUT" == *"sudo dnf swap tuned-ppd power-profiles-daemon"* ]] && ! grep -q "swap\|remove\|erase" <<< "$(grep "^dnf" <<< "$LOG")"'
 check "[5] font Nerd: instrukcja ręczna, bez COPR fontów" '[[ "$OUT" == *"not installed: ttf-iosevka-nerd"*"install manually"* ]] && ! grep -q "nerd-fonts" <<< "$LOG"'
 check "sudo tylko dla dnf (i sudo -k)"          '[[ -z "$(grep "^sudo" <<< "$LOG" | grep -vE "^sudo (dnf |-k$)")" ]]'
 check "[6]–[10] bez usług, zapory i instalatorów systemowych" '! grep -qE "^systemctl( --user)? (enable|disable|start|stop|restart)|^ufw" <<< "$LOG" && ! asked "CPU microcode|GPU drivers|kernel installer|UFW|Bluetooth|VirtualBox|Enable mpd|Enable NetworkManager"'
@@ -429,7 +429,7 @@ echo "== bieg 6 (Fedora, --skip-packages): ani razu dnf"
 fresh_state
 printf 'waybar\n' > "$MOCK_STATE/rpm-missing"
 ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 6 --skip-packages
-check "kod 0, wymagania sprawdzone, waybar z podpowiedzią" '[[ $RC -eq 0 && "$OUT" == *"✗ missing: waybar"* && "$OUT" == *"waybar: sudo dnf install waybar"* ]]'
+check "kod 0, wymagania sprawdzone, waybar z podpowiedzią" '[[ $RC -eq 0 && "$OUT" == *"✗ missing: waybar"* && "$OUT" == *"waybar: sudo dnf install --repo=fedora --repo=updates waybar"* ]]'
 check "zero mutacji (dnf, sudo, usługi)"        '[[ -z "$(mutations)" ]] && ! asked "Install missing|additional useful"'
 
 echo "== bieg 7 (NixOS): --skip-packages domyślnie, zero mutacji"
