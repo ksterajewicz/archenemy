@@ -10,7 +10,9 @@
 #   używa do wykrycia platformy oraz na Fedorze i NixOS.
 #
 #   Dane: packages/platform-map.tsv — czytane zwykłym `read`, nigdy eval/source;
-#   każda nazwa pakietu przechodzi przez whitelistę znaków, zanim trafi do sudo.
+#   każda nazwa pakietu przechodzi przez whitelistę znaków, zanim trafi do sudo
+#   (pierwszy znak alfanumeryczny, więc bez `--` przed nazwami), listy dzielone
+#   bez rozwijania ścieżek; nieznany status/źródło albo niespójne pola = zła mapa.
 #   Source nie robi nic poza definicją funkcji (żadnych zapytań ani instalacji).
 #
 #   API (komunikaty po angielsku, funkcje nie wychodzą z procesu):
@@ -21,10 +23,13 @@
 #                            Manjaro…), 1 = nie; bez komunikatów i bez ustawiania PKG_PLATFORM —
 #                            install.sh prowadzi pochodne starą ścieżką Archa (decyzja 2026-11-17)
 #     pkg_installed <id>     0 jest, 1 brak, 2 błąd zapytania / nieznany id,
-#                            3 nie da się sprawdzić na tej platformie (brak sondy)
+#                            3 nie da się sprawdzić na tej platformie (brak sondy);
+#                            zapytania rpm/pacman z LC_ALL=C — wynik nie zależy od języka
 #     pkg_install <id…>      tylko domyślne źródło platformy (Arch: pacman + AUR przez yay,
-#                            Fedora: `sudo dnf install` z repozytoriów Fedory, sukces = rpm -q
-#                            każdej nazwy). 0 wszystko zainstalowane, 1 porażka (PKG_FAILED),
+#                            Fedora: `sudo dnf install` z repozytoriów włączonych w systemie,
+#                            sukces = rpm -q każdej nazwy — stan, nie kod dnf: dnf ≠ 0 przy
+#                            komplecie nazw daje 0 z ostrzeżeniem). 0 wszystko zainstalowane,
+#                            1 porażka (PKG_FAILED),
 #                            2 nieznany id / zła mapa, 3 część pominięta (PKG_SKIPPED: ręczne,
 #                            niedostępne, systemowe albo wymagające pkg_install_extra),
 #                            4 platforma nieobsługiwana, 5 NixOS (deklaratywnie — nic nie robi)
@@ -97,10 +102,13 @@ _pkg_os_file() {
 
 pkg_arch_derivative() {
     local f id w
+    local -a like
     f="$(_pkg_os_file)" || return 1
     id="$(_pkg_os_value "$f" ID)"
     [[ -n "$id" && "$id" != arch ]] || return 1
-    for w in $(_pkg_os_value "$f" ID_LIKE); do
+    # read -ra dzieli bez rozwijania ścieżek (`for w in $(…)` zamieniłby „a*” w plik).
+    read -ra like <<< "$(_pkg_os_value "$f" ID_LIKE)"
+    for w in "${like[@]}"; do
         [[ "$w" == arch ]] && return 0
     done
     return 1
@@ -139,6 +147,36 @@ pkg_detect() {
 
 _pkg_name_ok() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9+._-]*$ ]]; }
 
+# _pkg_names_ok <pole> — „-” albo nazwy rozdzielone spacją, każda z whitelisty.
+# read -ra: bez rozwijania ścieżek (`for w in $pole` zamieniał „pkg-*” w plik
+# z katalogu roboczego, a do dnf trafiał surowy wzorzec).
+_pkg_names_ok() {
+    local w
+    local -a ws
+    [[ "$1" == - ]] && return 0
+    read -ra ws <<< "$1"
+    ((${#ws[@]})) || return 1
+    for w in "${ws[@]}"; do _pkg_name_ok "$w" || return 1; done
+}
+
+# _pkg_row_ok <asrc> <fsrc> <nix> <check> <min> <sf> <sn> — zbiór wartości
+# i spójność pól (te same reguły co tests/platform-map.sh); 1 = zła linia.
+_pkg_row_ok() {
+    local st
+    [[ "$1" == pacman || "$1" == aur ]] || return 1
+    case "$2" in fedora|"copr:$PKG_COPR_PROJECT"|vendor:brave|rpmfusion-free|rpmfusion-nonfree|-) ;; *) return 1 ;; esac
+    for st in "$6" "$7"; do
+        case "$st" in ok|manual|unavailable|system-managed) ;; *) return 1 ;; esac
+    done
+    [[ "$4" == - || "$4" =~ ^cmd:[A-Za-z0-9._+-]+(,[A-Za-z0-9._+-]+)*$ || "$4" =~ ^font:[A-Za-z0-9\ ]+$ ]] || return 1
+    [[ "$5" == - || "$5" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+    # fedora=ok = instalowalne: nazwy i źródło, które pkg_install/_extra obsługują.
+    if [[ "$6" == ok ]]; then
+        case "$2" in fedora|"copr:$PKG_COPR_PROJECT"|vendor:brave) ;; *) return 1 ;; esac
+    fi
+    [[ "$7" != ok || "$3" != - ]] || return 1
+}
+
 # _pkg_load_map — wczytuje mapę raz; 0 ok, 2 brak/zła mapa (żadnych działań
 # na częściowych danych: jedna zła linia = cała mapa odrzucona).
 _pkg_load_map() {
@@ -151,7 +189,7 @@ _pkg_load_map() {
         echo "  Package map not found: $map" >&2
         return 2
     fi
-    local line tabs id an asrc fn fsrc na ck mv stt url extra n=0 w sf sn
+    local line tabs id an asrc fn fsrc na ck mv stt url extra n=0 sf sn
     while IFS= read -r line || [[ -n "$line" ]]; do
         n=$((n + 1))
         [[ -z "$line" || "$line" == \#* ]] && continue
@@ -164,10 +202,15 @@ _pkg_load_map() {
         fi
         # Zapamiętaj od razu: _pkg_name_ok niżej nadpisuje BASH_REMATCH.
         sf="${BASH_REMATCH[1]}"; sn="${BASH_REMATCH[2]}"
-        for w in $an $fn; do
-            [[ "$w" == - ]] && continue
-            _pkg_name_ok "$w" || { echo "  Invalid package name in map line $n — refusing to use the map." >&2; return 2; }
-        done
+        # arch_name: dokładnie jedna nazwa; fedora_names: „-” albo same nazwy.
+        if ! _pkg_name_ok "$an" || ! _pkg_names_ok "$fn" || { [[ "$sf" == ok ]] && [[ "$fn" == - ]]; }; then
+            echo "  Invalid package name in map line $n — refusing to use the map." >&2
+            return 2
+        fi
+        if ! _pkg_row_ok "$asrc" "$fsrc" "$na" "$ck" "$mv" "$sf" "$sn" || [[ -n "${_PKG_ARCH[$id]+x}" ]]; then
+            echo "  Malformed package map line $n (unknown status/source, inconsistent fields or duplicate id) — refusing to use the map." >&2
+            return 2
+        fi
         _PKG_ARCH[$id]="$an"; _PKG_ASRC[$id]="$asrc"; _PKG_FNAMES[$id]="$fn"
         _PKG_FSRC[$id]="$fsrc"; _PKG_NIX[$id]="$na"; _PKG_CHECK[$id]="$ck"
         _PKG_MIN[$id]="$mv"; _PKG_SF[$id]="$sf"; _PKG_SN[$id]="$sn"
@@ -205,30 +248,57 @@ _pkg_probe() {
     return 3
 }
 
-# _pkg_rpm_check <nazwa…> — dokładne nazwy przez `rpm -q --qf '%{NAME}\n'`:
-# 0 wszystkie są, 1 czegoś brak (PKG_RPM_MISSING), 2 błąd zapytania.
+# Zapytania rpm/pacman: LC_ALL=C (komunikat braku po angielsku niezależnie od
+# języka użytkownika) i pusty LANGUAGE — gettext czyta LANGUAGE przy każdym
+# locale poza C, także przy C.UTF-8. dnf i pacman -S zostają w języku użytkownika.
+
+# _pkg_rpm_check <nazwa…> — dokładne nazwy przez `rpm -q --qf '%{NAME}\n'`.
+# Czytane tylko stdout (stderr rpm idzie do użytkownika) i kod wyjścia:
+# 0 = rc 0 i każda nazwa wypisana dokładnie; 1 = rc≠0 i każdej brakującej
+# odpowiada „package X is not installed” (PKG_RPM_MISSING); 2 = wszystko inne
+# (obca linia — komunikat błędu, inna nazwa z provides —, nazwa bez odpowiedzi,
+# rc niezgodny z odpowiedziami).
 _pkg_rpm_check() {
-    local out line
+    local out line rc n
+    local -A want=() seen=() miss=()
     PKG_RPM_MISSING=()
-    out="$(rpm -q --qf '%{NAME}\n' "$@" 2>&1)"
-    local -A seen=()
+    out="$(LC_ALL=C LANGUAGE='' rpm -q --qf '%{NAME}\n' "$@")"; rc=$?
+    for n in "$@"; do want[$n]=1; done
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
-        if [[ "$line" =~ ^package\ (.+)\ is\ not\ installed$ ]]; then
-            PKG_RPM_MISSING+=("${BASH_REMATCH[1]}")
-        else
+        if [[ "$line" =~ ^package\ (.+)\ is\ not\ installed$ && -n "${want[${BASH_REMATCH[1]}]:-}" ]]; then
+            miss[${BASH_REMATCH[1]}]=1
+        elif [[ -n "${want[$line]:-}" ]]; then
             seen[$line]=1
+        else
+            return 2
         fi
     done <<< "$out"
-    local n
-    for n in "$@"; do
-        [[ -n "${seen[$n]:-}" ]] && continue
-        [[ " ${PKG_RPM_MISSING[*]} " == *" $n "* ]] && continue
-        # Ani nazwa, ani „not installed” — rpm zwrócił coś innego (zepsuta baza…).
-        return 2
+    for n in "${!want[@]}"; do
+        [[ -n "${seen[$n]:-}" && -n "${miss[$n]:-}" ]] && return 2
+        [[ -n "${seen[$n]:-}" || -n "${miss[$n]:-}" ]] || return 2
     done
-    ((${#PKG_RPM_MISSING[@]} == 0)) && return 0
-    return 1
+    for n in "$@"; do
+        [[ -n "${miss[$n]:-}" && " ${PKG_RPM_MISSING[*]} " != *" $n "* ]] && PKG_RPM_MISSING+=("$n")
+    done
+    if ((${#PKG_RPM_MISSING[@]} == 0)); then
+        ((rc == 0)) && return 0
+        return 2
+    fi
+    ((rc != 0)) && return 1
+    return 2
+}
+
+# _pkg_pacman_query <-Qi|-Q> <nazwa> — zapytanie pacmana (ta sama komenda co
+# install.sh [5]); stdout przechodzi dalej. 0 jest; 1 = jedyny komunikat to
+# „error: package 'X' was not found”; 2 = inny błąd (baza, uprawnienia…) —
+# pacman daje rc 1 w obu przypadkach, więc rozróżnia je tylko tekst.
+_pkg_pacman_query() {
+    local err rc
+    { err="$(LC_ALL=C LANGUAGE='' pacman "$1" "$2" 2>&1 >&3 3>&-)"; rc=$?; } 3>&1
+    ((rc == 0)) && return 0
+    [[ "$err" == "error: package '$2' was not found" ]] && return 1
+    return 2
 }
 
 # ── API ──────────────────────────────────────────────────────────────────────
@@ -239,8 +309,8 @@ pkg_installed() {
     case "$PKG_PLATFORM" in
         arch)
             # Jak install.sh [5].
-            pacman -Qi "${_PKG_ARCH[$id]}" &>/dev/null && return 0
-            return 1 ;;
+            _pkg_pacman_query -Qi "${_PKG_ARCH[$id]}" >/dev/null
+            return $? ;;
         fedora)
             if [[ "${_PKG_FNAMES[$id]}" != - ]]; then
                 local -a names
@@ -304,14 +374,14 @@ pkg_version() {
     _pkg_ready "$id" || return 2
     case "$PKG_PLATFORM" in
         arch)
-            v="$(pacman -Q "${_PKG_ARCH[$id]}" 2>/dev/null)" || return 1
+            v="$(_pkg_pacman_query -Q "${_PKG_ARCH[$id]}")" || return $?
             v="${v#* }"; v="${v#*:}"; v="${v%-*}" ;;
         fedora)
             [[ "${_PKG_FNAMES[$id]}" != - ]] || return 2
             read -r first _ <<< "${_PKG_FNAMES[$id]}"
             _pkg_rpm_check "$first"; rc=$?
             ((rc == 0)) || return "$rc"
-            v="$(rpm -q --qf '%{VERSION}\n' "$first" 2>/dev/null)" || return 2 ;;
+            v="$(LC_ALL=C LANGUAGE='' rpm -q --qf '%{VERSION}\n' "$first" 2>/dev/null)" || return 2 ;;
         *) return 2 ;;
     esac
     [[ -n "$v" ]] || return 2
@@ -332,6 +402,19 @@ _pkg_fedora_verify() {
         *) PKG_FAILED+=("$@") ;;
     esac
     return 1
+}
+
+# _pkg_dnf_install <nazwa…> — `sudo dnf install` (bez -y: dnf pyta sam), wynik
+# = _pkg_fedora_verify. Sukces to odczytany stan, nie kod dnf: przy kodzie ≠ 0
+# i komplecie nazw w rpm (np. błąd scriptletu, nazwy już były) wynik 0, ale
+# z ostrzeżeniem. Bez --repo: kandydat może pochodzić z każdego repozytorium
+# włączonego przez użytkownika (fedora_source opisuje mapę, nie ogranicza dnf).
+_pkg_dnf_install() {
+    local rc
+    sudo dnf install "$@"; rc=$?
+    _pkg_fedora_verify "$@" || return 1
+    ((rc == 0)) || echo "  ⚠ dnf exited with code $rc, but rpm reports all of these installed: $*"
+    return 0
 }
 
 pkg_install() {
@@ -387,8 +470,7 @@ pkg_install() {
             if ((${#fed[@]})); then
                 # Bez -y i bez flag maskujących braki: jedna nieznana nazwa =
                 # odmowa całej transakcji, widoczna dla użytkownika.
-                sudo dnf install "${fed[@]}"
-                _pkg_fedora_verify "${fed[@]}" || rc=1
+                _pkg_dnf_install "${fed[@]}" || rc=1
             fi
             ((rc)) && return 1
             ((${#PKG_SKIPPED[@]})) && return 3
@@ -441,8 +523,7 @@ pkg_install_extra() {
         echo "  Commands: sudo dnf install dnf5-plugins; sudo dnf copr enable $PKG_COPR_PROJECT; sudo dnf install ${copr[*]}"
         if _pkg_confirm "  Enable COPR $PKG_COPR_PROJECT and install these packages?"; then
             if sudo dnf install dnf5-plugins && sudo dnf copr enable "$PKG_COPR_PROJECT"; then
-                sudo dnf install "${copr[@]}"
-                _pkg_fedora_verify "${copr[@]}" || rc=1
+                _pkg_dnf_install "${copr[@]}" || rc=1
             else
                 echo "  ✗ Could not enable COPR $PKG_COPR_PROJECT."
                 PKG_FAILED+=("${copr[@]}"); rc=1
@@ -466,8 +547,7 @@ pkg_install_extra() {
                 ok_repo=1
             fi
             if ((ok_repo)); then
-                sudo dnf install "${brave[@]}"
-                _pkg_fedora_verify "${brave[@]}" || rc=1
+                _pkg_dnf_install "${brave[@]}" || rc=1
             else
                 echo "  ✗ Could not add the Brave repository."
                 PKG_FAILED+=("${brave[@]}"); rc=1
