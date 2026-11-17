@@ -946,6 +946,8 @@ generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-asia-n-rice.co
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-dither-flux.conf" "0.70"
 # crt: zgaszony kineskop — ciemno jak w tronie, nad tym świecący zegar.
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-crt.conf" "0.60"
+# yin: przygaszony, rozmyty pulpit pod taflą matowego szkła z zegarem.
+generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-yin.conf" "0.60"
 
 # 8i. Styl paska głośności waybara (przełączalny w Super+A → [v]) — seed
 # domyślny. volume-bar.sh ma fallback "line", ale seed daje wykrywalność

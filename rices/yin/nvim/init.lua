@@ -1,0 +1,6 @@
+require("config.lazy")
+require("config.options")
+require("config.cmp")
+require("config.telescope")
+require("config.lsp")
+require("config.colorscheme")

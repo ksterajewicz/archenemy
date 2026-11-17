@@ -78,6 +78,16 @@ Rules that follow directly from the table:
   name). ALL the logic lives in `scripts/changing-theme-scripts/lib/switch-rice.sh`
   — edit the library, never paste logic back into a stub (that's how
   copy-paste parity drift happens).
+- **A new rice is listed by name in several places** besides its folder and
+  stub (checked when `yin` was added, 2026-11-17): `install/install.sh` [8h]
+  (`hyprlock-background-<rice>.conf`), `.gitignore`, `HYPRLOCK_BG_FILES` in
+  `scripts/rofi/rofi_wallpaper_switcher.sh`, `known_rices` in
+  `scripts/archenemy-doctor.sh`, `MOTIFS` in
+  `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), and the
+  hard-coded rice lists in `tests/` (`install-main`, `bluetooth`,
+  `keyboard-layouts`, `mouse-settings`, `rofi-clipboard`, `font-settings`,
+  `flux-wall-dither`). Suites that glob `rices/*/` (`rice-autostart`,
+  `tui-contrast`, `rofi-inputbar`, `rofi-theme-switcher`) pick it up alone.
 - **Monitors are identified by `desc:<EDID description>`, never by connector
   name.** `eDP-2`/`HDMI-A-1` became `eDP-1`/`HDMI-A-3` after a reboot on the
   owner's laptop (2026-09-21) and every rule of the machine layer stopped
