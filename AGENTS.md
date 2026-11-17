@@ -385,6 +385,16 @@ Rules that follow directly from the table:
   `rpm -q` of every name; COPR `nett00n/hyprland` and the Brave repo only via
   `pkg_install_extra` after an explicit `y`; NixOS never mutates the system
   (`bash tests/pkg.sh`).
+- **`install.sh` per platform:** Arch and Arch derivatives (`ID_LIKE=arch`)
+  keep the old code of steps [2]/[4]/[5] — same questions, commands and
+  output (compare with `INSTALL_MAIN_REV=<rev> INSTALL_MAIN_SAVE=<dir>
+  bash tests/install-main.sh`, README "Verification"). Fedora/NixOS go
+  through `pkg.sh`; other distributions are refused before any write.
+  `--skip-packages` (always on for NixOS) never installs a package, but the
+  requirement check stays. Until system installers and services get their
+  own Fedora/NixOS paths, a step that would call them prints `manual_step`
+  instructions there — never `pacman`, `yay`, `systemctl enable` or `ufw`.
+  A new installer question needs an answer in `tests/install-main.sh`.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing
