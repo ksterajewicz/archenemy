@@ -2,12 +2,13 @@
 -- made by kst - https://github.com/ksterajewicz
 -- github - https://github.com/ksterajewicz/archenemy
 --
--- Rice asia-n-rice: mauve/róż (#b47687) na granacie. Wygląd zaadaptowany 1:1
--- z zewnętrznego rice'a (kitty/wofi/cava/NVIDIA-hardcode) i przepięty pod
--- backend archenemy: alacritty zamiast kitty, rofi zamiast wofi, warstwa
--- maszynowa (GPU/monitory/workspace'y) przez require zamiast hardkodu, cava
--- usunięta. Płaski look źródła zachowany: ramka #131a2a, bez tuningu
--- dekoracji/animacji (domyślne Hyprlanda — tak jak w źródle).
+-- Rice asia-n-rice: mauve/róż (#b47687) na granacie. Wygląd przeniesiony 1:1
+-- z wcześniejszego, własnego rice'a autora (arch_linux_rice-beta1.2:
+-- kitty/wofi/cava/NVIDIA-hardcode) i przepięty pod backend archenemy:
+-- alacritty zamiast kitty, rofi zamiast wofi, warstwa maszynowa
+-- (GPU/monitory/workspace'y) przez require zamiast hardkodu, cava usunięta.
+-- Płaski look tamtej wersji zachowany: ramka #131a2a, bez tuningu
+-- dekoracji/animacji (domyślne Hyprlanda — tak jak tam).
 --
 -- Konwencja formatu (parsuje ją appbinds.sh — TUI Super+A):
 --   * zmienne rice'a: `local nazwa = "wartość"` — jedna na linię,
@@ -83,7 +84,7 @@ hl.config({
         gaps_out    = { top = 4, right = 12, bottom = 12, left = 12 },
         border_size = 2,
 
-        -- Płaski granat ze źródła — bez gradientu, bez glow (look asia-n-rice).
+        -- Płaski granat z wcześniejszej wersji — bez gradientu, bez glow (look asia-n-rice).
         ["col.active_border"]   = "rgb(131a2a)",
         ["col.inactive_border"] = "rgb(131a2a)",
 
@@ -93,9 +94,9 @@ hl.config({
     },
 })
 
--- Bez bloku decoration/animations — źródło ich nie ma. Zostają domyślne
--- Hyprlanda (ostre rogi, domyślny blur/animacje), co wiernie oddaje wygląd
--- źródłowego rice'a. NIE dokładać tu filozofii animacji white-blue.
+-- Bez bloku decoration/animations — wcześniejsza wersja ich nie miała.
+-- Zostają domyślne Hyprlanda (ostre rogi, domyślny blur/animacje), co wiernie
+-- oddaje jej wygląd. NIE dokładać tu filozofii animacji white-blue.
 
 
 hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })

@@ -1,7 +1,8 @@
 # =============================================
 #   archenemy - flux-wall
 #   Budowanie klienta tapety-shadera. Kod protokołów generuje wayland-scanner
-#   z XML-i dołączonych do repo (protocols/, licencja MIT) — bez zależności od
+#   z XML-i dołączonych do repo (protocols/: MIT, layer-shell HPND-sell-variant,
+#   źródła i noty w THIRD-PARTY.md) — bez zależności od
 #   pakietów wayland-protocols / wlr-protocols.
 #
 #   make            zbuduj build/flux-wall
