@@ -139,7 +139,9 @@ case "$1" in
 esac
 exit 0'
 stub hyprctl 'echo "hyprctl $*" >> "$MOCK_LOG"; [[ "$1" == reload ]] && { echo ok; exit 0; }; exec "$MOCK_HYPRCTL" "$@"'
-stub powerprofilesctl '[[ "$1" == get ]] && echo balanced; true'
+# MOCK_PPD=none: demon profili nie odpowiada (profile-get.sh → „brak”, z
+# ARCHENEMY_PP_SYSFS wskazującym brak pliku) — porada naprawcza z [6].
+stub powerprofilesctl '[[ "${MOCK_PPD:-}" == none ]] && exit 1; [[ "$1" == get ]] && echo balanced; true'
 stub lspci 'echo "03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 24"'
 for t in gcc wayland-scanner pkg-config mpd ncmpcpp clear notify-send hyprpaper waybar pkill; do stub "$t" 'true'; done
 stub pgrep 'exit 1'
@@ -409,7 +411,7 @@ fresh_state
 printf 'waybar\nswayosd\nbrave-browser\npower-profiles-daemon\n' > "$MOCK_STATE/rpm-missing"
 echo power-profiles-daemon > "$MOCK_STATE/dnf-conflict"
 printf 'JetBrainsMono Nerd Font\nSymbols Nerd Font Mono\n' > "$MOCK_STATE/fonts"
-ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 5
+MOCK_PPD=none ARCHENEMY_PP_SYSFS="$T/os/none" ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 5
 check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
 check "ani razu pacman ani yay"                 '! grep -qE "^(sudo )?(pacman|yay)( |$)" <<< "$LOG"'
 check "[4] AUR nie dotyczy Fedory"              '[[ "$OUT" == *"[4] AUR helper (yay): not used on Fedora."* ]] && ! asked "Install yay"'
@@ -424,6 +426,9 @@ check "[6]–[10] bez usług, zapory i instalatorów systemowych" '! grep -qE "^
 check "[6]/[10] instrukcje zamiast kroków"      '[[ "$OUT" == *"power-profiles-daemon: not done automatically on Fedora"* && "$OUT" == *"Fedora uses firewalld"* && "$OUT" == *"skipped: NetworkManager — not done on Fedora"* ]]'
 check "[8]/[9] warstwa maszynowa i linki jak na Archu" '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
 check "[11] baner z ostrzeżeniami"              '[[ "$OUT" == *"Setup finished with warnings"* ]]'
+# P2 (przegląd D5): porada przy „brak” bez asus-installation.sh (sudo pacman).
+prof_fix="$(grep -A2 "Profile switcher is not working" <<< "$OUT")"
+check "[6] profile nie działają: porada Fedory (dnf/systemctl), bez asus-installation.sh" '[[ "$prof_fix" == *"Other devices: sudo systemctl enable --now power-profiles-daemon"* && "$prof_fix" == *"asus-linux.org/guides/fedora-guide"* && "$OUT" != *"asus-installation.sh"* ]]'
 
 echo "== bieg 6 (Fedora, --skip-packages): ani razu dnf"
 fresh_state
@@ -434,7 +439,7 @@ check "zero mutacji (dnf, sudo, usługi)"        '[[ -z "$(mutations)" ]] && ! a
 
 echo "== bieg 7 (NixOS): --skip-packages domyślnie, zero mutacji"
 fresh_state
-PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" run_install "$ANS" 7
+PATH="$T/nixbin:$PATH" MOCK_PPD=none ARCHENEMY_PP_SYSFS="$T/os/none" ARCHENEMY_OS_RELEASE="$T/os/nixos" run_install "$ANS" 7
 check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
 check "wersje zgodne: działający Hyprland i hyprpaper ze sklepu, bez ostrzeżeń" 'called "hyprctl version" && [[ "$OUT" == *"✓ Hyprland 0.57.1 (running), hyprpaper 0.8.4"* && "$OUT" != *"version could not be read"* ]]'
 check "zero mutacji: pakiety, nix-env/nixos-rebuild, sudo, usługi, zapora" '[[ -z "$(mutations)" ]]'
@@ -444,6 +449,8 @@ check "[5] brakujący font: atrybut nixpkgs w podpowiedzi" '[[ "$OUT" == *"✗ m
 check "nie pyta o instalacje ani usługi"       '! asked "Install|additional useful|CPU microcode|UFW|Bluetooth|VirtualBox|Enable mpd|Enable NetworkManager"'
 check "[10] opcje NixOS zamiast usług"          '[[ "$OUT" == *"networking.networkmanager.enable = true;"* && "$OUT" == *"services.pipewire.pulse.enable = true;"* ]]'
 check "[8]/[9] warstwa maszynowa i linki"       '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
+prof_fix="$(grep -A2 "Profile switcher is not working" <<< "$OUT")"
+check "[6] profile nie działają: opcje NixOS, bez asus-installation.sh i systemctl" '[[ "$prof_fix" == *"services.power-profiles-daemon.enable = true;"* && "$prof_fix" == *"services.asusd.enable"* && "$prof_fix" != *systemctl* && "$OUT" != *"asus-installation.sh"* ]]'
 
 echo "== bieg 8 (Arch, --skip-packages): ani razu instalacja, sprawdzenie zostaje"
 fresh_state

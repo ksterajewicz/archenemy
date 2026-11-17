@@ -1006,7 +1006,15 @@ echo "$HW_PROFILE" > "$DATA_DIR/hardware.dat"
 PROFILE_CHECK="$(bash "$ARCHENEMY_DIR/scripts/waybar/profile-get.sh" 2>/dev/null)"
 if [[ -z "$PROFILE_CHECK" || "$PROFILE_CHECK" == "brak" ]]; then
     echo -e "  ${RED}✗ Profile switcher is not working (profile-get.sh → \"brak\").${NC}"
-    echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Other devices: systemctl enable --now power-profiles-daemon."
+    # Porada per platforma (P2 z przeglądu D5): asus-installation.sh woła
+    # `sudo pacman -S`, więc poza Archem — instrukcje z manual_step kroku [6].
+    case "$PLATFORM" in
+        fedora) echo -e "    ASUS: $(pkg_hint asusctl). Other devices: sudo systemctl enable --now power-profiles-daemon"
+                echo -e "    (if tuned-ppd is installed, first: sudo dnf swap tuned-ppd power-profiles-daemon)." ;;
+        nixos)  echo -e "    Set in configuration.nix, then nixos-rebuild switch — ASUS: services.asusd.enable = true;"
+                echo -e "    and services.power-profiles-daemon.enable = true;. Other devices: services.power-profiles-daemon.enable = true;" ;;
+        *)      echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Other devices: systemctl enable --now power-profiles-daemon." ;;
+    esac
     SUMMARY_SKIPPED+=("Hardware profile: $HW_PROFILE — profile tool is NOT responding, the bar will show \"brak\"")
 else
     SUMMARY_DONE+=("Hardware profile: $HW_PROFILE (active profile: $PROFILE_CHECK)")
