@@ -438,6 +438,8 @@ done <<'EOF'
 8|fedora=bogus;nixos=bogus|status fedora=bogus;nixos=bogus
 8|fedora=ok;nixos=bogus|status nixos=bogus
 8|fedora=ok;nixos=ok;fedora=manual|status z powtórzonym kluczem
+5|services.example.enable|nixos=ok z opcją NixOS zamiast atrybutu nixpkgs (jak tests/platform-map.sh)
+9|http://x.invalid/|source_url bez https (jak tests/platform-map.sh)
 4|copr:evil/repo|fedora_source=copr:evil/repo
 4|rpmfusion-free|fedora=ok ze źródłem rpmfusion-free (instalator go nie włącza)
 3|-|fedora=ok bez nazw RPM

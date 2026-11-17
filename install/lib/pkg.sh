@@ -163,8 +163,12 @@ _pkg_names_ok() {
     for w in "${ws[@]}"; do _pkg_name_ok "$w" || return 1; done
 }
 
-# _pkg_row_ok <asrc> <fsrc> <nix> <check> <min> <sf> <sn> — zbiór wartości
-# i spójność pól (te same reguły co tests/platform-map.sh); 1 = zła linia.
+# _pkg_row_ok <asrc> <fsrc> <nix> <check> <min> <sf> <sn> <url> — zbiór wartości
+# i spójność pól (reguły tests/platform-map.sh, które dotyczą działania
+# biblioteki: źródła, statusy, sonda, wersja, nixos=ok tylko z atrybutem
+# nixpkgs — nie opcją *.enable, która dałaby podpowiedź „pkgs.services…” —
+# i source_url tylko https); 1 = zła linia. Tylko w teście zostają reguły
+# redakcyjne danych: zakaz pakietów -git i własny URL źródła spoza Fedory.
 _pkg_row_ok() {
     local st
     [[ "$1" == pacman || "$1" == aur ]] || return 1
@@ -178,7 +182,8 @@ _pkg_row_ok() {
     if [[ "$6" == ok ]]; then
         case "$2" in fedora|"copr:$PKG_COPR_PROJECT"|vendor:brave) ;; *) return 1 ;; esac
     fi
-    [[ "$7" != ok || "$3" != - ]] || return 1
+    [[ "$7" != ok || ( "$3" != - && ! "$3" =~ \.enable$ ) ]] || return 1
+    [[ "$8" =~ ^https://[^[:space:]]+$ ]] || return 1
 }
 
 # _pkg_load_map — wczytuje mapę raz; 0 ok, 2 brak/zła mapa (żadnych działań
@@ -211,7 +216,7 @@ _pkg_load_map() {
             echo "  Invalid package name in map line $n — refusing to use the map." >&2
             return 2
         fi
-        if ! _pkg_row_ok "$asrc" "$fsrc" "$na" "$ck" "$mv" "$sf" "$sn" || [[ -n "${_PKG_ARCH[$id]+x}" ]]; then
+        if ! _pkg_row_ok "$asrc" "$fsrc" "$na" "$ck" "$mv" "$sf" "$sn" "$url" || [[ -n "${_PKG_ARCH[$id]+x}" ]]; then
             echo "  Malformed package map line $n (unknown status/source, inconsistent fields or duplicate id) — refusing to use the map." >&2
             return 2
         fi
