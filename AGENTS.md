@@ -373,6 +373,18 @@ Rules that follow directly from the table:
   `packages/additional-packages-*.txt` (optional — guarded with
   `command -v X && X`). Don't add dependencies "while you're at it" — every
   new one needs a stated reason.
+- **Fedora/NixOS (experimental, Arch is the reference):** a new package on
+  any of the four lists, in `config/shell/cli-tools.tsv` or a literal
+  `pacman -S --needed`/`PKGS=(…)` in `install/`/`scripts/` needs a row in
+  `packages/platform-map.tsv` (`bash tests/platform-map.sh` fails otherwise).
+  Ten tab-separated fields, `-` for an empty one (bash `read` with a tab IFS
+  merges empty fields); unknown Fedora/NixOS equivalents are `manual`,
+  `unavailable` or `system-managed`, never a `-git` stand-in. The map is data
+  — never `eval`/`source` it. `install/lib/pkg.sh` must keep Arch on the exact
+  installer commands; on Fedora no `-y`/`--skip-*`/`--allowerasing`, success =
+  `rpm -q` of every name; COPR `nett00n/hyprland` and the Brave repo only via
+  `pkg_install_extra` after an explicit `y`; NixOS never mutates the system
+  (`bash tests/pkg.sh`).
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

@@ -103,13 +103,18 @@ archenemy/
 │   ├── lib/aur.sh                    # Library (sourced by install.sh): builds yay in a fresh mktemp dir with an
 │   │                                 #   optional PKGBUILD review; AUR installs with opt-in `--diffmenu --answerdiff All`;
 │   │                                 #   reviews fall back to more/cat when `less` is missing.
+│   ├── lib/pkg.sh                    # EXPERIMENTAL package layer per distribution (not used by install.sh yet):
+│   │                                 #   pkg_detect / pkg_installed / pkg_install / pkg_install_extra / pkg_hint /
+│   │                                 #   pkg_version over packages/platform-map.tsv — see "Other distributions".
 │   └── virtualbox-installation.sh    # Oracle VirtualBox host (optional, asked in step [10]): DKMS modules +
 │                                     #   kernel headers, vboxdrv loaded and verified, opt-in vboxusers group.
 ├── packages/
 │   ├── requirements-pacman.txt       # Required packages (official repos).
 │   ├── requirements-aur.txt          # Required packages (AUR).
 │   ├── additional-packages-pacman.txt # Optional packages (official repos).
-│   └── additional-packages-aur.txt   # Optional packages (AUR).
+│   ├── additional-packages-aur.txt   # Optional packages (AUR).
+│   └── platform-map.tsv              # EXPERIMENTAL Arch → Fedora / NixOS package map (data, one row per
+│                                     #   list entry, CLI catalog package and ad-hoc install); Arch keeps using the four lists.
 ├── config/
 │   ├── applications/
 │   │   └── ncmpcpp.desktop           # rofi (drun) / [p] autostart entry for ncmpcpp; install.sh [8l]
@@ -436,6 +441,12 @@ archenemy/
 │                                     #   code (a deliberate exception is added to the baseline by hand, with a comment).
 │                                     #   secrets.sh — private keys/tokens in tracked files (always) and gitleaks
 │                                     #   over the whole history (when installed; otherwise "skip").
+│                                     #   platform-map.sh — packages/platform-map.tsv: 10 tab-separated fields, every
+│                                     #   entry of the four lists, cli-tools.tsv and literal ad-hoc installs has a
+│                                     #   row, no dead rows, no -git, only the approved COPR; negative cases → ✗.
+│                                     #   pkg.sh — install/lib/pkg.sh on fake os-release/sudo/pacman/yay/dnf/rpm/nix-*:
+│                                     #   Arch uses the old commands, Fedora exact RPM names without masking flags,
+│                                     #   COPR/Brave only after "y", NixOS never mutates, unsupported ID → refusal.
 │                                     #   packages-exist.sh — every name in packages/*.txt exists where it is
 │                                     #   installed from (official repos core/extra/multilib in the pacman sync DB /
 │                                     #   AUR RPC v5), no -git in requirements;
@@ -862,6 +873,15 @@ The updater (`Super + A → [u]`, `scripts/appbinds/update-archenemy.sh`) fetche
 - **What is coming:** before pulling, the updater lists the new commits from `origin/<branch>` (up to 30, then a count of the rest) and warns separately when the update changes `install/` or `packages/` — that is the code the installer later runs with sudo and yay. After a successful update it prints `To go back: git switch --detach <old commit>` with the previous `HEAD`. By then the pull output has usually scrolled the list out of the Super+A window, so right above the "Run install.sh now?" question the updater repeats a summary: new commits (or commits rolled back, when you switched to an older branch), files changed and — when the warning was shown — how many `install/`/`packages/` files changed, with `git -C ~/archenemy diff <old commit> HEAD -- install packages` to review them.
 - **Local changes:** tracked files you changed are stashed before the pull and restored after it. If restoring conflicts, the updater prints no ✓ and does not offer the installer: it lists the conflicting files, which now contain conflict markers, and a copy of your changes stays in the stash (`git stash list`). In `~/archenemy`, fix the markers, `git add` those files and run `git stash drop`, then start `install.sh` yourself. Do not run `git stash pop` again: on a file with conflict markers it fails with "needs merge", and after `git add` it applies the same changes a second time. If restoring fails without a conflict (nothing was applied), the updater says so and the right command is `git stash pop` once the error it printed is fixed.
 - **Installer prompt:** "Run install.sh now?" defaults to **No** and says that the installer will ask for sudo — the installer comes from code fetched a moment earlier, so a single Enter must not run it as root. The machine-layer check reminds you when the installed version is behind the code.
+
+## Other distributions (experimental)
+
+Arch Linux is the reference platform and the installer still supports only Arch. Fedora and NixOS support is being prepared and is **experimental**: package and configuration paths are covered by mocks only; desktop sessions and hardware have not been verified live. Debian/Ubuntu are out of scope (no rolling release, no Hyprland with Lua configuration).
+
+- `packages/platform-map.tsv` maps every Arch package archenemy installs — each entry of the four `packages/*.txt` lists, the CLI tool catalog and the packages installed directly by `install/*.sh` (yay, ASUS, microcode, kernels, GPU drivers, VirtualBox) — to Fedora RPM names and their source, and to nixpkgs attributes or NixOS options. One id may expand to several packages (`libpulse` → `pulseaudio-libs-devel pulseaudio-utils`). Rows without an equivalent say so explicitly: `manual`, `unavailable` or `system-managed`; there are no `-git` substitutes. The four lists remain the source for Arch and are unchanged. The file is data: it is read with `read`, never `eval`/`source`, and every package name must match a fixed character set.
+- On Fedora (43/44/45 checked) the Hyprland stack (`hyprland`, `hyprpaper`, `hyprlock`, `hyprpolkitagent`, `hyprshot`, `hyprpicker`, `xdg-desktop-portal-hyprland`, `swayosd`, `cliphist`) comes from the community COPR [`nett00n/hyprland`](https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/), and Brave from [Brave's own RPM repository](https://brave.com/linux/). Both are opt-in: the installer shows the source and asks `[y/N]` before enabling either. RPM Fusion (Steam, Discord) is never enabled by archenemy. `networkmanager-dmenu` and the Nerd Fonts have no Fedora package and are manual requirements in this first experimental version. `ufw` maps to Fedora's firewalld, which archenemy leaves alone.
+- On NixOS archenemy never runs `nix-env`, `nix profile` or `nixos-rebuild`: it only checks for commands/fonts and prints what to add to `environment.systemPackages`/`home.packages` or which NixOS option to set (for example `programs.hyprland.enable`). nixos-26.05 ships Hyprland 0.55.4, below the 0.56 Lua configuration archenemy needs; nixos-unstable has 0.57.2.
+- `install/lib/pkg.sh` is the library the installer will use (it is not wired into `install.sh` yet): `pkg_detect` reads `ID`/`VERSION_ID` from `/etc/os-release` (fallback `/usr/lib/os-release`) without `eval` and accepts only `arch`, `fedora` and `nixos` — any other ID, including Arch derivatives, and Fedora Atomic (rpm-ostree) are refused before anything is written. On Arch it runs exactly the installer's commands (`pacman -Qi`, `sudo pacman -S --needed`, `yay -S --needed` through `install/lib/aur.sh`). On Fedora it runs `sudo dnf install` without `-y`, `--skip-unavailable`, `--skip-broken` or `--allowerasing`, and reports success only when `rpm -q --qf '%{NAME}\n'` finds every expanded package by its exact name. COPR and the Brave repository are handled only by `pkg_install_extra`, after an explicit `y`. Test-only overrides (`ARCHENEMY_OS_RELEASE`, `ARCHENEMY_PKG_MAP`, …) work only with `ARCHENEMY_TEST=1`. Tests: `bash tests/platform-map.sh`, `bash tests/pkg.sh`.
 
 ## Verification
 
