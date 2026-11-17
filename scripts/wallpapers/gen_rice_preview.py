@@ -7,8 +7,8 @@ Prawdziwy zrzut ekranu wymaga żywej sesji Hyprlanda, więc repo trzyma
 MAKIETĘ złożoną z kolorów, które rice naprawdę deklaruje — nic nie jest
 wpisane na sztywno poza motywem tła:
   * tło: paleta z rices/<rice>/flux-wall.conf (bg, ink, accent) + motyw
-    tapety rice'a (logo Arch / siatka Tron / oscyloskop / dither Bayera /
-    słońce) — tapet nie da się tu zmniejszyć bez dekodera, więc motyw jest
+    tapety rice'a (plaster miodu blue-hex / siatka Tron / oscyloskop /
+    dither Bayera / słońce) — tapet nie da się tu zmniejszyć bez dekodera, więc motyw jest
     rysowany, nie skalowany,
   * pasek: wyspy waybara z rices/<rice>/waybar/style.css (.modules-left,
     #clock, .modules-right: tło, ramka, promień; aktywny workspace),
@@ -41,11 +41,11 @@ MOTIF_CX = 488.0   # środek wolnej (prawej) części kadru — tam motyw tapety
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # Motyw tła per rice (tapeta nie jest przypisana do rice'a w kodzie — to
-# skojarzenie z README: zestawy arch-white / tron-grid / crt / dither-flux).
+# skojarzenie z README: zestawy blue-hex / tron-grid / crt / dither-flux).
 # Paleta awaryjna tylko dla rice'a bez flux-wall.conf (white-blue_beta).
 MOTIFS = {
-    'white-blue':      'arch',
-    'white-blue_beta': 'arch',
+    'white-blue':      'hex',
+    'white-blue_beta': 'hex',
     'tron':            'grid',
     'crt':             'scope',
     'dither-flux':     'dither',
@@ -270,25 +270,28 @@ def bg_gradient(cv, top, bottom):
         for x in range(cv.w):
             cv.set(x, y, c)
 
-def motif_arch(cv, pal):
-    """Jasne tło, logo w stylu Arch (trójkąt z wcięciem) w akcencie."""
+def motif_hex(cv, pal):
+    """Jasne tło, plaster miodu z 7 sześciokątów w akcencie — ten sam motyw
+    co tapeta blue-hex (gen_hex_wallpaper.py); neutralna geometria, bez logo
+    (do 2026-11-17 odrysowany znak Arch Linux — znak towarowy)."""
     bg, ink, acc = pal
     bg_gradient(cv, bg, mix(bg, acc, 0.10))
-    cx, top, bot, half = MOTIF_CX, 80.0, 320.0, 104.0
+    cx, cy, height, cell = MOTIF_CX, 200.0, 240.0, 0.86
+    R = height / (3 * math.sqrt(3))
+    centers = [(cx, cy)] + [(cx + math.sqrt(3) * R * math.cos(math.radians(30 + 60 * k)),
+                             cy + math.sqrt(3) * R * math.sin(math.radians(30 + 60 * k)))
+                            for k in range(6)]
+    r = R * cell
     def inside(px, py):
-        if py < top or py > bot:
-            return False
-        t = (py - top) / (bot - top)
-        if abs(px - cx) > half * t:
-            return False
-        # wcięcie u dołu: odwrócony łuk-trójkąt
-        if py > top + (bot - top) * 0.70:
-            u = (py - (top + (bot - top) * 0.70)) / ((bot - top) * 0.30)
-            if abs(px - cx) < half * 0.34 * math.sqrt(u):
-                return False
-        return True
-    for y in range(int(top) - 1, int(bot) + 2):
-        for x in range(int(cx - half) - 1, int(cx + half) + 2):
+        # sześciokąt z płaskim bokiem u góry: |dy| ≤ √3/2·r i √3·|dx| + |dy| ≤ √3·r
+        for hx, hy in centers:
+            dx, dy = abs(px - hx), abs(py - hy)
+            if dy <= math.sqrt(3) / 2 * r and math.sqrt(3) * dx + dy <= math.sqrt(3) * r:
+                return True
+        return False
+    half_w = math.sqrt(3) * R + r
+    for y in range(int(cy - height / 2) - 1, int(cy + height / 2) + 2):
+        for x in range(int(cx - half_w) - 1, int(cx + half_w) + 2):
             n = sum(inside(x + (i + 0.5) / 3.0, y + (j + 0.5) / 3.0) for i in range(3) for j in range(3))
             cv.blend(x, y, acc, n / 9.0)
 
@@ -395,7 +398,7 @@ def motif_flat(cv, pal):
     bg, ink, acc = pal
     bg_gradient(cv, bg, mix(bg, acc, 0.12))
 
-MOTIF_FN = {'arch': motif_arch, 'grid': motif_grid, 'scope': motif_scope,
+MOTIF_FN = {'hex': motif_hex, 'grid': motif_grid, 'scope': motif_scope,
             'dither': motif_dither, 'sun': motif_sun}
 
 # ─── makieta ─────────────────────────────────────────────────────────────────

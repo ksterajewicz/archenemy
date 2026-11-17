@@ -470,6 +470,37 @@ menu "[x] Set as hyprlock background (no blur)" "Wallpapers/" "zestaw/nowa-v1.pn
 check "odznaczony: powrót do zrzutu z rozmyciem"       'lock_is screenshot 7 3 && [[ "$(<"$A/data/hyprlock-wallpaper.dat")" == off ]]'
 rm -f "${LB[@]}" "$A/data/hyprlock-wallpaper.dat"
 
+echo "== N: zapisany wybór arch-white (logo Arch, usunięte 2026-11-17) → blue-hex"
+# Stare pliki NIE istnieją (w repo zostały tylko przejściowe symlinki, tu ich
+# nie ma) — więc zielony wynik dowodzi migracji ścieżek, nie symlinków.
+OLDW="$A/wallpapers/arch-white"; NEWW="$A/wallpapers/blue-hex"
+mkdir -p "$NEWW"; : > "$NEWW/blue-hex-v1-1920x1080.png"; : > "$NEWW/blue-hex-v2-2560x1600.png"
+setup_dat a; lock_default
+boot_daemon_with "wallpaper {
+    monitor = desc:$DESC_HDMI
+    path = $OLDW/arch-logo-v1-1920x1080.png
+}"
+printf 'desc:%s=%s\ndesc:%s=%s\n' "$DESC_HDMI" "$OLDW/arch-logo-v1-1920x1080.png" "$DESC_EDP" "$OLDW/arch-logo-v2-2560x1600.png" > "$A/data/wallpaper.dat"
+printf '%s\n' "$OLDW/arch-logo-v1-1920x1080.png" > "$A/data/hyprlock-wallpaper.dat"
+out=$(MOCK_MONS=both bash "$SW" --init "$WP/stara-v1.png" 2>/dev/null)
+check "--init ze starym wyborem → restored (nie pierwsza tapeta)" '[[ "$out" == restored ]]'
+check "wallpaper.dat: nowe ścieżki, zero arch-white"  'grep -qxF "desc:$DESC_HDMI=$NEWW/blue-hex-v1-1920x1080.png" "$A/data/wallpaper.dat" && grep -qxF "desc:$DESC_EDP=$NEWW/blue-hex-v2-2560x1600.png" "$A/data/wallpaper.dat" && ! grep -q arch-white "$A/data/wallpaper.dat"'
+check "hyprpaper.conf bez arch-white"                 '! grep -q arch-white "$A/config/hypr/hyprpaper.conf"'
+check "ekran pokazuje blue-hex v1 / v2"               '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$NEWW/blue-hex-v1-1920x1080.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$NEWW/blue-hex-v2-2560x1600.png" ]]'
+check "tło hyprlocka i jego stan przepisane"          'lock_is "$NEWW/blue-hex-v1-1920x1080.png" 0 0 && [[ "$(<"$A/data/hyprlock-wallpaper.dat")" == "$NEWW/blue-hex-v1-1920x1080.png" ]]'
+# Najstarszy format wallpaper.dat: sama nazwa zestawu.
+setup_dat a; lock_default
+printf 'arch-white\n' > "$A/data/wallpaper.dat"
+MOCK_MONS=both bash "$SW" --restore >/dev/null 2>&1
+check "stary format (sama nazwa arch-white) → zestaw blue-hex"   'grep -qxF "desc:$DESC_HDMI=$NEWW/blue-hex-v1-1920x1080.png" "$A/data/wallpaper.dat" && ! grep -q arch-white "$A/data/wallpaper.dat"'
+# Plik użytkownika o tej samej nazwie, ale spoza wallpapers/arch-white/, zostaje.
+setup_dat a; : > "$WP/arch-logo-v1-1920x1080.png"
+printf 'desc:%s=%s\n' "$DESC_HDMI" "$WP/arch-logo-v1-1920x1080.png" > "$A/data/wallpaper.dat"
+MOCK_MONS=both bash "$SW" --restore >/dev/null 2>&1
+check "ta sama nazwa w innym folderze bez zmian"      'grep -qxF "desc:$DESC_HDMI=$WP/arch-logo-v1-1920x1080.png" "$A/data/wallpaper.dat"'
+rm -f "$WP/arch-logo-v1-1920x1080.png"
+rm -rf "$NEWW" "${LB[@]}" "$A/data/hyprlock-wallpaper.dat"
+
 echo "== H: Wallpapers/ — miniatury w data/thumbs/, cache po mtime"
 setup_dat a
 boot_daemon_with ""

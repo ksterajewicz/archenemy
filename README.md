@@ -247,7 +247,7 @@ archenemy/
 │   ├── wallpapers/                   # lib/dither-flux-sizes.sh — which dither-flux wallpapers the current
 │   │                                 #   monitors still need (shared by install.sh and Super+A → [n]).
 │   │                                 #   Mathematical wallpaper generators (pure Python, zero dependencies):
-│   │                                 #   Arch logo (gen_arch_wallpaper.py), Tron grid
+│   │                                 #   blue-hex honeycomb (gen_hex_wallpaper.py), Tron grid
 │   │                                 #   (gen_tron_wallpaper.py), and generative dither wallpapers
 │   │                                 #   for the dither-flux rice (gen_dither_flux_wallpaper.py),
 │   │                                 #   oscilloscope Lissajous for crt (gen_crt_wallpaper.py);
@@ -446,7 +446,12 @@ archenemy/
 │                                     #   suites get default INT/QUIT/HUP handling even when the run was
 │                                     #   started with SIGHUP ignored (nohup, a tool's background job).
 └── wallpapers/                       # Wallpapers (in git) — any files, optionally grouped in set folders.
-    ├── arch-white/                   # Set: Arch logo (#0148ED) on white — v1 1920x1080, v2 2560x1600.
+    ├── blue-hex/                     # Set: honeycomb of 7 hexagons (#0148ED) on white — v1 1920x1080,
+    │                                 #   v2 2560x1600; first in sort order, so the default after a fresh install.
+    ├── arch-white/                   # Transitional symlinks only: the old file names point to blue-hex
+    │                                 #   (the drawn Arch Linux mark was removed on 2026-11-17 — trademark).
+    │                                 #   Super+W, --restore and --init rewrite saved choices to blue-hex;
+    │                                 #   the menu lists regular files only, so these links stay hidden.
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.
     ├── crt/                          # Set: oscilloscope — Lissajous trace in phosphor cyan on
     │                                 #   navy glass with a faint graticule — v1/v2 as above.

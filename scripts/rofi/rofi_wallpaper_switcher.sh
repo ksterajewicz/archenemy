@@ -200,12 +200,30 @@ declare -A STATE   # monitor -> ścieżka tapety
 # martwy wpis potrafił przesłonić nowy wybór i tapeta „nie chciała się
 # zmieniać". Stary klucz migrujemy więc na dzisiejszy selektor i nigdy nie
 # trzymamy obu naraz; wpis selektora (świeższy format) ma pierwszeństwo.
+#
+# Zestaw arch-white (odrysowany znak Arch Linux) zastąpiony 2026-11-17
+# neutralnym blue-hex (znak towarowy — decyzja właściciela). Zapisany wybór
+# starego pliku przepisujemy na odpowiednik, więc najbliższe --restore/--init/
+# wybór zapisze nowe ścieżki do wallpaper.dat, hyprpaper.conf i tła hyprlocka.
+# Stare nazwy w wallpapers/arch-white/ zostały tylko jako przejściowe symlinki
+# (hyprpaper po samym `git pull` nie traci pliku) — menu ich nie pokazuje
+# (find -type f). Wynik w REPLY.
+migrate_wallpaper_path() {
+    REPLY="$1"
+    case "$1" in
+        */wallpapers/arch-white/arch-logo-v1-1920x1080.png)
+            REPLY="${1%/arch-white/*}/blue-hex/blue-hex-v1-1920x1080.png" ;;
+        */wallpapers/arch-white/arch-logo-v2-2560x1600.png)
+            REPLY="${1%/arch-white/*}/blue-hex/blue-hex-v2-2560x1600.png" ;;
+    esac
+}
 load_state() {
     [[ -f "$WALLPAPER_DAT" ]] || return 0
     local -a legacy_mon=() legacy_path=()
     local mon path sel i
     while IFS='=' read -r mon path; do
         [[ -n "$mon" && -n "$path" ]] || continue
+        migrate_wallpaper_path "$path"; path="$REPLY"
         if [[ "$mon" == desc:* || -n "${SELECTOR_KNOWN[$mon]:-}" ]]; then
             STATE[$mon]="$path"
         else
@@ -540,6 +558,7 @@ apply_ipc() {
 
 if [[ -f "$WALLPAPER_DAT" ]] && ! grep -q '=' "$WALLPAPER_DAT"; then
     legacy=$(<"$WALLPAPER_DAT")
+    [[ "$legacy" == arch-white ]] && legacy=blue-hex   # zestaw przemianowany 2026-11-17
     [[ -n "$legacy" && -d "$WALLPAPERS_DIR/$legacy" ]] && apply_set_folder "$WALLPAPERS_DIR/$legacy"
 fi
 load_state
@@ -550,6 +569,7 @@ MODE_ALL=1    # ptaszek "Upload to all monitors" — domyślnie zaznaczony
 MODE_LOCK=0   # ptaszek "Set as hyprlock background" — domyślnie odznaczony
 LOCK_STATE="off"
 [[ -f "$HYPRLOCK_DAT" ]] && LOCK_STATE="$(<"$HYPRLOCK_DAT")"
+migrate_wallpaper_path "$LOCK_STATE"; LOCK_STATE="$REPLY"   # arch-white → blue-hex
 [[ "$LOCK_STATE" != "off" ]] && MODE_LOCK=1
 
 # --init: wynik dla install.sh [9.5] po zastosowaniu; $1 = kod apply_ipc.
