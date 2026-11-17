@@ -17,6 +17,18 @@
 #     - z ARCHENEMY_TEST=1.
 #   Sprawdza skutki (pliki, symlinki, wywołania atrap), nie same komunikaty.
 #   Drugi bieg (zalecany po każdym pullu) ma nie zmienić żadnego pliku.
+#   Platformy (D5, od świeżego stanu kopii): Arch z brakującym AUR i dodatkami,
+#   pochodna Archa (EndeavourOS — wywołania, pytania i pliki jak na Archu),
+#   Fedora (dnf, ani razu pacman/yay, COPR/Brave tylko po zgodzie, tuned-ppd →
+#   odmowa dnf z podpowiedzią), NixOS (zero mutacji), --skip-packages na Archu
+#   (ani razu instalacja, sprawdzenie wymagań zostaje), nieznana dystrybucja
+#   (odmowa przed zapisem). Dystrybucja z atrapy os-release (ARCHENEMY_OS_RELEASE),
+#   nie z maszyny testu.
+#   Porównanie z inną wersją instalatora (ręcznie, np. z bazą przed D5):
+#     INSTALL_MAIN_REV=<rewizja> — install.sh z tej rewizji gita (tylko biegi Archa),
+#     INSTALL_MAIN_SAVE=<katalog> — zapis znormalizowanych transkrypcji, pytań,
+#       wywołań atrap i migawek plików każdego biegu; dwa zapisy porównuje diff -r
+#       (polecenie: README → Verification).
 #   EUID nie da się podrobić: na VPS i w CI (root) kopia instalatora dostaje
 #   wyłączony strażnik roota — test sprawdza, że to jedyna różnica, a sam
 #   strażnik ma własny test (tests/install-guards.sh, K8).
@@ -67,9 +79,16 @@ mapfile -t NOEXEC_PRE < <(find "$A/scripts" -mindepth 2 -maxdepth 2 -name '*.sh'
 chmod -x "${NOEXEC_PRE[@]}"
 check "kopia: 3 skrypty bez bitu x przed biegiem 1" '[[ ${#NOEXEC_PRE[@]} -eq 3 && -z "$(find "${NOEXEC_PRE[@]}" -perm -u+x)" ]]'
 INST="$A/install/install.sh"
+REF_INST="$REPO/install/install.sh"
+if [[ -n "${INSTALL_MAIN_REV:-}" ]]; then
+    REF_INST="$T/install.sh.rev"
+    git -C "$REPO" show "$INSTALL_MAIN_REV:install/install.sh" > "$REF_INST" || { echo "  ✗ brak install.sh w $INSTALL_MAIN_REV"; exit 1; }
+    cp "$REF_INST" "$INST"
+    echo "  (install.sh z rewizji $INSTALL_MAIN_REV)"
+fi
 if [[ $EUID -eq 0 ]]; then
     sed -i 's/^if \[\[ \$EUID -eq 0 \]\]; then$/if false; then  # tests\/install-main.sh: bieg jako root w atrapie/' "$INST"
-    check "root: w kopii wyłączony tylko strażnik roota" '[[ "$(diff "$REPO/install/install.sh" "$INST" | grep -c "^[<>]")" -eq 2 ]]'
+    check "root: w kopii wyłączony tylko strażnik roota" '[[ "$(diff "$REF_INST" "$INST" | grep -c "^[<>]")" -eq 2 ]]'
 fi
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 GIT=(git -C "$A" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null)
@@ -124,18 +143,86 @@ stub powerprofilesctl '[[ "$1" == get ]] && echo balanced; true'
 stub lspci 'echo "03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 24"'
 for t in gcc wayland-scanner pkg-config mpd ncmpcpp clear notify-send hyprpaper waybar pkill; do stub "$t" 'true'; done
 stub pgrep 'exit 1'
+# Fedora: rpm -q [--qf FMT] <nazwy…> — zainstalowane, chyba że w
+# $MOCK_STATE/rpm-missing; dnf install usuwa z listy brakujących, a nazwa
+# z $MOCK_STATE/dnf-conflict kończy transakcję odmową (jak tuned-ppd
+# przeciw power-profiles-daemon); copr/config-manager — tylko zapis.
+stub rpm 'echo "rpm $*" >> "$MOCK_LOG"
+m="$MOCK_STATE/rpm-missing"; touch "$m"
+[[ "$1" == -q ]] || exit 2; shift
+fmt=""; [[ "$1" == --qf ]] && { fmt="$2"; shift 2; }
+rc=0
+for p in "$@"; do
+  if grep -qxF -- "$p" "$m"; then echo "package $p is not installed"; rc=1
+  elif [[ "$fmt" == *VERSION* ]]; then echo "${MOCK_RPM_VERSION:-0.57.2}"
+  else echo "$p"; fi
+done
+exit "$rc"'
+stub dnf 'echo "dnf $*" >> "$MOCK_LOG"
+if [[ "$1" == install ]]; then
+  shift
+  for a in "$@"; do grep -qxF -- "$a" "$MOCK_STATE/dnf-conflict" 2>/dev/null && { echo "Problem: package $a conflicts with tuned-ppd provided by tuned-ppd"; exit 1; }; done
+  for a in "$@"; do grep -vxF -- "$a" "$MOCK_STATE/rpm-missing" > "$MOCK_STATE/rpm-missing.new"; mv "$MOCK_STATE/rpm-missing.new" "$MOCK_STATE/rpm-missing"; done
+fi
+exit 0'
+# fc-list: rodziny fontów z $MOCK_STATE/fonts (sondy font: w pkg.sh).
+stub fc-list 'echo "fc-list $*" >> "$MOCK_LOG"; cat "$MOCK_STATE/fonts" 2>/dev/null; true'
+# NixOS: każde wywołanie to mutacja, której instalator nie może zrobić.
+for t in nix-env nix nixos-rebuild nix-channel; do stub "$t" "echo \"$t \$*\" >> \"\$MOCK_LOG\""; done
+stub networkmanager_dmenu 'true'
+# Dystrybucja z atrapy os-release (haki pkg.sh pod ARCHENEMY_TEST=1).
+mkdir -p "$T/os"
+printf 'NAME="Arch Linux"\nID=arch\n' > "$T/os/arch"
+printf 'NAME="EndeavourOS"\nID="endeavouros"\nID_LIKE="arch"\n' > "$T/os/endeavouros"
+printf 'NAME="Fedora Linux"\nID=fedora\nVERSION_ID=44\nVARIANT_ID=workstation\n' > "$T/os/fedora"
+printf 'NAME=NixOS\nID=nixos\nVERSION_ID="26.05"\n' > "$T/os/nixos"
+printf 'NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\n' > "$T/os/ubuntu"
+export ARCHENEMY_OS_RELEASE="$T/os/arch" ARCHENEMY_OSTREE_MARKER="$T/os/none" ARCHENEMY_YUM_REPOS_DIR="$T/os/yum.repos.d"
 stub make 'echo "make $*" >> "$MOCK_LOG"; [[ "$1" == -C ]] && mkdir -p "$2/build" && printf "#!/bin/sh\n" > "$2/build/flux-wall" && chmod +x "$2/build/flux-wall"'
 stub python3 'echo "python3 $*" >> "$MOCK_LOG"'
 export PATH="$T/bin:$PATH" TERM=dumb ARCHENEMY_TEST=1
 
-# run_install <plik odpowiedzi> <przyrostek> — bieg w pty; transkrypcja w
-# $T/out.<p>, zadane pytania w $T/asked.<p>, wywołania atrap w $T/log.<p>.
+# run_install <plik odpowiedzi> <przyrostek> [argumenty install.sh] — bieg w pty;
+# transkrypcja w $T/out.<p>, zadane pytania w $T/asked.<p>, wywołania atrap
+# w $T/log.<p>; z INSTALL_MAIN_SAVE także znormalizowana kopia (save_run).
 run_install() {
     : > "$MOCK_LOG"
-    (cd "$HOME" && "$PY" "$REPO/tests/lib/drive-pty.py" "$1" "$T/out.$2" "$T/asked.$2" bash "$INST")
+    (cd "$HOME" && "$PY" "$REPO/tests/lib/drive-pty.py" "$1" "$T/out.$2" "$T/asked.$2" bash "$INST" "${@:3}")
     RC=$?
     cp "$MOCK_LOG" "$T/log.$2"
     OUT="$(<"$T/out.$2")"; ASKED="$(<"$T/asked.$2")"; LOG="$(<"$T/log.$2")"
+    save_run "$2"
+}
+# norm — ścieżka mktemp i znaczniki czasu zastąpione stałymi (porównanie biegów
+# z różnych procesów i chwil).
+norm() { sed -e "s|$T|<T>|g" -e 's/[0-9]\{8\}_[0-9]\{6\}/<TS>/g' -e 's/[0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9:+-]*/<DATE>/g'; }
+# snap_norm — migawka jak snapshot(), ale skrót z TREŚCI znormalizowanej.
+snap_norm() {
+    (cd "$HOME" && find . \( -path ./archenemy/.git -o -path ./archenemy/data/installed-head.dat \
+                -o -path ./archenemy/data/hyprlock-wallpaper.dat \) -prune -o -printf '%p %y %m %l\n' | norm | sort
+     find . \( -path ./archenemy/.git -o -path ./archenemy/data/installed-head.dat \
+                -o -path ./archenemy/data/hyprlock-wallpaper.dat \) -prune -o -type f -print0 \
+         | while IFS= read -r -d '' f; do printf '%s %s\n' "$(norm < "$f" | sha256sum | cut -d' ' -f1)" "$f"; done | norm | sort -k2)
+}
+# log_seq <p> — wywołania atrap w kolejności, z generatorem tapet [9.7] (python3,
+# biegnie w tle i wpisuje się między kroki [10]) osobno i posortowanym na końcu.
+log_seq() { norm < "$T/log.$1" | grep -v '^python3 '; echo "## w tle:"; norm < "$T/log.$1" | grep '^python3 ' | sort; }
+save_run() {
+    [[ -n "${INSTALL_MAIN_SAVE:-}" ]] || return 0
+    mkdir -p "$INSTALL_MAIN_SAVE"
+    norm < "$T/out.$1" > "$INSTALL_MAIN_SAVE/out.$1"
+    norm < "$T/asked.$1" > "$INSTALL_MAIN_SAVE/asked.$1"
+    log_seq "$1" > "$INSTALL_MAIN_SAVE/log.$1"
+    snap_norm > "$INSTALL_MAIN_SAVE/files.$1"
+}
+# fresh_state — kopia repo jak przed biegiem 1 (git: pliki, bity x, bez
+# ignorowanych), $HOME tylko z nią i świeżym configiem Hyprlanda, czysty stan atrap.
+fresh_state() {
+    find "$HOME" -mindepth 1 -maxdepth 1 ! -name archenemy -exec rm -rf {} +
+    "${GIT[@]}" checkout -q -- . && "${GIT[@]}" clean -fdxq
+    mkdir -p "$HOME/.config/hypr" && echo "# autogenerated = 1" > "$HOME/.config/hypr/hyprland.conf"
+    rm -rf "$MOCK_STATE"; mkdir -p "$MOCK_STATE"; : > "$MOCK_HYPRPAPER_STATE"
+    find "$XDG_RUNTIME_DIR" "$TMPDIR" -mindepth 1 -delete 2>/dev/null
 }
 asked() { grep -qE -- "$1" <<< "$ASKED"; }
 called() { grep -qxE -- "$1" <<< "$LOG"; }
@@ -163,6 +250,11 @@ Role \(primary/secondary/other\) \[[^]]*\]:
 Enter = confirm, or enter your own order.*:
 Choose mode \[1/2\]:	1
 Install missing pacman packages\? \[Y/n\]:
+Install missing AUR packages with yay\? \[Y/n\]:
+Review each PKGBUILD diff before building.*\[y/N\]:	n
+Install missing packages with dnf\? \[Y/n\]:
+Enable COPR nett00n/hyprland and install these packages\? \[y/N\]:	n
+Add the Brave repository and install brave-browser\? \[y/N\]:	y
 Would you like to install additional useful packages\? \[y/N\]:	n
 Select your device \[default: [0-9]\]:	3
 Run CPU microcode installer\? \[y/N\]:	n
@@ -239,6 +331,7 @@ fi
 
 echo "== bieg 2: ponowny bieg (Enter = zostaw) nie zmienia plików"
 snapshot > "$T/snap.1"
+snap_norm > "$T/snapn.1"   # do porównania z biegiem pochodnej Archa (4)
 # Użytkownik po biegu 1 zaostrzył zaporę (ufw default deny outgoing); lista
 # odpowiedzi nadal ma „y” dla ufw — ponowny bieg nie może ruszyć polityk (S7).
 echo deny > "$MOCK_STATE/ufw.out"
@@ -258,6 +351,105 @@ check "[8l] mpd.socket: ostrzeżenie o porcie 6600 zamiast 'already enabled' (S1
 check "[8l] mpd.socket: wpis w podsumowaniu z komendą, bez zmiany usług" '[[ "$OUT" == *"skipped: mpd.socket listens on port 6600"*"systemctl --user disable --now mpd.socket"* ]] && ! grep -q "^systemctl --user \(enable\|disable\)" "$T/log.2"'
 check "[5] nic nie doinstalowuje"               '! grep -q "^pacman -S --needed swayosd" "$T/log.2"'
 check "hyprlock-wallpaper.dat (jeśli powstał) = off" '[[ ! -e "$A/data/hyprlock-wallpaper.dat" || "$(<"$A/data/hyprlock-wallpaper.dat")" == off ]]'
+
+# ─── platformy (D5) — każdy bieg od świeżego stanu kopii ─────────────────────
+# Lista dodatków w kolejności menu [5] (pacman, potem AUR) — numery do „Pick numbers”.
+mapfile -t ADDL < <(for f in "$A/packages/additional-packages-pacman.txt" "$A/packages/additional-packages-aur.txt"; do
+    while IFS= read -r p || [[ -n "$p" ]]; do p="${p%%[[:space:]]*}"; [[ -z "$p" || "$p" == \#* ]] && continue; echo "$p"; done < "$f"; done)
+idx_of() { local i; for i in "${!ADDL[@]}"; do [[ "${ADDL[$i]}" == "$1" ]] && { echo $((i + 1)); return; }; done; }
+# with_answers <plik> <wiersze…> — odpowiedzi biegu: własne wiersze PRZED wspólną listą
+# (drive-pty: wygrywa pierwszy pasujący wzorzec).
+with_answers() { local f="$1"; shift; printf '%s\n' "$@" > "$f"; cat "$ANS" >> "$f"; }
+# Wywołania zmieniające system: pakiety, repozytoria, zapora, usługi (sudo -k nie).
+mutations() { grep -E '^(pacman -S|yay|dnf|nix-env|nix|nixos-rebuild|nix-channel|ufw (default|enable))( |$)|^systemctl( --user)? (enable|disable|start|stop|restart|mask)|^sudo ' <<< "$LOG" | grep -vx 'sudo -k'; }
+
+echo "== bieg 3 (Arch): brakuje pakietu z repo i z AUR, dodatki z obu źródeł"
+fresh_state
+printf 'swayosd\nbrave-bin\n' > "$MOCK_STATE/pacman-missing"
+with_answers "$T/answers.3" "Would you like to install additional useful packages\\? \\[y/N\\]:	y" \
+    "Pick numbers.*:	$(idx_of btop) $(idx_of megasync)"
+run_install "$T/answers.3" 3
+check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
+check "[5] repo pacmanem, AUR przez aur_install (yay -S --needed)" 'called "sudo pacman -S --needed swayosd" && called "yay -S --needed brave-bin" && asked "Install missing AUR packages with yay"'
+check "[5] dodatki: pacman i yay osobno"        'called "sudo pacman -S --needed btop" && called "yay -S --needed megasync"'
+check "[4] yay znaleziony, bez budowy"          '[[ "$OUT" == *"✓ yay found."* ]] && ! asked "Install yay"'
+
+if [[ -n "${INSTALL_MAIN_REV:-}" ]]; then
+    echo "  (INSTALL_MAIN_REV: biegi innych platform pominięte)"
+else
+echo "== bieg 4 (EndeavourOS, ID_LIKE=arch): ścieżka Archa bez zmian względem biegu 1"
+fresh_state
+echo swayosd > "$MOCK_STATE/pacman-missing"
+ARCHENEMY_OS_RELEASE="$T/os/endeavouros" run_install "$ANS" 4
+snap_norm > "$T/snapn.4"
+check "kod 0 jak bieg 1"                        '[[ $RC -eq 0 ]]'
+check "te same pytania i odpowiedzi co bieg 1"  'diff <(norm < "$T/asked.1") <(norm < "$T/asked.4") >/dev/null'
+check "te same wywołania atrap (i kolejność) co bieg 1" 'diff <(log_seq 1) <(log_seq 4) >/dev/null'
+check "to samo wyjście co bieg 1"               'diff <(norm < "$T/out.1") <(norm < "$T/out.4") >/dev/null'
+check "te same pliki (typ, prawa, treść) co bieg 1" 'diff "$T/snapn.1" "$T/snapn.4" >/dev/null'
+diff <(log_seq 1) <(log_seq 4) | head -5 | sed 's/^/      /'
+
+echo "== bieg 5 (Fedora 44): dnf, COPR odrzucony, repo Brave przyjęte, tuned-ppd"
+fresh_state
+printf 'waybar\nswayosd\nbrave-browser\npower-profiles-daemon\n' > "$MOCK_STATE/rpm-missing"
+echo power-profiles-daemon > "$MOCK_STATE/dnf-conflict"
+printf 'JetBrainsMono Nerd Font\nSymbols Nerd Font Mono\n' > "$MOCK_STATE/fonts"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 5
+check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
+check "ani razu pacman ani yay"                 '! grep -qE "^(sudo )?(pacman|yay)( |$)" <<< "$LOG"'
+check "[4] AUR nie dotyczy Fedory"              '[[ "$OUT" == *"[4] AUR helper (yay): not used on Fedora."* ]] && ! asked "Install yay"'
+check "[5] sprawdzenie dokładnych nazw rpm"     'called "rpm -q --qf %\{NAME\}\\\\n waybar"'
+check "[5] repo Fedory: sudo dnf install waybar (bez -y i flag maskujących)" 'called "sudo dnf install waybar" && ! grep -qE "^dnf .*(--allowerasing|--skip-|(^| )-y( |$))" <<< "$LOG"'
+check "[5] COPR bez zgody: nic nie włączone, swayosd w podsumowaniu" '! grep -q "copr enable" <<< "$LOG" && [[ "$OUT" == *"COPR nett00n/hyprland not enabled at your request"* && "$OUT" == *"skipped: REQUIRED package not installed: swayosd"* ]]'
+check "[5] repo Brave po y: addrepo + dnf install brave-browser" 'called "sudo dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo" && called "sudo dnf install brave-browser"'
+check "[5] tuned-ppd: odmowa dnf widoczna, podpowiedź dnf swap, bez podmiany" 'called "sudo dnf install power-profiles-daemon" && [[ "$OUT" == *"conflicts with tuned-ppd provided by tuned-ppd"* && "$OUT" == *"sudo dnf swap tuned-ppd power-profiles-daemon"* ]] && ! grep -q "swap\|remove\|erase" <<< "$(grep "^dnf" <<< "$LOG")"'
+check "[5] font Nerd: instrukcja ręczna, bez COPR fontów" '[[ "$OUT" == *"not installed: ttf-iosevka-nerd"*"install manually"* ]] && ! grep -q "nerd-fonts" <<< "$LOG"'
+check "sudo tylko dla dnf (i sudo -k)"          '[[ -z "$(grep "^sudo" <<< "$LOG" | grep -vE "^sudo (dnf |-k$)")" ]]'
+check "[6]–[10] bez usług, zapory i instalatorów systemowych" '! grep -qE "^systemctl( --user)? (enable|disable|start|stop|restart)|^ufw" <<< "$LOG" && ! asked "CPU microcode|GPU drivers|kernel installer|UFW|Bluetooth|VirtualBox|Enable mpd|Enable NetworkManager"'
+check "[6]/[10] instrukcje zamiast kroków"      '[[ "$OUT" == *"power-profiles-daemon: not done automatically on Fedora"* && "$OUT" == *"Fedora uses firewalld"* && "$OUT" == *"skipped: NetworkManager — not done on Fedora"* ]]'
+check "[8]/[9] warstwa maszynowa i linki jak na Archu" '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
+check "[11] baner z ostrzeżeniami"              '[[ "$OUT" == *"Setup finished with warnings"* ]]'
+
+echo "== bieg 6 (Fedora, --skip-packages): ani razu dnf"
+fresh_state
+printf 'waybar\n' > "$MOCK_STATE/rpm-missing"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 6 --skip-packages
+check "kod 0, wymagania sprawdzone, waybar z podpowiedzią" '[[ $RC -eq 0 && "$OUT" == *"✗ missing: waybar"* && "$OUT" == *"waybar: sudo dnf install waybar"* ]]'
+check "zero mutacji (dnf, sudo, usługi)"        '[[ -z "$(mutations)" ]] && ! asked "Install missing|additional useful"'
+
+echo "== bieg 7 (NixOS): --skip-packages domyślnie, zero mutacji"
+fresh_state
+ARCHENEMY_OS_RELEASE="$T/os/nixos" run_install "$ANS" 7
+check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
+check "zero mutacji: pakiety, nix-env/nixos-rebuild, sudo, usługi, zapora" '[[ -z "$(mutations)" ]]'
+mutations | head -5 | sed 's/^/      /'
+check "komunikat o trybie deklaratywnym"       '[[ "$OUT" == *"NixOS is declarative: archenemy installs nothing"* ]]'
+check "[5] brakujący font: atrybut nixpkgs w podpowiedzi" '[[ "$OUT" == *"✗ missing: ttf-iosevka-nerd"* && "$OUT" == *"pkgs.nerd-fonts.iosevka"* && "$OUT" == *"skipped: REQUIRED packages missing — add them to your NixOS configuration"* ]]'
+check "nie pyta o instalacje ani usługi"       '! asked "Install|additional useful|CPU microcode|UFW|Bluetooth|VirtualBox|Enable mpd|Enable NetworkManager"'
+check "[10] opcje NixOS zamiast usług"          '[[ "$OUT" == *"networking.networkmanager.enable = true;"* && "$OUT" == *"services.pipewire.pulse.enable = true;"* ]]'
+check "[8]/[9] warstwa maszynowa i linki"       '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
+
+echo "== bieg 8 (Arch, --skip-packages): ani razu instalacja, sprawdzenie zostaje"
+fresh_state
+printf 'swayosd\nbrave-bin\n' > "$MOCK_STATE/pacman-missing"
+run_install "$ANS" 8 --skip-packages
+check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
+check "ani razu pacman -S ani yay"              '! grep -qE "^(sudo )?(pacman -S|yay)( |$)" <<< "$LOG"'
+check "[5] sprawdzenie zostaje: pacman -Qi, ✗ z komendą" 'called "pacman -Qi swayosd" && [[ "$OUT" == *"✗ missing: swayosd"* && "$OUT" == *"Not installed (--skip-packages): sudo pacman -S --needed swayosd"* && "$OUT" == *"yay -S --needed brave-bin"* ]]'
+check "[5] braki w podsumowaniu"                '[[ "$OUT" == *"skipped: REQUIRED pacman packages not installed (--skip-packages): swayosd"* && "$OUT" == *"skipped: REQUIRED AUR packages not installed (--skip-packages): brave-bin"* ]]'
+check "nie pyta o instalacje (pakiety, sterowniki, BT, VirtualBox)" '! asked "Install missing|additional useful|CPU microcode|GPU drivers|kernel installer|Bluetooth|VirtualBox"'
+check "[6] ppd: usługa włączona, pakiet nie instalowany" 'called "systemctl enable --now power-profiles-daemon" && ! grep -q "power-profiles-daemon" <<< "$(grep "^pacman -S" <<< "$LOG")"'
+check "[10] zainstalowany ufw skonfigurowany bez pacmana" 'called "ufw enable"'
+
+echo "== bieg 9 (Ubuntu): odmowa przed jakimkolwiek zapisem"
+fresh_state
+snapshot > "$T/snap.9a"
+ARCHENEMY_OS_RELEASE="$T/os/ubuntu" run_install "$ANS" 9
+snapshot > "$T/snap.9b"
+check "kod 1, komunikat o nieobsługiwanej dystrybucji" '[[ $RC -eq 1 && "$OUT" == *"Unsupported distribution (ID=ubuntu)"* && "$OUT" == *"nothing was installed or changed"* ]]'
+check "żadnych pytań i wywołań poza sudo -k"    '[[ -z "$ASKED" && -z "$(grep -vx "sudo -k" <<< "$LOG")" ]]'
+check "pliki w \$HOME bez zmian"                'diff -q "$T/snap.9a" "$T/snap.9b" >/dev/null'
+fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
