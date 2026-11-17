@@ -8,6 +8,8 @@
 #       w cudzysłowach, próba wstrzyknięcia), fallback /usr/lib/os-release
 #       (unshare -rm; bez niego skip), hak pliku tylko pod ARCHENEMY_TEST=1,
 #       inne ID i Fedora Atomic → odmowa przed jakimkolwiek poleceniem;
+#       pkg_arch_derivative (ID_LIKE=arch, ID≠arch) bez komunikatów; source
+#       bez dirname w PATH;
 #     - Arch = stare komendy: `pacman -Qi`, `sudo pacman -S --needed`,
 #       `yay -S --needed` przez aur_install (zgodność z install.sh sprawdzana
 #       na tekście instalatora);
@@ -162,6 +164,24 @@ check "ID=ubuntu → odmowa, PKG_PLATFORM pusty" '[[ "$OUT" == *"rc=1 p=[]"* && 
 osr 'ID=endeavouros' 'ID_LIKE=arch'
 run '' 'pkg_detect; echo "rc=$?"'
 check "pochodna Archa (ID_LIKE=arch) → odmowa, tylko jawne ID" '[[ "$OUT" == *"rc=1"* ]]'
+echo "== pkg_arch_derivative (D5: pochodne Archa → stara ścieżka Archa w install.sh)"
+for os in 'ID=endeavouros|ID_LIKE=arch' 'ID=manjaro|ID_LIKE="arch"' 'ID=cachyos|ID_LIKE="arch"' 'ID=garuda|ID_LIKE="arch archlinux"'; do
+    IFS='|' read -ra lines <<< "$os"; reset_state; osr "${lines[@]}"
+    run '' 'pkg_arch_derivative; echo "rc=$? p=[$PKG_PLATFORM]"'
+    check "${lines[0]} (${lines[1]}) → pochodna, bez PKG_PLATFORM i bez poleceń" '[[ "$OUT" == "rc=0 p=[]" && ! -s "$CALLS" ]]'
+done
+for os in 'ID=arch' 'ID=arch|ID_LIKE=arch' 'ID=fedora' 'ID=nixos' 'ID=ubuntu|ID_LIKE=debian' 'ID=archcraft' 'ID_LIKE=arch' 'ID=x|ID_LIKE="archlinux"'; do
+    IFS='|' read -ra lines <<< "$os"; osr "${lines[@]}"
+    run '' 'pkg_arch_derivative; echo "rc=$?"'
+    check "${os//|/ } → nie pochodna (tylko słowo „arch” w ID_LIKE, ID≠arch)" '[[ "$OUT" == "rc=1" ]]'
+done
+rm -f "$T/os/os-release"
+run '' 'pkg_arch_derivative; echo "rc=$?"'
+check "brak os-release → nie pochodna, bez komunikatu" '[[ "$OUT" == "rc=1" ]]'
+# install.sh source'uje bibliotekę także przy okrojonym PATH (bez dirname).
+mkdir -p "$T/nodirname"; PATH="$ORIG_PATH" ln -sf "$(PATH="$ORIG_PATH" command -v bash)" "$T/nodirname/bash"
+OUT="$(cd "$REPO/install" && PATH="$T/nodirname" bash -c 'source lib/pkg.sh; echo "dir=$PKG_LIB_DIR"' 2>&1)"
+check "source bez dirname w PATH: PKG_LIB_DIR poprawny, bez błędów" '[[ "$OUT" == "dir=$REPO/install/lib" ]]'
 osr 'ID=fedora' 'VERSION_ID=44' 'VARIANT_ID=silverblue'
 run '' 'pkg_detect; echo "rc=$?"'
 check "Fedora Silverblue (VARIANT_ID) → odmowa" '[[ "$OUT" == *"rc=1"* && "$OUT" == *"Fedora Atomic"* ]]'

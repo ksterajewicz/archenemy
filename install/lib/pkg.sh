@@ -5,7 +5,9 @@
 #   w wariancie A, decyzje właściciela 2026-11-17). Arch jest platformą
 #   referencyjną: na Archu funkcje wołają DOKŁADNIE te same komendy co
 #   install.sh i install/lib/aur.sh (`pacman -Qi`, `sudo pacman -S --needed`,
-#   `aur_install` → `yay -S --needed`). install.sh jeszcze tego nie używa (D5).
+#   `aur_install` → `yay -S --needed`). install.sh (D5) prowadzi jednak Archa
+#   i jego pochodne dotychczasowym kodem kroków [2]/[4]/[5], a tej biblioteki
+#   używa do wykrycia platformy oraz na Fedorze i NixOS.
 #
 #   Dane: packages/platform-map.tsv — czytane zwykłym `read`, nigdy eval/source;
 #   każda nazwa pakietu przechodzi przez whitelistę znaków, zanim trafi do sudo.
@@ -15,6 +17,9 @@
 #     pkg_detect             PKG_PLATFORM=arch|fedora|nixos (+ PKG_OS_ID, PKG_OS_VERSION);
 #                            0 = obsługiwana, 1 = odmowa (inne ID, Fedora Atomic) — przed
 #                            jakimkolwiek zapisem
+#     pkg_arch_derivative    0 = pochodna Archa (ID≠arch, ID_LIKE zawiera „arch”: EndeavourOS,
+#                            Manjaro…), 1 = nie; bez komunikatów i bez ustawiania PKG_PLATFORM —
+#                            install.sh prowadzi pochodne starą ścieżką Archa (decyzja 2026-11-17)
 #     pkg_installed <id>     0 jest, 1 brak, 2 błąd zapytania / nieznany id,
 #                            3 nie da się sprawdzić na tej platformie (brak sondy)
 #     pkg_install <id…>      tylko domyślne źródło platformy (Arch: pacman + AUR przez yay,
@@ -37,7 +42,11 @@
 #   ARCHENEMY_YUM_REPOS_DIR (zamiast /etc/yum.repos.d).
 # =============================================
 
-PKG_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Katalog biblioteki bez dirname (source działa też przy okrojonym PATH).
+_pkg_self="${BASH_SOURCE[0]}"
+[[ "$_pkg_self" == */* ]] || _pkg_self="./$_pkg_self"
+PKG_LIB_DIR="$(cd "${_pkg_self%/*}" && pwd)"
+unset _pkg_self
 PKG_PLATFORM=""
 PKG_OS_ID=""
 PKG_OS_VERSION=""
@@ -72,8 +81,9 @@ _pkg_os_value() {
     done < "$1"
 }
 
-pkg_detect() {
-    local f="" variant marker="/run/ostree-booted"
+# _pkg_os_file — ścieżka czytelnego os-release (hak testowy, /etc, /usr/lib); 1 = brak.
+_pkg_os_file() {
+    local f=""
     if _pkg_test && [[ -n "${ARCHENEMY_OS_RELEASE:-}" ]]; then
         f="$ARCHENEMY_OS_RELEASE"
     elif [[ -r /etc/os-release ]]; then
@@ -81,8 +91,25 @@ pkg_detect() {
     elif [[ -r /usr/lib/os-release ]]; then
         f=/usr/lib/os-release
     fi
+    [[ -n "$f" && -r "$f" ]] || return 1
+    printf '%s\n' "$f"
+}
+
+pkg_arch_derivative() {
+    local f id w
+    f="$(_pkg_os_file)" || return 1
+    id="$(_pkg_os_value "$f" ID)"
+    [[ -n "$id" && "$id" != arch ]] || return 1
+    for w in $(_pkg_os_value "$f" ID_LIKE); do
+        [[ "$w" == arch ]] && return 0
+    done
+    return 1
+}
+
+pkg_detect() {
+    local f variant marker="/run/ostree-booted"
     PKG_PLATFORM=""
-    if [[ -z "$f" || ! -r "$f" ]]; then
+    if ! f="$(_pkg_os_file)"; then
         echo "  Cannot read /etc/os-release or /usr/lib/os-release — unknown distribution, nothing will be installed." >&2
         return 1
     fi
