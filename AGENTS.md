@@ -432,7 +432,10 @@ so these rules are tested, not just conventions:
 - **`install.sh` never runs as root** (EUID guard at the top): it asks for
   sudo itself, and makepkg/yay must never build AUR packages as root. It
   drops the cached sudo password on every exit: an `EXIT` trap with
-  `sudo -k` right after the guard. A later `trap … EXIT` (the step [3]
+  `sudo -k` right after platform detection — only where the run uses sudo
+  (Arch, also with `--skip-packages`; Fedora without it). NixOS and Fedora
+  with `--skip-packages` never call sudo, not even `sudo -k`
+  (`USES_SUDO=0`); nothing before platform detection calls sudo. A later `trap … EXIT` (the step [3]
   `monitors.new` cleanup) replaces it, so every such trap must keep
   `sudo -k` (`bash tests/install-guards.sh`).
 - **AUR goes through `install/lib/aur.sh` only.** yay is cloned from the

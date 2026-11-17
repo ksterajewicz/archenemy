@@ -90,12 +90,12 @@ check "[2] odpowiedź n → exit 0 i sudo -k"   '[[ $rc -eq 0 && "$out" == *"Exi
 
 echo "== D5: flagi i platforma — odmowa, zanim cokolwiek zapisze"
 run_inst '' --no-such-flag
-check "nieznana opcja → kod 1, usage, bez sudo poza -k" '[[ $rc -eq 1 && "$out" == *"unknown option: --no-such-flag"* && "$out" == *"Usage: install.sh [--skip-packages]"* && "$(grep -vx -- -k "$T/sudo.log" 2>/dev/null)" == "" ]]'
+check "nieznana opcja → kod 1, usage, zero sudo (przed wykryciem platformy nie ma czego unieważniać)" '[[ $rc -eq 1 && "$out" == *"unknown option: --no-such-flag"* && "$out" == *"Usage: install.sh [--skip-packages]"* && ! -s "$T/sudo.log" ]]'
 run_inst '' --help
 check "--help → kod 0, usage" '[[ $rc -eq 0 && "$out" == *"--skip-packages"* ]]'
 printf 'ID=ubuntu\nID_LIKE=debian\n' > "$T/os-release-ubuntu"
 ARCHENEMY_OS_RELEASE="$T/os-release-ubuntu" run_inst 'y\n'
-check "Ubuntu → kod 1 przed [2], bez sudo poza -k" '[[ $rc -eq 1 && "$out" == *"Unsupported distribution (ID=ubuntu)"* && "$out" == *"nothing was installed"* && "$out" != *"Hyprland"* && "$(grep -vx -- -k "$T/sudo.log" 2>/dev/null)" == "" ]]'
+check "Ubuntu → kod 1 przed [2], zero sudo (także -k)" '[[ $rc -eq 1 && "$out" == *"Unsupported distribution (ID=ubuntu)"* && "$out" == *"nothing was installed"* && "$out" != *"Hyprland"* && ! -s "$T/sudo.log" ]]'
 check "Ubuntu → nic nie zapisane w \$HOME" '[[ "$(cd "$H" && find . -mindepth 1 | sort | tr "\n" " ")" == "./archenemy ./archenemy/install ./archenemy/packages ./archenemy/rices " ]]'
 run_inst 'y\n' --skip-packages
 check "--skip-packages, brak Hyprlanda → instrukcja, kod 1, bez pacmana" '[[ $rc -eq 1 && "$out" == *"sudo pacman -S --needed hyprland"* && "$(grep -vx -- -k "$T/sudo.log" 2>/dev/null)" == "" ]]'
@@ -110,7 +110,9 @@ check "[2] Fedora, COPR bez zgody → Exiting., kod 0, nic nie włączone" '[[ $
 ARCHENEMY_OS_RELEASE="$T/os-release-fedora" ARCHENEMY_OSTREE_MARKER="$T/none" run_inst 'y\n'
 check "[2] Fedora, COPR po y → copr enable + dnf install hyprland, bez pacmana" '[[ $rc -eq 0 && "$out" == *"Hyprland installed."* ]] && grep -qx "dnf copr enable nett00n/hyprland" "$T/sudo.log" && grep -qx "dnf install hyprland" "$T/sudo.log" && ! grep -q pacman "$T/sudo.log"'
 ARCHENEMY_OS_RELEASE="$T/os-release-nixos" run_inst 'y\n'
-check "[2] NixOS → opcja programs.hyprland.enable, kod 1, zero sudo" '[[ $rc -eq 1 && "$out" == *"programs.hyprland.enable"* && "$out" == *"0.56"* && "$(grep -vx -- -k "$T/sudo.log" 2>/dev/null)" == "" ]]'
+check "[2] NixOS → opcja programs.hyprland.enable, kod 1, zero sudo (także -k)" '[[ $rc -eq 1 && "$out" == *"programs.hyprland.enable"* && "$out" == *"0.56"* && ! -s "$T/sudo.log" ]]'
+ARCHENEMY_OS_RELEASE="$T/os-release-fedora" ARCHENEMY_OSTREE_MARKER="$T/none" run_inst '' --skip-packages
+check "[2] Fedora --skip-packages → instrukcja, kod 1, zero sudo (także -k)" '[[ $rc -eq 1 && "$out" == *"dnf"* && ! -s "$T/sudo.log" ]]'
 # Ctrl+C przy pytaniu [2]: SIGINT do grupy procesów w nowej sesji z domyślną
 # obsługą SIGINT, na znacznik w wyjściu (echo przed `read`; prompt `read -p`
 # bez TTY się nie drukuje). Wejście otwarte, dopóki instalator żyje.

@@ -22,13 +22,6 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
-# Hasło sudo unieważniane na KAŻDYM wyjściu (K18; I4 z przeglądu 2026-11-15):
-# Ctrl+C, exit z [2], przerwanie przez `set -u` — nie tylko na zwykłym końcu.
-# `trap … EXIT` zastępuje poprzednią pułapkę, więc pułapki z [3] (katalog
-# monitors.new) też kończą się `sudo -k`; zmieniasz jedną — zmień wszystkie
-# (pilnuje tests/install-guards.sh).
-trap 'sudo -k 2>/dev/null' EXIT
-
 # ─── FLAGI ────────────────────────────────────────────────────────────────────
 # Przed czymkolwiek innym: nieznana opcja = odmowa, nic nie zapisane.
 usage() {
@@ -100,6 +93,19 @@ esac
 # Etykieta komunikatów o krokach pominiętych przez platformę albo flagę.
 PLATFORM_LABEL="$PLATFORM_NAME"
 [[ "$PLATFORM" == arch ]] && PLATFORM_LABEL="Arch Linux with --skip-packages"
+
+# Hasło sudo unieważniane na KAŻDYM wyjściu (K18; I4 z przeglądu 2026-11-15):
+# Ctrl+C, exit z [2], przerwanie przez `set -u` — nie tylko na zwykłym końcu.
+# Tylko tam, gdzie instalator używa sudo (P4 z przeglądu D5): Arch (także
+# z --skip-packages: usługi w [6]–[10]) i Fedora z instalacją dnf. NixOS
+# i Fedora z --skip-packages nie wołają sudo wcale — więc i `sudo -k`. Przed
+# wykryciem platformy sudo nie pada, pułapka nie jest potrzebna.
+# `trap … EXIT` zastępuje poprzednią pułapkę, więc pułapki z [3] (katalog
+# monitors.new) też kończą się `sudo -k` z tym samym warunkiem; zmieniasz
+# jedną — zmień wszystkie (pilnuje tests/install-guards.sh).
+USES_SUDO=1
+[[ "$PLATFORM" != arch && "$SKIP_PACKAGES" -eq 1 ]] && USES_SUDO=0
+[[ "$USES_SUDO" == 0 ]] || trap 'sudo -k 2>/dev/null' EXIT
 
 # manual_step <co> <jak zrobić to ręcznie> [summary] — zamiast kroku, którego na
 # tej platformie (albo z --skip-packages) instalator nie wykonuje. Instalatory
@@ -334,8 +340,8 @@ mkdir -p "$DATA_DIR/monitors"
 # Katalog po biegu zabitym bez trapa (SIGKILL) sprzątamy tu; własny — trapem.
 rm -rf "$DATA_DIR"/monitors.new.*
 MON_TMP="$(mktemp -d "$DATA_DIR/monitors.new.XXXXXX")"
-# Ta pułapka zastępuje tę spod strażnika roota — `sudo -k` musi zostać (K18).
-trap 'rm -rf "$MON_TMP"; sudo -k 2>/dev/null' EXIT
+# Ta pułapka zastępuje tę spod wykrycia platformy — `sudo -k` (z warunkiem USES_SUDO) musi zostać (K18).
+trap 'rm -rf "$MON_TMP"; [[ "${USES_SUDO:-1}" == 0 ]] || sudo -k 2>/dev/null' EXIT
 # Podmiana: stare .dat (także po monitorach, których już nie ma — inaczej
 # wallpaper switcher mógłby wybrać odłączony monitor jako primary/secondary)
 # znikają w tej samej chwili, w której wchodzą nowe (mv w obrębie data/ =
@@ -345,7 +351,7 @@ commit_monitor_dats() {
     mv "$MON_TMP"/*.dat "$DATA_DIR/monitors/"
     rmdir "$MON_TMP"
     # Katalog już pusty i usunięty — wraca sama pułapka sudo (K18).
-    trap 'sudo -k 2>/dev/null' EXIT
+    trap '[[ "${USES_SUDO:-1}" == 0 ]] || sudo -k 2>/dev/null' EXIT
 }
 
 declare -A MON_RES
@@ -1989,8 +1995,8 @@ echo -e "${NC}"
 # Koniec pracy z sudo (K18): unieważnij zapamiętane hasło, żeby przez
 # następne minuty żaden inny proces użytkownika nie dostał roota bez pytania.
 # Już tutaj, przed ostatnim pytaniem; przerwane biegi łapie pułapka EXIT
-# spod strażnika roota.
-sudo -k 2>/dev/null
+# ustawiona po wykryciu platformy. Bez sudo w tym biegu (USES_SUDO=0) — nic.
+[[ "$USES_SUDO" == 0 ]] || sudo -k 2>/dev/null
 
 # Pasek, tapetę, powiadomienia, OSD i schowek rice uruchamia w
 # hl.on("hyprland.start"), a reload tego zdarzenia nie wywołuje. Po pierwszej

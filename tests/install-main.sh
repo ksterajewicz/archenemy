@@ -375,8 +375,9 @@ idx_of() { local i; for i in "${!ADDL[@]}"; do [[ "${ADDL[$i]}" == "$1" ]] && { 
 # with_answers <plik> <wiersze…> — odpowiedzi biegu: własne wiersze PRZED wspólną listą
 # (drive-pty: wygrywa pierwszy pasujący wzorzec).
 with_answers() { local f="$1"; shift; printf '%s\n' "$@" > "$f"; cat "$ANS" >> "$f"; }
-# Wywołania zmieniające system: pakiety, repozytoria, zapora, usługi (sudo -k nie).
-mutations() { grep -E '^(pacman -S|yay|dnf|nix-env|nix|nixos-rebuild|nix-channel|ufw (default|enable))( |$)|^systemctl( --user)? (enable|disable|start|stop|restart|mask)|^sudo ' <<< "$LOG" | grep -vx 'sudo -k'; }
+# Wywołania zmieniające system: pakiety, repozytoria, zapora, usługi i KAŻDE
+# sudo — także `sudo -k` (P4 z przeglądu D5: ścieżka bez sudo go nie woła).
+mutations() { grep -E '^(pacman -S|yay|dnf|nix-env|nix|nixos-rebuild|nix-channel|ufw (default|enable))( |$)|^systemctl( --user)? (enable|disable|start|stop|restart|mask)|^sudo ' <<< "$LOG"; }
 
 echo "== bieg 3 (Arch): brakuje pakietu z repo i z AUR, dodatki z obu źródeł"
 fresh_state
@@ -435,14 +436,14 @@ fresh_state
 printf 'waybar\n' > "$MOCK_STATE/rpm-missing"
 ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 6 --skip-packages
 check "kod 0, wymagania sprawdzone, waybar z podpowiedzią" '[[ $RC -eq 0 && "$OUT" == *"✗ missing: waybar"* && "$OUT" == *"waybar: sudo dnf install --repo=fedora --repo=updates waybar"* ]]'
-check "zero mutacji (dnf, sudo, usługi)"        '[[ -z "$(mutations)" ]] && ! asked "Install missing|additional useful"'
+check "zero mutacji (dnf, usługi, sudo — także -k)" '[[ -z "$(mutations)" ]] && ! asked "Install missing|additional useful"'
 
 echo "== bieg 7 (NixOS): --skip-packages domyślnie, zero mutacji"
 fresh_state
 PATH="$T/nixbin:$PATH" MOCK_PPD=none ARCHENEMY_PP_SYSFS="$T/os/none" ARCHENEMY_OS_RELEASE="$T/os/nixos" run_install "$ANS" 7
 check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
 check "wersje zgodne: działający Hyprland i hyprpaper ze sklepu, bez ostrzeżeń" 'called "hyprctl version" && [[ "$OUT" == *"✓ Hyprland 0.57.1 (running), hyprpaper 0.8.4"* && "$OUT" != *"version could not be read"* ]]'
-check "zero mutacji: pakiety, nix-env/nixos-rebuild, sudo, usługi, zapora" '[[ -z "$(mutations)" ]]'
+check "zero mutacji: pakiety, nix-env/nixos-rebuild, usługi, zapora, sudo (także -k)" '[[ -z "$(mutations)" ]] && ! grep -q "^sudo" "$T/log.7"'
 mutations | head -5 | sed 's/^/      /'
 check "komunikat o trybie deklaratywnym"       '[[ "$OUT" == *"NixOS is declarative: archenemy installs nothing"* ]]'
 check "[5] brakujący font: atrybut nixpkgs w podpowiedzi" '[[ "$OUT" == *"✗ missing: ttf-iosevka-nerd"* && "$OUT" == *"pkgs.nerd-fonts.iosevka"* && "$OUT" == *"skipped: REQUIRED packages missing — add them to your NixOS configuration"* ]]'
@@ -474,7 +475,7 @@ snapshot > "$T/snap.9a"
 ARCHENEMY_OS_RELEASE="$T/os/ubuntu" run_install "$ANS" 9
 snapshot > "$T/snap.9b"
 check "kod 1, komunikat o nieobsługiwanej dystrybucji" '[[ $RC -eq 1 && "$OUT" == *"Unsupported distribution (ID=ubuntu)"* && "$OUT" == *"nothing was installed or changed"* ]]'
-check "żadnych pytań i wywołań poza sudo -k"    '[[ -z "$ASKED" && -z "$(grep -vx "sudo -k" <<< "$LOG")" ]]'
+check "żadnych pytań i wywołań (także sudo -k)" '[[ -z "$ASKED" && -z "$LOG" ]]'
 check "pliki w \$HOME bez zmian"                'diff -q "$T/snap.9a" "$T/snap.9b" >/dev/null'
 
 # P1 (przegląd D5): poza Archem niezgodna wersja = odmowa PRZED pierwszym
@@ -490,7 +491,8 @@ refused_run() {
     snapshot > "$T/snap.${rr_p}b"
     check "$2: kod 1, komunikat" '[[ $RC -eq 1 && "$OUT" == *"$rr_want"* && "$OUT" == *"Nothing was installed or changed."* ]]'
     check "$2: żadnych pytań, pliki w \$HOME bez zmian" '[[ -z "$ASKED" ]] && diff -q "$T/snap.${rr_p}a" "$T/snap.${rr_p}b" >/dev/null'
-    check "$2: zero mutacji (pakiety, usługi, sudo)" '[[ -z "$(mutations)" ]]'
+    # Fedora bez --skip-packages używa sudo (dnf), więc jej pułapka woła sudo -k.
+    check "$2: zero mutacji (pakiety, usługi; sudo -k tylko na Fedorze)" '[[ -z "$(mutations | grep -vx "sudo -k")" ]] && { [[ "$OUT" == *Fedora* ]] || ! grep -q "^sudo" <<< "$LOG"; }'
 }
 echo "== bieg 10 (NixOS): działający Hyprland 0.55.4 → odmowa przed zapisami"
 PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" MOCK_HYPRLAND_VERSION=0.55.4 \
