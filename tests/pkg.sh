@@ -142,7 +142,7 @@ done
 chmod +x "$T/bin"/*
 # PATH tylko z atrap i potrzebnych narzędzi: na tej maszynie są prawdziwe
 # pacman i yay — nie mogą zafałszować testu.
-for c in bash sh env cat dirname sort head grep touch mkdir rm sed tr chmod; do ln -s "$(command -v "$c")" "$T/sys/$c"; done
+for c in bash sh env cat dirname sort head grep touch mkdir rm sed tr chmod readlink ln; do ln -s "$(command -v "$c")" "$T/sys/$c"; done
 ORIG_PATH="$PATH"
 export PATH="$T/bin:$T/sys"
 export RED='' GREEN='' YELLOW='' NC=''
@@ -357,8 +357,35 @@ echo "Iosevka Nerd Font,Iosevka NF" > "$STATE/fonts"
 run '' 'pkg_installed waybar; echo "a=$?"; pkg_installed mako; echo "b=$?"; pkg_installed papirus-icon-theme; echo "c=$?"; pkg_installed ttf-iosevka-nerd; echo "d=$?"; pkg_installed ttf-jetbrains-mono-nerd; echo "e=$?"'
 check "sondy: cmd jest 0, brak 1, bez sondy 3, font jest 0, brak 1" '[[ "$OUT" == *"a=0"*"b=1"*"c=3"*"d=0"*"e=1"* ]]'
 run '' 'pkg_version waybar; echo "rc=$?"'
-check "pkg_version na NixOS → 2 (brak bazy pakietów)" '[[ "$OUT" == *"rc=2"* ]]'
+check "pkg_version na NixOS: komenda spoza sklepu Nix → 2" '[[ "$OUT" == *"rc=2"* ]]'
 rm -f "$T/bin/waybar"
+# Wersja ze ścieżki sklepu (hak ARCHENEMY_NIX_STORE): link w PATH → <hash>-<nazwa>-<wersja>.
+NS="$T/nix/store"; NH=0123456789abcdfghijklmnpqrsvwxyz
+nix_pkg() {   # nix_pkg <nazwa-wersja> <komenda>
+    mkdir -p "$NS/$NH-$1/bin"; printf '#!/usr/bin/env bash\n' > "$NS/$NH-$1/bin/$2"; chmod +x "$NS/$NH-$1/bin/$2"
+    ln -sfn "$NS/$NH-$1/bin/$2" "$T/bin/$2"
+}
+nixv() { run '' "ARCHENEMY_NIX_STORE='$NS' pkg_version $1; echo \"rc=\$?\""; }
+nix_pkg hyprpaper-0.8.4 hyprpaper
+nixv hyprpaper
+check "NixOS: hyprpaper-0.8.4 ze sklepu → 0.8.4, rc 0" '[[ "$OUT" == *"0.8.4"*"rc=0"* ]]'
+nix_pkg hyprpaper-0.8.1 hyprpaper
+nixv hyprpaper
+check "NixOS: hyprpaper-0.8.1 < min 0.8.2 → rc 3" '[[ "$OUT" == *"0.8.1"*"rc=3"* ]]'
+nix_pkg hyprpaper-wrapped-0.9.0 hyprpaper
+nixv hyprpaper
+check "NixOS: inna nazwa w sklepie (hyprpaper-wrapped) → rc 2" '[[ "$OUT" == "rc=2" ]]'
+run '' 'pkg_version hyprpaper; echo "rc=$?"'
+check "NixOS: bez haka sklep = /nix/store, ścieżka atrapy nie pasuje → rc 2" '[[ "$OUT" == "rc=2" ]]'
+rm -f "$T/bin/hyprpaper"
+nixv hyprpaper
+check "NixOS: hyprpaper nie w PATH → rc 1" '[[ "$OUT" == "rc=1" ]]'
+nix_pkg hyprland-0.56.2 hyprctl
+nixv hyprland
+check "NixOS: hyprland (system-managed) → rc 2, wersja z działającej instancji w install.sh" '[[ "$OUT" == "rc=2" ]]'
+rm -f "$T/bin/hyprctl"
+run '' 'pkg_min_version hyprpaper; echo "a=$?"; pkg_min_version waybar; echo "b=$?"; pkg_version_ge 0.10.0 0.8.2 && echo c; pkg_version_ge 0.55.4 0.56 || echo d; pkg_version_ge 0.56 0.56 && echo e'
+check "pkg_min_version (0.8.2 / brak) i pkg_version_ge (sort -V)" '[[ "$OUT" == *"0.8.2"*"a=0"*"b=1"*c*d*e* ]]'
 
 echo "== mapa jako dane"
 osr 'ID=fedora' 'VERSION_ID=44'

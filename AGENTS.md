@@ -393,6 +393,9 @@ Rules that follow directly from the table:
   output (compare with `INSTALL_MAIN_REV=<rev> INSTALL_MAIN_SAVE=<dir>
   bash tests/install-main.sh`, README "Verification"). Fedora/NixOS go
   through `pkg.sh`; other distributions are refused before any write.
+  On Fedora/NixOS step [2b] checks versions before the first write (running
+  Hyprland and the Fedora package ≥ 0.56, hyprpaper ≥ 0.8.2 — `min_version`
+  in the map); incompatible = exit 1, nothing written. No such gate on Arch.
   `--skip-packages` (always on for NixOS) never installs a package, but the
   requirement check stays. Until system installers and services get their
   own Fedora/NixOS paths, a step that would call them prints `manual_step`

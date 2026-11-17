@@ -144,7 +144,7 @@ stub lspci 'echo "03:00.0 VGA compatible controller: Advanced Micro Devices, Inc
 for t in gcc wayland-scanner pkg-config mpd ncmpcpp clear notify-send hyprpaper waybar pkill; do stub "$t" 'true'; done
 stub pgrep 'exit 1'
 # Fedora: rpm -q [--qf FMT] <nazwy…> — zainstalowane, chyba że w
-# $MOCK_STATE/rpm-missing; dnf install usuwa z listy brakujących, a nazwa
+# $MOCK_STATE/rpm-missing; wersja z MOCK_RPM_VERSION_<nazwa> albo MOCK_RPM_VERSION; dnf install usuwa z listy brakujących, a nazwa
 # z $MOCK_STATE/dnf-conflict kończy transakcję odmową (jak tuned-ppd
 # przeciw power-profiles-daemon); copr/config-manager — tylko zapis.
 stub rpm 'echo "rpm $*" >> "$MOCK_LOG"
@@ -154,7 +154,7 @@ fmt=""; [[ "$1" == --qf ]] && { fmt="$2"; shift 2; }
 rc=0
 for p in "$@"; do
   if grep -qxF -- "$p" "$m"; then echo "package $p is not installed"; rc=1
-  elif [[ "$fmt" == *VERSION* ]]; then echo "${MOCK_RPM_VERSION:-0.57.2}"
+  elif [[ "$fmt" == *VERSION* ]]; then v="MOCK_RPM_VERSION_${p//-/_}"; echo "${!v:-${MOCK_RPM_VERSION:-0.57.2}}"
   else echo "$p"; fi
 done
 exit "$rc"'
@@ -170,6 +170,18 @@ stub fc-list 'echo "fc-list $*" >> "$MOCK_LOG"; cat "$MOCK_STATE/fonts" 2>/dev/n
 # NixOS: każde wywołanie to mutacja, której instalator nie może zrobić.
 for t in nix-env nix nixos-rebuild nix-channel; do stub "$t" "echo \"$t \$*\" >> \"\$MOCK_LOG\""; done
 stub networkmanager_dmenu 'true'
+# NixOS: hyprpaper ze sklepu Nix — pkg_version czyta wersję ze ścieżki
+# <sklep>/<hash>-hyprpaper-<wersja>/ (hak ARCHENEMY_NIX_STORE); biegi NixOS
+# dostają PATH="$T/nixbin:…" z linkiem do wersji wybranej przez nix_hyprpaper.
+NIX_STORE="$T/nix/store"; NIX_HASH=0123456789abcdfghijklmnpqrsvwxyz
+mkdir -p "$T/nixbin"
+nix_hyprpaper() {
+    mkdir -p "$NIX_STORE/$NIX_HASH-hyprpaper-$1/bin"
+    printf '#!/usr/bin/env bash\ntrue\n' > "$NIX_STORE/$NIX_HASH-hyprpaper-$1/bin/hyprpaper"
+    chmod +x "$NIX_STORE/$NIX_HASH-hyprpaper-$1/bin/hyprpaper"
+    ln -sfn "$NIX_STORE/$NIX_HASH-hyprpaper-$1/bin/hyprpaper" "$T/nixbin/hyprpaper"
+}
+nix_hyprpaper 0.8.4
 # Dystrybucja z atrapy os-release (haki pkg.sh pod ARCHENEMY_TEST=1).
 mkdir -p "$T/os"
 printf 'NAME="Arch Linux"\nID=arch\n' > "$T/os/arch"
@@ -177,7 +189,8 @@ printf 'NAME="EndeavourOS"\nID="endeavouros"\nID_LIKE="arch"\n' > "$T/os/endeavo
 printf 'NAME="Fedora Linux"\nID=fedora\nVERSION_ID=44\nVARIANT_ID=workstation\n' > "$T/os/fedora"
 printf 'NAME=NixOS\nID=nixos\nVERSION_ID="26.05"\n' > "$T/os/nixos"
 printf 'NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\n' > "$T/os/ubuntu"
-export ARCHENEMY_OS_RELEASE="$T/os/arch" ARCHENEMY_OSTREE_MARKER="$T/os/none" ARCHENEMY_YUM_REPOS_DIR="$T/os/yum.repos.d"
+export ARCHENEMY_OS_RELEASE="$T/os/arch" ARCHENEMY_OSTREE_MARKER="$T/os/none" ARCHENEMY_YUM_REPOS_DIR="$T/os/yum.repos.d" \
+    ARCHENEMY_NIX_STORE="$NIX_STORE"
 stub make 'echo "make $*" >> "$MOCK_LOG"; [[ "$1" == -C ]] && mkdir -p "$2/build" && printf "#!/bin/sh\n" > "$2/build/flux-wall" && chmod +x "$2/build/flux-wall"'
 stub python3 'echo "python3 $*" >> "$MOCK_LOG"'
 export PATH="$T/bin:$PATH" TERM=dumb ARCHENEMY_TEST=1
@@ -368,8 +381,10 @@ fresh_state
 printf 'swayosd\nbrave-bin\n' > "$MOCK_STATE/pacman-missing"
 with_answers "$T/answers.3" "Would you like to install additional useful packages\\? \\[y/N\\]:	y" \
     "Pick numbers.*:	$(idx_of btop) $(idx_of megasync)"
-run_install "$T/answers.3" 3
+# Działający Hyprland 0.55.4: Arch nie sprawdza wersji (parytet z bazą — bez nowej blokady).
+MOCK_HYPRLAND_VERSION=0.55.4 run_install "$T/answers.3" 3
 check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
+check "Arch: wersja Hyprlanda nie sprawdzana (bez hyprctl version)" '! called "hyprctl version"'
 check "[5] repo pacmanem, AUR przez aur_install (yay -S --needed)" 'called "sudo pacman -S --needed swayosd" && called "yay -S --needed brave-bin" && asked "Install missing AUR packages with yay"'
 check "[5] dodatki: pacman i yay osobno"        'called "sudo pacman -S --needed btop" && called "yay -S --needed megasync"'
 check "[4] yay znaleziony, bez budowy"          '[[ "$OUT" == *"✓ yay found."* ]] && ! asked "Install yay"'
@@ -419,8 +434,9 @@ check "zero mutacji (dnf, sudo, usługi)"        '[[ -z "$(mutations)" ]] && ! a
 
 echo "== bieg 7 (NixOS): --skip-packages domyślnie, zero mutacji"
 fresh_state
-ARCHENEMY_OS_RELEASE="$T/os/nixos" run_install "$ANS" 7
+PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" run_install "$ANS" 7
 check "kod 0, doszedł do końca"                 '[[ $RC -eq 0 ]] && asked "Reload Hyprland now"'
+check "wersje zgodne: działający Hyprland i hyprpaper ze sklepu, bez ostrzeżeń" 'called "hyprctl version" && [[ "$OUT" == *"✓ Hyprland 0.57.1 (running), hyprpaper 0.8.4"* && "$OUT" != *"version could not be read"* ]]'
 check "zero mutacji: pakiety, nix-env/nixos-rebuild, sudo, usługi, zapora" '[[ -z "$(mutations)" ]]'
 mutations | head -5 | sed 's/^/      /'
 check "komunikat o trybie deklaratywnym"       '[[ "$OUT" == *"NixOS is declarative: archenemy installs nothing"* ]]'
@@ -449,6 +465,45 @@ snapshot > "$T/snap.9b"
 check "kod 1, komunikat o nieobsługiwanej dystrybucji" '[[ $RC -eq 1 && "$OUT" == *"Unsupported distribution (ID=ubuntu)"* && "$OUT" == *"nothing was installed or changed"* ]]'
 check "żadnych pytań i wywołań poza sudo -k"    '[[ -z "$ASKED" && -z "$(grep -vx "sudo -k" <<< "$LOG")" ]]'
 check "pliki w \$HOME bez zmian"                'diff -q "$T/snap.9a" "$T/snap.9b" >/dev/null'
+
+# P1 (przegląd D5): poza Archem niezgodna wersja = odmowa PRZED pierwszym
+# zapisem ([3] tworzy data/monitors) — kod 1, zero plików, zero mutacji.
+# refused_run <przyrostek> <opis> <oczekiwany fragment> — bieg od świeżego
+# stanu; zmienne środowiska (os-release, wersje atrap) z wywołania.
+# (check() robi eval we własnej funkcji — stąd lokalne rr_p/rr_want, nie $1/$3.)
+refused_run() {
+    local rr_p="$1" rr_want="$3"
+    fresh_state
+    snapshot > "$T/snap.${rr_p}a"
+    run_install "$ANS" "$rr_p"
+    snapshot > "$T/snap.${rr_p}b"
+    check "$2: kod 1, komunikat" '[[ $RC -eq 1 && "$OUT" == *"$rr_want"* && "$OUT" == *"Nothing was installed or changed."* ]]'
+    check "$2: żadnych pytań, pliki w \$HOME bez zmian" '[[ -z "$ASKED" ]] && diff -q "$T/snap.${rr_p}a" "$T/snap.${rr_p}b" >/dev/null'
+    check "$2: zero mutacji (pakiety, usługi, sudo)" '[[ -z "$(mutations)" ]]'
+}
+echo "== bieg 10 (NixOS): działający Hyprland 0.55.4 → odmowa przed zapisami"
+PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" MOCK_HYPRLAND_VERSION=0.55.4 \
+    refused_run 10 "NixOS, Hyprland 0.55.4" "running Hyprland is 0.55.4 — archenemy needs 0.56 or newer"
+check "NixOS: podpowiedź nixos-unstable / flake" '[[ "$OUT" == *"nixos-unstable or the Hyprland flake"* ]]'
+echo "== bieg 11 (NixOS): hyprpaper 0.8.1 ze sklepu Nix → odmowa"
+nix_hyprpaper 0.8.1
+PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" \
+    refused_run 11 "NixOS, hyprpaper 0.8.1" "hyprpaper is 0.8.1 — archenemy needs 0.8.2 or newer"
+nix_hyprpaper 0.8.4
+echo "== bieg 12 (NixOS): wersji działającego Hyprlanda nie da się odczytać → odmowa"
+PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" MOCK_HYPRLAND_VERSION=none \
+    refused_run 12 "NixOS, hyprctl version bez odpowiedzi" "cannot read the version of the running Hyprland"
+echo "== bieg 13 (Fedora): pakiet 0.57.2, ale działa stara sesja 0.55.4 → odmowa"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" MOCK_HYPRLAND_VERSION=0.55.4 \
+    refused_run 13 "Fedora, sesja 0.55.4" "running Hyprland is 0.55.4"
+check "Fedora: każe zalogować się ponownie, bez dnf" '[[ "$OUT" == *"log out and back in"* ]] && ! grep -q "^dnf" <<< "$LOG"'
+echo "== bieg 14 (Fedora): pakiet hyprland 0.55.4 z repo Fedory → odmowa z COPR"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" MOCK_HYPRLAND_VERSION=0.55.4 MOCK_RPM_VERSION_hyprland=0.55.4 \
+    refused_run 14 "Fedora, pakiet 0.55.4" "installed Hyprland package is 0.55.4"
+check "Fedora: podpowiedź COPR" '[[ "$OUT" == *"dnf copr enable nett00n/hyprland"* ]]'
+echo "== bieg 15 (Fedora): hyprpaper 0.8.1 → odmowa"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" MOCK_RPM_VERSION_hyprpaper=0.8.1 \
+    refused_run 15 "Fedora, hyprpaper 0.8.1" "hyprpaper is 0.8.1 — archenemy needs 0.8.2 or newer"
 fi
 
 echo ""

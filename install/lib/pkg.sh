@@ -38,13 +38,17 @@
 #                            włącza. Kody jak pkg_install; inne platformy → 2
 #     pkg_hint <id>          jedna linia: jak zainstalować/skonfigurować na tej platformie
 #     pkg_version <id>       wypisuje wersję pierwszego pakietu; 0 ok, 1 brak, 2 nie da się
-#                            odczytać (NixOS, błąd), 3 poniżej min_version z mapy
+#                            odczytać (błąd), 3 poniżej min_version z mapy. NixOS: tylko
+#                            nixos=ok z sondą cmd: — wersja ze ścieżki sklepu Nix, do której
+#                            prowadzi pierwsza komenda (<hash>-<atrybut>-<wersja>); inaczej 2
+#     pkg_min_version <id>   wypisuje min_version z mapy; 0 jest, 1 brak minimum („-”), 2 zły id
+#     pkg_version_ge <v> <min> 0 = v ≥ min (sort -V, jak pkg_version)
 #
 #   NixOS: nigdy nix-env, nix profile ani nixos-rebuild — tylko sondy i podpowiedzi.
 #   Fedora: bez --skip-unavailable/--skip-broken/--allowerasing i bez -y (dnf pyta sam).
 #   Haki testowe (tylko ARCHENEMY_TEST=1): ARCHENEMY_OS_RELEASE (plik os-release),
 #   ARCHENEMY_OSTREE_MARKER (zamiast /run/ostree-booted), ARCHENEMY_PKG_MAP (mapa),
-#   ARCHENEMY_YUM_REPOS_DIR (zamiast /etc/yum.repos.d).
+#   ARCHENEMY_YUM_REPOS_DIR (zamiast /etc/yum.repos.d), ARCHENEMY_NIX_STORE (zamiast /nix/store).
 # =============================================
 
 # Katalog biblioteki bez dirname (source działa też przy okrojonym PATH).
@@ -369,10 +373,41 @@ pkg_hint() {
     esac
 }
 
+# _pkg_nix_version <id> — NixOS: wersja ze ścieżki sklepu, do której prowadzi
+# pierwsza komenda sondy (readlink -f: /run/current-system/sw/bin/x albo profil
+# użytkownika → <sklep>/<hash>-<nazwa>-<wersja>/bin/x). Nazwa = parseDrvName
+# Nixa (wersja zaczyna się od pierwszego „-” z cyfrą) i musi równać się
+# atrybutowi z mapy — inaczej (wrapper, inna paczka) wersji nie znamy: 2.
+_pkg_nix_version() {
+    local id="$1" store="/nix/store" cmd p seg
+    _pkg_test && [[ -n "${ARCHENEMY_NIX_STORE:-}" ]] && store="$ARCHENEMY_NIX_STORE"
+    [[ "${_PKG_SN[$id]}" == ok && "${_PKG_CHECK[$id]}" == cmd:* ]] || return 2
+    cmd="${_PKG_CHECK[$id]#cmd:}"; cmd="${cmd%%,*}"
+    p="$(command -v "$cmd")" || return 1
+    p="$(readlink -f -- "$p" 2>/dev/null)" || return 2
+    [[ "$p" == "$store"/* ]] || return 2
+    seg="${p#"$store"/}"; seg="${seg%%/*}"
+    [[ "$seg" =~ ^[0-9a-z]{32}-([^-]+(-[^0-9][^-]*)*)-([0-9][^/]*)$ ]] || return 2
+    [[ "${BASH_REMATCH[1]}" == "${_PKG_NIX[$id]%% *}" ]] || return 2
+    printf '%s\n' "${BASH_REMATCH[3]}"
+}
+
+pkg_version_ge() {
+    [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
+}
+
+pkg_min_version() {
+    _pkg_ready "$1" || return 2
+    [[ "${_PKG_MIN[$1]}" != - ]] || return 1
+    printf '%s\n' "${_PKG_MIN[$1]}"
+}
+
 pkg_version() {
     local id="$1" v first min rc
     _pkg_ready "$id" || return 2
     case "$PKG_PLATFORM" in
+        nixos)
+            v="$(_pkg_nix_version "$id")" || return $? ;;
         arch)
             v="$(_pkg_pacman_query -Q "${_PKG_ARCH[$id]}")" || return $?
             v="${v#* }"; v="${v#*:}"; v="${v%-*}" ;;
@@ -387,7 +422,7 @@ pkg_version() {
     [[ -n "$v" ]] || return 2
     printf '%s\n' "$v"
     min="${_PKG_MIN[$id]}"
-    if [[ "$min" != - && "$(printf '%s\n%s\n' "$min" "$v" | sort -V | head -n1)" != "$min" ]]; then
+    if [[ "$min" != - ]] && ! pkg_version_ge "$v" "$min"; then
         return 3
     fi
     return 0

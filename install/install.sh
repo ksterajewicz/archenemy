@@ -188,14 +188,65 @@ if ! command -v hyprctl &>/dev/null; then
 fi
 
 echo -e "${GREEN}✓ Hyprland found.${NC}"
-# Fedora: Hyprland z repo Fedory (< 0.56) nie wczyta configów Lua tego repo.
-if [[ "$PLATFORM" == fedora ]]; then
-    HYPR_VER="$(pkg_version hyprland)"
-    if [[ $? -eq 3 ]]; then
-        echo -e "${RED}✗ Hyprland $HYPR_VER is older than 0.56 — the archenemy configs will not load.${NC}"
-        echo -e "  Upgrade from COPR: $(pkg_hint hyprland)"
-        SUMMARY_SKIPPED+=("Hyprland $HYPR_VER is older than 0.56 (archenemy needs 0.56+): $(pkg_hint hyprland)")
+
+# ─── 2b. ZGODNOŚĆ WERSJI (Fedora, NixOS) ──────────────────────────────────────
+# P1 z przeglądu D5: PRZED pierwszym zapisem (mkdir data/monitors w [3]).
+# Configi Lua potrzebują Hyprlanda ≥ min z mapy (0.56) — DZIAŁAJĄCEJ instancji
+# (to ona przeładuje config w [11]) i, na Fedorze, pakietu (wejdzie po
+# ponownym logowaniu); tapety — hyprpapera ≥ 0.8.2 (packages/platform-map.tsv).
+# Niezgodność = komunikat, kod 1, zero zapisów i instalacji. Brak hyprpapera
+# zgłasza [5] (Fedora doinstaluje go z COPR, który ma wersję z mapy); wersji
+# nieznanej (NixOS: hyprpaper spoza sklepu Nix) nie blokujemy — ostrzeżenie.
+# Arch BEZ tej kontroli (parytet z bazą; wersje trzyma repozytorium Archa).
+# hypr_running_version — wersja z 1. linii `hyprctl version`: „Hyprland <wersja>
+# built from branch …” (src/helpers/SystemInfo.cpp, v0.56.2 i v0.57.1).
+hypr_running_version() {
+    local out
+    out="$(hyprctl version 2>/dev/null)" || return 1
+    [[ "${out%%$'\n'*}" =~ ^Hyprland\ v?([0-9]+(\.[0-9]+)+)([[:space:]]|$) ]] || return 1
+    printf '%s\n' "${BASH_REMATCH[1]}"
+}
+if [[ "$PLATFORM" != arch ]]; then
+    VERSION_PROBLEMS=()
+    HYPR_MIN="$(pkg_min_version hyprland)" || HYPR_MIN=0.56
+    PAPER_MIN="$(pkg_min_version hyprpaper)" || PAPER_MIN=0.8.2
+    if [[ "$PLATFORM" == nixos ]]; then
+        HYPR_UPGRADE="nixos-26.05 ships 0.55.4: use nixos-unstable or the Hyprland flake (programs.hyprland.package)"
+    else
+        HYPR_UPGRADE="upgrade from COPR: $(pkg_hint hyprland)"
     fi
+    if HYPR_RUN="$(hypr_running_version)"; then
+        if ! pkg_version_ge "$HYPR_RUN" "$HYPR_MIN"; then
+            VERSION_PROBLEMS+=("running Hyprland is $HYPR_RUN — archenemy needs $HYPR_MIN or newer (Lua configs)")
+        fi
+    else
+        VERSION_PROBLEMS+=("cannot read the version of the running Hyprland (hyprctl version) — run install.sh inside a Hyprland $HYPR_MIN+ session")
+    fi
+    if [[ "$PLATFORM" == fedora ]]; then
+        HYPR_PKG="$(pkg_version hyprland)"
+        case $? in
+            3) VERSION_PROBLEMS+=("installed Hyprland package is $HYPR_PKG — archenemy needs $HYPR_MIN or newer") ;;
+            0) [[ -n "${HYPR_RUN:-}" ]] && ! pkg_version_ge "$HYPR_RUN" "$HYPR_MIN" \
+                   && HYPR_UPGRADE="Hyprland $HYPR_PKG is installed — log out and back in to Hyprland, then run install.sh again" ;;
+        esac
+    fi
+    PAPER_VER="$(pkg_version hyprpaper)"
+    case $? in
+        0) PAPER_NOTE="hyprpaper $PAPER_VER" ;;
+        1) PAPER_NOTE="hyprpaper not installed yet (checked in [5])" ;;
+        3) PAPER_NOTE=""
+           VERSION_PROBLEMS+=("hyprpaper is $PAPER_VER — archenemy needs $PAPER_MIN or newer; $(pkg_hint hyprpaper)") ;;
+        *) PAPER_NOTE=""
+           echo -e "  ${YELLOW}⚠ hyprpaper version could not be read — archenemy needs $PAPER_MIN or newer.${NC}"
+           SUMMARY_SKIPPED+=("hyprpaper version not checked (could not be read) — archenemy needs $PAPER_MIN or newer") ;;
+    esac
+    if ((${#VERSION_PROBLEMS[@]})); then
+        for p in "${VERSION_PROBLEMS[@]}"; do echo -e "${RED}✗ $p${NC}"; done
+        [[ "${VERSION_PROBLEMS[*]}" == *Hyprland* ]] && echo -e "  Hyprland: $HYPR_UPGRADE"
+        echo -e "${YELLOW}Nothing was installed or changed.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Hyprland $HYPR_RUN (running)${PAPER_NOTE:+, $PAPER_NOTE} — versions compatible.${NC}"
 fi
 echo ""
 
