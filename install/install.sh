@@ -1428,6 +1428,20 @@ if command -v mpd >/dev/null 2>&1; then
         SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
     elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null; then
         echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
+    elif [[ "$PLATFORM" == nixos ]]; then
+        # P3 z przeglądu D5: `systemctl --user enable mpd` zakłada jednostkę
+        # z pakietu, a jednostek pakietów NixOS nie ładuje z samego
+        # environment.systemPackages (do tego jest systemd.packages; nixpkgs
+        # pkgs/by-name/mp/mpd/package.nix ustawia tylko systemd_system_unit_dir
+        # w $out) — nie zgadujemy, deklarujemy; services.mpd z home-managera pisze WŁASNY
+        # mpd.conf do sklepu (modules/services/mpd.nix: ExecStart … --no-daemon
+        # ${mpdConf}). Stąd jawna usługa użytkownika (systemd.user.services, NixOS
+        # nixos/modules/system/boot/systemd/user.nix) na config archenemy: mpd
+        # bierze plik konfiguracji jako argument pozycyjny (src/CommandLine.cxx).
+        manual_step "mpd user service" "declare it in configuration.nix (it reads archenemy's ~/.config/mpd/mpd.conf):
+      systemd.user.services.mpd = { description = \"Music Player Daemon (archenemy config)\";
+        wantedBy = [ \"default.target\" ]; serviceConfig.ExecStart = \"\${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf\"; };
+      then nixos-rebuild switch. Not home-manager services.mpd: it generates its own mpd.conf."
     elif [[ "$PLATFORM" != arch ]]; then
         # Usługi poza Archem: etap D7.
         manual_step "mpd user service" "systemctl --user enable --now mpd"

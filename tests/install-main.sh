@@ -450,6 +450,10 @@ check "nie pyta o instalacje ani usługi"       '! asked "Install|additional use
 check "[10] opcje NixOS zamiast usług"          '[[ "$OUT" == *"networking.networkmanager.enable = true;"* && "$OUT" == *"services.pipewire.pulse.enable = true;"* ]]'
 check "[8]/[9] warstwa maszynowa i linki"       '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
 prof_fix="$(grep -A2 "Profile switcher is not working" <<< "$OUT")"
+# P3 (przegląd D5): pkgs.mpd nie daje jednostki, którą `systemctl --user enable`
+# znajdzie — deklaracja usługi użytkownika na config archenemy.
+mpd_fix="$(grep -A3 "mpd user service: not done" <<< "$OUT")"
+check "[8l] NixOS: deklaracja systemd.user.services.mpd z ExecStart na ~/.config/mpd/mpd.conf" '[[ "$mpd_fix" == *"systemd.user.services.mpd"* && "$mpd_fix" == *'"'"'${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf'"'"'* && "$mpd_fix" == *"home-manager services.mpd"* && "$mpd_fix" != *"systemctl --user enable"* ]]'
 check "[6] profile nie działają: opcje NixOS, bez asus-installation.sh i systemctl" '[[ "$prof_fix" == *"services.power-profiles-daemon.enable = true;"* && "$prof_fix" == *"services.asusd.enable"* && "$prof_fix" != *systemctl* && "$OUT" != *"asus-installation.sh"* ]]'
 
 echo "== bieg 8 (Arch, --skip-packages): ani razu instalacja, sprawdzenie zostaje"
