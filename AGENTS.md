@@ -328,7 +328,9 @@ Rules that follow directly from the table:
   enable, no unit created); a missing unit, no user bus or no `systemctl`
   never surfaces in the session: exit 0, one quiet line in
   `<private session dir>/archenemy-polkit-agent.log` (`scripts/lib/runtime-dir.sh`;
-  no private dir = no log, never shared `/tmp`). Don't put a bare
+  no private dir = no log, never shared `/tmp`; a log that cannot be opened
+  stays silent too — the write sits in a `{ …; } 2>/dev/null` block, because
+  `>> log 2>/dev/null` reports the open error before stderr is redirected). Don't put a bare
   `systemctl` in a rice's autostart; `bash tests/rice-autostart.sh` checks it,
   and that no new entry appears in `/` after the run.
 - **`window-history.sh` must capture a window's command while it is open.**

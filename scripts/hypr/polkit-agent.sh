@@ -20,8 +20,13 @@ if ! err="$(systemctl --user start hyprpolkitagent 2>&1)"; then
     # shellcheck source=scripts/lib/runtime-dir.sh
     if source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh" 2>/dev/null \
         && RUN_DIR="$(archenemy_runtime_dir)" && [[ -n "$RUN_DIR" ]]; then
-        printf '%s systemctl --user start hyprpolkitagent failed: %s — install hyprpolkitagent (README) or start your own polkit agent\n' \
-            "$(date -Iseconds)" "${err//$'\n'/ }" >> "$RUN_DIR/archenemy-polkit-agent.log" 2>/dev/null
+        # Cichy blok (D7F R6): błąd OTWARCIA logu (np. katalog pod tą nazwą)
+        # zgłasza powłoka przy przekierowaniu — `>> log 2>/dev/null` na samym
+        # printf go nie ucisza, bo stderr przekierowuje się dopiero po `>>`.
+        {
+            printf '%s systemctl --user start hyprpolkitagent failed: %s — install hyprpolkitagent (README) or start your own polkit agent\n' \
+                "$(date -Iseconds)" "${err//$'\n'/ }" >> "$RUN_DIR/archenemy-polkit-agent.log"
+        } 2>/dev/null
     fi
 fi
 exit 0

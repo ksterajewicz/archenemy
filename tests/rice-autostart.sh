@@ -176,6 +176,18 @@ polkit_run ok "${T:?}/nosysctl" "${T:?}/run"
 if [[ $p_rc -eq 0 && -z "$p_out" && "$p_log" == *"start hyprpolkitagent failed"* ]]; then
     ok "polkit-agent.sh bez systemctl w PATH: kod 0, cisza, wpis w logu"
 else fail "polkit-agent.sh bez systemctl: rc=$p_rc out=$p_out log=$p_log"; fi
+# D7F R6 (przegląd Codexa D7): log nie da się otworzyć (katalog pod nazwą pliku
+# logu) — nadal kod 0 i NIC na wyjściu sesji (dawniej „Is a directory” na stderr).
+for st in nounit nobus; do
+    rm -rf "${T:?}/run/archenemy-polkit-agent.log"
+    mkdir -p "${T:?}/run/archenemy-polkit-agent.log"
+    p_out="$(MOCK_POLKIT="$st" PATH="${T:?}/pbin" XDG_RUNTIME_DIR="${T:?}/run" ARCHENEMY_RUNTIME_SYSTEM="${T:?}/none" \
+        TMPDIR="${T:?}/tmpdir" "${T:?}/pbin/bash" "$AGENT" 2>&1)"; p_rc=$?
+    if [[ $p_rc -eq 0 && -z "$p_out" && -d "${T:?}/run/archenemy-polkit-agent.log" ]]; then
+        ok "polkit-agent.sh $st, log nie do otwarcia (katalog): kod 0, cisza w sesji"
+    else fail "polkit-agent.sh $st, log nie do otwarcia: rc=$p_rc out=$p_out"; fi
+    rm -rf "${T:?}/run/archenemy-polkit-agent.log"
+done
 # Brak katalogu sesji, a w TMPDIR cudzy (zły) katalog archenemy-<UID>: bez logu i bez /tmp.
 mkdir -p "${T:?}/tmpdir/archenemy-$UID" && chmod 755 "${T:?}/tmpdir/archenemy-$UID"
 polkit_run nounit "${T:?}/pbin" ""
