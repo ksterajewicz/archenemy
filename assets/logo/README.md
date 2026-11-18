@@ -28,5 +28,18 @@ launcher or accent already used).
 | `yin` | `#FFFFFF` | `#custom-launcher` colour | yes |
 | `yang` | `#0C0C0E` | yin's dark text colour | no — there is no `yang` rice yet |
 
+## How the bar uses it
+
+In `crt`, `dither-flux`, `tron` and `yin` the waybar module `custom/launcher`
+shows the mark instead of text: `rices/<rice>/waybar/launcher.svg` is a tracked
+symlink to `assets/logo/rices/<rice>.svg`, and `style.css` sets it as the
+module's `background-image: url("launcher.svg")`. GTK resolves a relative
+`url()` against the directory of the CSS file as it was opened
+(`~/.config/waybar/`, itself a link into the active rice), so the picture
+follows a rice switch without an absolute path. Waybar opens `style.css` by
+path only while it contains no 8-digit `#RRGGBBAA` colour (with one it loads
+the rewritten CSS as a string and relative URLs stop resolving), so those
+style files use `rgba()`; `bash tests/waybar-launcher.sh` checks this.
+
 To change a colour, edit the `fill` of `rices/<rice>.svg` only; keep the path
 identical in all files.

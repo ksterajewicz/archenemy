@@ -74,19 +74,31 @@ window#waybar {
     border:     none;
     box-shadow: none;
 }
-/* Glif Archa jako launcher na początku lewej wyspy — świeci jak wskaźnik
-   zasilania na obudowie monitora; hairline w błękicie po prawej. */
+/* Logo projektu (Æ) jako launcher na początku lewej wyspy; hairline w błękicie
+   po prawej. Dawna poświata (text-shadow glifu) nie działa na obrazie — znak
+   wyróżnia kolor fosforu.
+   Obraz: launcher.svg obok tego pliku (śledzony symlink do
+   assets/logo/rices/crt.svg). GTK liczy względny url() od katalogu, z którego
+   Waybar wczytał style.css (~/.config/waybar = link do aktywnego rice'a), więc
+   obraz idzie za zmianą rice'a bez ścieżki bezwzględnej. Waybar podaje plik
+   ścieżką tylko bez kolorów #RRGGBBAA — z nimi wczytuje przepisany CSS jako
+   tekst i względny url() przestaje działać: alfę zapisuj jako rgba()
+   (tests/waybar-launcher.sh). Format w configu to jedna spacja: pusty tekst
+   ukrywa moduł custom bez exec. */
 #custom-launcher {
-    color:        #74dce2;
-    font-size:    15px;
-    padding:      0 12px 0 10px;
-    margin:       2px 2px 2px 0;
-    border-right: 1px solid rgba(48, 105, 173, 0.45);
-    text-shadow:  0 0 7px rgba(54, 210, 216, 0.65);
+    background-image:    url("launcher.svg");
+    background-repeat:   no-repeat;
+    background-position: center;
+    background-size:     20px 20px;
+    min-width:           20px;
+    min-height:          20px;
+    padding:             0 11px;
+    margin:              2px 2px 2px 0;
+    border-right:        1px solid rgba(48, 105, 173, 0.45);
 }
+/* background-color, nie skrót background: skrót zeruje background-image. */
 #custom-launcher:hover {
-    color:       #36d2d8;
-    background:  rgba(54, 210, 216, 0.10);
+    background-color: rgba(54, 210, 216, 0.10);
 }
 #workspaces {
     padding: 0 4px;

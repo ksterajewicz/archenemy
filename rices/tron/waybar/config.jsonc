@@ -10,9 +10,11 @@
     "modules-left":   ["custom/launcher", "hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock", "custom/timer"],
     "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "tray"],
-    // Sygnatura rice'a: neonowy „portal do Gridu" — glyph Archa otwiera rofi.
+    // Sygnatura rice'a: neonowy „portal do Gridu" — logo projektu (Æ) otwiera rofi.
+    // Obraz daje style.css (#custom-launcher → launcher.svg); format to jedna
+    // spacja, bo moduł custom bez exec z pustym tekstem jest ukryty.
     "custom/launcher": {
-        "format": "󰣇",
+        "format": " ",
         "on-click": "~/archenemy/scripts/rofi/rofi_drun.sh",
         "on-click-right": "~/archenemy/scripts/rofi/rofi_power_menu.sh",
         "tooltip": false

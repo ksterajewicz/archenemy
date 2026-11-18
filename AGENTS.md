@@ -317,6 +317,17 @@ Rules that follow directly from the table:
   command and has no option to disable that in drun mode, so the script sets
   `-run-command` to a gate that only runs commands found in a `.desktop` `Exec=`.
   `tests/rofi-drun.sh`.
+- **The waybar launcher is the Æ logo as a CSS image.** `custom/launcher` has
+  `"format": " "` (a custom module without `exec` and with empty text is hidden —
+  Waybar `custom.cpp`), and `style.css` sets `background-image: url("launcher.svg")`,
+  where `rices/<rice>/waybar/launcher.svg` is a tracked symlink to
+  `assets/logo/rices/<rice>.svg`. GTK resolves a relative `url()` against the
+  directory of the CSS file as opened (`~/.config/waybar/`, no realpath), so never
+  climb out with `../` (GLib removes `..` as text, not through the link). Waybar
+  opens the file by path only while it has no 8-digit `#RRGGBBAA` colour — with one
+  it loads the rewritten CSS from a string and every relative `url()` silently
+  disappears; use `rgba()`. In `:hover` use `background-color`, the `background`
+  shorthand resets the image. `bash tests/waybar-launcher.sh`.
 - **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
   the parity rices, not by `white-blue_beta`) swaps the active colours for the
   inactive ones while the cursor is on another monitor. It changes the look

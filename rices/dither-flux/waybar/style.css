@@ -68,18 +68,30 @@ window#waybar {
     background: transparent;
     border:     none;
 }
-/* Glif Archa jako launcher na początku lewej wyspy, oddzielony linią 1 px
-   w kolorze wody od workspace'ów. */
+/* Logo projektu (Æ) jako launcher na początku lewej wyspy, oddzielone linią
+   1 px w kolorze wody od workspace'ów.
+   Obraz: launcher.svg obok tego pliku (śledzony symlink do
+   assets/logo/rices/dither-flux.svg). GTK liczy względny url() od katalogu, z którego
+   Waybar wczytał style.css (~/.config/waybar = link do aktywnego rice'a), więc
+   obraz idzie za zmianą rice'a bez ścieżki bezwzględnej. Waybar podaje plik
+   ścieżką tylko bez kolorów #RRGGBBAA — z nimi wczytuje przepisany CSS jako
+   tekst i względny url() przestaje działać: alfę zapisuj jako rgba()
+   (tests/waybar-launcher.sh). Format w configu to jedna spacja: pusty tekst
+   ukrywa moduł custom bez exec. */
 #custom-launcher {
-    color:        #d8e6ee;
-    font-size:    15px;
-    padding:      0 12px 0 10px;
-    margin:       2px 2px 2px 0;
-    border-right: 1px solid rgba(92, 135, 163, 0.20);
+    background-image:    url("launcher.svg");
+    background-repeat:   no-repeat;
+    background-position: center;
+    background-size:     20px 20px;
+    min-width:           20px;
+    min-height:          20px;
+    padding:             0 11px;
+    margin:              2px 2px 2px 0;
+    border-right:        1px solid rgba(92, 135, 163, 0.20);
 }
+/* background-color, nie skrót background: skrót zeruje background-image. */
 #custom-launcher:hover {
-    color:       #a8c4d4;
-    background:  rgba(92, 135, 163, 0.10);
+    background-color: rgba(92, 135, 163, 0.10);
 }
 #workspaces {
     padding: 0 4px;
