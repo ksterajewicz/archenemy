@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - workspace-orphan-guard.sh
@@ -13,6 +13,15 @@
 #   Sierota powstaje też bez odpinania: scroll/klik/przeniesienie
 #   okna poza dekadę żywego monitora tworzy workspace przypięty
 #   do monitora, którego nie ma.
+#
+#   Trzeci rodzaj (2026-09-21): workspace BEZ ŻADNEJ reguły (np. 21, 22).
+#   Gdy reguły celowały w nieaktualne nazwy złączy, Hyprland dla żywych
+#   monitorów wziął pierwsze wolne numery poza dekadami
+#   (Monitor.cpp findAvailableDefaultWS pomija id związane z innym
+#   monitorem). Po naprawie reguł (install.sh, hyprctl reload) te
+#   workspace'y ZOSTAJĄ — reload nie przenosi istniejących — i pasek
+#   pokazuje „21 22". Guard scala je do dekady monitora, na którym leżą
+#   (21 na HDMI z dekadą 11-20 → 11), o ile ten monitor jakąś dekadę ma.
 #
 #   Rozwiązanie: po zdarzeniach socket2 (monitorremoved,
 #   configreloaded, createworkspace, movewindow) guard scala
@@ -35,6 +44,20 @@ set -uo pipefail
 WS_MON_CONF="$HOME/archenemy/config/hypr/workspaces-monitors.lua"
 WS_MODE_DAT="$HOME/archenemy/data/workspace-mode.dat"
 
+# Reguły celują w selektor "desc:<opis>" (albo nazwę złącza w starych
+# generacjach) — dopasowanie jak w Hyprlandzie: nazwa równa albo
+# "desc:"+opis zaczyna się od selektora. Patrz lib/monitor-id.sh.
+selector_is_connected() {
+    local sel="$1" d
+    if [[ "$sel" == desc:* ]]; then
+        for d in "${connected_desc[@]}"; do
+            [[ "desc:$d" == "$sel"* ]] && return 0
+        done
+        return 1
+    fi
+    [[ -n "${connected[$sel]:-}" ]]
+}
+
 # Tryb shared (globalne workspace'y 1-10): dekady-sieroty nie istnieją,
 # demon jest zbędny. Sprawdzane też w merge_orphans, żeby żywy demon
 # z poprzedniej sesji stał się bezczynny po zmianie trybu bez re-loginu.
@@ -42,68 +65,137 @@ ws_mode_is_shared() {
     [[ -f "$WS_MODE_DAT" && "$(<"$WS_MODE_DAT")" == "shared" ]]
 }
 
+REHOME=0
+
 merge_orphans() {
     ws_mode_is_shared && return 0
     [[ -f "$WS_MON_CONF" ]] || return 0
 
     # Podłączone (aktywne) monitory — hyprctl monitors pomija wyłączone.
+    # Nazwy i opisy (EDID) — reguły mogą celować w jedno albo drugie.
     local -A connected=()
-    local name
-    while IFS= read -r name; do
-        [[ -n "$name" ]] && connected["$name"]=1
-    done < <(hyprctl monitors 2>/dev/null | sed -n 's/^Monitor \(\S\+\) (ID [0-9]\+):$/\1/p')
+    local -A desc_of=()
+    local -a connected_desc=()
+    local name="" line
+    while IFS= read -r line; do
+        case "$line" in
+            'Monitor '*)
+                name="${line#Monitor }"
+                name="${name%% *}"
+                [[ -n "$name" ]] && connected["$name"]=1
+                ;;
+            *'description: '*)
+                connected_desc+=("${line#*description: }")
+                [[ -n "$name" ]] && desc_of["$name"]="${line#*description: }"
+                ;;
+        esac
+    done < <(hyprctl monitors 2>/dev/null)
     # hyprctl nie odpowiada / zero monitorów — nie ruszaj niczego
     ((${#connected[@]})) || return 0
 
     # Reguły przypięcia: hl.workspace_rule({ workspace = "<id>", monitor = "<nazwa>", ... })
     # → sieroty (monitor odpięty) + baza dekady pierwszego żywego monitora.
     local -a orphan_ids=()
-    local min_alive="" id mon
-    while read -r id mon; do
-        if [[ -n "${connected[$mon]:-}" ]]; then
+    local -A ruled=()          # id → selektor monitora z reguły
+    local -A decade_base=()    # nazwa żywego monitora → baza jego dekady (min id - 1)
+    local min_alive="" id mon n
+    while IFS=$'\t' read -r id mon; do
+        ruled["$id"]="$mon"
+        if selector_is_connected "$mon"; then
             [[ -z "$min_alive" || "$id" -lt "$min_alive" ]] && min_alive=$id
+            for n in "${!connected[@]}"; do
+                if [[ "$mon" == desc:* ]]; then
+                    [[ "desc:${desc_of[$n]:-}" == "$mon"* ]] || continue
+                else
+                    [[ "$mon" == "$n" ]] || continue
+                fi
+                [[ -z "${decade_base[$n]:-}" || $((id - 1)) -lt "${decade_base[$n]}" ]] && decade_base["$n"]=$((id - 1))
+            done
         else
             orphan_ids+=("$id")
         fi
-    done < <(sed -n 's/^hl\.workspace_rule({ workspace = "\([0-9]\+\)", monitor = "\([^"]\+\)".*$/\1 \2/p' "$WS_MON_CONF")
-    ((${#orphan_ids[@]})) || return 0
+    done < <(sed -n 's/^hl\.workspace_rule({ workspace = "\([0-9]\+\)", monitor = "\([^"]\+\)".*$/\1\t\2/p' "$WS_MON_CONF")
 
     local base=0
     [[ -n "$min_alive" ]] && base=$((min_alive - 1))
 
-    # Istniejące workspace'y (puste sieroty Hyprland ubija sam — pomijamy je).
+    # Istniejące workspace'y (puste sieroty Hyprland ubija sam — pomijamy je)
+    # + monitor, na którym każdy leży (dla workspace'ów bez reguły).
     local -A existing=()
-    while IFS= read -r id; do existing["$id"]=1; done \
-        < <(hyprctl workspaces 2>/dev/null | sed -n 's/^workspace ID \(-\?[0-9]\+\).*$/\1/p')
+    local -A ws_monitor=()
+    while IFS=$'\t' read -r id mon; do
+        existing["$id"]=1
+        ws_monitor["$id"]="$mon"
+    # Nagłówek: "workspace 11 (1) on monitor X:" od Hyprlanda 0.57, wcześniej
+    # "workspace ID 11 (1) on monitor X:" — obsługujemy oba. Bez tego sed nie
+    # dopasuje niczego i guard po cichu przestaje cokolwiek scalać.
+    done < <(hyprctl workspaces 2>/dev/null | sed -n 's/^workspace \(ID \)\?\(-\?[0-9]\+\) ([^)]*) on monitor \([^:]*\):.*$/\2\t\3/p')
+
+    # Workspace'y BEZ reguły (poza wszystkimi dekadami, np. 21/22) na monitorze,
+    # który MA dekadę → scal do tej dekady. Docelowy id niesiemy jako parę
+    # "id:target" — reszta pętli używa jednego kodu przenoszenia.
+    local -a merges=()
+    for id in "${!existing[@]}"; do
+        [[ "$id" =~ ^[0-9]+$ && "$id" -gt 0 ]] || continue     # specjalne (ujemne) pomijamy
+        [[ -z "${ruled[$id]:-}" ]] || continue
+        mon="${ws_monitor[$id]:-}"
+        [[ -n "$mon" && -n "${decade_base[$mon]:-}" ]] || continue
+        # ${...} zamiast decade_base[$mon] w $(( )): w kontekście arytmetycznym
+        # bash liczy indeks "HDMI-A-3" jako HDMI - A - 3 (klucz "-3" → 0)
+        merges+=("$id:$((${decade_base[$mon]} + (id - 1) % 10 + 1))")
+    done
+    for id in "${orphan_ids[@]}"; do
+        [[ -n "${existing[$id]:-}" ]] || continue
+        merges+=("$id:$((base + (id - 1) % 10 + 1))")
+    done
+    # --rehome: numeracja monitorów się zmieniła, a reload nie przenosi istniejących
+    # workspace'ów. Tylko na żądanie z Super+A → [n]: demon nie może cofać
+    # workspace'a, którego użytkownik przeniósł na inny ekran.
+    if (( REHOME )); then
+        for id in "${!existing[@]}"; do
+            [[ "$id" =~ ^[0-9]+$ && "$id" -gt 0 && -n "${ruled[$id]:-}" ]] || continue
+            selector_is_connected "${ruled[$id]}" || continue
+            mon="${ws_monitor[$id]:-}"
+            [[ -n "$mon" && -n "${decade_base[$mon]:-}" ]] || continue
+            merges+=("$id:$((${decade_base[$mon]} + (id - 1) % 10 + 1))")
+        done
+    fi
+    ((${#merges[@]})) || return 0
 
     local clients active
     clients=$(hyprctl clients 2>/dev/null)
-    active=$(hyprctl activeworkspace 2>/dev/null | sed -n 's/^workspace ID \(-\?[0-9]\+\).*$/\1/p')
+    active=$(hyprctl activeworkspace 2>/dev/null | sed -n 's/^workspace \(ID \)\?\(-\?[0-9]\+\).*$/\2/p')
 
-    # Okna sieroty → odpowiednik w żywej dekadzie (11→1, 13→3; odwrotnie 2→12).
-    local from target addr ws line
-    for from in "${orphan_ids[@]}"; do
-        [[ -n "${existing[$from]:-}" ]] || continue
-        target=$((base + (from - 1) % 10 + 1))
+    # Okna sieroty → odpowiednik w żywej dekadzie (11→1, 13→3; odwrotnie 2→12);
+    # workspace bez reguły → dekada swojego monitora (21 na HDMI 11-20 → 11).
+    local from target addr ws pair
+    for pair in "${merges[@]}"; do
+        from="${pair%%:*}"
+        target="${pair##*:}"
+        [[ "$from" -ne "$target" ]] || continue
         addr=""
         while IFS= read -r line; do
             case "$line" in
                 'Window '*' -> '*)
                     addr="${line#Window }"
                     addr="${addr%% *}"
+                    # Trafia do wyrażenia Lua, a tytuł okna z nową linią udaje ten wiersz.
+                    [[ "$addr" =~ ^[[:alnum:]]+$ ]] || addr=""
                     ;;
                 $'\t'"workspace: "*)
                     ws="${line#*workspace: }"
                     ws="${ws%% *}"
                     if [[ "$ws" == "$from" && -n "$addr" ]]; then
-                        hyprctl dispatch movetoworkspacesilent "$target,address:0x$addr" >/dev/null 2>&1
+                        # Config w Lua: `hyprctl dispatch X` = hl.dispatch(X), więc X
+                        # to wyrażenie Lua, nie stara nazwa dispatchera.
+                        hyprctl dispatch "hl.dsp.window.move({ workspace = \"$target\", follow = false, window = \"address:0x$addr\" })" >/dev/null 2>&1
                     fi
                     ;;
             esac
         done <<<"$clients"
         # Fokus stał na sierocie → przeskocz na cel (opróżniony sierota ginie).
         if [[ "$active" == "$from" ]]; then
-            hyprctl dispatch workspace "$target" >/dev/null 2>&1
+            hyprctl dispatch "hl.dsp.focus({ workspace = \"$target\" })" >/dev/null 2>&1
             active=$target
         fi
     done
@@ -114,12 +206,22 @@ if [[ "${1:-}" == "--sweep" ]]; then
     merge_orphans
     exit 0
 fi
+if [[ "${1:-}" == "--rehome" ]]; then
+    REHOME=1
+    merge_orphans
+    exit 0
+fi
 
 # Tryb shared — nie stawiaj demona w ogóle (bez locka i nasłuchu socket2).
 ws_mode_is_shared && exit 0
 
-# Jedna instancja demona na sesję.
-exec 9>"${XDG_RUNTIME_DIR:-/tmp}/archenemy-workspace-guard.lock" || exit 0
+# Jedna instancja demona na sesję. Blokada w prywatnym katalogu sesji
+# (lib/runtime-dir.sh, S12): we wspólnym /tmp ktoś inny mógł ją zająć i demon
+# by nie wstał. Bez takiego katalogu — jak przy nieudanym otwarciu blokady.
+# shellcheck source=scripts/lib/runtime-dir.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/runtime-dir.sh" || exit 0
+RUN_DIR="$(archenemy_runtime_dir)" || exit 0
+exec 9>"$RUN_DIR/archenemy-workspace-guard.lock" || exit 0
 flock -n 9 || exit 0
 
 # exec-once startuje razem z kompozytorem — poczekaj aż hyprctl odpowiada.
@@ -134,7 +236,7 @@ merge_orphans
 SOCK="${XDG_RUNTIME_DIR:-}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/.socket2.sock"
 
 # Po scaleniu zdrenuj linie zakolejkowane w trakcie pracy: własne echa
-# dispatchy guarda (movetoworkspacesilent → movewindowv2) i duplikaty v1
+# dispatchy guarda (hl.dsp.window.move → movewindowv2) i duplikaty v1
 # re-triggerowały scalanie po każdym scaleniu. Jeśli w drenażu przyszedł
 # świeży event monitora, zrób JEDNO powtórne scalenie — mógł zajść realny
 # unplug, gdy pracowaliśmy.

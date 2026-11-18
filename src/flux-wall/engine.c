@@ -52,6 +52,10 @@ static const char *UPDATE_PRELUDE =
     "uniform float audio_high;\n"
     "uniform float audio_beat;\n"
     "uniform sampler2D audio_spectrum;\n"
+    "uniform sampler2D audio_wave;   /* przebieg po triggerze: N×1 RG32F, r = L, g = R, w -1..1 */\n"
+    "uniform float audio_wave_peak;  /* szczyt |mono| okna przebiegu — auto-wzmocnienie oscyloskopu */\n"
+    "uniform sampler2D audio_spectrogram;     /* historia kolumn: COLS×BINS R8, S = REPEAT (pierścień) */\n"
+    "uniform float audio_spectrogram_head;    /* indeks kolumny NAJNOWSZEJ (x tekstury) */\n"
     "out vec4 o;\n"
     "uint h2u(int x, int y, int s) {\n"
     "    uint n = uint(x) * 374761393u + uint(y) * 668265263u + uint(s) * 1013904223u;\n"
@@ -81,6 +85,7 @@ static const char *UPDATE_PRELUDE =
 static const char *VS_SPLAT =
     "#version 300 es\n"
     "precision highp float;\n"
+    "precision highp sampler2D;   /* w shaderze wierzchołków też domyślnie lowp — texelFetch pozycji jak w UPDATE_PRELUDE */\n"
     "uniform sampler2D pos;\n"
     "uniform int   P;\n"
     "uniform int   n_active;\n"
@@ -118,6 +123,10 @@ static const char *FS_FADE =
 
 /* ── struktury ────────────────────────────────────────────────────────────── */
 
+#define AUDIO_UNIFORMS 11
+/* Historia spektrogramu: kolumn w pierścieniu (50/s → ~41 s). */
+#define SPECTRO_COLS   2048
+
 struct flux_engine {
     bool particle;
     struct flux_params params;
@@ -125,15 +134,16 @@ struct flux_engine {
     GLuint prog_present, prog_update, prog_splat, prog_fade;
     GLuint vao;
     /* present */
-    GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail, u_accum, u_gain;
+    GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail, u_dither, u_accum, u_gain;
     /* update */
     GLint uu_pos, uu_time, uu_dt, uu_detail, uu_resolution, uu_aspect, uu_seed, uu_life, uu_accum;
     /* splat */
     GLint us_pos, us_P, us_active, us_splat, us_scale, us_aspect, us_warm, us_inc;
     /* fade */
     GLint uf_keep;
-    /* audio: present (p) i update (u): level, bass, lowmid, mid, high, beat, spectrum */
-    GLint up_audio[7], uu_audio[7];
+    /* audio: present (p) i update (u): level, bass, lowmid, mid, high, beat, spectrum, wave,
+     * wave_peak, spectrogram, spectrogram_head */
+    GLint up_audio[AUDIO_UNIFORMS], uu_audio[AUDIO_UNIFORMS];
 };
 
 struct flux_target {
@@ -146,6 +156,10 @@ struct flux_target {
     double step_acc;                        /* ułamek kroku przeniesiony na następną klatkę */
     double warp_offset;                     /* anim_time = time + warp_offset (0 bez muzyki — bit w bit) */
     GLuint spec_tex;                        /* widmo 32×1 R32F, jednostka 2 */
+    GLuint wave_tex;                        /* przebieg AUDIO_WAVE_N×1 RG32F (L, R), jednostka 3 */
+    GLuint spectro_tex;                     /* spektrogram SPECTRO_COLS×BINS R8 (pierścień po x), jednostka 4 */
+    int    spectro_head;                    /* kolumna najnowsza */
+    double spectro_acc;                     /* ułamek kolumny przeniesiony na następną klatkę */
     bool warmed;
 };
 
@@ -165,7 +179,9 @@ bool flux_update_path(const char *frag_path, char *out, size_t outlen) {
 static bool set_param(struct flux_params *p, const char *key, const char *val, char *err, size_t errlen) {
     char *end;
     double d = strtod(val, &end);
-    if (end == val || *end != 0) { snprintf(err, errlen, "#pragma flux %s: '%s' nie jest liczbą", key, val); return false; }
+    /* strtod przyjmuje „nan” i „inf”: NaN przeszedłby każde sprawdzenie zakresu
+     * niżej (porównania z NaN są fałszywe), a (int)NaN jest niezdefiniowane */
+    if (end == val || *end != 0 || !isfinite(d)) { snprintf(err, errlen, "#pragma flux %s: '%s' nie jest liczbą", key, val); return false; }
     if      (strcmp(key, "particles") == 0) { if (d < 1 || d > 4000000) goto range; p->particles = (int)d; }
     else if (strcmp(key, "life")      == 0) { if (d <= 0 || d > 600)    goto range; p->life = (float)d; }
     else if (strcmp(key, "rate")      == 0) { if (d <= 0 || d > 1000)   goto range; p->rate = (float)d; }
@@ -222,7 +238,9 @@ char *flux_strip_directives(const char *src, bool keep_version) {
         char *nl = strchr(line, '\n');
         char *s = line;
         while (*s == ' ' || *s == '\t') s++;
-        bool pragma = strncmp(s, "#pragma flux", 12) == 0;
+        /* jak w flux_params_parse: po „#pragma flux" musi być biały znak —
+         * „#pragma fluxx" to cudza pragma, zostaje w źródle */
+        bool pragma = strncmp(s, "#pragma flux", 12) == 0 && isspace((unsigned char)s[12]);
         bool version = !keep_version && strncmp(s, "#version", 8) == 0;
         if (pragma || version) {
             size_t len = nl ? (size_t)(nl - line) : strlen(line);
@@ -308,12 +326,14 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->u_ink        = glGetUniformLocation(e->prog_present, "palette_ink");
     e->u_accent     = glGetUniformLocation(e->prog_present, "palette_accent");
     e->u_detail     = glGetUniformLocation(e->prog_present, "detail");
+    e->u_dither     = glGetUniformLocation(e->prog_present, "dither");   /* -1, gdy shader go nie deklaruje */
     e->u_accum      = glGetUniformLocation(e->prog_present, "accum");
     e->u_gain       = glGetUniformLocation(e->prog_present, "gain");
-    static const char *AUDIO_NAMES[7] = { "audio_level", "audio_bass", "audio_lowmid", "audio_mid",
-                                          "audio_high", "audio_beat", "audio_spectrum" };
-    for (int i = 0; i < 7; i++) e->up_audio[i] = glGetUniformLocation(e->prog_present, AUDIO_NAMES[i]);
-    for (int i = 0; i < 7; i++) e->uu_audio[i] = -1;
+    static const char *AUDIO_NAMES[AUDIO_UNIFORMS] = { "audio_level", "audio_bass", "audio_lowmid", "audio_mid",
+                                          "audio_high", "audio_beat", "audio_spectrum", "audio_wave", "audio_wave_peak",
+                                          "audio_spectrogram", "audio_spectrogram_head" };
+    for (int i = 0; i < AUDIO_UNIFORMS; i++) e->up_audio[i] = glGetUniformLocation(e->prog_present, AUDIO_NAMES[i]);
+    for (int i = 0; i < AUDIO_UNIFORMS; i++) e->uu_audio[i] = -1;
 
     glGenVertexArrays(1, &e->vao);
 
@@ -344,7 +364,7 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->uu_seed       = glGetUniformLocation(e->prog_update, "seed");
     e->uu_life       = glGetUniformLocation(e->prog_update, "life_steps");
     e->uu_accum      = glGetUniformLocation(e->prog_update, "accum");
-    for (int i = 0; i < 7; i++) e->uu_audio[i] = glGetUniformLocation(e->prog_update, AUDIO_NAMES[i]);
+    for (int i = 0; i < AUDIO_UNIFORMS; i++) e->uu_audio[i] = glGetUniformLocation(e->prog_update, AUDIO_NAMES[i]);
 
     e->prog_splat = link(VS_SPLAT, FS_SPLAT, "splat", err, errlen);
     if (!e->prog_splat) { flux_engine_destroy(e); return NULL; }
@@ -403,6 +423,10 @@ static bool make_fbo(GLuint tex, GLuint *fbo) {
 static void target_free_gl(struct flux_target *t) {
     if (t->spec_tex) glDeleteTextures(1, &t->spec_tex);
     t->spec_tex = 0;
+    if (t->wave_tex) glDeleteTextures(1, &t->wave_tex);
+    t->wave_tex = 0;
+    if (t->spectro_tex) glDeleteTextures(1, &t->spectro_tex);
+    t->spectro_tex = 0;
     if (t->acc_fbo) glDeleteFramebuffers(1, &t->acc_fbo);
     if (t->acc_tex) glDeleteTextures(1, &t->acc_tex);
     for (int i = 0; i < 2; i++) {
@@ -413,9 +437,13 @@ static void target_free_gl(struct flux_target *t) {
     t->pos_fbo[0] = t->pos_fbo[1] = t->pos_tex[0] = t->pos_tex[1] = 0;
 }
 
-static bool target_alloc_accum(struct flux_target *t, char *err, size_t errlen) {
-    t->acc_tex = make_tex(t->w, t->h, GL_R16F, GL_RED, GL_HALF_FLOAT, NULL);
-    if (!make_fbo(t->acc_tex, &t->acc_fbo)) {
+/* Nowy, wyczyszczony akumulator w×h; przy błędzie nic nie zostaje przydzielone
+ * (tekstura zwolniona), więc wołający może zachować stary. */
+static bool alloc_accum(int w, int h, GLuint *tex, GLuint *fbo, char *err, size_t errlen) {
+    *tex = make_tex(w, h, GL_R16F, GL_RED, GL_HALF_FLOAT, NULL);
+    if (!make_fbo(*tex, fbo)) {
+        glDeleteTextures(1, tex);
+        *tex = 0;
         snprintf(err, errlen, "akumulator R16F nie jest renderowalny (brak GL_EXT_color_buffer_half_float?)");
         return false;
     }
@@ -432,11 +460,27 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
         float zero[AUDIO_SPECTRUM_BINS] = {0};
         t->spec_tex = make_tex(AUDIO_SPECTRUM_BINS, 1, GL_R32F, GL_RED, GL_FLOAT, zero);
     }
+    {
+        static const float zero_wave[AUDIO_WAVE_N * AUDIO_CHANNELS] = {0};
+        t->wave_tex = make_tex(AUDIO_WAVE_N, 1, GL_RG32F, GL_RG, GL_FLOAT, zero_wave);
+    }
+    if (e->up_audio[9] >= 0 || e->uu_audio[9] >= 0) {
+        /* tylko spektrogram — 256 KiB na cel; R8 jest filtrowalny (LINEAR =
+         * gładka interpolacja między pasmami i kolumnami), REPEAT po x robi
+         * z tekstury pierścień: shader czyta (head - wiek) bez własnego modulo */
+        unsigned char *zero = calloc((size_t)SPECTRO_COLS * AUDIO_SPECTRO_BINS, 1);
+        if (!zero) { target_free_gl(t); free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
+        t->spectro_tex = make_tex(SPECTRO_COLS, AUDIO_SPECTRO_BINS, GL_R8, GL_RED, GL_UNSIGNED_BYTE, zero);
+        free(zero);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    }
     if (!e->particle) return t;
 
     int P = e->P;
     float *zero = calloc((size_t)P * P * 4, sizeof(float));
-    if (!zero) { free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
+    if (!zero) { target_free_gl(t); free(t); snprintf(err, errlen, "brak pamięci"); return NULL; }
     for (int i = 0; i < 2; i++) {
         t->pos_tex[i] = make_tex(P, P, GL_RGBA32F, GL_RGBA, GL_FLOAT, zero);
         if (!make_fbo(t->pos_tex[i], &t->pos_fbo[i])) {
@@ -447,23 +491,30 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
         }
     }
     free(zero);
-    if (!target_alloc_accum(t, err, errlen)) { target_free_gl(t); free(t); return NULL; }
+    if (!alloc_accum(t->w, t->h, &t->acc_tex, &t->acc_fbo, err, errlen)) { target_free_gl(t); free(t); return NULL; }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return t;
 }
 
 /* Zmiana rozmiaru odtwarza i CZYŚCI akumulator (pozycje są znormalizowane,
- * więc zostają — cząstki nie skaczą). */
-void flux_target_resize(struct flux_target *t, int w, int h) {
-    if (w == t->w && h == t->h) return;
-    t->w = w; t->h = h;
-    if (!t->e->particle) return;
+ * więc zostają — cząstki nie skaczą). Nowy akumulator powstaje PRZED
+ * zwolnieniem starego: gdy sterownik odmówi (brak pamięci przy dużym
+ * buforze), cel zostaje w starym rozmiarze z działającym FBO — fade/splat
+ * nigdy nie rysują do okna przez acc_fbo = 0. Pusty akumulator kasuje też
+ * `warmed`: przy --once (jedna klatka, bez kolejnych) następna klatka liczy
+ * rozgrzewkę od nowa — inaczej po zmianie skali zostawało samo tło. */
+bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t errlen) {
+    if (w == t->w && h == t->h) return true;
+    if (!t->e->particle) { t->w = w; t->h = h; return true; }
+    GLuint tex = 0, fbo = 0;
+    if (!alloc_accum(w, h, &tex, &fbo, err, errlen)) { glBindFramebuffer(GL_FRAMEBUFFER, 0); return false; }
     if (t->acc_fbo) glDeleteFramebuffers(1, &t->acc_fbo);
     if (t->acc_tex) glDeleteTextures(1, &t->acc_tex);
-    t->acc_fbo = t->acc_tex = 0;
-    char err[128];
-    target_alloc_accum(t, err, sizeof err);   /* format już raz przeszedł — nie może paść */
+    t->acc_tex = tex; t->acc_fbo = fbo;
+    t->w = w; t->h = h;
+    t->warmed = false;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
 }
 
 void flux_target_destroy(struct flux_target *t) {
@@ -475,18 +526,79 @@ void flux_target_destroy(struct flux_target *t) {
 /* ── GL: render ───────────────────────────────────────────────────────────── */
 
 /* Uniformy audio dla programu o lokacjach `loc` (NULL audio → zera). */
-static void set_audio_uniforms(const GLint loc[7], const struct audio_features *a, float strength, GLuint spec_tex) {
-    float v[6] = {0, 0, 0, 0, 0, 0};
-    if (a && strength > 0.0f) {
-        v[0] = a->level; v[1] = a->bass; v[2] = a->lowmid; v[3] = a->mid; v[4] = a->high; v[5] = a->beat;
-    }
+static void set_audio_uniforms(const GLint loc[AUDIO_UNIFORMS], const struct audio_features *a, float strength,
+                               GLuint spec_tex, GLuint wave_tex, GLuint spectro_tex, int spectro_head) {
+    float v[6], peak;
+    flux_audio_uniform_values(a, strength, v, &peak);
     for (int i = 0; i < 6; i++) if (loc[i] >= 0) glUniform1f(loc[i], v[i]);
+    if (loc[8] >= 0) glUniform1f(loc[8], peak);
     if (loc[6] >= 0) {
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, spec_tex);
         glUniform1i(loc[6], 2);
         glActiveTexture(GL_TEXTURE0);
     }
+    if (loc[7] >= 0) {
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, wave_tex);
+        glUniform1i(loc[7], 3);
+        glActiveTexture(GL_TEXTURE0);
+    }
+    if (loc[9] >= 0) {
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, spectro_tex);
+        glUniform1i(loc[9], 4);
+        glActiveTexture(GL_TEXTURE0);
+    }
+    if (loc[10] >= 0) glUniform1f(loc[10], (float)spectro_head);
+}
+
+/* Spektrogram: kolumny przybywają w tempie hopu analizy (AUDIO_RATE/AUDIO_HOP
+ * = 50/s) według zegara REALNEGO — oś czasu jest prawdziwa niezależnie od fps,
+ * a w ciszy/bez serwera obraz dalej przewija się pustą kolumną (jak prawdziwy
+ * spektrogram, który nie zatrzymuje się, gdy nic nie gra). Po pauzie
+ * (uśpiony ekran) nie dopisujemy zaległych sekund — limit kolumn na klatkę. */
+int flux_spectro_advance(double *acc, double dt_real) {
+    const double cols_per_s = (double)AUDIO_RATE / AUDIO_HOP;
+    *acc += dt_real * cols_per_s;
+    int n = (int)floor(*acc);
+    if (n <= 0) return 0;
+    if (n > FLUX_SPECTRO_MAX_COLS) { n = FLUX_SPECTRO_MAX_COLS; *acc = 0; } else *acc -= n;
+    return n;
+}
+
+void flux_spectro_bytes(const struct audio_features *audio, float strength, unsigned char col[AUDIO_SPECTRO_BINS]) {
+    memset(col, 0, AUDIO_SPECTRO_BINS);
+    if (audio && strength > 0.0f)
+        for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) {
+            float v = audio->spectro[i] * strength;
+            col[i] = (unsigned char)(v <= 0.0f ? 0 : (v >= 1.0f ? 255 : (int)(v * 255.0f + 0.5f)));
+        }
+}
+
+void flux_audio_uniform_values(const struct audio_features *a, float strength, float v[6], float *peak) {
+    for (int i = 0; i < 6; i++) v[i] = 0.0f;
+    *peak = 0.0f;
+    if (a && strength > 0.0f) {
+        v[0] = a->level; v[1] = a->bass; v[2] = a->lowmid; v[3] = a->mid; v[4] = a->high; v[5] = a->beat;
+        *peak = a->wave_peak;
+    }
+}
+
+static void spectro_push(struct flux_target *t, double dt_real, const struct audio_features *audio, float strength) {
+    int n = flux_spectro_advance(&t->spectro_acc, dt_real);
+    if (n <= 0) return;
+    unsigned char col[AUDIO_SPECTRO_BINS];
+    flux_spectro_bytes(audio, strength, col);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, t->spectro_tex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    for (int k = 0; k < n; k++) {
+        t->spectro_head = (t->spectro_head + 1) % SPECTRO_COLS;
+        glTexSubImage2D(GL_TEXTURE_2D, 0, t->spectro_head, 0, 1, AUDIO_SPECTRO_BINS, GL_RED, GL_UNSIGNED_BYTE, col);
+    }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glActiveTexture(GL_TEXTURE0);
 }
 
 static void sim_step(struct flux_engine *e, struct flux_target *t, double step_time, float detail,
@@ -502,7 +614,7 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, t->pos_tex[t->src]);
     if (e->uu_pos        >= 0) glUniform1i(e->uu_pos, 0);
-    if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)step_time);
+    if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)fmod(step_time, FLUX_TIME_PERIOD));
     if (e->uu_dt         >= 0) glUniform1f(e->uu_dt, 1.0f / p->rate);
     if (e->uu_detail     >= 0) glUniform1f(e->uu_detail, detail);
     if (e->uu_resolution >= 0) glUniform2f(e->uu_resolution, (float)t->w, (float)t->h);
@@ -515,7 +627,7 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
         glUniform1i(e->uu_accum, 1);
         glActiveTexture(GL_TEXTURE0);
     }
-    set_audio_uniforms(e->uu_audio, audio, strength, t->spec_tex);
+    set_audio_uniforms(e->uu_audio, audio, strength, t->spec_tex, t->wave_tex, t->spectro_tex, t->spectro_head);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     t->src = 1 - t->src;
 
@@ -575,7 +687,7 @@ static void simulate(struct flux_engine *e, struct flux_target *t, double anim_t
 }
 
 void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint dest_fbo,
-                        double time, const struct palette *pal, float detail,
+                        double time, const struct palette *pal, float detail, float dither,
                         const struct audio_features *audio, float audio_strength, bool warmup_once) {
     glBindVertexArray(e->vao);
     const struct flux_params *p = &e->params;
@@ -596,6 +708,16 @@ void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint des
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, AUDIO_SPECTRUM_BINS, 1, GL_RED, GL_FLOAT, audio->spectrum);
         glActiveTexture(GL_TEXTURE0);
     }
+    /* przebieg L/R do tekstury (jednostka 3) — tylko dla shaderów oscyloskopowych */
+    if (audio && audio_strength > 0.0f && (e->up_audio[7] >= 0 || e->uu_audio[7] >= 0)) {
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, t->wave_tex);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, AUDIO_WAVE_N, 1, GL_RG, GL_FLOAT, audio->wave);
+        glActiveTexture(GL_TEXTURE0);
+    }
+    /* spektrogram (jednostka 4) — tylko gdy shader go deklaruje; przewija się
+     * zegarem realnym także bez sygnału */
+    if (t->spectro_tex) spectro_push(t, dt_real, audio, audio_strength);
 
     if (e->particle) {
         if (warmup_once && !t->warmed) {
@@ -626,12 +748,13 @@ void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint des
         if (audio && audio_strength > 0.0f) gain_eff *= 1.0f + 1.5f * p->audio_glow * audio_strength * audio->bass;
         if (e->u_gain  >= 0) glUniform1f(e->u_gain, gain_eff);
     }
-    set_audio_uniforms(e->up_audio, audio, audio_strength, t->spec_tex);
+    set_audio_uniforms(e->up_audio, audio, audio_strength, t->spec_tex, t->wave_tex, t->spectro_tex, t->spectro_head);
     if (e->u_resolution >= 0) glUniform2f(e->u_resolution, (float)t->w, (float)t->h);
-    if (e->u_time       >= 0) glUniform1f(e->u_time, (float)anim_time);
+    if (e->u_time       >= 0) glUniform1f(e->u_time, (float)fmod(anim_time, FLUX_TIME_PERIOD));
     if (e->u_bg         >= 0) glUniform3fv(e->u_bg, 1, pal->bg);
     if (e->u_ink        >= 0) glUniform3fv(e->u_ink, 1, pal->ink);
     if (e->u_accent     >= 0) glUniform3fv(e->u_accent, 1, pal->accent);
     if (e->u_detail     >= 0) glUniform1f(e->u_detail, detail);
+    if (e->u_dither     >= 0) glUniform1f(e->u_dither, dither);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }

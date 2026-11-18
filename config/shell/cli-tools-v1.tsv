@@ -1,0 +1,5 @@
+# Immutable catalog for recognizing unsigned v1 personal files. Do not edit.
+# name	repository	SPDX license	pacman package	command	shells	bash init	zsh init
+fd	https://github.com/sharkdp/fd	MIT OR Apache-2.0	fd	fd	bash,zsh		
+ripgrep	https://github.com/BurntSushi/ripgrep	MIT OR Unlicense	ripgrep	rg	bash,zsh		
+zoxide	https://github.com/ajeetdsouza/zoxide	MIT	zoxide	zoxide	bash,zsh	eval "$(zoxide init bash)"	eval "$(zoxide init zsh)"

@@ -1,8 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - appbinds.sh
-#   Terminalowy menedżer skrótów do aplikacji (Super + klawisz).
+#   Terminalowe ustawienia pulpitu: skróty aplikacji (Super + klawisz), audio,
+#   monitory, układy klawiatury, autostart, powłoka (bash/zsh), diagnostyka. Każda pozycja woła
+#   skrypt z logiką, menu tylko pyta i pokazuje stan.
 #   Otwierany przez Super+A (pływające okno alacritty).
 #   UI po angielsku (decyzja właściciela 2026-07-12).
 #
@@ -11,59 +13,39 @@
 #   — hyprland.lua rice'a require'uje ten plik.
 # =============================================
 
+set -uo pipefail
+
+# Obsługa polecenia przed wczytaniem TUI i tworzeniem plików osobistych.
+if [[ "${1:-}" == doctor ]]; then
+    shift
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../archenemy-doctor.sh" "$@"
+fi
+
+# Szerokość kolumn liczona w znakach wymaga locale UTF-8.
+[[ "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" == *[Uu][Tt][Ff]* ]] || export LC_ALL=C.UTF-8
+
 ARCHENEMY_DIR="$HOME/archenemy"
 BINDS_CONF="$ARCHENEMY_DIR/config/hypr/appbinds.lua"
 CONFIG_DIR="$HOME/.config"
+# shellcheck source=lib/tui.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
+# shellcheck source=../hypr/lib/hypr-apply.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../hypr/lib/hypr-apply.sh"
+# shellcheck source=lib/binds.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
+# shellcheck source=lib/mpd-output.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/mpd-output.sh"
 
 # Pliki, w których klawisz może już być zajęty (bindy Super+klawisz archenemy).
 # workspaces-monitors.lua: od 2026-07-17 bindy Super+1..0 są GENEROWANE tam
 # (zależą od trybu shared/decades) — bez tego wpisu TUI pozwoliłoby przykryć
-# nawigację workspace'ów własnym bindem.
+# nawigację workspace'ów własnym bindem. Tracked workspaces.lua trzyma już
+# tylko autostart guarda (zero hl.bind) — nie ma go tu celowo.
 CONFLICT_FILES=(
     "$CONFIG_DIR/hypr/hyprland.lua"
-    "$ARCHENEMY_DIR/config/hypr/workspaces.lua"
     "$ARCHENEMY_DIR/config/hypr/workspaces-monitors.lua"
     "$BINDS_CONF"
 )
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# Czysty bashowy trim — NIE `| xargs`: xargs robi przetwarzanie cudzysłowów,
-# więc `sh -c 'btop; read'` gubił apostrofy, a samotny apostrof wysypywał
-# cały pipe („unmatched single quote" → „Empty command").
-trim() {
-    local s="$1"
-    s="${s#"${s%%[![:space:]]*}"}"
-    s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
-}
-
-# Jeden klawisz bez Enter (menu/potwierdzenia — nie wolne wpisywanie tekstu).
-# Zwraca $'\e' dla samego Escape, żeby wołający mógł potraktować go jak
-# anulowanie/wyjście.
-read_key() {
-    local prompt="$1" key=""
-    IFS= read -rsn1 -p "$prompt" key
-    echo "" >&2
-    printf '%s' "$key"
-}
-
-# Zapis jednowartościowego pliku warstwy maszynowej (data/*.dat) — atomowo
-# (tmp + mv), bo moduły waybara czytają te pliki co sekundę i nie mogą trafić
-# na zapis w połowie. Jedno miejsce dla wszystkich menu TUI.
-write_dat() {
-    local file="$1" value="$2" tmp
-    mkdir -p "$(dirname "$file")"
-    tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
-    printf '%s\n' "$value" > "$tmp"
-    mv "$tmp" "$file"
-}
 
 # ─── PLIK BINDÓW ──────────────────────────────────────────────────────────────
 
@@ -80,41 +62,107 @@ ensure_conf() {
     } > "$BINDS_CONF"
 }
 
-# Czy klawisz jest już zajęty przez jakikolwiek bind Super+klawisz?
-# (bez dodatkowych modyfikatorów — SUPER SHIFT itd. nie koliduje)
+# Czy kombinacja jest już zajęta? Argument w formacie pliku, np. `g`, `SHIFT + g`.
+# Mod SUPER jest wspólny, więc `SHIFT + g` nie koliduje z samym `g`.
 key_taken() {
-    local key="$1"
+    local key="${1// + / \\+ }"
     # Dwa warianty emisji: `hl.bind(mainMod .. " + KEY", ...` (configi archenemy)
     # oraz `hl.bind("SUPER + KEY", ...` (gdyby ktoś wpisał moda dosłownie).
     grep -hqiE "^hl\\.bind\\((mainMod[[:space:]]*\\.\\.[[:space:]]*\" \\+ ${key}\"|\"SUPER \\+ ${key}\")," \
         "${CONFLICT_FILES[@]}" 2>/dev/null
 }
 
-# Wypisz obecne bindy użytkownika, ponumerowane
-list_binds() {
-    local i=0 key cmd
-    while IFS= read -r line; do
-        # hl.bind(mainMod .. " + KEY", hl.dsp.exec_cmd("CMD"))
-        [[ "$line" =~ ^hl\.bind\(mainMod[[:space:]]*\.\.[[:space:]]*\"\ \+\ ([A-Za-z0-9_]+)\",[[:space:]]*hl\.dsp\.exec_cmd\(\"(.*)\"\)\) ]] || continue
-        i=$((i + 1))
-        key="${BASH_REMATCH[1]}"
-        cmd="${BASH_REMATCH[2]}"
-        printf "    ${CYAN}%2d)${NC} Super + ${BLUE}%-12s${NC} → %s\n" "$i" "$key" "$cmd"
-    done < "$BINDS_CONF"
-    if [[ $i -eq 0 ]]; then
-        echo -e "    ${YELLOW}(no custom binds yet — add your first!)${NC}"
+# Wpisane `shift+g`, `CTRL + ALT + F5` → format pliku `CTRL + ALT + F5`, modyfikatory
+# w stałej kolejności, żeby ten sam skrót nie miał dwóch zapisów. Pusto = błąd.
+normalize_key_combo() {
+    local raw="${1// /}" part key="" shift_m="" ctrl_m="" alt_m="" out=""
+    local -a parts=()
+    IFS='+' read -ra parts <<<"$raw"
+    ((${#parts[@]})) || return 1
+    key="${parts[-1]}"
+    for part in "${parts[@]:0:${#parts[@]}-1}"; do
+        case "${part^^}" in
+            SHIFT) shift_m=1 ;;
+            CTRL|CONTROL) ctrl_m=1 ;;
+            ALT) alt_m=1 ;;
+            *) return 1 ;;
+        esac
+    done
+    [[ "$key" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    [[ -n "$shift_m" ]] && out+="SHIFT + "
+    [[ -n "$ctrl_m" ]] && out+="CTRL + "
+    [[ -n "$alt_m" ]] && out+="ALT + "
+    printf '%s%s' "$out" "$key"
+}
+
+# Czy to prawdziwa nazwa klawisza. Hyprland odrzuca nieznaną nazwę i zgłasza błąd
+# configu przy każdym reloadzie. Nazwy jak w xkb_keysym_from_name bez rozróżniania
+# wielkości liter. Bez nagłówka (brak libxkbcommon) decyduje reload.
+XKB_KEYSYMS_HEADER="${ARCHENEMY_XKB_KEYSYMS:-/usr/include/xkbcommon/xkbcommon-keysyms.h}"
+key_name_valid() {
+    [[ "$1" =~ ^[A-Za-z0-9]$ ]] && return 0
+    [[ -r "$XKB_KEYSYMS_HEADER" ]] || return 0
+    grep -qiE "^#define XKB_KEY_$1[[:space:]]" "$XKB_KEYSYMS_HEADER"
+}
+
+# list_binds / remove_bind_by_index — lib/binds.sh (jedno źródło wyboru linii
+# dla listy i usuwania).
+
+# Przeładuj Hyprlanda i powiedz, co się naprawdę stało. Kod 2 = nowe błędy configu
+# (wołający cofa zmianę), reszta kodów jak w hypr_reload_checked.
+#   $1 błędy configu sprzed zapisu (hypr_config_errors)
+reload_hyprland() {
+    local errors rc
+    errors="$(hypr_reload_checked "$1")"; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}✓ Hyprland reloaded, no config errors.${NC}" ;;
+        1) echo -e "  ${YELLOW}⚠ Hyprland did not respond — saved, reload it manually.${NC}" ;;
+        2) echo -e "  ${RED}✗ Hyprland reports a config error:${NC}"
+           printf '    %s\n' "$errors" | head -5 ;;
+        3) echo -e "  ${YELLOW}⚠ No Hyprland session — saved, applies when Hyprland starts.${NC}" ;;
+    esac
+    return "$rc"
+}
+
+# Plik bindów ma być taki jak przed zmianą. Kod 0 tylko wtedy, gdy odczyt równa
+# się kopii: sam zapis bez odczytu nie jest dowodem.
+restore_binds() {
+    [[ "$(cat "$BINDS_CONF" 2>/dev/null)" == "$1" ]] && return 0
+    printf '%s\n' "$1" > "$BINDS_CONF"
+    [[ "$(cat "$BINDS_CONF" 2>/dev/null)" == "$1" ]]
+}
+
+# Zapis się nie udał (pełny dysk, plik tylko do odczytu): bez przeładowania
+# i bez zielonego komunikatu. $1 = zawartość sprzed zmiany.
+report_write_failed() {
+    if restore_binds "$1"; then
+        echo -e "  ${RED}✗ Could not write ${BINDS_CONF} — nothing was changed.${NC}"
+    else
+        echo -e "  ${RED}✗ Could not write ${BINDS_CONF} and it no longer matches the old content — check it by hand.${NC}"
     fi
     return 0
 }
 
-# Przeładuj Hyprlanda, żeby bind działał od razu
-reload_hyprland() {
-    if command -v hyprctl &>/dev/null; then
-        hyprctl reload &>/dev/null
-        echo -e "  ${GREEN}✓ Hyprland reloaded — the bind works immediately.${NC}"
-    else
-        echo -e "  ${YELLOW}⚠ hyprctl unavailable — reload Hyprland manually.${NC}"
-    fi
+# Wspólny koniec [a]/[e]/[d], wołany po zapisie potwierdzonym odczytem pliku.
+# Zielony komunikat pada dopiero po przeładowaniu bez błędów; przy błędzie
+# configu plik wraca do kopii, a wynik cofnięcia też jest odczytany.
+#   $1 zawartość sprzed zmiany, $2 tekst sukcesu, $3 co zostało zapisane,
+#   $4 tekst cofnięcia, $5 błędy configu odczytane PRZED zapisem
+finish_bind_change() {
+    local backup="$1" done_msg="$2" saved_msg="$3" undone_msg="$4" errors_before="$5" rc
+    reload_hyprland "$errors_before"; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}✓ ${done_msg}${NC}" ;;
+        2) if ! restore_binds "$backup"; then
+               echo -e "  ${RED}✗ Could not restore ${BINDS_CONF} — remove the line named above by hand.${NC}"
+           elif hypr_reload_checked "$errors_before" >/dev/null; then
+               echo -e "  ${YELLOW}↩ ${undone_msg}${NC}"
+           else
+               echo -e "  ${YELLOW}↩ ${undone_msg} Hyprland did not confirm the reload — reload it manually.${NC}"
+           fi ;;
+        *) echo -e "  ${YELLOW}${saved_msg}${NC}" ;;
+    esac
+    return 0
 }
 
 # ─── PODGLĄD WSZYSTKICH SKRÓTÓW ──────────────────────────────────────────────
@@ -161,8 +209,8 @@ print_binds_from() {
 
         # exec_cmd("...") → pokaż polecenie; exec_cmd(zmienna) → rozwiń z
         # hyprland.lua; inne dyspozytory → pokaż wywołanie hl.dsp bez opcji bindu
-        if [[ "$rest" =~ ^hl\.dsp\.exec_cmd\(\"([^\"]*)\"\) ]]; then
-            action="${BASH_REMATCH[1]}"
+        if [[ "$rest" =~ ^hl\.dsp\.exec_cmd\(\"((\\.|[^\"\\])*)\"\) ]]; then
+            action="$(lua_unescape "${BASH_REMATCH[1]}")"
         elif [[ "$rest" =~ ^hl\.dsp\.exec_cmd\(([A-Za-z_][A-Za-z0-9_]*)\) ]]; then
             var="${BASH_REMATCH[1]}"
             action="${HYPR_VARS[$var]:-\$$var}"
@@ -219,27 +267,32 @@ show_all_binds() {
 
 add_bind() {
     echo ""
-    read -rp "  Key (e.g. g, F5, semicolon, minus): " key
-    key=$(trim "$key")
+    local raw combo key cmd bin
+    read -rp "  Key (e.g. g, F5, semicolon, SHIFT+g, CTRL+ALT+F5): " raw
+    raw=$(trim "$raw")
 
-    if [[ -z "$key" ]]; then
+    if [[ -z "$raw" ]]; then
         echo -e "  ${YELLOW}⚠ Empty key — cancelled.${NC}"
         return
     fi
-    # Nazwa keysym Hyprlanda: litera/cyfra albo nazwa bez spacji i przecinków
-    if [[ ! "$key" =~ ^[A-Za-z0-9_]+$ ]]; then
-        echo -e "  ${RED}✗ '${key}' does not look like a key name (no spaces or commas).${NC}"
+    if ! combo="$(normalize_key_combo "$raw")"; then
+        echo -e "  ${RED}✗ '${raw}' does not look like a key (use SHIFT, CTRL or ALT before the key name).${NC}"
         return
     fi
+    key="${combo##* }"
     # Klawisze-modyfikatory dokładają własny mod do maski w chwili naciśnięcia,
     # więc prosty bind Super+<modyfikator> nigdy nie odpali (wiki: Binding modkeys
     # only) — odrzucamy, zamiast pozwolić na martwy bind.
-    if [[ "$key" =~ ^(Shift|Control|Alt|Super|Meta|Hyper)_(L|R)$ ]]; then
+    if [[ "${key,,}" =~ ^(shift|control|ctrl|alt|super|meta|hyper)_(l|r)$ ]]; then
         echo -e "  ${RED}✗ '${key}' is a modifier key — a plain Super+${key} bind would never fire.${NC}"
         return
     fi
-    if key_taken "$key"; then
-        echo -e "  ${RED}✗ Super+${key} is already taken (by archenemy or one of your binds).${NC}"
+    if ! key_name_valid "$key"; then
+        echo -e "  ${RED}✗ '${key}' is not a key name Hyprland knows (e.g. g, F5, Return, semicolon).${NC}"
+        return
+    fi
+    if key_taken "$combo"; then
+        echo -e "  ${RED}✗ Super + ${combo} is already taken (by archenemy or one of your binds).${NC}"
         return
     fi
 
@@ -249,44 +302,96 @@ add_bind() {
         echo -e "  ${YELLOW}⚠ Empty command — cancelled.${NC}"
         return
     fi
-    # Komenda ląduje w stringu Lua — cudzysłów/backslash rozbiłyby składnię pliku.
-    if [[ "$cmd" == *'"'* || "$cmd" == *'\'* ]]; then
-        echo -e "  ${RED}✗ Command must not contain \" or \\ (it is written into a Lua string).${NC}"
-        return
-    fi
 
     # Ostrzeż, jeśli program nie jest zainstalowany (bind i tak można dodać)
-    local bin="${cmd%% *}"
+    bin="${cmd%% *}"
     if ! command -v "$bin" &>/dev/null; then
         echo -e "  ${YELLOW}⚠ '${bin}' not found in PATH.${NC}"
-        read -rp "  Add anyway? [y/N]: " ans
-        [[ "$ans" =~ ^[Yy]$ ]] || return
+        confirm "Add anyway?" N || return
     fi
 
-    echo "hl.bind(mainMod .. \" + $key\", hl.dsp.exec_cmd(\"$cmd\"))" >> "$BINDS_CONF"
-    echo -e "  ${GREEN}✓ Added: Super+${key} → ${cmd}${NC}"
-    reload_hyprland
+    local backup line errors_before
+    backup="$(cat "$BINDS_CONF")"
+    errors_before="$(hypr_config_errors)"
+    line="$(format_bind_line "$combo" "$cmd")"
+    # Dowodem zapisu jest ostatnia linia pliku, nie kod wyjścia dopisania.
+    printf '%s\n' "$line" >> "$BINDS_CONF"
+    if [[ "$(tail -n 1 "$BINDS_CONF" 2>/dev/null)" != "$line" ]]; then
+        report_write_failed "$backup"
+        return 0
+    fi
+    finish_bind_change "$backup" "Added: Super + ${combo} → ${cmd}" \
+        "Saved: Super + ${combo} → ${cmd}" "Bind removed again — nothing was added." "$errors_before"
+}
+
+edit_bind() {
+    local total num cmd backup key errors_before
+    total="$(bind_count "$BINDS_CONF")"
+    if [[ "$total" -eq 0 ]]; then
+        echo -e "  ${YELLOW}⚠ Nothing to edit.${NC}"
+        return
+    fi
+    echo ""
+    local -a choices=()
+    while IFS=$'\t' read -r _ key cmd; do choices+=("Super + ${key} → ${cmd}"); done < <(user_bind_lines "$BINDS_CONF")
+    tui_menu_lines 0 "${choices[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    num=$((TUI_MENU_INDEX + 1))
+    if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
+        echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
+        return
+    fi
+    read -rp "  New command (Enter = keep): " cmd
+    cmd=$(trim "$cmd")
+    [[ -n "$cmd" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    backup="$(cat "$BINDS_CONF")"
+    errors_before="$(hypr_config_errors)"
+    replace_bind_command "$BINDS_CONF" "$num" "$cmd"
+    case $? in
+        0) ;;
+        1) echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"; return 0 ;;
+        *) report_write_failed "$backup"; return 0 ;;
+    esac
+    # Dowodem zapisu jest komenda odczytana z tej samej pozycji listy.
+    if [[ "$(user_bind_lines "$BINDS_CONF" | sed -n "${num}p" | cut -f3-)" != "$cmd" ]]; then
+        report_write_failed "$backup"
+        return 0
+    fi
+    finish_bind_change "$backup" "Changed: bind ${num} → ${cmd}" \
+        "Saved: bind ${num} → ${cmd}" "Change undone — the bind runs the old command." "$errors_before"
 }
 
 remove_bind() {
-    # Zbierz numery linii z bindami, w kolejności wyświetlania
-    mapfile -t BIND_LINES < <(grep -n '^hl\.bind(' "$BINDS_CONF" | cut -d: -f1)
-    if [[ ${#BIND_LINES[@]} -eq 0 ]]; then
+    local total num key cmd
+    total="$(bind_count "$BINDS_CONF")"
+    if [[ "$total" -eq 0 ]]; then
         echo -e "  ${YELLOW}⚠ Nothing to remove.${NC}"
         return
     fi
 
     echo ""
-    read -rp "  Bind number to remove (Enter = cancel): " num
-    [[ -z "$num" ]] && return
-    if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > ${#BIND_LINES[@]} )); then
+    local -a choices=()
+    while IFS=$'\t' read -r _ key cmd; do choices+=("Super + ${key} → ${cmd}"); done < <(user_bind_lines "$BINDS_CONF")
+    tui_menu_lines 0 "${choices[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    num=$((TUI_MENU_INDEX + 1))
+    if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 1 || num > total )); then
         echo -e "  ${RED}✗ There is no bind number '${num}'.${NC}"
         return
     fi
 
-    sed -i "${BIND_LINES[$((num - 1))]}d" "$BINDS_CONF"
-    echo -e "  ${GREEN}✓ Removed.${NC}"
-    reload_hyprland
+    # Ten sam wybór linii co lista wyżej — numer N kasuje dokładnie linię
+    # pokazaną jako N, niezależnie od innych `hl.bind(` w pliku.
+    confirm "Remove ${choices[$((num - 1))]}?" N || { echo "Cancelled."; return; }
+    local backup errors_before
+    backup="$(cat "$BINDS_CONF")"
+    errors_before="$(hypr_config_errors)"
+    # Numer sprawdzony wyżej, więc porażka tutaj to nieudany zapis. Dowodem
+    # usunięcia jest lista krótsza o jeden bind.
+    if ! remove_bind_by_index "$BINDS_CONF" "$num" || [[ "$(bind_count "$BINDS_CONF")" -ne $((total - 1)) ]]; then
+        report_write_failed "$backup"
+        return 0
+    fi
+    finish_bind_change "$backup" "Removed: ${choices[$((num - 1))]}" \
+        "Saved: ${choices[$((num - 1))]} is off the list." "Bind restored — nothing was removed." "$errors_before"
 }
 
 # ─── TRYB WORKSPACE'ÓW (shared/decades) ──────────────────────────────────────
@@ -306,38 +411,76 @@ workspace_mode_menu() {
     echo -e "    ${BLUE}shared${NC}  — 10 global workspaces (1-10) shared by all monitors"
     echo -e "    ${BLUE}decades${NC} — each monitor gets its own 1-10 (isolated decades)"
     echo ""
-    local ans; ans="$(read_key "  Switch to '${other}'? [y/N]: ")"
-    [[ "$ans" =~ ^[Yy]$ ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    confirm "Switch to '${other}'?" N || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
 
-    if [[ ! -x "$switch" ]]; then
+    # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
+    # (brak bitu w indeksie gita blokował tak install.sh w update-archenemy.sh
+    # — audyt 2026-09-23; tu ta sama zasada).
+    if [[ ! -f "$switch" ]]; then
         echo -e "  ${RED}✗ Missing ${switch} — run ./install/install.sh once.${NC}"
         return
     fi
     bash "$switch" "$other"
 }
 
+# white-blue_beta (legacy) nie ma modułów custom/volumebar i custom/timer, więc
+# zapis jest tam bez efektu. Menu ma to powiedzieć, nie udawać, że działa.
+warn_if_beta() {
+    local rice=""
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    [[ "$rice" == "white-blue_beta" ]] || return 0
+    echo -e "  ${YELLOW}⚠ white-blue_beta has no ${1} — switch rice (Super+T) to use this.${NC}"
+}
+
+# Koniec zmiany ustawienia paska. Plik jest już zapisany i odczytany (write_dat),
+# ale zielony komunikat pada tylko wtedy, gdy pasek może pokazać zmianę: rice ma
+# moduł, waybar działa i przyjął sygnał (pkill oddaje 1, gdy nie trafił w żaden
+# proces). Inaczej mówimy, co jest zapisane i kiedy będzie to widać.
+#   $1 numer sygnału, $2 tekst sukcesu, $3 co zapisano, $4 nazwa modułu
+bar_change_report() {
+    local signal="$1" shown_msg="$2" saved_msg="$3" module="$4" rice=""
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    if [[ "$rice" == "white-blue_beta" ]]; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. white-blue_beta has no ${module} — it shows after you switch rice (Super+T).${NC}"
+    elif ! pgrep -x waybar >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar is not running — the bar shows it once waybar starts.${NC}"
+    elif ! pkill -RTMIN+"$signal" waybar 2>/dev/null; then
+        echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar did not take the refresh signal — the bar shows it on its next refresh or after waybar restarts.${NC}"
+    else
+        echo -e "  ${GREEN}✓ ${shown_msg}${NC}"
+    fi
+    return 0
+}
+
 # ─── STYL PASKA GŁOŚNOŚCI (waybar) ───────────────────────────────────────────
+
+# Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
+# (w tym nazwy stylów wycofanych 2026-09-03) jest efektywnie "line" — menu
+# nie może pokazywać stylu, którego skrypt już nie zna.
+volume_style_current() {
+    local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat" cur="line"
+    [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
+    cur="${cur//[[:space:]]/}"
+    [[ "$cur" == "ticks" || "$cur" == "solid" ]] || cur="line"
+    printf '%s' "$cur"
+}
 
 # Wybór stylu paska custom/volumebar (line/ticks/solid). Zapis do
 # data/volume-bar-style.dat (czyta go scripts/waybar/volume-bar.sh), potem
-# sygnał 10 do waybara = pasek przerysowuje się od razu.
+# sygnał 10 do waybara = pasek przerysowuje się od razu. Wynik sygnału jest
+# sprawdzany (bar_change_report).
 volume_style_menu() {
     local style_dat="$ARCHENEMY_DIR/data/volume-bar-style.dat"
-    local cur="line"
-    [[ -f "$style_dat" ]] && cur="$(<"$style_dat")"
-    cur="${cur//[[:space:]]/}"
-    # Ta sama interpretacja co w volume-bar.sh: wszystko poza "ticks"/"solid"
-    # (w tym nazwy stylów wycofanych 2026-09-03) jest efektywnie "line" — menu
-    # nie może pokazywać stylu, którego skrypt już nie zna.
-    [[ "$cur" == "ticks" || "$cur" == "solid" ]] || cur="line"
+    local cur; cur="$(volume_style_current)"
 
     echo ""
     echo -e "  Volume bar style (waybar): ${CYAN}${cur}${NC}"
+    warn_if_beta "volume bar module"
     echo -e "    ${BLUE}1${NC}) line    ━━━━━━────"
     echo -e "    ${BLUE}2${NC}) ticks   ▮▮▮▮▮▮▯▯▯▯"
     echo -e "    ${BLUE}3${NC}) solid   ▬▬▬▬▬▬▬▬▬▬▬▬────────"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "line" "ticks" "solid" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
     local target=""
     case "$ans" in
         1) target="line" ;;
@@ -347,16 +490,163 @@ volume_style_menu() {
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    write_dat "$style_dat" "$target" || return
-    pkill -RTMIN+10 waybar 2>/dev/null
-    echo -e "  ${GREEN}✓ Volume bar style: ${target}${NC}"
+    write_dat "$style_dat" "$target" || return 1
+    bar_change_report 10 "Volume bar style: ${target}" "volume bar style ${target}" "volume bar module"
+}
+
+# ─── WYJŚCIE AUDIO mpd (pipewire / alsa) ─────────────────────────────────────
+
+# Menu tylko pyta; zapis, restart i test żyją w lib/mpd-output.sh.
+report_mpd_result() {
+    local rc="$1" label="$2" detail="$3"
+    case "$rc" in
+        0) echo -e "  ${GREEN}✓ mpd output: ${label} (test playback OK)${NC}" ;;
+        3) echo -e "  ${YELLOW}⚠ Saved '${label}', but NOT verified: the queue is empty, so there was nothing to play.${NC}"
+           echo -e "  ${YELLOW}  Add a song and play it; if it stays silent, come back here.${NC}" ;;
+        *) echo -e "  ${RED}✗ ${label}: ${detail}${NC}" ;;
+    esac
+}
+
+mpd_output_menu() {
+    if ! command -v mpd >/dev/null 2>&1 || ! command -v mpc >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}mpd/mpc not installed — the music stack is optional (install.sh → additional packages).${NC}"
+        return
+    fi
+    local blocker
+    if ! blocker="$(mpd_output_blocker)"; then
+        echo -e "  ${RED}✗ ${blocker}${NC}"
+        return
+    fi
+
+    echo ""
+    echo -e "  mpd audio output: ${CYAN}$(mpd_current_output)${NC}"
+    echo -e "    ${BLUE}1${NC}) pipewire  — recommended: mixes with the desktop, volume keys work,"
+    echo -e "                  music-reactive wallpapers (♪) hear mpd"
+    echo -e "    ${BLUE}2${NC}) alsa      — EXCLUSIVE hw: device (bit-perfect / experiments)"
+    echo ""
+    echo -e "  ${YELLOW}⚠ ALSA warning:${NC} while mpd holds the sound card, notifications, the browser,"
+    echo -e "    volume keys and ♪ wallpapers may lose audio; if PipeWire holds the card, mpd"
+    echo -e "    fails to open it. A 1-second test plays from your queue after switching; on"
+    echo -e "    failure the output goes back to pipewire automatically. PipeWire itself is"
+    echo -e "    never stopped by this menu. mpd restarts."
+    echo ""
+    local ans msg rc; tui_menu_lines 0 "pipewire — recommended desktop audio" "alsa — exclusive hardware device" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    case "$ans" in
+        1)
+            msg="$(apply_mpd_output pipewire)"; rc=$?
+            report_mpd_result "$rc" "pipewire" "$msg"
+            ;;
+        2)
+            local devices=() line
+            while IFS= read -r line; do [[ -n "$line" ]] && devices+=("$line"); done < <(list_alsa_playback)
+            if [[ ${#devices[@]} -eq 0 ]]; then
+                echo -e "  ${RED}✗ No ALSA playback devices found in /proc/asound.${NC}"
+                return
+            fi
+            echo ""
+            local i hw busy
+            for i in "${!devices[@]}"; do
+                hw="${devices[$i]%%$'\t'*}"
+                busy=""
+                alsa_device_busy "$hw" && busy=" ${YELLOW}(busy — held by PipeWire?)${NC}"
+                printf "    ${BLUE}%d${NC}) %-10s %s%b\n" "$((i+1))" "$hw" "${devices[$i]#*$'\t'}" "$busy"
+            done
+            echo ""
+            local -a labels=(); for line in "${devices[@]}"; do labels+=("${line%%$'\t'*} — ${line#*$'\t'}"); done
+            tui_menu_lines 0 "${labels[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+            (( ans >= 1 && ans <= ${#devices[@]} )) || { echo -e "  ${RED}✗ Out of range.${NC}"; return; }
+            hw="${devices[$((ans-1))]%%$'\t'*}"
+            if alsa_device_busy "$hw"; then
+                echo -e "  ${YELLOW}⚠ $hw is open right now — mpd will most likely fail to grab it.${NC}"
+                confirm "Try anyway?" N || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+            fi
+            local prev_state; prev_state="$(mpd_play_state)"
+            msg="$(apply_mpd_output alsa "$hw")"; rc=$?
+            report_mpd_result "$rc" "alsa $hw" "$msg"
+            (( rc == 1 )) || { echo -e "  ${YELLOW}  Back to pipewire any time: Super+A → [o] → 3 → 1.${NC}"; return; }
+
+            echo -e "  ${YELLOW}↩ Rolling back to pipewire…${NC}"
+            msg="$(apply_mpd_output pipewire "" "$prev_state")"; rc=$?
+            if (( rc != 1 )); then
+                echo -e "  ${GREEN}✓ mpd output: pipewire (restored)${NC}"
+                notify-send "archenemy" "mpd: ALSA $hw failed — output restored to pipewire." 2>/dev/null
+            else
+                echo -e "  ${RED}✗ Rollback failed too: ${msg}${NC}"
+                notify-send -u critical "archenemy" "mpd: ALSA failed and pipewire rollback failed — see journalctl --user -u mpd" 2>/dev/null
+            fi
+            ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
+        *)  echo -e "  ${RED}✗ Pick 1 or 2.${NC}" ;;
+    esac
+}
+
+# ─── AUDIO SYSTEMU ───────────────────────────────────────────────────────────
+
+# Wybór domyślnego urządzenia. Lista, zapis i sprawdzenie: audio-devices.sh.
+pick_audio_device() {
+    local kind="$1" label="$2" script="$ARCHENEMY_DIR/scripts/appbinds/audio-devices.sh"
+    local -a devices=()
+    local line i cur mark ans out rc
+    while IFS= read -r line; do [[ -n "$line" ]] && devices+=("$line"); done < <(bash "$script" list "$kind" 2>/dev/null)
+    if [[ ${#devices[@]} -eq 0 ]]; then
+        echo -e "  ${RED}✗ No ${label} devices found.${NC}"
+        return
+    fi
+    cur="$(bash "$script" current "$kind" 2>/dev/null)"
+    echo ""
+    for i in "${!devices[@]}"; do
+        mark=" "; [[ "${devices[$i]%%$'\t'*}" == "$cur" ]] && mark="*"
+        printf "    ${BLUE}%d${NC}) %s %s\n" "$((i+1))" "$mark" "${devices[$i]#*$'\t'}"
+    done
+    echo ""
+    local -a labels=(); for line in "${devices[@]}"; do labels+=("${line#*$'\t'}"); done
+    tui_menu_lines 0 "${labels[@]}" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    (( ans >= 1 && ans <= ${#devices[@]} )) || { echo -e "  ${RED}✗ Out of range.${NC}"; return; }
+    out="$(bash "$script" set "$kind" "${devices[$((ans-1))]%%$'\t'*}" 2>&1)"; rc=$?
+    case $rc in
+        0) echo -e "  ${GREEN}${out}${NC}" ;;
+        2) echo -e "  ${YELLOW}${out}${NC}" ;;
+        *) echo -e "  ${RED}${out}${NC}" ;;
+    esac
+}
+
+audio_menu() {
+    local script="$ARCHENEMY_DIR/scripts/appbinds/audio-devices.sh" out in
+    out="$(bash "$script" describe sink 2>/dev/null)"
+    in="$(bash "$script" describe source 2>/dev/null)"
+    echo ""
+    echo -e "  Output: ${CYAN}${out:-audio server not responding}${NC}"
+    echo -e "  Input:  ${CYAN}${in:-audio server not responding}${NC}"
+    echo ""
+    echo -e "    ${BLUE}1${NC}) output device for all apps (speakers, headset, HDMI)"
+    echo -e "    ${BLUE}2${NC}) input device (microphone)"
+    echo -e "    ${BLUE}3${NC}) mpd music output (pipewire / alsa)"
+    echo -e "    ${BLUE}4${NC}) open pavucontrol (per-app streams, ports, profiles)"
+    echo ""
+    local ans; tui_menu_lines 0 "output device for all apps" "input device (microphone)" "mpd music output (pipewire / alsa)" "open pavucontrol" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    case "$ans" in
+        1) pick_audio_device sink "output" ;;
+        2) pick_audio_device source "input" ;;
+        3) mpd_output_menu ;;
+        4)
+            if command -v pavucontrol >/dev/null 2>&1; then
+                setsid pavucontrol >/dev/null 2>&1 &
+                echo -e "  ${GREEN}✓ pavucontrol opened.${NC}"
+            else
+                echo -e "  ${RED}✗ pavucontrol not found.${NC}"
+            fi
+            ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
+        *) echo -e "  ${RED}✗ Pick 1, 2, 3 or 4.${NC}" ;;
+    esac
 }
 
 # ─── TIMER (waybar) ──────────────────────────────────────────────────────────
 
 # Ustawienia modułu custom/timer: włączenie na pasku, domyślny czas odliczania
 # i kolor tekstu. Pliki data/timer-*.dat czyta scripts/waybar/timer.sh; po
-# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu.
+# każdej zmianie leci sygnał 11 = pasek przerysowuje się od razu. Zielony
+# komunikat pada dopiero po wyniku sygnału (bar_change_report).
 # Sam bieg timera (start/pauza/reset) obsługuje pasek, nie to menu.
 timer_menu() {
     local lib="$ARCHENEMY_DIR/scripts/waybar/lib/timer-state.sh"
@@ -373,6 +663,7 @@ timer_menu() {
 
     echo ""
     echo -e "  Timer (waybar): ${CYAN}${enabled_label}${NC} · ${CYAN}$(timer_duration_minutes) min${NC} · ${CYAN}$(timer_color)${NC} · now: ${CYAN}${TIMER_STATUS}${NC}"
+    warn_if_beta "timer module"
     if [[ "$enabled_label" == "on" ]]; then
         echo -e "    ${BLUE}1${NC}) turn off"
     else
@@ -381,17 +672,18 @@ timer_menu() {
     echo -e "    ${BLUE}2${NC}) default duration (minutes)"
     echo -e "    ${BLUE}3${NC}) text colour (hex)"
     echo ""
-    local ans; ans="$(read_key "  Choose [1-3, Esc = cancel]: ")"
+    local ans; tui_menu_lines 0 "$( [[ "$enabled_label" == on ]] && echo 'turn off' || echo 'turn on' )" "default duration (minutes)" "text colour (hex)" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    local shown_msg saved_msg
 
     case "$ans" in
         1)
             local target="1"
             [[ "$enabled_label" == "on" ]] && target="0"
-            write_dat "$TIMER_ENABLED_DAT" "$target" || return
+            write_dat "$TIMER_ENABLED_DAT" "$target" || return 1
             if [[ "$target" == "1" ]]; then
-                echo -e "  ${GREEN}✓ Timer shown on the bar.${NC}"
+                shown_msg="Timer shown on the bar."; saved_msg="timer on"
             else
-                echo -e "  ${GREEN}✓ Timer hidden (the clock goes back to the exact centre).${NC}"
+                shown_msg="Timer hidden (the clock goes back to the exact centre)."; saved_msg="timer off"
             fi
             ;;
         2)
@@ -402,7 +694,7 @@ timer_menu() {
                 echo -e "  ${RED}✗ '${mins}' is not a number between 1 and ${TIMER_MAX_MINUTES}.${NC}"
                 return
             fi
-            write_dat "$TIMER_DURATION_DAT" "$mins" || return
+            write_dat "$TIMER_DURATION_DAT" "$mins" || return 1
             # Nowy czas ma być widoczny od razu — ale tylko wtedy, gdy nie
             # przerwie trwającego odliczania (reset zabiłby bieg w połowie).
             if [[ "$TIMER_STATUS" == "running" ]]; then
@@ -410,7 +702,7 @@ timer_menu() {
             else
                 bash "$ARCHENEMY_DIR/scripts/waybar/timer-ctl.sh" reset
             fi
-            echo -e "  ${GREEN}✓ Default duration: ${mins} min${NC}"
+            shown_msg="Default duration: ${mins} min"; saved_msg="default duration ${mins} min"
             ;;
         3)
             local hex
@@ -421,48 +713,533 @@ timer_menu() {
                 echo -e "  ${RED}✗ '${hex}' is not a #rrggbb colour.${NC}"
                 return
             fi
-            write_dat "$TIMER_COLOR_DAT" "$hex" || return
-            echo -e "  ${GREEN}✓ Timer colour: ${hex}${NC}"
+            write_dat "$TIMER_COLOR_DAT" "$hex" || return 1
+            shown_msg="Timer colour: ${hex}"; saved_msg="timer colour ${hex}"
             ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
         *)  echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
     esac
 
-    pkill -RTMIN+11 waybar 2>/dev/null
+    bar_change_report 11 "$shown_msg" "$saved_msg" "timer module"
+}
+
+# ─── KEYBOARD LAYOUTS ────────────────────────────────────────────────────────
+
+# Nowa kolejność układów ekranem wyboru: dla każdego miejsca lista pozostałych
+# układów (strzałki, j/k, Enter, cyfra; Esc anuluje całość), ostatni układ
+# wchodzi sam. Skrót z czasów wpisywania zostaje: na pierwszym ekranie można
+# wpisać całą permutację cyframi i Enter (np. `2 1`); jeden numer wybiera układ
+# na pierwsze miejsce. $1 = keyboard-layouts.sh (nazwy), reszta = kody w obecnej
+# kolejności. Wynik w LAYOUT_ORDER (kody po przecinku). Kod 1 = anulowane,
+# 2 = błędne numery (komunikat wypisany).
+LAYOUT_ORDER=""
+# shellcheck disable=SC2034  # zmienne TUI_MENU_* czyta tui_menu z lib/tui.sh
+pick_layout_order() {
+    local script="$1"; shift
+    local -a remaining=("$@") all=("$@") chosen=() labels=() picks=() TUI_MENU_KEYS=()
+    local total=$# code n seen=" "
+    local TUI_MENU_CAPTURE_DIGITS=1 TUI_MENU_INPUT="" TUI_MENU_CHECKLIST=0 TUI_MENU_NO_DIGITS=0
+    echo -e "  Pick the layout for each place, or type the whole order as numbers and"
+    echo -e "  press Enter, e.g. ${CYAN}$(seq -s ' ' "$total" -1 1)${NC}."
+    while (( ${#remaining[@]} > 1 )); do
+        echo "  Layout #$(( ${#chosen[@]} + 1 )):"
+        labels=()
+        for code in "${remaining[@]}"; do
+            tui_fit "$code" 4
+            labels+=("$FIT $(bash "$script" name "$code")")
+        done
+        TUI_MENU_INPUT=""
+        tui_menu 0 "${labels[@]}" || return 1
+        if (( TUI_MENU_INDEX < 0 )); then
+            # Wpisane cyfry (tylko pierwszy ekran, numery jak na liście wyżej).
+            read -ra picks <<< "${TUI_MENU_INPUT//,/ }"
+            for n in "${picks[@]}"; do
+                if [[ ! "$n" =~ ^[0-9]+$ ]] || (( 10#$n < 1 || 10#$n > total )) || [[ "$seen" == *" $((10#$n)) "* ]]; then
+                    echo -e "  ${RED}✗ Use each number 1–${total} exactly once.${NC}"; return 2
+                fi
+                seen+="$((10#$n)) "
+            done
+            if (( ${#picks[@]} == total )); then
+                for n in "${picks[@]}"; do chosen+=("${all[$((10#$n - 1))]}"); done
+                remaining=()
+                break
+            elif (( ${#picks[@]} != 1 )); then
+                echo -e "  ${RED}✗ Use each number 1–${total} exactly once.${NC}"; return 2
+            fi
+            TUI_MENU_INDEX=$(( 10#${picks[0]} - 1 ))
+        fi
+        chosen+=("${remaining[$TUI_MENU_INDEX]}")
+        unset 'remaining[TUI_MENU_INDEX]'
+        remaining=("${remaining[@]}")
+        TUI_MENU_CAPTURE_DIGITS=0
+    done
+    chosen+=("${remaining[@]}")
+    LAYOUT_ORDER="$(IFS=','; printf '%s' "${chosen[*]}")"
+    return 0
+}
+
+# Lista 1–4 układów klawiatury i ich kolejność. Zapis, reload i sprawdzenie
+# robi scripts/hypr/keyboard-layouts.sh (jedna droga — te same skrypty wołają
+# bindy Super+Ctrl+1…4); to menu tylko zbiera wybór. Super+K = następny układ.
+# white-blue_beta (legacy) nie czyta tej listy ani nie ma Super+Ctrl+1…4.
+keyboard_layouts_menu() {
+    local script="$ARCHENEMY_DIR/scripts/hypr/keyboard-layouts.sh"
+    if [[ ! -f "$script" ]]; then
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([u]).${NC}"
+        return
+    fi
+    local cur rice="" i
+    cur="$(bash "$script" show)"
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    local -a L; IFS=',' read -ra L <<< "$cur"
+
+    echo ""
+    echo -e "  Keyboard layouts (${CYAN}Super+K${NC} = next; #1 is active after login):"
+    for i in "${!L[@]}"; do
+        printf "    ${BLUE}%d${NC}) %-4s %-24s Super+Ctrl+%d\n" "$((i+1))" "${L[$i]}" "$(bash "$script" name "${L[$i]}")" "$((i+1))"
+    done
+    if [[ "$rice" == "white-blue_beta" ]]; then
+        echo -e "  ${YELLOW}⚠ white-blue_beta keeps pl,us and has no Super+Ctrl+1…4 — switch rice (Super+T) to use this.${NC}"
+    fi
+    echo ""
+    echo -e "    ${BLUE}1${NC}) choose layouts (how many and which)"
+    echo -e "    ${BLUE}2${NC}) change order (optional)"
+    echo -e "    ${BLUE}3${NC}) reset to pl,us"
+    echo ""
+    local ans; tui_menu_lines 0 "choose layouts (how many and which)" "change order (optional)" "reset to pl,us" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    local new=""
+    case "$ans" in
+        1)
+            local count; tui_menu_lines 0 "1 layout" "2 layouts" "3 layouts" "4 layouts" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; count=$((TUI_MENU_INDEX+1))
+            local -a P=() codes=()
+            local line
+            while IFS= read -r line; do [[ -n "$line" ]] && P+=("$line"); done < <(bash "$script" presets)
+            echo ""
+            for i in "${!P[@]}"; do
+                printf "  ${BLUE}%2d${NC}) %-3s %-22s" "$((i+1))" "${P[$i]%%$'\t'*}" "${P[$i]#*$'\t'}"
+                (( (i+1) % 3 == 0 )) && echo ""
+            done
+            echo ""; echo ""
+            echo -e "  Type a number from the list or any XKB code (e.g. ${CYAN}de${NC}, ${CYAN}ie${NC}); Enter = cancel."
+            local pick code
+            local -a preset_labels=(); for line in "${P[@]}"; do preset_labels+=("${line%%$'\t'*} — ${line#*$'\t'}"); done
+            for (( i = 1; i <= count; i++ )); do
+                echo "  Layout #$i (choose preset or custom XKB code):"
+                tui_menu_lines 0 "${preset_labels[@]}" "Custom XKB code…" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+                if (( TUI_MENU_INDEX == ${#P[@]} )); then read -rp "  XKB code: " pick; else pick=$((TUI_MENU_INDEX+1)); fi
+                pick=$(trim "$pick")
+                [[ -n "$pick" ]] || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+                if [[ "$pick" =~ ^[0-9]+$ ]]; then
+                    (( pick >= 1 && pick <= ${#P[@]} )) || { echo -e "  ${RED}✗ No preset #$pick.${NC}"; (( i-- )); continue; }
+                    code="${P[$((pick-1))]%%$'\t'*}"
+                else
+                    code="${pick,,}"
+                fi
+                if [[ " ${codes[*]} " == *" $code "* ]]; then
+                    echo -e "  ${RED}✗ '$code' is already on the list.${NC}"; (( i-- )); continue
+                fi
+                codes+=("$code")
+            done
+            new="$(IFS=','; printf '%s' "${codes[*]}")"
+            ;;
+        2)
+            if (( ${#L[@]} < 2 )); then
+                echo -e "  ${YELLOW}Only one layout — nothing to reorder.${NC}"; return
+            fi
+            pick_layout_order "$script" "${L[@]}"
+            case $? in
+                0) ;;
+                1) echo -e "  ${YELLOW}Cancelled.${NC}"; return 0 ;;
+                *) return 0 ;;
+            esac
+            new="$LAYOUT_ORDER"
+            if [[ "$new" == "$cur" ]]; then
+                echo -e "  ${YELLOW}Order unchanged.${NC}"; return 0
+            fi
+            ;;
+        3) new="reset" ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}"; return ;;
+        *) echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}"; return ;;
+    esac
+
+    local out rc
+    if [[ "$new" == "reset" ]]; then
+        out="$(bash "$script" reset 2>&1)"; rc=$?
+    else
+        out="$(bash "$script" set "$new" 2>&1)"; rc=$?
+    fi
+    case $rc in
+        0) echo -e "  ${GREEN}${out}${NC}" ;;
+        2) echo -e "  ${YELLOW}${out}${NC}" ;;
+        *) echo -e "  ${RED}${out}${NC}" ;;
+    esac
+}
+
+# ─── DIAGNOSTYKA ─────────────────────────────────────────────────────────────
+
+# Zrzut do pliku w katalogu domowym i podgląd. Skrypty tylko czytają system; plik
+# zostaje, bo diagnozę porównuje się przed i po zmianie.
+run_diag_dump() {
+    local script="$ARCHENEMY_DIR/scripts/hypr/$1" name="$2" out
+    if [[ ! -f "$script" ]]; then
+        echo -e "  ${RED}✗ Missing ${script} — update archenemy ([u]).${NC}"
+        return
+    fi
+    out="$HOME/archenemy-diag-${name}-$(date +%Y%m%d-%H%M%S).txt"
+    bash "$script" > "$out" 2>&1
+    if [[ ! -s "$out" ]]; then
+        rm -f "$out"
+        echo -e "  ${RED}✗ ${1} produced no output.${NC}"
+        return
+    fi
+    if command -v less &>/dev/null; then less -R "$out"; else cat "$out"; fi
+    echo -e "  ${GREEN}✓ Saved to ${out}${NC}"
+    echo -e "  ${YELLOW}  It lists your hardware, including monitor serial numbers; keep it private.${NC}"
+}
+
+diagnostics_menu() {
+    local check="$ARCHENEMY_DIR/scripts/hypr/machine-layer-check.sh"
+    echo ""
+    echo -e "  Diagnostics (read-only, nothing is changed):"
+    echo -e "    ${BLUE}1${NC}) config check: generated files against the connected monitors"
+    echo -e "    ${BLUE}2${NC}) workspaces: rules, monitors and windows, saved to a file"
+    echo -e "    ${BLUE}3${NC}) GPU and games: drivers and render GPU, saved to a file"
+    echo ""
+    local ans; tui_menu_lines 0 "config check: generated files against connected monitors" "workspaces: rules, monitors and windows" "GPU and games: drivers and render GPU" || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }; ans=$((TUI_MENU_INDEX+1))
+    case "$ans" in
+        1)
+            if [[ ! -f "$check" ]]; then
+                echo -e "  ${RED}✗ Missing ${check} — update archenemy ([u]).${NC}"
+                return
+            fi
+            echo ""
+            if bash "$check"; then
+                echo -e "  ${GREEN}✓ Config matches this machine.${NC}"
+            else
+                echo -e "  ${YELLOW}⚠ Problems found, see above.${NC}"
+            fi
+            ;;
+        2) run_diag_dump workspace-diag.sh workspaces ;;
+        3) run_diag_dump gaming-diag.sh gaming ;;
+        ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
+        *) echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}" ;;
+    esac
+}
+
+# ─── MENU GŁÓWNE ─────────────────────────────────────────────────────────────
+
+# Lista po lewej, podgląd zaznaczonej pozycji po prawej. Strzałki przesuwają
+# zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
+# i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
+
+MENU_KEYS=(a e d s w n k m v t c f p o h i u)
+declare -A MENU_LABEL=(
+    [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
+    [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
+    [v]="volume bar" [t]="timer" [c]="terminal" [f]="fonts" [p]="autostart" [o]="audio"
+    [h]="shell" [i]="diagnostics" [u]="update archenemy"
+)
+declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [p]="Apps" [h]="System")
+declare -A MENU_STATE=() MENU_PREVIEW=()
+MENU_SEL=0
+MENU_LEFT=48            # szerokość listy
+MENU_PANE_MIN=24        # węższy podgląd nie ma sensu, lista zostaje sama
+MENU_PANE=0
+MENU_LAST_COLS=0
+
+# Wartość ze skryptu `show`/`summary`. Pusto, gdy skryptu nie ma albo nie odpowiada;
+# menu pokazuje wtedy samą etykietę.
+state_from() {
+    local script="$ARCHENEMY_DIR/scripts/$1"
+    [[ -f "$script" ]] || return 0
+    timeout 2 bash "$script" "${@:2}" 2>/dev/null
+}
+
+state_workspaces() {
+    local mode="decades" dat="$ARCHENEMY_DIR/data/workspace-mode.dat"
+    [[ -f "$dat" ]] && mode="$(<"$dat")"
+    printf '%s' "$mode"
+}
+
+state_timer() {
+    local lib="$ARCHENEMY_DIR/scripts/waybar/lib/timer-state.sh"
+    [[ -f "$lib" ]] || return 0
+    # shellcheck source=/dev/null
+    if ( source "$lib"; timer_enabled ); then printf 'on'; else printf 'off'; fi
+}
+
+autostart_ids() {
+    local dat="$ARCHENEMY_DIR/data/autostart-apps.dat"
+    [[ -f "$dat" ]] || return 0
+    grep -vE '^[[:space:]]*(#|$)' "$dat"
+}
+
+item_state() {
+    local n
+    case "$1" in
+        s) n="$(bind_count "$BINDS_CONF")"
+           if (( n == 1 )); then printf '1 bind'; else printf '%d binds' "$n"; fi ;;
+        w) state_workspaces ;;
+        n) state_from hypr/monitor-settings.sh summary ;;
+        k) state_from hypr/keyboard-layouts.sh show ;;
+        m) state_from hypr/mouse-settings.sh summary ;;
+        v) volume_style_current ;;
+        t) state_timer ;;
+        c) state_from appbinds/terminal-settings.sh summary ;;
+        f) state_from appbinds/font-settings.sh summary ;;
+        p) n="$(autostart_ids | wc -l)"
+           if (( n == 1 )); then printf '1 app'; else printf '%d apps' "$n"; fi ;;
+        o) state_from appbinds/audio-devices.sh describe sink ;;
+        h) state_from shell/shell-settings.sh summary ;;
+    esac
+}
+
+# Linie podglądu: pierwszy znak to styl (b tytuł, d przygaszony, n zwykły).
+PV=""
+pv()  { PV+="n${1//$'\t'/ }"$'\n'; }
+pvb() { PV+="b$1"$'\n'; }
+pvd() { PV+="d${1//$'\t'/ }"$'\n'; }
+# Opis zawijany na szerokość podglądu.
+pvw() {
+    local line
+    while IFS= read -r line; do pvd "$line"; done < <(fold -s -w "$MENU_PANE" <<<"$1" | sed 's/[[:space:]]*$//')
+}
+
+preview_binds() {
+    local n=0 key cmd hand
+    while IFS=$'\t' read -r _ key cmd; do
+        n=$((n + 1))
+        key="${key//SHIFT/Shift}"; key="${key//CTRL/Ctrl}"; key="${key//ALT/Alt}"; key="${key// + / }"
+        tui_fit "Super $key" 15
+        pv "$n  $FIT $cmd"
+    done < <(user_bind_lines "$BINDS_CONF")
+    (( n > 0 )) || pvd "No binds yet."
+    hand="$(other_bind_count "$BINDS_CONF")"
+    (( hand == 0 )) || pvd "+ $hand written by hand"
+}
+
+preview_lines_from() {
+    local line
+    while IFS= read -r line; do [[ -n "$line" ]] && pv "$line"; done
+}
+
+build_preview() {
+    local key="$1" cur i code total shown id out in
+    PV=""
+    pvb "${MENU_LABEL[$key]^}"
+    case "$key" in
+        a) pvw "Super + a key runs any command. SHIFT, CTRL and ALT work too."; pv ""; preview_binds ;;
+        e) pvw "Changes the command and keeps the key."; pv ""; preview_binds ;;
+        d) pvw "Removes one of your binds by its number."; pv ""; preview_binds ;;
+        s) pvw "Every shortcut in a pager: rice, workspaces, media keys, hardware and yours." ;;
+        w) cur="$(state_workspaces)"
+           pvw "Now: $cur."; pv ""
+           pv "shared"; pvw "10 workspaces for all monitors."; pv ""
+           pv "decades"; pvw "Each monitor gets its own 1-10." ;;
+        n) pvw "Mode, position and scale on a trial: press y within 15 s."; pv ""
+           preview_lines_from < <(state_from hypr/monitor-settings.sh brief) ;;
+        k) cur="$(state_from hypr/keyboard-layouts.sh show)"
+           pvw "Super+K cycles. The first layout is active after login."; pv ""
+           i=0
+           for code in ${cur//,/ }; do
+               i=$((i + 1))
+               tui_fit "$code" 4; pv "$i  $FIT Super+Ctrl+$i"
+           done ;;
+        m) preview_lines_from < <(state_from hypr/mouse-settings.sh brief); pv ""
+           pvw "Speed, DPI, polling rate, acceleration, scrolling, left-handed." ;;
+        v) cur="$(volume_style_current)"; pvw "Now: $cur."; pv ""
+           pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
+        t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
+           pvw "Turn it on or off, set the default minutes and the text colour." ;;
+        c) pvw "Copy selected text to the clipboard. Now: ${MENU_STATE[c]:-unknown}."; pv ""
+           pvw "Change only Alacritty's save_to_clipboard setting. Restore the .bak file to undo." ;;
+        f) pvw "The rice font or any installed font for the terminal, rofi menus and fastfetch. Sizes stay as the rice sets them."; pv ""
+           preview_lines_from < <(state_from appbinds/font-settings.sh brief) ;;
+        p) total="$(autostart_ids | wc -l)"
+           pvw "Apps that start at login."; pv ""
+           shown=0
+           while IFS= read -r id; do
+               shown=$((shown + 1)); pv "$id"
+           done < <(autostart_ids | head -9)
+           (( total > shown )) && pvd "+ $(( total - shown )) more"
+           (( total > 0 )) || pvd "Nothing selected." ;;
+        o) out="$(state_from appbinds/audio-devices.sh describe sink)"
+           in="$(state_from appbinds/audio-devices.sh describe source)"
+           pvd "Output"; pv "${out:-audio server not responding}"; pv ""
+           pvd "Input"; pv "${in:-audio server not responding}"
+           if command -v mpc >/dev/null 2>&1; then
+               pv ""; pvd "Music (mpd)"; pv "$(mpd_current_output)"
+           fi ;;
+        h) pvw "Bash or zsh. Your aliases, functions and PATH live in one file both shells read, edited in neovim."; pv ""
+           preview_lines_from < <(state_from shell/shell-settings.sh brief) ;;
+        i) pv "1  config check"; pvd "   generated files and monitors"
+           pv "2  workspaces"; pvd "   dump saved to a file"
+           pv "3  GPU and games"; pvd "   dump saved to a file"; pv ""
+           pvw "Read-only, nothing is changed." ;;
+        u) cur="$(git -C "$ARCHENEMY_DIR" log -1 --format='%h %ar' 2>/dev/null)"
+           pvd "Branch"; pv "$(git -C "$ARCHENEMY_DIR" branch --show-current 2>/dev/null)"; pv ""
+           pvd "Commit"; pv "${cur:-unknown}"; pv ""
+           pvw "Pulls dev or main, keeps your monitors, binds and autostart." ;;
+    esac
+    MENU_PREVIEW[$key]="$PV"
+}
+
+# Linie listy: tekst gotowy do wydruku, MENU_SEL_LINE = indeks zaznaczonej.
+declare -a MENU_LINES=()
+MENU_SEL_LINE=0
+build_list() {
+    local i key label_w value_w
+    MENU_LINES=()
+    label_w=18
+    value_w=$(( MENU_LEFT - 4 - 3 - label_w - 1 ))
+    for i in "${!MENU_KEYS[@]}"; do
+        key="${MENU_KEYS[$i]}"
+        if [[ -n "${MENU_GROUP[$key]:-}" ]]; then
+            tui_fit "${MENU_GROUP[$key]}" $(( MENU_LEFT - 2 ))
+            MENU_LINES+=("  ${C_DIM}${FIT}${C_NC}")
+        fi
+        [[ -v "MENU_STATE[$key]" ]] || MENU_STATE[$key]="$(item_state "$key")"
+        tui_fit "${MENU_LABEL[$key]}" "$label_w"; local label="$FIT"
+        tui_fit "${MENU_STATE[$key]}" "$value_w"; local value="$FIT"
+        if (( i == MENU_SEL )); then
+            MENU_SEL_LINE=${#MENU_LINES[@]}
+            MENU_LINES+=("  ${C_ACCENT}${C_REV} ${key}  ${label}${value} ${C_NC} ")
+        else
+            MENU_LINES+=("   ${C_ACCENT}${key}${C_NC}  ${label}${C_DIM}${value}${C_NC}  ")
+        fi
+    done
+}
+
+draw_menu() {
+    local body top i buf="" sel_key line style left right
+    local -a pane=()
+    tui_size
+    if (( TUI_COLS != MENU_LAST_COLS )); then
+        MENU_PREVIEW=(); MENU_LAST_COLS=$TUI_COLS
+        [[ -t 1 ]] && clear
+    fi
+    MENU_LEFT=48
+    MENU_PANE=$(( TUI_COLS - MENU_LEFT - 7 ))
+    if (( MENU_PANE < MENU_PANE_MIN )); then
+        MENU_PANE=0
+        (( TUI_COLS - 2 < MENU_LEFT )) && MENU_LEFT=$(( TUI_COLS - 2 ))
+    fi
+    build_list
+    sel_key="${MENU_KEYS[$MENU_SEL]}"
+    if (( MENU_PANE > 0 )); then
+        [[ -v "MENU_PREVIEW[$sel_key]" ]] || build_preview "$sel_key"
+        mapfile -t pane <<<"${MENU_PREVIEW[$sel_key]%$'\n'}"
+    fi
+
+    # Nagłówek, stopka i po jednym pustym wierszu zajmują 6 wierszy. Reszta to okno
+    # listy, które jedzie za zaznaczeniem, gdy terminal jest niski.
+    body=$(( TUI_ROWS - 6 ))
+    (( body < 3 )) && body=3
+    top=0
+    if (( ${#MENU_LINES[@]} > body )); then
+        top=$(( MENU_SEL_LINE - body / 2 ))
+        (( top > ${#MENU_LINES[@]} - body )) && top=$(( ${#MENU_LINES[@]} - body ))
+        (( top < 0 )) && top=0
+    else
+        body=${#MENU_LINES[@]}
+    fi
+
+    for (( i = 0; i < body; i++ )); do
+        left="${MENU_LINES[$((top + i))]}"
+        right=""
+        if (( MENU_PANE > 0 )); then
+            line="${pane[$i]:-}"; style="${line:0:1}"
+            tui_fit "${line:1}" "$MENU_PANE"; while [[ "$FIT" == *" " ]]; do FIT="${FIT% }"; done
+            case "$style" in
+                b) right="${C_BOLD}${FIT}${C_NC}" ;;
+                d) right="${C_DIM}${FIT}${C_NC}" ;;
+                *) right="$FIT" ;;
+            esac
+            right="${C_DIM}│${C_NC}  ${right}"
+        fi
+        buf+="${left}${right}${C_EOL}"$'\n'
+    done
+
+    [[ -t 1 ]] && printf '\033[?25l\033[H'
+    tui_header "settings" | sed "s/\$/${C_EOL}/"
+    printf '%s' "$buf"
+    printf '%s\n  %s↑↓%s move   %sEnter%s or %sletter%s open   %sq%s quit%s' \
+        "$C_EOL" "$C_ACCENT" "$C_NC" "$C_ACCENT" "$C_NC" "$C_ACCENT" "$C_NC" "$C_ACCENT" "$C_NC" "$C_EOL"
+    [[ -t 1 ]] && printf '\033[J'
+    return 0
+}
+
+run_item() {
+    local key="$1"
+    case "$key" in
+        s) show_all_binds; return ;;
+        n) bash "$ARCHENEMY_DIR/scripts/hypr/monitor-settings.sh"; return ;;
+        m) bash "$ARCHENEMY_DIR/scripts/hypr/mouse-settings.sh"; return ;;
+        p) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; return ;;
+        h) bash "$ARCHENEMY_DIR/scripts/shell/shell-settings.sh"; return ;;
+        u) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; return ;;
+        c) bash "$ARCHENEMY_DIR/scripts/appbinds/terminal-settings.sh"; return ;;
+        f) bash "$ARCHENEMY_DIR/scripts/appbinds/font-settings.sh"
+           echo ""; read -rp "  Press Enter to continue..." _; return ;;
+    esac
+    clear
+    tui_header "${MENU_LABEL[$key]}"
+    case "$key" in
+        a|e|d) echo -e "  Your binds (Super + key):"; echo ""; list_binds ;;
+    esac
+    case "$key" in
+        a) add_bind ;;
+        e) edit_bind ;;
+        d) remove_bind ;;
+        w) workspace_mode_menu ;;
+        k) keyboard_layouts_menu ;;
+        v) volume_style_menu ;;
+        t) timer_menu ;;
+        o) audio_menu ;;
+        i) diagnostics_menu ;;
+    esac
+    echo ""
+    read -rp "  Press Enter to continue..." _
 }
 
 # ─── PĘTLA GŁÓWNA ─────────────────────────────────────────────────────────────
 
+# Znaki sterujące gotowe do wydruku przez %s: tekst użytkownika w menu nie może
+# przejść przez %b, bo backslash w komendzie bindu zostałby zinterpretowany.
+printf -v C_ACCENT '%b' "$ACCENT"
+printf -v C_DIM '%b' "$DIM"
+printf -v C_BOLD '%b' "$BOLD"
+printf -v C_NC '%b' "$NC"
+C_REV=$'\e[7m'
+C_EOL=$'\e[K'
+
 ensure_conf
+[[ -t 1 ]] && trap 'printf "\033[?25h"' EXIT
+clear
 
 while :; do
-    clear
-    echo -e "${BLUE}"
-    echo "  ┌─────────────────────────────────────┐"
-    echo "  │      archenemy · app shortcuts      │"
-    echo "  └─────────────────────────────────────┘"
-    echo -e "${NC}"
-    echo -e "  Your binds (Super + key):"
-    echo ""
-    list_binds
-    echo ""
-    echo -e "  ${GREEN}[a]${NC} add bind   ${RED}[d]${NC} remove bind   ${BLUE}[s]${NC} all shortcuts   ${YELLOW}[w]${NC} workspace mode   ${GREEN}[v]${NC} volume bar   ${GREEN}[t]${NC} timer   ${GREEN}[u]${NC} autostart apps   ${GREEN}[p]${NC} update archenemy   ${CYAN}[q]${NC} quit (Esc also quits)"
-    echo ""
-    choice="$(read_key "  Choice: ")"
-
+    draw_menu
+    choice="$(read_key_nav)" || exit 0
+    count=${#MENU_KEYS[@]}
     case "$choice" in
-        a|A) add_bind ;;
-        d|D) remove_bind ;;
-        s|S) show_all_binds; continue ;;
-        w|W) workspace_mode_menu ;;
-        v|V) volume_style_menu ;;
-        t|T) timer_menu ;;
-        u|U) bash "$ARCHENEMY_DIR/scripts/appbinds/autostart-picker.sh"; continue ;;
-        p|P) bash "$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh"; continue ;;
-        q|Q|$'\e') exit 0 ;;
-        *)   continue ;;
+        up)   MENU_SEL=$(( (MENU_SEL + count - 1) % count )); continue ;;
+        down) MENU_SEL=$(( (MENU_SEL + 1) % count )); continue ;;
+        home) MENU_SEL=0; continue ;;
+        end)  MENU_SEL=$(( count - 1 )); continue ;;
+        esc|q|Q) exit 0 ;;
+        enter) choice="${MENU_KEYS[$MENU_SEL]}" ;;
+        ignored) continue ;;
     esac
-
-    echo ""
-    read -rp "  Press Enter to continue..." _
+    choice="${choice,,}"
+    case "$choice" in
+        a|e|d|s|w|n|k|m|v|t|c|f|p|o|h|i|u) ;;
+        *) continue ;;
+    esac
+    for i in "${!MENU_KEYS[@]}"; do
+        [[ "${MENU_KEYS[$i]}" == "$choice" ]] && MENU_SEL=$i
+    done
+    [[ -t 1 ]] && printf '\033[?25h'
+    run_item "$choice"
+    MENU_STATE=(); MENU_PREVIEW=()
+    clear
 done

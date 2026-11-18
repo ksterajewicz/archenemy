@@ -31,11 +31,22 @@
     { "type": "shell",        "key": "SHELL" },
     { "type": "wm",           "key": "WM   " },
     { "type": "terminal",     "key": "TERM " },
+    // Font terminala z uwzględnieniem wyboru Super+A → [f] (rodzina jest w importach alacritty).
+    // fastfetch po cichu pomija wiersz, gdy polecenie nic nie wypisze albo skończy się
+    // kodem 127 (np. brak skryptu), więc zapasowo (także gdy skrypt wypisze „unknown…”)
+    // czytamy te same pliki co alacritty; wynik nigdy nie jest pusty.
+    { "type": "command",      "key": "FONT ", "text": "f=$(bash \"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current 2>/dev/null); case \"$f\" in ''|unknown*) g=$(sed -n 's/^[[:space:]]*family[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1 (alacritty config)/p' \"$HOME/.config/archenemy/fonts/alacritty.toml\" \"$HOME/.config/alacritty/font.toml\" 2>/dev/null | head -n 1); [ -n \"$g\" ] && f=$g ;; esac; echo \"${f:-unknown (font-settings.sh and alacritty font files unavailable)}\"" },
     { "type": "custom", "format": "────────────────────────────────" },
     { "type": "cpu",          "key": "CPU  " },
     { "type": "gpu",          "key": "GPU  " },
     { "type": "memory",       "key": "MEM  " },
-    { "type": "disk",         "key": "DISK ", "folders": "/" },
+    // Pojemność każdego fizycznego dysku (hideVirtual: bez zram, dm-* i loop*),
+    // potem każdy zamontowany system plików: zwykłe partycje i dyski zewnętrzne;
+    // bez pseudo-FS (tmpfs, proc…), ukrytych i podwoluminów btrfs. Tylko opcje
+    // modułów — zero nazw urządzeń i ścieżek.
+    { "type": "physicaldisk", "key": "DRIVE", "format": "{name}  {size}", "hideVirtual": true },
+    { "type": "disk",         "key": "DISK ", "format": "{mountpoint}  {size-used} / {size-total} ({size-percentage})",
+      "showRegular": true, "showExternal": true, "showHidden": false, "showSubvolumes": false, "showUnknown": false },
     { "type": "battery",      "key": "BAT  " },
     "break",
     { "type": "colors", "symbol": "circle" }

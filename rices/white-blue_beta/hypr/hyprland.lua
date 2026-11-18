@@ -26,7 +26,7 @@ end
 local mainMod      = "SUPER"
 local terminal     = "alacritty"
 local filemanager  = "thunar"
-local menu         = "rofi -show drun"
+local menu         = "~/archenemy/scripts/rofi/rofi_drun.sh"
 local browser      = "brave"
 local lock         = "hyprlock"
 local gamelauncher = "steam"
@@ -48,6 +48,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("wl-paste --type text  --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
+require(HOME .. "/archenemy/config/hypr/autostart-common.lua")
 require(HOME .. "/archenemy/config/hypr/autostartpersonalisation.lua")
 require_optional(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
 
@@ -111,7 +112,6 @@ hl.config({
         smart_split          = false,
         smart_resizing       = true,
         force_split          = 0,
-        special_scale_factor = 0.95,
     },
 })
 
@@ -201,7 +201,9 @@ hl.window_rule({ match = { class = "^(xdg-desktop-portal-gtk)$" }, float = true 
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, float = true })
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, pin = true })
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, size = { 480, 270 } })
-hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, move = { "100%-490", "100%-280" } })
+-- move liczy muParser Hyprlanda: "%" nie jest operatorem, a błąd wyrażenia
+-- tylko centruje okno (bez configerrors). Prawy dolny róg, 10 px od krawędzi.
+hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, move = { "monitor_w-window_w-10", "monitor_h-window_h-10" } })
 require(HOME .. "/archenemy/config/hypr/custom_window_rules.lua")
 
 -- Layer rules

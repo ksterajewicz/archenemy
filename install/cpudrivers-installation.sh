@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - cpudrivers-installation.sh
@@ -9,14 +9,20 @@
 
 set -uo pipefail
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 # Wspólna obsługa bootloadera (regeneracja configu po instalacji mikrokodu).
 source "$(dirname "$(readlink -f "$0")")/bootloader.sh"
 
 # ─── DETECT CPU VENDOR ────────────────────────────────────────────────────────
 
-VENDOR="$(grep -m1 '^vendor_id' /proc/cpuinfo | awk '{print $NF}')"
+# Hak testowy (tests/bootloader.sh): plik atrapy zamiast /proc/cpuinfo —
+# TYLKO przy ARCHENEMY_TEST=1 (jak haki instalatora GPU, K10).
+CPUINFO=/proc/cpuinfo
+if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
+    CPUINFO="${ARCHENEMY_CPUINFO:-/proc/cpuinfo}"
+fi
+VENDOR="$(grep -m1 '^vendor_id' "$CPUINFO" | awk '{print $NF}')"
 echo -e "${YELLOW}Detected CPU vendor: ${VENDOR:-unknown}${NC}"
 
 case "$VENDOR" in
@@ -34,9 +40,21 @@ esac
 
 read -rp "Install $UCODE? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
-    sudo pacman -S --needed "$UCODE"
-    echo -e "${GREEN}✓ $UCODE installed.${NC}"
-    # Mikrokod ładuje bootloader wczesnym initrd — sam pakiet nic nie robi,
-    # dopóki config bootloadera się do niego nie odwoła.
-    regenerate_bootloader "mikrokod $UCODE"
+    # Sukces = pakiet realnie w bazie pacmana, nie sam kod wyjścia (audyt
+    # 2026-09-25: „✓ installed" i regeneracja GRUB-a leciały także po
+    # nieudanym pacmanie — wpis initrd wskazywałby nieistniejący obraz).
+    if sudo pacman -S --needed "$UCODE" && pacman -Qi "$UCODE" &>/dev/null; then
+        echo -e "${GREEN}✓ $UCODE installed.${NC}"
+        # Mikrokod ładuje bootloader wczesnym initrd — sam pakiet nic nie robi,
+        # dopóki config bootloadera się do niego nie odwoła.
+        regenerate_bootloader "microcode $UCODE"
+        # Kod regeneracji = kod skryptu, kontrakt z install.sh [6.5]: 0 gotowe,
+        # 1 grub-mkconfig padł, 2 wpisy bootowania do poprawienia ręcznie.
+        exit $?
+    else
+        echo -e "${RED}✗ $UCODE was not installed — check pacman output above; bootloader unchanged.${NC}"
+        # Skrypt jest wołany przez install.sh jako osobny proces (bash …),
+        # więc niezerowy kod nie przerywa instalatora — tylko sygnalizuje stan.
+        exit 1
+    fi
 fi

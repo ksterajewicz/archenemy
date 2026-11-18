@@ -127,6 +127,7 @@ window#waybar.solo  #window {
 #cpu,
 #temperature,
 #custom-volumebar,
+#custom-bluetooth,
 #network,
 #battery,
 #tray,
@@ -149,6 +150,7 @@ window#waybar.solo  #window {
 #cpu:hover,
 #temperature:hover,
 #custom-volumebar:hover,
+#custom-bluetooth:hover,
 #network:hover,
 #battery:hover,
 #custom-profileswitcher:hover,
@@ -205,4 +207,15 @@ tooltip {
 tooltip label {
     color:   #e8e8e8;
     padding: 4px;
+}
+
+/* Bluetooth: kolory stanu w palecie rice'a; pusty moduł bez odstępów. */
+#custom-bluetooth.disabled { color: #888888; }
+#custom-bluetooth.connected { color: #b47687; }
+#custom-bluetooth.off {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }

@@ -1,0 +1,143 @@
+# made by kst - https://github.com/ksterajewicz
+
+# ─── Font family ───────────────────────────────────────
+# Rodzina fontu rice'a jest w font.toml, a wybór z Super+A → [f] w
+# ~/.config/archenemy/fonts/alacritty.toml (poza repo). Importy wczytują się
+# po kolei, późniejszy wygrywa, brakujący plik jest pomijany; ten plik
+# wczytuje się na końcu, więc nie może ustawiać `family`. Bold/italic
+# biorą rodzinę z [font.normal]; rozmiar i style zostają tutaj.
+[general]
+import = [
+    "~/.config/alacritty/font.toml",
+    "~/.config/archenemy/fonts/alacritty.toml",
+]
+
+# ─── Window ────────────────────────────────────────────
+[window]
+padding        = { x = 16, y = 12 }   # rytm 4 px
+decorations    = "None"
+opacity        = 0.82
+blur           = true
+
+# ─── Font ──────────────────────────────────────────────
+[font]
+size = 11.5
+
+[font.normal]
+style  = "Regular"
+
+[font.bold]
+style  = "Bold"
+
+[font.italic]
+style  = "Italic"
+
+# ─── Cursor ────────────────────────────────────────────
+[cursor]
+style          = { shape = "Block", blinking = "On" }
+blink_interval = 550
+unfocused_hollow = true
+
+# ─── Selection — zaznaczenie = automatyczne kopiowanie ─
+[selection]
+save_to_clipboard = true   # samo zaznaczenie kopiuje do schowka
+
+# ─── Scrollback ────────────────────────────────────────
+[scrolling]
+history    = 10000
+multiplier = 3
+
+# ─── Kolory — yin (czerń, grafit, szarości, biel; jeden ciepły kolor) ──
+# Matowe szkło: tło #0C0C0E przy opacity 0.82 + blur Hyprlanda nad ciemną
+# tapetą „zaćmienie" (wallpapers/yin). Tekst #E6E6EA, kursor i akcent = biel.
+# Szarości ANSI idą RÓWNYMI krokami jasności (L* co ~6: blue 56 → magenta 62
+# → green 68 → cyan 74 → yellow 80 → white 86; jasne o stopień wyżej), więc
+# ls, git i składnia dalej niosą informację bez koloru. Jedyny ciepły kolor
+# to żar #E0805A w miejscu czerwieni (błędy, usunięcia w diffie, alarmy).
+# Kontrast: każdy kolor tekstu ≥ 4,5:1 nawet na szkle nad najjaśniejszym
+# miejscem tapety (rachunek: README, rice yin); wyjątek = bright black
+# (#5E5E66, 3:1) — przygaszone podpowiedzi i tło, nie tekst do czytania.
+[colors.primary]
+background = "#0C0C0E"
+foreground = "#E6E6EA"
+
+[colors.cursor]
+text   = "#0C0C0E"
+cursor = "#FFFFFF"
+
+[colors.vi_mode_cursor]
+text   = "#0C0C0E"
+cursor = "#B6B6BD"
+
+[colors.selection]
+text       = "#0C0C0E"
+background = "#D7D7DC"
+
+[colors.search.matches]
+foreground = "#0C0C0E"
+background = "#8C8C96"
+
+[colors.search.focused_match]
+foreground = "#0C0C0E"
+background = "#FFFFFF"
+
+[colors.hints.start]
+foreground = "#0C0C0E"
+background = "#FFFFFF"
+
+[colors.hints.end]
+foreground = "#E6E6EA"
+background = "#2E2E33"
+
+# ── Normal colors ──────────────────────────────────────
+[colors.normal]
+black   = "#2E2E33"          # łupek (widoczny na tle #0C0C0E)
+red     = "#E0805A"          # żar — jedyny ciepły kolor, wyłącznie alarmy
+green   = "#A6A6AD"          # L* 68
+yellow  = "#C6C6CC"          # L* 80
+blue    = "#868690"          # L* 56 — najciemniejszy kolor tekstu
+magenta = "#96969F"          # L* 62
+cyan    = "#B6B6BD"          # L* 74
+white   = "#D7D7DC"          # L* 86
+
+# ── Bright colors ──────────────────────────────────────
+[colors.bright]
+black   = "#5E5E66"          # dym — podpowiedzi/tło, nie tekst
+red     = "#F2A07E"          # jasny żar
+green   = "#B8B8BE"
+yellow  = "#D8D8DE"
+blue    = "#9A9AA3"
+magenta = "#AAAAB2"
+cyan    = "#C8C8CF"
+white   = "#FFFFFF"          # biel — akcent
+
+# ─── Keyboard bindings ─────────────────────────────────
+[[keyboard.bindings]]
+key    = "Return"
+mods   = "Control|Shift"
+action = "SpawnNewInstance"
+
+[[keyboard.bindings]]
+key    = "C"
+mods   = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key    = "V"
+mods   = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key    = "Plus"
+mods   = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Minus"
+mods   = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Key0"
+mods   = "Control"
+action = "ResetFontSize"

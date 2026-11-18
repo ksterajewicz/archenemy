@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - ws-scroll.sh
@@ -33,4 +33,5 @@ esac
 prefix="r"
 [[ "$MODE" == "shared" ]] && prefix="e"
 
-exec hyprctl dispatch workspace "${prefix}${dir}"
+# Config w Lua: `hyprctl dispatch X` = hl.dispatch(X), czyli wyrażenie Lua.
+exec hyprctl dispatch "hl.dsp.focus({ workspace = \"${prefix}${dir}\" })"

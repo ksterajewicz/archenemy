@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - lib/timer-state.sh
@@ -112,6 +112,26 @@ timer_save_state() {
         echo "notified=$TIMER_NOTIFIED"
     } > "$tmp"
     mv "$tmp" "$TIMER_STATE_DAT"
+}
+
+# Blokada przejścia running → finished. Na dwóch monitorach waybar ma dwa
+# paski i każdy co sekundę odpala własny timer.sh: oba czytały „running”
+# i oba wysyłały „Timer finished.” (audyt 2026-11-05, A11). Blokowany jest
+# sam katalog danych (flock na deskryptorze katalogu, bez pliku .lock):
+# plik stanu podmienia mv, więc blokada na nim trzymałaby stary i-węzeł.
+# Bez flock — dawne zachowanie (bez blokady). Kod 1 = blokada zajęta dłużej
+# niż 2 s albo brak katalogu; przejście zrobi wtedy następny tik.
+timer_lock() {
+    command -v flock >/dev/null 2>&1 || return 0
+    exec {TIMER_LOCK_FD}<"$TIMER_DATA_DIR" || return 1
+    flock -w 2 "$TIMER_LOCK_FD" && return 0
+    timer_unlock
+    return 1
+}
+
+timer_unlock() {
+    [[ -n "${TIMER_LOCK_FD:-}" ]] && exec {TIMER_LOCK_FD}<&-
+    TIMER_LOCK_FD=""
 }
 
 # Ile sekund zostało DO WYŚWIETLENIA. Dla running liczone z zegara ściennego

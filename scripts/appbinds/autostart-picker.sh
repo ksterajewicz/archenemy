@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =============================================
 #   archenemy - autostart-picker.sh
 #   Wybór aplikacji odpalanych przy starcie Hyprlanda — checkboxy [x]/[ ]
 #   na liście wszystkich wpisów .desktop, z filtrowaniem po nazwie.
-#   Otwierany z Super+A → [u]. UI po angielsku (decyzja właściciela 2026-07-12).
+#   Otwierany z Super+A → [p]. UI po angielsku (decyzja właściciela 2026-07-12).
 #
 #   Czysty bash (bez rofi/fzf/dialog — świadoma decyzja właściciela).
 #   Wybór ląduje w data/autostart-apps.dat, z niego generator
@@ -13,31 +13,15 @@
 #   autostartpersonalisation.lua, którego ta warstwa NIE dotyka).
 # =============================================
 
+set -uo pipefail
+
 ARCHENEMY_DIR="$HOME/archenemy"
+# shellcheck source=lib/tui.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
 DATA_DAT="$ARCHENEMY_DIR/data/autostart-apps.dat"
 OUT_LUA="$ARCHENEMY_DIR/config/hypr/autostart-apps.lua"
 GEN_LIB="$ARCHENEMY_DIR/scripts/hypr/lib/gen-autostart.sh"
 
-DESKTOP_DIRS=(
-    "/usr/share/applications"
-    "$HOME/.local/share/applications"
-)
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# Czysty bashowy trim (jak w appbinds.sh — bez xargs, który gubi apostrofy)
-trim() {
-    local s="$1"
-    s="${s#"${s%%[![:space:]]*}"}"
-    s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
-}
 
 # ─── ODKRYWANIE APLIKACJI ─────────────────────────────────────────────────────
 
@@ -71,19 +55,33 @@ scan_desktop_file() {
     return 0
 }
 
-# Zbierz wszystkie wpisy .desktop. Deduplikacja po nazwie pliku: katalog
-# lokalny idzie PO systemowym, więc nadpisuje wpis systemowy.
+# Te same katalogi co rofi: XDG_DATA_DIRS (też Flatpak) i katalog użytkownika.
+# Kolejność od najniższego priorytetu, bo późniejszy wpis nadpisuje wcześniejszy.
+declare -a DESKTOP_DIRS=()
+build_desktop_dirs() {
+    local i
+    local -a sys=()
+    IFS=: read -ra sys <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    DESKTOP_DIRS=()
+    for (( i = ${#sys[@]} - 1; i >= 0; i-- )); do
+        DESKTOP_DIRS+=("${sys[$i]}/applications")
+    done
+    DESKTOP_DIRS+=("${XDG_DATA_HOME:-$HOME/.local/share}/applications")
+}
+
+# Zbierz wszystkie wpisy .desktop, także z podkatalogów. ID wg specyfikacji
+# Desktop Entry: ścieżka względna z „-” zamiast „/”, taką nazwę zna gtk-launch.
 discover_apps() {
-    local dir file base id
+    local dir file rel id
     declare -A seen=()
 
     for dir in "${DESKTOP_DIRS[@]}"; do
         [[ -d "$dir" ]] || continue
-        for file in "$dir"/*.desktop; do
-            [[ -f "$file" ]] || continue
-            base="$(basename "$file")"
-            id="${base%.desktop}"
-            # Lokalny wpis nadpisuje systemowy — usuń poprzedni ślad,
+        while IFS= read -r file; do
+            rel="${file#"$dir"/}"
+            id="${rel%.desktop}"
+            id="${id//\//-}"
+            # Późniejszy katalog nadpisuje wpis — usuń poprzedni ślad,
             # bo ten plik może być teraz ukryty (NoDisplay=true).
             unset "APP_NAME[$id]"
             if scan_desktop_file "$file" "$id"; then
@@ -91,7 +89,7 @@ discover_apps() {
             else
                 unset "seen[$id]"
             fi
-        done
+        done < <(find -L "$dir" -type f -name '*.desktop' 2>/dev/null)
     done
 
     # Sortowanie po nazwie wyświetlanej (case-insensitive), ID po tabulatorze.
@@ -114,6 +112,21 @@ load_selection() {
     done < "$DATA_DAT"
 }
 
+# Zaznaczone, a już niezainstalowane: pokazujemy na górze listy, żeby dało się
+# je odznaczyć. Inaczej zostawałyby w pliku i każde logowanie odpalałoby
+# gtk-launch na nieistniejący wpis.
+add_missing_selected() {
+    local id
+    local -a missing=()
+    for id in "${!SELECTED[@]}"; do
+        [[ -n "${APP_NAME[$id]:-}" ]] && continue
+        APP_NAME["$id"]="(not installed) $id"
+        missing+=("$id")
+    done
+    ((${#missing[@]})) && ALL_IDS=("${missing[@]}" "${ALL_IDS[@]}")
+    return 0
+}
+
 # Zapis atomowy (mktemp w tym samym katalogu + mv — wzorzec z
 # rofi_wallpaper_switcher.sh), potem regeneracja pliku Lua.
 save_selection() {
@@ -129,7 +142,7 @@ save_selection() {
     if [[ -f "$GEN_LIB" ]]; then
         # shellcheck source=/dev/null
         source "$GEN_LIB"
-        generate_autostart_apps "$DATA_DAT" "$OUT_LUA"
+        generate_autostart_apps "$DATA_DAT" "$OUT_LUA" || return 1
         return 0
     fi
     return 2
@@ -138,6 +151,19 @@ save_selection() {
 # ─── PĘTLA UI ─────────────────────────────────────────────────────────────────
 
 FILTER=""
+PAGE=0
+DIRTY=0
+
+# Tyle pozycji mieści się w oknie pod nagłówkiem i nad stopką. Lista bez stron
+# uciekała poza ekran już przy kilkudziesięciu aplikacjach.
+page_size() {
+    local rows
+    rows="$( { stty size </dev/tty; } 2>/dev/null | cut -d' ' -f1)"
+    [[ "$rows" =~ ^[0-9]+$ ]] || rows=30
+    rows=$(( rows - 20 ))
+    (( rows < 5 )) && rows=5
+    echo "$rows"
+}
 
 # Lista ID pasujących do filtru (podciąg nazwy, case-insensitive)
 declare -a VIEW=()
@@ -156,15 +182,14 @@ build_view() {
 }
 
 picker_loop() {
-    local input token i id box count bad
+    local input token i id box count bad size pages cursor=0 rc
+    local -a labels=() actions=() TUI_MENU_KEYS=() TUI_MENU_NUMBERS=()
+    # shellcheck disable=SC2034  # opcje odczytuje tui_menu przez zakres dynamiczny
+    local TUI_MENU_CHECKLIST=1 TUI_MENU_CAPTURE_DIGITS=1
     while :; do
         build_view
         clear
-        echo -e "${BLUE}"
-        echo "  ┌─────────────────────────────────────┐"
-        echo "  │      archenemy · autostart apps     │"
-        echo "  └─────────────────────────────────────┘"
-        echo -e "${NC}"
+        tui_header "autostart"
         if ! command -v gtk-launch &>/dev/null; then
             echo -e "  ${YELLOW}⚠ gtk-launch not found in PATH — the selection will be saved,${NC}"
             echo -e "  ${YELLOW}  but autostart will not work until you install it (gtk3).${NC}"
@@ -177,59 +202,111 @@ picker_loop() {
         fi
         echo ""
 
+        size="$(page_size)"
+        pages=$(( (${#VIEW[@]} + size - 1) / size ))
+        (( pages < 1 )) && pages=1
+        (( PAGE >= pages )) && PAGE=$(( pages - 1 ))
+        labels=(); actions=(); TUI_MENU_KEYS=()
         if [[ ${#VIEW[@]} -eq 0 ]]; then
             echo -e "    ${YELLOW}(nothing matches the filter)${NC}"
         else
-            i=0
-            for id in "${VIEW[@]}"; do
-                i=$((i + 1))
-                if [[ -n "${SELECTED[$id]}" ]]; then
+            # Numery liczone na całej liście, więc nie zmieniają się między stronami.
+            for (( i = PAGE * size + 1; i <= (PAGE + 1) * size && i <= ${#VIEW[@]}; i++ )); do
+                id="${VIEW[$((i - 1))]}"
+                if [[ -n "${SELECTED[$id]:-}" ]]; then
                     box="${GREEN}[x]${NC}"
                 else
                     box="[ ]"
                 fi
-                printf "    ${CYAN}%3d)${NC} ${box} %-32s ${BLUE}%s${NC}\n" \
-                    "$i" "${APP_NAME[$id]}" "$id"
+                labels+=("")
+                # Bez ANSI w etykiecie: tui_menu sam dobiera kolory zaznaczenia.
+                if [[ -n "${SELECTED[$id]:-}" ]]; then labels[-1]="[x] ${APP_NAME[$id]} — $id"
+                else labels[-1]="[ ] ${APP_NAME[$id]} — $id"; fi
+                actions+=("$i"); TUI_MENU_KEYS+=("")
+                if [[ ! -t 0 ]]; then
+                    printf "    ${CYAN}%3d)${NC} ${box} %-32s ${BLUE}%s${NC}\n" \
+                        "$i" "${APP_NAME[$id]}" "$id"
+                fi
             done
         fi
 
+        # Numer aplikacji jest globalny; akcje nie dostają numerów aplikacji.
+        # shellcheck disable=SC2034  # etykiety odczytuje tui_menu
+        TUI_MENU_NUMBERS=("${actions[@]}")
         count=0
         for id in "${!SELECTED[@]}"; do
-            [[ -n "${SELECTED[$id]}" ]] && count=$((count + 1))
+            [[ -n "${SELECTED[$id]:-}" ]] && count=$((count + 1))
         done
         echo ""
-        echo -e "  ${GREEN}${count} selected${NC}"
+        echo -e "  ${GREEN}${count} selected${NC}   page $(( PAGE + 1 ))/${pages}"
         echo ""
-        echo -e "  numbers = toggle   ${CYAN}/text${NC} = filter   ${CYAN}/${NC} = clear filter   ${GREEN}[s]${NC} save   ${RED}[q]${NC} cancel"
+        echo -e "  numbers = toggle   ${CYAN}[n]${NC}/${CYAN}[p]${NC} page   ${CYAN}/text${NC} = filter   ${CYAN}/${NC} = clear filter   ${GREEN}[s]${NC} save   ${RED}[q]${NC} cancel"
         echo ""
-        read -rp "  Choice: " input
+        labels+=("Next page [n]" "Previous page [p]" "Filter [/text]" "Save [s]" "Cancel [q/Esc]")
+        actions+=(n p / s q); TUI_MENU_KEYS+=(n p / s "")
+        if [[ -t 0 ]]; then
+            rc=0; tui_menu "$cursor" "${labels[@]}" || rc=$?
+            if (( rc )); then input=q
+            elif (( TUI_MENU_INDEX < 0 )); then input="$TUI_MENU_INPUT"
+            else
+                cursor=$TUI_MENU_INDEX
+                input="${actions[$cursor]}"
+                if [[ "$input" == / ]]; then
+                    read -rp "  Filter (Enter = clear): " input || return 0
+                    input="/$input"
+                fi
+            fi
+        else
+            read -rp "  Choice: " input || return 0
+            if [[ "$input" == *$'\e'* || "$input" == j* || "$input" == k* ]]; then
+                rc=0; tui_menu "$cursor" "${labels[@]}" <<<"$input" || rc=$?
+                if (( rc )); then input=q
+                elif (( TUI_MENU_INDEX < 0 )); then input="$TUI_MENU_INPUT"
+                else cursor=$TUI_MENU_INDEX; input="${actions[$cursor]}"; fi
+            fi
+        fi
         input="$(trim "$input")"
 
         case "$input" in
             "")  continue ;;
-            "/") FILTER=""; continue ;;
-            /*)  FILTER="${input#/}"; continue ;;
+            "/") FILTER=""; PAGE=0; cursor=0; continue ;;
+            /*)  FILTER="${input#/}"; PAGE=0; cursor=0; continue ;;
+            n|N) (( PAGE + 1 < pages )) && PAGE=$(( PAGE + 1 )); continue ;;
+            p|P) (( PAGE > 0 )) && PAGE=$(( PAGE - 1 )); continue ;;
             s|S)
                 if save_selection; then
-                    echo -e "  ${GREEN}✓ Saved ${count} apps for autostart.${NC}"
+                    # Liczba z pliku Lua (skutek), nie z zaznaczenia: wpis, którego
+                    # generator nie zapisał, nie może wyglądać na zapisany (Z7).
+                    count="$(grep -c '^    hl.exec_cmd("gtk-launch ' "$OUT_LUA" 2>/dev/null)"
+                    echo -e "  ${GREEN}✓ Saved ${count:-0} apps. They start at your next login.${NC}"
+                    for id in "${AUTOSTART_SKIPPED[@]}"; do
+                        echo -e "  ${YELLOW}⚠ Not saved (control characters in the ID): ${id@Q}${NC}"
+                    done
                 else
                     echo -e "  ${RED}✗ Save failed (missing generator or temp file).${NC}"
                 fi
                 read -rp "  Press Enter to continue..." _
                 return 0
                 ;;
-            q|Q) return 0 ;;
+            q|Q)
+                (( DIRTY == 0 )) && return 0
+                confirm "Discard your changes?" N && return 0
+                continue
+                ;;
         esac
 
-        # Liczby oddzielone spacją — indeksy w AKTUALNIE wyświetlanej liście
+        # Liczby oddzielone spacją — indeksy w AKTUALNIE wyświetlanej liście.
+        # 10#: „08” to dla basha zła liczba ósemkowa — picker wychodził z kodem 1
+        # bez zapisu (audyt 2026-11-05, Z12).
         bad=0
         for token in $input; do
-            if [[ ! "$token" =~ ^[0-9]+$ ]] || (( token < 1 || token > ${#VIEW[@]} )); then
+            if [[ ! "$token" =~ ^[0-9]+$ ]] || (( 10#$token < 1 || 10#$token > ${#VIEW[@]} )); then
                 bad=1
                 continue
             fi
-            id="${VIEW[$((token - 1))]}"
-            if [[ -n "${SELECTED[$id]}" ]]; then
+            id="${VIEW[$((10#$token - 1))]}"
+            DIRTY=1
+            if [[ -n "${SELECTED[$id]:-}" ]]; then
                 unset "SELECTED[$id]"
             else
                 SELECTED["$id"]=1
@@ -244,7 +321,10 @@ picker_loop() {
 
 # ─── START ────────────────────────────────────────────────────────────────────
 
+build_desktop_dirs
 discover_apps
+load_selection
+add_missing_selected
 
 if [[ ${#ALL_IDS[@]} -eq 0 ]]; then
     echo ""
@@ -257,5 +337,4 @@ if [[ ${#ALL_IDS[@]} -eq 0 ]]; then
     exit 0
 fi
 
-load_selection
 picker_loop

@@ -1,0 +1,54 @@
+// archenemy — fastfetch (crt rice: fosfor błękit/cyjan)
+// Własny motyw: wbudowane logo Archa w cyjanie fosforu (#74DCE2) i błękicie (#5695D6).
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+
+  "logo": {
+    "source": "arch",
+    "color": { "1": "38;2;116;220;226", "2": "38;2;86;149;214" },
+    "padding": { "top": 1, "right": 3, "left": 2 }
+  },
+
+  // Klucze i tytuł w jasnym cyjanie (= ANSI bright white/cyan alacritty); separatory jako moduł
+  // „custom" (kolor bierze z display.color.output → niebieski).
+  // Bez display.key.width — obcinał ręcznie wyrównane klucze („KERN" → „KE").
+  "display": {
+    "separator": "  ",
+    "color": { "keys": "white", "title": "white", "output": "blue" }
+  },
+
+  // Klucze = krótkie etykiety w stylu „panelu przyrządów" (bez ikon spoza
+  // pewnego zakresu glifów — świadoma decyzja, żeby nic nie wyszło jako tofu).
+  "modules": [
+    "break",
+    { "type": "title", "keyColor": "white" },
+    { "type": "custom", "format": "────────────────────────────────" },
+    { "type": "os",           "key": "OS   " },
+    { "type": "kernel",       "key": "KERN " },
+    { "type": "host",         "key": "HOST " },
+    { "type": "uptime",       "key": "UP   " },
+    { "type": "packages",     "key": "PKGS " },
+    { "type": "shell",        "key": "SHELL" },
+    { "type": "wm",           "key": "WM   " },
+    { "type": "terminal",     "key": "TERM " },
+    // Font terminala z uwzględnieniem wyboru Super+A → [f] (rodzina jest w importach alacritty).
+    // fastfetch po cichu pomija wiersz, gdy polecenie nic nie wypisze albo skończy się
+    // kodem 127 (np. brak skryptu), więc zapasowo (także gdy skrypt wypisze „unknown…”)
+    // czytamy te same pliki co alacritty; wynik nigdy nie jest pusty.
+    { "type": "command",      "key": "FONT ", "text": "f=$(bash \"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current 2>/dev/null); case \"$f\" in ''|unknown*) g=$(sed -n 's/^[[:space:]]*family[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1 (alacritty config)/p' \"$HOME/.config/archenemy/fonts/alacritty.toml\" \"$HOME/.config/alacritty/font.toml\" 2>/dev/null | head -n 1); [ -n \"$g\" ] && f=$g ;; esac; echo \"${f:-unknown (font-settings.sh and alacritty font files unavailable)}\"" },
+    { "type": "custom", "format": "────────────────────────────────" },
+    { "type": "cpu",          "key": "CPU  " },
+    { "type": "gpu",          "key": "GPU  " },
+    { "type": "memory",       "key": "MEM  " },
+    // Pojemność każdego fizycznego dysku (hideVirtual: bez zram, dm-* i loop*),
+    // potem każdy zamontowany system plików: zwykłe partycje i dyski zewnętrzne;
+    // bez pseudo-FS (tmpfs, proc…), ukrytych i podwoluminów btrfs. Tylko opcje
+    // modułów — zero nazw urządzeń i ścieżek.
+    { "type": "physicaldisk", "key": "DRIVE", "format": "{name}  {size}", "hideVirtual": true },
+    { "type": "disk",         "key": "DISK ", "format": "{mountpoint}  {size-used} / {size-total} ({size-percentage})",
+      "showRegular": true, "showExternal": true, "showHidden": false, "showSubvolumes": false, "showUnknown": false },
+    { "type": "battery",      "key": "BAT  " },
+    "break",
+    { "type": "colors", "symbol": "circle" }
+  ]
+}

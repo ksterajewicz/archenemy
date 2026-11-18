@@ -25,3 +25,6 @@ hl.window_rule({ match = { class = "^(steam_app_\\d+|gamescope|.*\\.exe)$" }, op
 
 hl.window_rule({ match = { class = "^(MEGAsync)$" }, float = true })
 hl.window_rule({ match = { title = "^(Set up MEGA)$" }, float = true })
+
+-- Terminal opcjonalnego menedżera Bluetooth.
+hl.window_rule({ match = { class = "^(bluetui)$" }, float = true })

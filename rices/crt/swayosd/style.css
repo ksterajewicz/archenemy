@@ -1,0 +1,51 @@
+/* archenemy - swayosd (crt)
+ * OSD jasności/głośności u dołu wszystkich monitorów. Szkło kineskopu:
+ * płyta granat #043D7B (alfa 0.80), pasek w cyjanie fosforu #36D2D8,
+ * ikony/etykiety w jasnym cyjanie #74DCE2; rogi 4 px jak w waybarze. */
+
+window#osd {
+    border-radius: 4px;
+    border: 1px solid rgba(48, 105, 173, 0.60);
+    background: rgba(4, 61, 123, 0.80);
+    box-shadow: 0 0 10px rgba(54, 210, 216, 0.18);
+}
+
+window#osd #container {
+    margin: 16px;
+}
+
+window#osd image,
+window#osd label {
+    color: #74dce2;
+}
+
+window#osd progressbar,
+window#osd segmentedprogress {
+    min-height: 8px;
+    border-radius: 3px;
+    background: transparent;
+    border: none;
+}
+
+window#osd trough,
+window#osd segment {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: rgba(11, 53, 139, 0.55);
+}
+
+window#osd progress,
+window#osd segment.active {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: #36d2d8;
+}
+
+window#osd segment {
+    margin-left: 8px;
+}
+window#osd segment:first-child {
+    margin-left: 0;
+}

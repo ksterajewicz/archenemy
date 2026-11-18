@@ -26,7 +26,7 @@ end
 local mainMod      = "SUPER"
 local terminal     = "alacritty"
 local filemanager  = "thunar"
-local menu         = "rofi -show drun"
+local menu         = "~/archenemy/scripts/rofi/rofi_drun.sh"
 local browser      = "brave"
 local lock         = "hyprlock"
 local gamelauncher = "steam"
@@ -47,13 +47,14 @@ hl.on("hyprland.start", function()
     -- flux-wall: tapeta liczona shaderem (deklaracja w rices/dither-flux/flux-wall.conf).
     -- Rysuje na warstwie bottom — nad hyprpaperem, pod oknami; hyprpaper zostaje
     -- pod spodem jako fallback. Brak binarki = cicho nic.
-    hl.exec_cmd("~/archenemy/scripts/wallpapers/flux-wall.sh autostart")
     hl.exec_cmd("mako")
     hl.exec_cmd("swayosd-server")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("wl-paste --type text  --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
+require(HOME .. "/archenemy/config/hypr/autostart-common.lua")
+require(HOME .. "/archenemy/config/hypr/focus-highlight.lua")
 require(HOME .. "/archenemy/config/hypr/autostartpersonalisation.lua")
 require_optional(HOME .. "/archenemy/config/hypr/autostart-apps.lua")
 
@@ -182,7 +183,6 @@ hl.config({
         smart_split          = false,
         smart_resizing       = true,
         force_split          = 0,
-        special_scale_factor = 0.95,
     },
 })
 
@@ -194,6 +194,7 @@ hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
 hl.bind(mainMod .. " + S", hl.dsp.exec_cmd(gamelauncher))
 hl.bind(mainMod .. " + N", hl.dsp.exec_cmd(networkmanager_gui))
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(theme_menu))
+hl.bind(mainMod .. " + C", hl.dsp.exec_cmd("~/archenemy/scripts/rofi/rofi_clipboard.sh"))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(wallpaper_menu))
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(lock))
 hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(appbinds))
@@ -206,6 +207,11 @@ hl.bind(mainMod .. " + SHIFT + Shift_R", hl.dsp.exec_cmd(power_menu), { release 
 -- Keyboard language
 -- Allows the user to switch between any two chosen keyboard layouts.
 hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("hyprctl switchxkblayout all next"))
+-- Bezpośrednio układ nr 1–4 z listy (kolejność: Super+A → [k]).
+hl.bind(mainMod .. " + CTRL + 1", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 1"))
+hl.bind(mainMod .. " + CTRL + 2", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 2"))
+hl.bind(mainMod .. " + CTRL + 3", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 3"))
+hl.bind(mainMod .. " + CTRL + 4", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/keyboard-layouts.sh switch 4"))
 
 hl.config({
     input = {
@@ -229,8 +235,18 @@ hl.config({
     },
 })
 
+-- Czułość myszy użytkownika (Super+A → [m], warstwa osobista, poza gitem) —
+-- PO bloku input, więc nadpisuje `sensitivity = 0`; brak pliku = 0 z rice'a.
+require_optional(HOME .. "/archenemy/config/hypr/mouse.lua")
+-- Układy klawiatury użytkownika (Super+A → [k], warstwa osobista) — nadpisują
+-- `kb_layout = "pl,us"` wyżej; brak pliku = pl,us z rice'a.
+require_optional(HOME .. "/archenemy/config/hypr/keyboard-layouts.lua")
+
 -- Window control
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
+-- Przywróć ostatnio zamkniętą aplikację (stos sesji; demon startuje we wspólnym
+-- autostart-common.lua). Kolejne naciśnięcia sięgają dalej wstecz.
+hl.bind(mainMod .. " + TAB", hl.dsp.exec_cmd("~/archenemy/scripts/hypr/window-history.sh restore"))
 hl.bind(mainMod .. " + V", hl.dsp.window.float())
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ mode = "fullscreen" }))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
@@ -281,7 +297,9 @@ hl.window_rule({ match = { class = "^(xdg-desktop-portal-gtk)$" }, float = true 
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, float = true })
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, pin = true })
 hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, size = { 480, 270 } })
-hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, move = { "100%-490", "100%-280" } })
+-- move liczy muParser Hyprlanda: "%" nie jest operatorem, a błąd wyrażenia
+-- tylko centruje okno (bez configerrors). Prawy dolny róg, 10 px od krawędzi.
+hl.window_rule({ match = { title = "^(Picture-in-Picture)$" }, move = { "monitor_w-window_w-10", "monitor_h-window_h-10" } })
 hl.window_rule({ match = { class = "^(archenemy-appbinds)$" }, float = true })
 hl.window_rule({ match = { class = "^(archenemy-appbinds)$" }, size = { 860, 560 } })
 hl.window_rule({ match = { class = "^(archenemy-appbinds)$" }, center = true })

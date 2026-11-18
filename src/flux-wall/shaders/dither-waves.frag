@@ -17,6 +17,7 @@ uniform float time;
 uniform vec3  palette_bg;
 uniform vec3  palette_ink;
 uniform vec3  palette_accent;
+uniform float dither;   /* 1 = raster Bayera, 0 = gładki gradient palety (engine.h) */
 uniform float detail;
 
 out vec4 fragColor;
@@ -24,6 +25,7 @@ out vec4 fragColor;
 const float LEVEL    = 0.60;
 const float GAMMA    = 1.9;
 const float ACC_FROM = 0.84;
+const float ACC_SOFT = 0.10;   /* tryb gładki: szerokość przejścia atrament → akcent nad progiem (część LEVEL) */
 
 float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -66,6 +68,15 @@ float bayer8(vec2 c) {
     return (float(r) + 0.5) / 64.0;
 }
 
+/* Tryb gładki (dither = 0): kolor, który raster daje z daleka, ale bez
+ * rastra — ton `f` (ułamek zapalonych pikseli w rastrze) jako krycie koloru
+ * „zapalonego” na tle, a `acc` (0..1) przesuwa ten kolor z atramentu
+ * w akcent. Gradient palety tło → atrament → akcent, ciągły. */
+vec3 palette_ramp(float f, float acc) {
+    vec3 lit = mix(palette_ink, palette_accent, clamp(acc, 0.0, 1.0));
+    return mix(palette_bg, lit, clamp(f, 0.0, 1.0));
+}
+
 void main() {
     /* Współrzędne w pikselach, ale długości fal w jednostkach wysokości ekranu —
      * ta sama gęstość prążków na 1080p i 1600p. */
@@ -94,7 +105,11 @@ void main() {
     f = pow(clamp(f, 0.0, 1.0), GAMMA) * LEVEL;
 
     vec3 col = palette_bg;
-    if (f > bayer8(px))
-        col = (f >= ACC_FROM * LEVEL) ? palette_accent : palette_ink;
+    if (dither > 0.5) {
+        if (f > bayer8(px))
+            col = (f >= ACC_FROM * LEVEL) ? palette_accent : palette_ink;
+    } else {
+        col = palette_ramp(f, smoothstep(ACC_FROM * LEVEL, (ACC_FROM + ACC_SOFT) * LEVEL, f));
+    }
     fragColor = vec4(col, 1.0);
 }

@@ -5,7 +5,7 @@
  *   - jednoprzebiegowy: `shaders/<nazwa>.frag` liczony per piksel (jak dotąd);
  *   - cząstkowy:        do tego `shaders/<nazwa>.update.glsl` — krok symulacji
  *                       cząstek; ślady akumulują się w buforze, który gaśnie
- *                       w czasie, a `<nazwa>.frag` robi z niego tone + dither.
+ *                       w czasie, a `<nazwa>.frag` robi z niego ton (+ raster przy dither = 1).
  *
  * Silnik nie wie nic o Waylandzie ani EGL: dostaje bieżący kontekst GL i cel
  * (framebuffer + rozmiar). Dzięki temu ten sam kod działa pod kompozytorem
@@ -13,9 +13,20 @@
  *
  * Kontrakt uniformów przebiegu finalnego (.frag):
  *   resolution, time, palette_bg/ink/accent, detail   — jak dotąd,
+ *   dither (1.0 = raster Bayera 8×8 do trzech kolorów palety, 0.0 = gładko:
+ *   ciągły ton na gradiencie tło → atrament → akcent; ustawia `--dither` /
+ *   `--no-dither`, domyślnie 0 — raster to cecha rice'a dither-flux, nie
+ *   animacji; shader bez tego uniformu działa jak dotąd),
  *   accum (sampler2D), gain                            — tylko tryb cząstkowy,
  *   audio_level/bass/lowmid/mid/high/beat (0..1), audio_spectrum (sampler2D
- *   32×1, jednostka 2) — dźwięk; ustawiane, jeśli shader je zadeklaruje.
+ *   32×1 R, jednostka 2), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
+ *   g = R, próbki -1..1 po triggerze — oscyloskop), audio_wave_peak (szczyt
+ *   |mono| tego okna — auto-wzmocnienie), audio_spectrogram (sampler2D
+ *   COLS×AUDIO_SPECTRO_BINS R8, jednostka 4: historia kolumn spektrogramu w
+ *   pierścieniu po x — WRAP_S = REPEAT, LINEAR; kolumny przybywają 50/s
+ *   zegarem realnym) + audio_spectrogram_head (float: x kolumny NAJNOWSZEJ;
+ *   wiek w kolumnach → u = (head + 0.5 - wiek) / textureSize().x) — dźwięk;
+ *   ustawiane, jeśli shader je zadeklaruje (tekstury ładowane tylko wtedy).
  *   `time` to CZAS ANIMACJI: przy muzyce płynie szybciej (audio_tempo·mid).
  * `#pragma flux` wolno pisać także w .frag (np. audio_tempo dla animacji
  * jednoprzebiegowych) — linie są usuwane przed kompilacją, `#version` zostaje.
@@ -36,6 +47,15 @@
 #include "audio.h"
 
 struct palette { float bg[3], ink[3], accent[3]; };
+
+/* Uniform `time` jest floatem (24 bity mantysy: ulp = t·2⁻²³, po dobie
+ * ~10 ms — animacje zaczynają drgać). Silnik liczy dt na double'ach, a do
+ * shaderów wysyła fmod(time, FLUX_TIME_PERIOD): przy 3600 s ulp ≈ 0.43 ms.
+ * Zawinięcie raz na godzinę jest ciągłe dla okresów dzielących 3600 (obrót
+ * radaru 4 s, oddech rings 3 s, tiki int(time·k)); shadery z fazą liniową
+ * (dither-flux, dither-waves, orb-spinnin', tunnel, dryf szumu pól) widzą
+ * wtedy jeden skok fazy na godzinę — świadomy kompromis wobec ciągłego drżenia. */
+#define FLUX_TIME_PERIOD 3600.0
 
 /* Parametry animacji cząstkowej — z `#pragma flux` (wartości domyślne niżej). */
 struct flux_params {
@@ -72,6 +92,18 @@ int flux_step_cap(const struct flux_params *p, float strength);
 char *flux_strip_directives(const char *src, bool keep_version);
 /* Ścieżka `.update.glsl` dla `.frag`; false, gdy nazwa nie kończy się na .frag. */
 bool flux_update_path(const char *frag_path, char *out, size_t outlen);
+/* Spektrogram (uniform audio_spectrogram): ile kolumn dopisać w tej klatce przy
+ * `dt_real` sekund zegara REALNEGO — AUDIO_RATE/AUDIO_HOP = 50 kolumn/s, ułamek
+ * przechodzi w `acc` na następną klatkę; po pauzie (uśpiony ekran) najwyżej
+ * FLUX_SPECTRO_MAX_COLS i bez zaległości (acc = 0). */
+#define FLUX_SPECTRO_MAX_COLS 64
+int flux_spectro_advance(double *acc, double dt_real);
+/* Kolumna spektrogramu 0..255 z audio->spectro × strength (zaokrąglenie,
+ * nasycenie na 0 i 255); bez audio albo strength <= 0 — pusta kolumna. */
+void flux_spectro_bytes(const struct audio_features *audio, float strength, unsigned char col[AUDIO_SPECTRO_BINS]);
+/* Uniformy audio_level, _bass, _lowmid, _mid, _high, _beat (v) i audio_wave_peak
+ * (peak); bez audio albo strength <= 0 — zera. */
+void flux_audio_uniform_values(const struct audio_features *a, float strength, float v[6], float *peak);
 
 struct flux_engine;
 struct flux_target;
@@ -89,17 +121,20 @@ const struct flux_params *flux_engine_params(const struct flux_engine *e);
  * bieżącego kontekstu. NULL + `err`, gdy FBO zmiennoprzecinkowy nie jest
  * dostępny na tym sterowniku. */
 struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char *err, size_t errlen);
-void flux_target_resize(struct flux_target *t, int w, int h);
+/* false + `err` = nowy akumulator się nie udał; cel zostaje w STARYM rozmiarze
+ * z działającym FBO (wołający może dalej rysować). */
+bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t errlen);
 void flux_target_destroy(struct flux_target *t);
 
 /* Jedna klatka: symulacja (tryb cząstkowy) + przebieg finalny do `dest_fbo`
  * (0 = powierzchnia okna) o rozmiarze celu. `time` w sekundach od startu;
  * `warmup_once` = przed TĄ klatką przelicz `warmup` sekund symulacji
  * (dla --once, gdzie nie ma kolejnych klatek). */
-/* `audio` = NULL → bez reakcji (warp 1, uniformy audio = 0); `audio_strength`
+/* `dither` → uniform `dither` przebiegu finalnego (1 = raster Bayera, 0 = gładko).
+ * `audio` = NULL → bez reakcji (warp 1, uniformy audio = 0); `audio_strength`
  * skaluje wzmocnienia (1.0 = wartości z pragm shadera). */
 void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint dest_fbo,
-                        double time, const struct palette *pal, float detail,
+                        double time, const struct palette *pal, float detail, float dither,
                         const struct audio_features *audio, float audio_strength, bool warmup_once);
 
 #endif

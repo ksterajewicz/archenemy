@@ -1,14 +1,48 @@
 veracrypt
 discord
-vscodium
 btop
 signal-desktop
 keepassxc
+# proton-vpn-gtk-app: oficjalny klient Proton VPN z repo extra (dawna nazwa AUR
+# "protonvpn" nie istnieje — ktoś mógłby ją zarejestrować, audyt 2026-11-14)
+proton-vpn-gtk-app
 libreoffice-fresh
 qbittorrent
 vlc
+# mpv: odtwarzacz wideo/audio; kolory OSD per rice w rices/*/mpv/mpv.conf
+# (wchodzi do ~/.config/mpv jak każdy folder rice'a — patrz README „Music stack”)
 mpv
+# ── music stack (OPCJONALNY — rekomendacja, nie wymóg; zalecany komplet: mpd + mpc + ncmpcpp) ──
+# mpd: demon muzyczny jako usługa użytkownika; config w config/mpd/ (pipewire +
+#      fifo dla wizualizera ncmpcpp); install.sh [8l] PYTA, zanim cokolwiek włączy
+mpd
+# mpc: CLI mpd — używa go Super+A → [o] (przełącznik wyjścia audio) i skrypty
+mpc
+# ncmpcpp: klient TUI ze skórką per rice (rices/*/ncmpcpp/); wpis .desktop dla
+#          rofi kopiuje install.sh [8l] (tylko gdy nie masz własnego)
+ncmpcpp
 pavucontrol
+# zsh: druga powłoka do wyboru w Super+A → [h] (domyślnie bash); TUI doinstalowuje
+# ją po potwierdzeniu, aliasy i PATH zostają we wspólnym config/shell/shellrc
+zsh
+# Opcjonalne wtyczki zsh: Super+A → [h] → 5, wszystkie domyślnie wyłączone.
+zsh-autosuggestions
+zsh-syntax-highlighting
+zsh-completions
+# Opcjonalne narzędzia CLI: Super+A → [h] → 6, osobno dla bash/zsh.
+fd
+ripgrep
+zoxide
+# libratbag: ratbagctl — prawdziwe DPI i częstotliwość raportowania myszy w Super+A → [m]
+# (zapis w pamięci myszy, tylko wspierane modele); bez niego DPI jest emulowane szybkością
+libratbag
+# hyprpicker: próbnik kolorów pod Wayland — żaden skrypt ani bind go nie woła
+# (przeniesiony z requirements 2026-09-25), narzędzie do ręcznego użycia
+hyprpicker
+# nm-connection-editor: GUI połączeń NetworkManagera — wpis `gui =` w
+# rices/*/networkmanager-dmenu/config.ini (Super+N → edycja połączenia);
+# menu działa i bez niego, więc pakiet jest opcjonalny
+nm-connection-editor
 mangohud
 # steam wymaga repo [multilib] w /etc/pacman.conf (włącza je instalator GPU)
 steam
@@ -18,3 +52,9 @@ gamemode
 lib32-gamemode
 # gamescope: mikrokompozytor Valve — ratuje problematyczne gry Proton
 gamescope
+
+# Opcjonalny moduł Bluetooth: install.sh [10], flaga dopiero po weryfikacji.
+bluez
+bluez-utils
+dbus
+bluetui

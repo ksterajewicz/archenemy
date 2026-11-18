@@ -1,6 +1,6 @@
-// archenemy — fastfetch (asia-n-rice). Zaadaptowany 1:1 ze źródła: bez
-// bloku logo/color (domyślne logo Archa i kolory) — tak jak w źródłowym
-// rice'u. Można w każdej chwili przebarwić logo/klucze na mauve (jak
+// archenemy — fastfetch (asia-n-rice). Przeniesiony 1:1 z wcześniejszej
+// wersji tego rice'a: bez bloku logo/color (logo dystrybucji i kolory to
+// domyślne fastfetcha, nie plik z repo) — tak jak tam. Można w każdej chwili przebarwić logo/klucze na mauve (jak
 // robią white-blue/tron), jeśli właściciel zechce parytetu wizualnego.
 {
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
@@ -22,12 +22,22 @@
     "font",
     "cursor",
     "terminal",
-    "terminalfont",
+    // Font terminala z uwzględnieniem wyboru Super+A → [f]; rodzina jest w importach
+    // alacritty (font.toml), których terminalfont może nie uwzględniać. fastfetch po
+    // cichu pomija wiersz, gdy polecenie nic nie wypisze albo skończy się kodem 127
+    // (np. brak skryptu), więc zapasowo (także gdy skrypt wypisze „unknown…”) czytamy
+    // te same pliki co alacritty; wynik nigdy nie jest pusty.
+    { "type": "command", "key": "Terminal Font", "text": "f=$(bash \"$HOME/archenemy/scripts/appbinds/font-settings.sh\" current 2>/dev/null); case \"$f\" in ''|unknown*) g=$(sed -n 's/^[[:space:]]*family[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1 (alacritty config)/p' \"$HOME/.config/archenemy/fonts/alacritty.toml\" \"$HOME/.config/alacritty/font.toml\" 2>/dev/null | head -n 1); [ -n \"$g\" ] && f=$g ;; esac; echo \"${f:-unknown (font-settings.sh and alacritty font files unavailable)}\"" },
     "cpu",
     "gpu",
     "memory",
     "swap",
-    "disk",
+    // Pojemność każdego fizycznego dysku (hideVirtual: bez zram, dm-* i loop*),
+    // potem każdy zamontowany system plików: zwykłe partycje i dyski zewnętrzne;
+    // bez pseudo-FS (tmpfs, proc…), ukrytych i podwoluminów btrfs. Tylko opcje
+    // modułów — zero nazw urządzeń i ścieżek.
+    { "type": "physicaldisk", "hideVirtual": true },
+    { "type": "disk", "showRegular": true, "showExternal": true, "showHidden": false, "showSubvolumes": false, "showUnknown": false },
     "battery",
     "poweradapter",
     "locale",

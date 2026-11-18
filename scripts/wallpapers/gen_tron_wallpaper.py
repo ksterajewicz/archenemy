@@ -3,7 +3,8 @@
 archenemy — matematyczny generator tapety „siatka Tron" (rice tron).
 Zero zależności: perspektywiczna siatka (podłoga Gridu) pod linią horyzontu
 z cyjanową poświatą, pionowe linie zbiegające do punktu zbiegu, delikatna
-winieta; PNG pisany ręcznie przez zlib/struct (wzorzec z gen_arch_wallpaper.py).
+winieta; PNG pisany ręcznie przez zlib/struct (wzorzec z gen_hex_wallpaper.py,
+dawniej gen_arch_wallpaper.py).
 
 Paleta rice'a tron: tło #020A0F, neon #00E5FF, przygaszony #0E2A33.
 """

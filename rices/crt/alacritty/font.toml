@@ -1,0 +1,4 @@
+# archenemy — domyślny font rice'a (importowany przez alacritty.toml).
+# Własny wybór: Super+A → [f]; zapisuje się poza repo i ma pierwszeństwo.
+[font.normal]
+family = "JetBrainsMono Nerd Font"

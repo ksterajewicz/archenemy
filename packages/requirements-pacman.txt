@@ -3,10 +3,10 @@
 hyprland
 hyprpaper
 hyprlock
-hyprpicker
 hyprpolkitagent
 waybar
-rofi-wayland
+# rofi: od 2.0 z obsługą Waylanda; dawny "rofi-wayland" pacman zastępuje (Replaces)
+rofi
 alacritty
 fastfetch
 neovim
@@ -26,6 +26,11 @@ wireplumber
 pavucontrol
 playerctl
 brightnessctl
+# swayosd: OSD jasności — pasek u dołu WSZYSTKICH monitorów przy zmianie
+# jasności (klawisze XF86MonBrightness → swayosd-client). swayosd-server
+# autostartuje każdy rice; motyw per rice w rices/*/swayosd/style.css.
+# Wydanie z repo extra (0.3.x), nie swayosd-git z niesprawdzonego HEAD (audyt 2026-11-14)
+swayosd
 # power profiles (universal profile switcher)
 power-profiles-daemon
 # libnotify: notify-send — powiadomienia z 7 skryptów (zmiana rice'a,
@@ -34,10 +39,22 @@ power-profiles-daemon
 libnotify
 # socat: nasłuch zdarzeń Hyprlanda (socket2) w workspace-orphan-guard.sh —
 # scalanie workspace'ów po odpięciu monitora; bez socat guard
-# przechodzi w awaryjny tryb sondy co 5 s
+# przechodzi w awaryjny tryb sondy co 5 s; także window-history.sh
+# (Super+Tab — migawka okna przy openwindow, bez socat sonda co 2 s)
 socat
+# util-linux: flock — blokady w workspace-orphan-guard.sh, window-history.sh
+# i przełączniku rice'ów (lib/switch-rice.sh: dwa szybkie Super+T czekają na
+# siebie); setsid — window-history.sh uruchamia przywróconą aplikację,
+# rofi_wallpaper_switcher.sh restartuje hyprpaper poza sesją terminala
+util-linux
+# xdg-desktop-portal-hyprland: portal Hyprlanda — udostępnianie ekranu
+# (Discord, przeglądarki, RustDesk) i zrzuty przez portal; hyprland ma go
+# tylko jako zależność opcjonalną (decyzja właściciela 2026-09-23)
+xdg-desktop-portal-hyprland
 # network + firewall
 networkmanager
+# networkmanager-dmenu: menu Wi-Fi Super+N (rofi); jest w repo extra (dawniej z AUR)
+networkmanager-dmenu
 ufw
 # pciutils: lspci — wykrywanie GPU w install/gpudrivers-installation.sh;
 # minimalny Arch potrafi go nie mieć (skrypt też sam go dociąga w razie braku)
@@ -56,6 +73,13 @@ mesa
 # zależności); do 2026-09-07 był opcjonalny (regeneracja tapet), teraz wymagany —
 # bez niego rice dither-flux ma tylko zestaw awaryjny v1/v2 z repo
 python
+# gtk3: gtk-launch — uruchamia wpisy .desktop z autostartu wybranego w
+# Super+A → [p] (scripts/hypr/lib/gen-autostart.sh emituje `gtk-launch <id>`
+# do config/hypr/autostart-apps.lua); bez niego wybrane aplikacje cicho nie startują
+gtk3
+# git: aktualizator (scripts/appbinds/update-archenemy.sh) i kontrola wersji
+# warstwy maszynowej (scripts/hypr/machine-layer-check.sh, data/installed-head.dat)
+git
 # fonts + icons
 # ttf-iosevka-nerd: font waybara (oba rice'y) — bez niego cichy fallback na monospace
 ttf-iosevka-nerd
@@ -63,3 +87,9 @@ ttf-jetbrains-mono-nerd
 ttf-nerd-fonts-symbols-mono
 noto-fonts
 papirus-icon-theme
+
+# coreutils: sha256sum — rozpoznawanie niezmienionych plików osobistych po aktualizacji szablonów powłoki
+coreutils
+
+# procps-ng: pgrep — odczyt stanu demonów przez archenemy doctor (bez argumentów procesów w raporcie)
+procps-ng

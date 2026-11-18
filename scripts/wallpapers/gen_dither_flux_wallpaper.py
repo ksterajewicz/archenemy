@@ -22,8 +22,9 @@ Użycie:
     ziarno   liczba całkowita (domyślnie 2026)
     TAG:WxH  rozdzielczość docelowa, np. v1:1920x1080 v2:2560x1600 — podane
              zastępują domyślne SIZES. install.sh podaje tu REALNE tryby
-             monitorów z data/monitors/*.dat (primary → v1, secondary → v2),
-             żeby raster był liczony natywnie, bez skalowania.
+             monitorów z data/monitors/*.dat (primary → v1, secondary → v2,
+             pozostałe → m-<złącze>, np. m-HDMI-A-1), żeby raster był liczony
+             natywnie, bez skalowania. TAG: litery, cyfry i myślnik.
     filtr    fragment nazwy formy (przeplyw, atraktor…) — generuj tylko pasujące
 """
 import math, os, struct, sys, time, zlib
@@ -69,8 +70,22 @@ def write_png(path, bits, w, h, bg, ink, acc):
            + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
            + chunk(b'IDAT', zlib.compress(raw, 9))
            + chunk(b'IEND', b''))
-    with open(path, 'wb') as f:
-        f.write(png)
+    # Zapis atomowy: plik tymczasowy w tym samym katalogu + os.replace. Bieg
+    # przerwany w trakcie zapisu (reboot zaraz po instalacji, generowanie idzie
+    # w tle) nie zostawia uciętego PNG pod docelową nazwą — w Super+W jest albo
+    # cały plik, albo żaden. Ukryta nazwa z końcówką .part nie jest obrazem, więc
+    # przełącznik tapet jej nie pokaże; następny bieg ją nadpisze.
+    tmp = os.path.join(os.path.dirname(path) or '.', '.' + os.path.basename(path) + '.part')
+    try:
+        with open(tmp, 'wb') as f:
+            f.write(png)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 # ── dither: uporządkowana macierz Bayera 8x8 ─────────────────────────────────
 
@@ -349,6 +364,9 @@ def engine_warp(w, h, seed):
 # (nazwa pliku, silnik, offset ziarna, poziom tonowania, gamma tonowania)
 # Silniki fal i domain warpingu zostają wyżej i są sprawne — po prostu nie weszły
 # do pierwszego zestawu tapet; dopisanie ich tutaj wystarczy, by wróciły.
+# Formy powstają po kolei, a OSTATNIA jest znacznikiem kompletu danej
+# rozdzielczości (DITHER_FLUX_LAST_FORM w lib/dither-flux-sizes.sh). Nową formę
+# dopisz na końcu i przenieś tam znacznik — pilnuje tests/dither-flux-sizes.sh.
 FORMS = [
     ('przeplyw',  engine_flow,      1,  0.62, 1.9),
     ('atraktor',  engine_attractor, 2,  0.62, 1.9),
@@ -382,10 +400,14 @@ if __name__ == '__main__':
     base_seed = int(sys.argv[3]) if len(sys.argv) > 3 else 2026
     rest = sys.argv[4:]
     # Argumenty w formie TAG:WxH to rozdzielczości; reszta to filtry nazw form.
+    # TAG z wielkimi literami i myślnikiem (m-HDMI-A-1, monitor z rolą other):
+    # dawny wzorzec [a-z0-9]+ brał go za filtr nazw, a filtr nie pasował do
+    # żadnej formy, więc bieg kończył się kodem 0 bez ANI JEDNEGO pliku — także
+    # bez v1/v2 (audyt 2026-11-05, A5).
     sizes = []
     only = []
     for arg in rest:
-        m = re.fullmatch(r'([a-z0-9]+):(\d+)x(\d+)', arg)
+        m = re.fullmatch(r'([A-Za-z0-9][A-Za-z0-9-]*):(\d+)x(\d+)', arg)
         if m:
             w, h = int(m.group(2)), int(m.group(3))
             if w < 64 or h < 64 or w > 16384 or h > 16384:

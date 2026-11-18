@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+# =============================================
+#   archenemy - tests/machine-layer.sh
+#   Testy regresji warstwy maszynowej na ATRAPIE hyprctl (tests/mock/hyprctl
+#   odtwarza prawdziwy zrzut z 2026-09-21: monitory eDP-1 i HDMI-A-3, których
+#   nazwy złączy zmieniły się po restarcie względem eDP-2 / HDMI-A-1 z dnia
+#   instalacji). Bez Hyprlanda, bez roota, bez zapisu poza mktemp.
+#
+#   Zasada integralności: każdy generator warstwy maszynowej i każdy skrypt,
+#   który czyta data/monitors/*.dat, ma tu test na trzy przypadki:
+#     A. opis EDID dostępny        → selektor desc:, przeżywa zmianę nazwy,
+#     B. brak opisu (stare .dat)   → nazwa złącza, dokładnie dawne zachowanie,
+#     C. opisy nierozróżnialne     → nazwy złączy (install.sh [3]).
+#   Uruchom: bash tests/machine-layer.sh   (kod 0 = wszystko przeszło)
+# =============================================
+
+# shellcheck disable=SC2016,SC1091,SC1007,SC2034  # check() robi eval na cytowanym wyrażeniu; źródła przez $REPO; puste kolory dla wycinka install.sh
+set -uo pipefail
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/environment.sh
+source "$REPO/tests/lib/environment.sh"
+T="$(mktemp -d)"
+trap 'rm -rf "$T"' EXIT
+test_environment_init "$T" || exit 1
+export PATH="$REPO/tests/mock:$PATH"
+export MOCK_LOG="$T/dispatch.log"
+# Pułapki EXIT z install.sh [3] wołają `sudo -k` (K18) — atrapa tylko loguje,
+# żeby wycinki nie ruszały prawdziwego sudo.
+mkdir -p "$T/stub"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/sudo.log"\n' "$T" > "$T/stub/sudo"; chmod +x "$T/stub/sudo"
+export PATH="$T/stub:$PATH"
+
+PASS=0; FAIL=0; SKIP=0
+ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
+fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
+# Pominięcie nigdy nie liczy się jako ✓; liczba trafia do ostatniego wiersza (run-all pokazuje tylko jego).
+skip() { SKIP=$((SKIP + 1)); echo "  ? skip: $1"; }
+check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
+
+# ─── środowisko: $HOME/archenemy = linki do repo + własna warstwa maszynowa ───
+H="$T/home"; A="$H/archenemy"
+mkdir -p "$A/config/hypr" "$A/data/monitors" "$A/scripts/hypr"
+ln -s "$REPO/scripts/hypr/lib" "$A/scripts/hypr/lib"
+ln -s "$REPO/scripts/lib" "$A/scripts/lib"   # lib/runtime-dir.sh — katalog sesji (S12)
+for s in workspace-orphan-guard.sh machine-layer-check.sh workspace-mode-switch.sh; do
+    ln -s "$REPO/scripts/hypr/$s" "$A/scripts/hypr/$s"
+done
+export HOME="$H"
+
+DESC_EDP="Thermotrex Corporation TL160ADMP03-0"
+DESC_HDMI="Microstep MSI G241 0x00000603"
+printf 'MONITOR=eDP-2\nRESOLUTION=2560x1600\nRATE=240\nPOSITION=0x0\nSCALE=1.3333334\nROLE=secondary\nDESCRIPTION=%s\nORDER=1\n' "$DESC_EDP"  > "$A/data/monitors/eDP-2.dat"
+printf 'MONITOR=HDMI-A-1\nRESOLUTION=1920x1080\nRATE=144\nPOSITION=1925x123\nSCALE=1\nROLE=primary\nDESCRIPTION=%s\nORDER=2\n' "$DESC_HDMI" > "$A/data/monitors/HDMI-A-1.dat"
+echo decades > "$A/data/workspace-mode.dat"
+
+# shellcheck source=../scripts/hypr/lib/monitor-id.sh
+source "$REPO/scripts/hypr/lib/monitor-id.sh"
+# shellcheck source=../scripts/hypr/lib/gen-workspaces.sh
+source "$REPO/scripts/hypr/lib/gen-workspaces.sh"
+
+echo "== lib/monitor-id.sh"
+check "A: selektor z .dat = desc:"            '[[ "$(monitor_selector_from_dat "$A/data/monitors/eDP-2.dat")" == "desc:$DESC_EDP" ]]'
+printf 'MONITOR=DP-9\nORDER=3\n' > "$T/old.dat"
+check "B: stary .dat bez opisu = nazwa"       '[[ "$(monitor_selector_from_dat "$T/old.dat")" == "DP-9" ]]'
+printf 'MONITOR=DP-8\nDESCRIPTION=Foo "Bar"\n' > "$T/bad.dat"
+check "opis z cudzysłowem = nazwa (bezpiecznik)" '[[ "$(monitor_selector_from_dat "$T/bad.dat")" == "DP-8" ]]'
+check "desc: → żywa nazwa po zmianie złącza"  '[[ "$(MOCK_MONS=both monitor_live_name "desc:$DESC_HDMI")" == "HDMI-A-3" ]]'
+check "desc: odpiętego monitora → pusto"      '[[ -z "$(MOCK_MONS=edp monitor_live_name "desc:$DESC_HDMI")" ]]'
+check "stara nazwa → pusto (nie ma eDP-2)"    '[[ -z "$(MOCK_MONS=both monitor_live_name eDP-2)" ]]'
+check "lua_string cytuje \\ i \""             '[[ "$(lua_string "a\"b\\c")" == "\"a\\\"b\\\\c\"" ]]'
+# Znak sterujący (np. CR z ręcznie edytowanego .dat, \n w nazwie pliku) jako
+# surowy bajt urywał literał Lua i cały plik (audyt 2026-11-05, S14).
+CTL=$'a\nb\rc\td\x7fe'
+check "lua_string: sterujące jako \\ddd, 1 linia" '[[ "$(lua_string "$CTL")" == '"'"'"a\010b\013c\009d\127e"'"'"' ]]'
+check "lua_string: UTF-8 bez zmian"           '[[ "$(lua_string "Żółć")" == "\"Żółć\"" ]]'
+generate_workspaces_monitors "$T/ctl.lua" decades $'DP-7\r'
+check "nazwa z CR: 1 reguła = 1 linia"        '[[ $(grep -c "^hl\.workspace_rule({ workspace = \"[0-9]*\", monitor = \"DP-7\\\\013\"" "$T/ctl.lua") -eq 10 ]]'
+mkdir -p "$T/ctl-mon"
+printf 'MONITOR=DP-7\r\nRESOLUTION=1920x1080\nRATE=60\nPOSITION=0x0\nSCALE=1\nORDER=1\n' > "$T/ctl-mon/DP-7"$'\r'".dat"
+( source "$REPO/scripts/hypr/lib/gen-monitors.sh"; generate_monitors_conf "$T/ctl-mon.lua" "$T/ctl-mon" )
+check "gen-monitors: CR → \\013, komentarz z ?" 'grep -qF "output = \"DP-7\\013\"" "$T/ctl-mon.lua" && grep -qxF -e "-- DP-7?" "$T/ctl-mon.lua"'
+if command -v lua5.4 >/dev/null 2>&1; then
+    check "gen-monitors: CR — plik Lua się wczytuje" 'lua5.4 -e "hl={monitor=function(t) assert(t.output==\"\" or t.output==\"DP-7\\r\") end}" -e "dofile(\"$T/ctl-mon.lua\")" </dev/null'
+    check "lua_string: Lua czyta te same bajty"  '[[ "$(lua5.4 -e "io.write($(lua_string "$CTL"))" </dev/null)" == "$CTL" ]]'
+    check "nazwa z CR: plik Lua się wczytuje"    'lua5.4 -e "hl={workspace_rule=function() end, bind=function() end, dsp={focus=function() end, window={move=function() end}}}" -e "dofile(\"$T/ctl.lua\")" </dev/null'
+else
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — Lua with control characters not executed"
+fi
+check "monitor_desc_usable odrzuca pusty/#/=" '! monitor_desc_usable "" && ! monitor_desc_usable "a#b" && ! monitor_desc_usable "a=b" && monitor_desc_usable "$DESC_EDP"'
+
+echo "== gen-workspaces.sh"
+generate_workspaces_monitors "$T/dec.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP" "HDMI-A-1"$'\t'"desc:$DESC_HDMI" "DP-9"
+check "A: decades — panel 1-10 po desc:"     'grep -q "workspace = \"1\", monitor = \"desc:$DESC_EDP\", default = true" "$T/dec.lua"'
+check "A: decades — zewnętrzny 11-20 po desc:" 'grep -q "workspace = \"11\", monitor = \"desc:$DESC_HDMI\", default = true, default_name = \"1\"" "$T/dec.lua"'
+check "B: wpis bez TAB-a = nazwa (DP-9 → 21)" 'grep -q "workspace = \"21\", monitor = \"DP-9\"" "$T/dec.lua"'
+check "inwariant: 1 reguła = 1 linia (guard)" '[[ $(grep -c "^hl\.workspace_rule({ workspace = \"[0-9]*\", monitor = \"" "$T/dec.lua") -eq 30 ]]'
+generate_workspaces_monitors "$T/sh.lua" shared "eDP-2"$'\t'"desc:$DESC_EDP" "HDMI-A-1"$'\t'"desc:$DESC_HDMI"
+check "A: shared — 2 domowe reguły po desc:" '[[ $(grep -c "monitor = \"desc:" "$T/sh.lua") -eq 2 ]]'
+if command -v lua5.4 >/dev/null 2>&1; then
+    check "Lua: plik wczytuje się z atrapą hl.*" 'lua5.4 -e "hl={workspace_rule=function(t) assert(type(t.workspace)==\"string\" and type(t.monitor)==\"string\") end, bind=function() end, dsp={focus=function() end, window={move=function() end}}}" -e "dofile(\"$T/dec.lua\")" </dev/null'
+else
+    skip "lua5.4 is not installed (sudo pacman -S lua54) — generated Lua not executed"
+fi
+
+echo "== workspace-orphan-guard.sh"
+cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
+: > "$MOCK_LOG"; MOCK_MONS=both bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "oba podłączone (nowe nazwy) → nic nie przenosi" '[[ ! -s "$MOCK_LOG" ]]'
+: > "$MOCK_LOG"; MOCK_MONS=edp bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "HDMI odpięty → okno z 11 na 1"         'grep -q "dispatch hl.dsp.window.move({ workspace = \"1\", follow = false, window = \"address:0xaaaa\" })" "$MOCK_LOG"'
+# zrzut 2026-09-21 po naprawie reguł: 21 (HDMI, dekada 11-20) i 22 (eDP, 1-10) bez reguły
+# (reguły tylko dla dwóch realnych monitorów — z DP-9 z fixture wyżej 21 byłby zwykłą sierotą)
+generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP" "HDMI-A-1"$'\t'"desc:$DESC_HDMI"
+: > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale MOCK_TITLE=1 bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "guard: tytuł okna nie wchodzi do wyrażenia Lua" '! grep -q "os.execute" "$MOCK_LOG" && grep -q "address:0xaaaa" "$MOCK_LOG"'
+: > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "21 bez reguły na HDMI → okna na 11"     'grep -q "dispatch hl.dsp.window.move({ workspace = \"11\", follow = false, window = \"address:0xaaaa\" })" "$MOCK_LOG" && grep -q "dispatch hl.dsp.window.move({ workspace = \"11\", follow = false, window = \"address:0xcccc\" })" "$MOCK_LOG"'
+check "22 bez reguły na eDP → okno na 2, fokus za nim" 'grep -q "dispatch hl.dsp.window.move({ workspace = \"2\", follow = false, window = \"address:0xbbbb\" })" "$MOCK_LOG" && grep -q "dispatch hl.dsp.focus({ workspace = \"2\" })" "$MOCK_LOG"'
+check "nic nie leci do dekady cudzego monitora" '! grep -q "dispatch hl.dsp.window.move({ workspace = \"1\", follow = false, window = \"address:0xaaaa\" })" "$MOCK_LOG"'
+# monitor bez własnej dekady (reguły tylko dla panelu) → jego 21 zostaje w spokoju
+generate_workspaces_monitors "$A/config/hypr/workspaces-monitors.lua" decades "eDP-2"$'\t'"desc:$DESC_EDP"
+: > "$MOCK_LOG"; MOCK_MONS=both MOCK_WS=stale bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "monitor bez dekady → jego workspace nietknięty" '! grep -q "address:0xaaaa" "$MOCK_LOG" && grep -q "dispatch hl.dsp.window.move({ workspace = \"2\", follow = false, window = \"address:0xbbbb\" })" "$MOCK_LOG"'
+cp "$T/dec.lua" "$A/config/hypr/workspaces-monitors.lua"
+
+# --rehome: po zmianie numeracji workspace 11 leży na eDP, a reguła oddaje go HDMI
+: > "$MOCK_LOG"; MOCK_MONS=both bash "$A/scripts/hypr/workspace-orphan-guard.sh" --rehome </dev/null
+check "--rehome: okno wraca do dekady swojego monitora" 'grep -qF "workspace = \"1\", follow = false, window = \"address:0xaaaa\"" "$MOCK_LOG"'
+check "--rehome: workspace we własnej dekadzie zostaje" '! grep -q "address:0xbbbb" "$MOCK_LOG"'
+printf 'shared\n' > "$A/data/workspace-mode.dat"
+: > "$MOCK_LOG"; MOCK_MONS=both bash "$A/scripts/hypr/workspace-orphan-guard.sh" --rehome </dev/null
+check "--rehome w shared nic nie robi"        '[[ ! -s "$MOCK_LOG" ]]'
+echo decades > "$A/data/workspace-mode.dat"
+
+# Hyprland < 0.57 miał nagłówek `workspace ID N` — guard ma działać na obu.
+: > "$MOCK_LOG"; MOCK_MONS=edp MOCK_HYPRLAND=0.56 bash "$A/scripts/hypr/workspace-orphan-guard.sh" --sweep </dev/null
+check "stary format 0.56 → okno z 11 na 1" 'grep -qF "workspace = \"1\", follow = false, window = \"address:0xaaaa\"" "$MOCK_LOG"'
+
+echo "== ws-scroll.sh"
+printf 'decades\n' > "$A/data/workspace-mode.dat"
+: > "$MOCK_LOG"; bash "$REPO/scripts/hypr/ws-scroll.sh" up </dev/null
+check "decades: scroll = hl.dsp.focus z r+1" 'grep -qF "dispatch hl.dsp.focus({ workspace = \"r+1\" })" "$MOCK_LOG"'
+printf 'shared\n' > "$A/data/workspace-mode.dat"
+: > "$MOCK_LOG"; bash "$REPO/scripts/hypr/ws-scroll.sh" down </dev/null
+check "shared: scroll = hl.dsp.focus z e-1" 'grep -qF "dispatch hl.dsp.focus({ workspace = \"e-1\" })" "$MOCK_LOG"'
+echo decades > "$A/data/workspace-mode.dat"
+
+echo "== workspace-mode-switch.sh"
+MOCK_MONS=both bash "$A/scripts/hypr/workspace-mode-switch.sh" shared >/dev/null 2>&1 </dev/null
+check "przełącznik trybu emituje desc:"      'grep -q "monitor = \"desc:$DESC_HDMI\"" "$A/config/hypr/workspaces-monitors.lua" && [[ "$(<"$A/data/workspace-mode.dat")" == shared ]]'
+
+echo "== machine-layer-check.sh"
+for f in hardware-keys.lua gpu-env.lua autostartpersonalisation.lua appbinds.lua hyprpaper.conf; do : > "$A/config/hypr/$f"; done
+{
+    echo "hl.monitor({ output = \"desc:$DESC_EDP\", mode = \"2560x1600@240\", position = \"0x0\", scale = 1.3333334 })"
+    echo "hl.monitor({ output = \"desc:$DESC_HDMI\", mode = \"1920x1080@144\", position = \"1925x123\", scale = 1 })"
+    echo "hl.monitor({ output = \"\", mode = \"preferred\", position = \"auto\", scale = 1 })"
+} > "$A/config/hypr/monitorshyprl.lua"
+check "A: reguły desc: + nowe nazwy → OK"     'MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" >/dev/null 2>&1 </dev/null'
+check "HDMI odpięty → nadal OK (nie alarmuj)" 'MOCK_MONS=edp bash "$A/scripts/hypr/machine-layer-check.sh" >/dev/null 2>&1 </dev/null'
+rep=$(MOCK_MONS=three bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null)
+check "sam nowy monitor → droga przez Super+A" '[[ "$rep" == *"monitor DP-3 nie ma"* && "$rep" == *"Super+A → [n]"* && "$rep" != *"install.sh again"* ]]'
+{
+    echo "hl.monitor({ output = \"eDP-2\", mode = \"2560x1600@240\", position = \"0x0\", scale = 1.3333334 })"
+    echo "hl.monitor({ output = \"HDMI-A-1\", mode = \"1920x1080@144\", position = \"1925x123\", scale = 1 })"
+    echo "hl.monitor({ output = \"\", mode = \"preferred\", position = \"auto\", scale = 1 })"
+} > "$A/config/hypr/monitorshyprl.lua"
+rep=$(MOCK_MONS=three bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null)
+check "nowy monitor i stare nazwy → install.sh" '[[ "$rep" == *"install.sh again"* ]]'
+check "stare nazwy (zrzut 2026-09-21) → ALARM" '! MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" >/dev/null 2>&1 </dev/null'
+rm -f "$A/config/hypr/appbinds.lua"
+check "brak pliku generowanego → ALARM"      '! MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null | grep -q "brak config/hypr/appbinds.lua"'
+
+echo "== install.sh [3] (wycinek: detekcja + opis + unikalność)"
+S=$(grep -n '^# ─── 3. CHECK MONITORS' "$REPO/install/install.sh" | cut -d: -f1)
+E=$(grep -n '^# ─── 3.5 MONITOR LAYOUT' "$REPO/install/install.sh" | cut -d: -f1)
+sed -n "${S},$((E-1))p" "$REPO/install/install.sh" > "$T/step3.sh"
+out=$(MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$T/inst" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash -c "source '$T/step3.sh'; echo \"\${CUR_DESC[eDP-1]}|\${CUR_DESC[HDMI-A-3]}\"" 2>/dev/null | tail -n1)
+check "A: [3] składa opis z make/model/serial" '[[ "$out" == "$DESC_EDP|$DESC_HDMI" ]]'
+out=$(MOCK_MONS=twins ARCHENEMY_DIR="$REPO" DATA_DIR="$T/inst2" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash -c "source '$T/step3.sh'; echo \"[\${CUR_DESC[DP-1]}|\${CUR_DESC[DP-2]}]\"" 2>/dev/null | tail -n1)
+check "C: dwa identyczne monitory → bez desc:" '[[ "$out" == "[|]" ]]'
+
+echo "== install.sh [3]–[3.7] (wycinek: przerwanie NIE kasuje starych .dat; komplet podmieniany po [3.7])"
+# Audyt 2026-09-25: `rm -f data/monitors/*.dat` szło w [3], PRZED pytaniami
+# [3.5]–[3.7] — Ctrl-C w trakcie zostawiał data/monitors/ pusty. Nowe .dat
+# powstają w data/monitors.new.XXXXXX i wchodzą na miejsce po ostatnim pytaniu.
+S=$(grep -n '^# ─── 3. CHECK MONITORS' "$REPO/install/install.sh" | cut -d: -f1)
+E=$(grep -n '^# ─── 4. CHECK YAY' "$REPO/install/install.sh" | cut -d: -f1)
+sed -n "${S},$((E-1))p" "$REPO/install/install.sh" > "$T/step3-37.sh"
+I="$T/inst3"; mkdir -p "$I/monitors"
+printf 'MONITOR=DP-OLD\nRESOLUTION=1x1\nROLE=primary\nORDER=1\n' > "$I/monitors/DP-OLD.dat"
+# Odpowiedzi: [3.5] 5×Enter na monitor (2 monitory), [3.6] Enter — potem stdin
+# WISI na pytaniu [3.7] i przychodzi SIGINT (= Ctrl-C użytkownika).
+# SIGINT idzie dopiero, gdy skrypt wypisał nagłówek [3.7] (trap już ustawiony).
+# Dawniej `timeout -s INT 2` strzelał po stałych 2 s: pod obciążeniem (pełny
+# run-all, 1 rdzeń) sygnał trafiał przed `trap … EXIT` i katalog zostawał —
+# niestabilne także na dev d96ead8 (2026-11-14). timeout 30 = siatka.
+rm -f "$T/step3-37.pid" "$T/step3-37.out" "$T/sudo.log"
+exec 3< <(printf '\n\n\n\n\n\n\n\n\n\n\n'
+          for _ in $(seq 300); do grep -qF '[3.7]' "$T/step3-37.out" 2>/dev/null && break; sleep 0.1; done
+          kill -INT "$(cat "$T/step3-37.pid" 2>/dev/null)" 2>/dev/null
+          sleep 30)
+feeder=$!
+MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I" GREEN= NC= YELLOW= BLUE= CYAN= RED= \
+    timeout -s INT 30 bash -c 'echo $$ > "$1"; exec bash "$2"' _ "$T/step3-37.pid" "$T/step3-37.sh" \
+    <&3 >"$T/step3-37.out" 2>&1
+exec 3<&-; kill "$feeder" 2>/dev/null
+check "przerwany bieg: SIGINT na pytaniu [3.7]" '[[ "$(<"$T/step3-37.out")" == *"[3.7]"* && "$(<"$T/step3-37.out")" != *"Workspace mode: "* && ! -e "$I/workspace-mode.dat" ]]'
+check "przerwany bieg: stary .dat zostaje"     '[[ -f "$I/monitors/DP-OLD.dat" ]]'
+check "przerwany bieg: nowe .dat NIE na miejscu" '[[ ! -e "$I/monitors/eDP-1.dat" && ! -e "$I/monitors/HDMI-A-3.dat" ]]'
+check "przerwany bieg: katalog tymczasowy sprzątnięty (trap)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
+check "przerwany bieg: pułapka [3] woła też sudo -k (K18)" '[[ "$(cat "$T/sudo.log" 2>/dev/null)" == -k ]]'
+# Pełny bieg: te same odpowiedzi + „1" (shared) w [3.7].
+mkdir -p "$I/monitors.new.STALE"   # resztka po biegu zabitym bez trapa (SIGKILL)
+rm -f "$T/sudo.log"
+out=$(printf '\n\n\n\n\n\n\n\n\n\n\n1\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" 2>&1)
+check "pełny bieg: nowe .dat na miejscu"       '[[ -f "$I/monitors/eDP-1.dat" && -f "$I/monitors/HDMI-A-3.dat" ]]'
+check "pełny bieg: stary .dat (odpięty monitor) usunięty" '[[ ! -e "$I/monitors/DP-OLD.dat" ]]'
+check "pełny bieg: .dat kompletny (opis, rola, ORDER)" 'grep -q "^DESCRIPTION=$DESC_HDMI$" "$I/monitors/HDMI-A-3.dat" && grep -q "^ROLE=" "$I/monitors/HDMI-A-3.dat" && grep -q "^ORDER=[12]$" "$I/monitors/eDP-1.dat" && grep -q "^ORDER=[12]$" "$I/monitors/HDMI-A-3.dat"'
+check "pełny bieg: bez katalogów tymczasowych (także resztki)" '! ls -d "$I"/monitors.new.* >/dev/null 2>&1'
+check "pełny bieg: workspace-mode.dat = shared" '[[ "$(<"$I/workspace-mode.dat")" == shared ]]'
+check "pełny bieg: komunikat o zapisie po [3.7]" '[[ "$out" == *"data/monitors/*.dat saved (2 monitors)"* ]]'
+check "pełny bieg: po [3.7] pułapka EXIT dalej z sudo -k (K18)" '[[ "$(cat "$T/sudo.log" 2>/dev/null)" == -k ]]'
+
+# Audyt 2026-11-05, Z12: numer z zerem na początku w [3.6] („08”) to zła liczba
+# ósemkowa w $((n - 1)) — błąd rozwinięcia kończył instalator w pół kroku.
+# „08 1” ma być odrzucone jak każdy numer spoza listy, „02 01” = „2 1”.
+I4="$T/inst4"; mkdir -p "$I4/monitors"
+out=$(printf '\n\n\n\n\n\n\n\n\n\n08 1\n02 01\n1\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I4" GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" 2>&1)
+check '[3.6] 08 1 odrzucone, bieg trwa'      '[[ "$out" == *"Use each number from 1..2 exactly once"* && "$(<"$I4/workspace-mode.dat")" == shared ]]'
+check '[3.6] 02 01 = odwrócona numeracja'    'grep -qx "ORDER=1" "$I4/monitors/HDMI-A-3.dat" && grep -qx "ORDER=2" "$I4/monitors/eDP-1.dat"'
+
+# Audyt 2026-11-05, Z13: wejście zamknięte na pytaniu [3.7] (potok bez odpowiedzi,
+# Ctrl-D) = pętla „Enter 1 or 2” bez końca. Ma być koniec z kodem 1, stare .dat
+# na miejscu. head ucina wyjście, gdyby pętla wróciła (SIGPIPE kończy bieg).
+I5="$T/inst5"; mkdir -p "$I5/monitors"
+printf 'MONITOR=DP-OLD\nRESOLUTION=1x1\nROLE=primary\nORDER=1\n' > "$I5/monitors/DP-OLD.dat"
+printf '\n\n\n\n\n\n\n\n\n\n\n' | MOCK_MONS=both ARCHENEMY_DIR="$REPO" DATA_DIR="$I5" GREEN= NC= YELLOW= BLUE= CYAN= RED= \
+    timeout 30 bash "$T/step3-37.sh" 2>&1 | head -n 300 > "$T/eof.out"
+rc=${PIPESTATUS[1]}
+check '[3.7] zamknięte wejście: koniec z kodem 1' '[[ $rc -eq 1 && "$(grep -c "Enter 1 or 2" "$T/eof.out")" -le 1 && "$(<"$T/eof.out")" == *"input closed"* ]]'
+check '[3.7] zamknięte wejście: stare .dat zostają, bez trybu' '[[ -f "$I5/monitors/DP-OLD.dat" && ! -e "$I5/monitors/eDP-1.dat" && ! -e "$I5/workspace-mode.dat" ]] && ! ls -d "$I5"/monitors.new.* >/dev/null 2>&1'
+
+echo "== install.sh [3.5] rola: Enter = obecna rola z .dat (nowy konsument .dat: A/B/C)"
+# Audyt 2026-11-05, Z4: nagłówek [3.5] obiecuje „Enter = keep current setting”,
+# a rola szła z kolejności monitora — ponowny bieg (aktualizator proponuje go po
+# każdym pullu) zamieniał primary/secondary, czyli tapety v1/v2. Obecna rola =
+# ROLE z .dat, którego selektor wskazuje TERAZ ten monitor (desc: przed nazwą).
+# ORDER zostaje propozycją z pozycji X (DECYZJE 2026-07-17 D3) — tu bez zmian.
+role_run() {   # role_run <MOCK_MONS> <DATA_DIR>: same Entery w [3.5]–[3.6], „1” w [3.7]
+    printf '\n\n\n\n\n\n\n\n\n\n\n1\n' | MOCK_MONS="$1" ARCHENEMY_DIR="$REPO" DATA_DIR="$2" \
+        GREEN= NC= YELLOW= BLUE= CYAN= RED= bash "$T/step3-37.sh" >/dev/null 2>&1
+}
+role_of() { grep -m1 '^ROLE=' "$1" | cut -d= -f2; }
+R="$T/roles-a"; mkdir -p "$R/monitors"
+printf 'MONITOR=eDP-2\nROLE=primary\nDESCRIPTION=%s\nORDER=1\n' "$DESC_EDP" > "$R/monitors/eDP-2.dat"
+printf 'MONITOR=HDMI-A-1\nROLE=secondary\nDESCRIPTION=%s\nORDER=2\n' "$DESC_HDMI" > "$R/monitors/HDMI-A-1.dat"
+printf 'MONITOR=HDMI-A-3\nROLE=other\nORDER=3\n' > "$R/monitors/HDMI-A-3.dat"   # selektor po nazwie przegrywa z desc:
+role_run both "$R"
+check "A: desc: — role przeżywają zmianę złączy" '[[ "$(role_of "$R/monitors/eDP-1.dat")" == primary && "$(role_of "$R/monitors/HDMI-A-3.dat")" == secondary ]]'
+R="$T/roles-b"; mkdir -p "$R/monitors"
+printf 'MONITOR=HDMI-A-3\nROLE=other\nORDER=2\n' > "$R/monitors/HDMI-A-3.dat"
+printf 'MONITOR=eDP-2\nROLE=secondary\nORDER=1\n' > "$R/monitors/eDP-2.dat"   # stara nazwa bez opisu — nie pasuje
+role_run both "$R"
+check "B: .dat bez opisu — rola po nazwie, reszta: pierwsza wolna" '[[ "$(role_of "$R/monitors/HDMI-A-3.dat")" == other && "$(role_of "$R/monitors/eDP-1.dat")" == primary ]]'
+R="$T/roles-c"; mkdir -p "$R/monitors"
+printf 'MONITOR=DP-1\nROLE=secondary\nORDER=1\n' > "$R/monitors/DP-1.dat"
+printf 'MONITOR=DP-2\nROLE=primary\nORDER=2\n' > "$R/monitors/DP-2.dat"
+role_run twins "$R"
+check "C: identyczne monitory — role po nazwach złączy" '[[ "$(role_of "$R/monitors/DP-1.dat")" == secondary && "$(role_of "$R/monitors/DP-2.dat")" == primary ]]'
+R="$T/roles-d"; mkdir -p "$R/monitors"
+printf 'MONITOR=eDP-2\nROLE=primary\nDESCRIPTION=%s\nORDER=1\n' "$DESC_EDP" > "$R/monitors/eDP-2.dat"
+role_run both "$R"
+check "nowy monitor obok znanego: pierwsza wolna rola, bez dwóch primary" '[[ "$(role_of "$R/monitors/HDMI-A-3.dat")" == secondary && "$(role_of "$R/monitors/eDP-1.dat")" == primary ]]'
+R="$T/roles-e"; mkdir -p "$R/monitors"
+role_run both "$R"
+check "świeża instalacja: pierwszy primary, drugi secondary (jak dawniej)" '[[ "$(role_of "$R/monitors/HDMI-A-3.dat")" == primary && "$(role_of "$R/monitors/eDP-1.dat")" == secondary ]]'
+
+echo "== wersja kodu a ostatni install.sh (data/installed-head.dat)"
+# Audyt 2026-09-23: laptop działał na innej wersji niż repo i nic tego nie
+# mówiło. Alarm tylko przy zmianach w katalogach przetwarzanych przez
+# install.sh; brak pliku (instalacja sprzed zmiany) = cisza.
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+git -C "$A" init -q && git -C "$A" add -A && git -C "$A" commit -qm start
+ver_msg() { MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null | grep -c "od ostatniego install.sh\|wersji ostatniej instalacji"; }
+check "brak installed-head.dat → cisza"        '[[ $(ver_msg) -eq 0 ]]'
+printf 'COMMIT=%s\nDATE=x\n' "$(git -C "$A" rev-parse HEAD)" > "$A/data/installed-head.dat"
+check "HEAD = zainstalowany → cisza"           '[[ $(ver_msg) -eq 0 ]]'
+echo doc > "$A/README.md"; git -C "$A" add README.md; git -C "$A" commit -qm doc
+check "zmiana tylko w dokumentacji → cisza"    '[[ $(ver_msg) -eq 0 ]]'
+mkdir -p "$A/scripts/nowe"; echo x > "$A/scripts/nowe/x.sh"; git -C "$A" add scripts/nowe; git -C "$A" commit -qm kod
+check "zmiana w scripts/ → ALARM"              '[[ $(ver_msg) -eq 1 ]]'
+printf 'COMMIT=%s\n' 0123456789abcdef0123456789abcdef01234567 > "$A/data/installed-head.dat"
+check "nieznany commit (przepisana historia) → ALARM" '[[ $(ver_msg) -eq 1 ]]'
+rep=$(MOCK_MONS=both bash "$A/scripts/hypr/machine-layer-check.sh" 2>&1 </dev/null)   # całość, bez grep -q (SIGPIPE + pipefail)
+check "raport podaje obie wersje"              '[[ "$rep" == *"installed from: 0123456 · repo HEAD:"* ]]'
+
+echo ""
+echo "passed: $PASS, failed: $FAIL, skipped: $SKIP"
+(( FAIL == 0 ))
