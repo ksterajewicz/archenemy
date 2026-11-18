@@ -1,7 +1,7 @@
 # archenemy logo — Æ
 
-The archenemy mark is the ligature **Æ** — **A**rch**E**nemy: the left leg of
-the A and the stem of the E are one shared vertical stroke, the crossbars are
+The archenemy mark is the ligature **Æ** — **A**rch**E**nemy: the right leg
+of the A and the stem of the E are one shared vertical stroke, the crossbars are
 offset, and the counter of the A is a triangle. It is the project's own mark,
 drawn as its own geometry (one `<path fill-rule="evenodd">` in a
 `viewBox="0 0 256 256"`): no fonts, no outlined glyphs, no raster images and no

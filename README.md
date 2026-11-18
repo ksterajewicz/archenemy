@@ -1,3 +1,5 @@
+<!-- banner: assets/logo/banner-*.svg (Codex L2) -->
+
 # archenemy
 
 Personal Arch Linux rice for Hyprland. A single installer sets up the entire desktop look — bar, notifications, terminal, lock screen — and lets you switch between themes (rices) with one shortcut. Machine-specific configuration (monitors, graphics card, hardware keys) is generated locally; personal settings such as autostart and app shortcuts also stay outside git.
@@ -15,7 +17,7 @@ Personal Arch Linux rice for Hyprland. A single installer sets up the entire des
 
 ## Before you install
 
-Read this whole file. The project replaces folders in `~/.config` — the installer offers to make a backup (it lands in `~/archenemy/backups/`), and linking keeps existing real directories or symlinks outside `rices/` as `<name>.bak-<timestamp>`. Links into an old rice are removed before the new rice is linked. Paths managed by home-manager (links into `/nix/store`) are never replaced, moved or written through: the installer and `Super+T` stop before changing anything and tell you which declaration to remove (see "Other distributions" → NixOS).
+Read this whole file. The project replaces folders in `~/.config` — the installer offers to make a backup (it lands in `~/archenemy/backups/`), and linking keeps existing real directories or symlinks outside `rices/` as `<name>.bak-<timestamp>`. Links into an old rice are removed before the new rice is linked. Paths managed by home-manager (links into `/nix/store`) are never replaced, moved or written through: `Super+T` stops before changing anything, and the installer leaves those paths untouched, skips linking in step [9] and names the declaration to remove in the summary (see "Other distributions" → NixOS).
 
 ## Installation
 
@@ -80,6 +82,9 @@ it with the checkbox in `Super + W`, not by editing `hyprlock.conf`. Beta inheri
 
 ```
 archenemy/
+├── AGENTS.md                        # Rules for AI agents working on this repo (layers, pitfalls, tests).
+├── CONTRIBUTING.md                  # Contribution rules: GPL-3.0-or-later inbound = outbound, third-party files.
+├── .github/workflows/tests.yml      # CI: tests/run-all.sh in an archlinux container (see "Verification").
 ├── LICENSE                          # GPL-3.0-or-later: unmodified GPLv3 text from the FSF (gnu.org).
 ├── LICENSES/
 │   └── Apache-2.0.txt               # Full Apache-2.0 text for the lazy.nvim bootstrap snippet (see THIRD-PARTY.md).
@@ -157,7 +162,8 @@ archenemy/
 │       ├── focus-highlight.lua       # Dims the active window highlight while the cursor is on another monitor.
 │       ├── autostart-common.lua      # Shared autostart required by every rice (flux-wall wallpaper
 │                                     #   animation — your Super+W choice comes back after login in any rice;
-│                                     #   the closed-apps history daemon behind Super+Tab).
+│                                     #   the closed-apps history daemon behind Super+Tab; the new-monitor
+│                                     #   notification, monitor-settings.sh notify).
 │       ├── keyboard.lua              # Media keys (shared).
 │       ├── gpu_wayland_scaling.lua   # Universal Wayland variables (shared).
 │       └── custom_window_rules.lua   # Window rules (shared).
@@ -281,6 +287,8 @@ archenemy/
 │   │                                 #   (data/installed-head.dat vs HEAD — re-run the installer).
 │   │                                 #   window-history.sh — Super+Tab: reopens recently closed apps
 │   │                                 #   (daemon started from autostart-common.lua + `restore`).
+│   │                                 #   polkit-agent.sh — starts hyprpolkitagent from the rices' autostart
+│   │                                 #   (no enable; a failure is one quiet log line, always exit 0).
 │   ├── rofi/                         # Rofi menus: app launcher (rofi_drun.sh), rices, wallpapers, clipboard history (rofi_clipboard.sh), network (with rescan), power.
 │   │                                 #   lib/rofi-preview.sh — PNG previews in Super+W / Super+T (3-column
 │   │                                 #   grid with big icons; lazy wallpaper thumbnails in data/thumbs/).
@@ -296,7 +304,9 @@ archenemy/
 │   │                                 #   (drawn from each rice's waybar/alacritty/hypr/flux-wall colors);
 │   │                                 #   flux-wall.sh — start/stop the shader-driven wallpaper.
 │   └── waybar/                       # Power profile switcher (asus/universal: profile-get.sh /
-│                                     #   profile-switch.sh — also the ASUS hardware key path) +
+│                                     #   profile-switch.sh — also the ASUS hardware key path; the switch
+│                                     #   itself, verified by reading the profile back: asusprofile.sh /
+│                                     #   universalprofile.sh) +
 │                                     #   volume-bar.sh — volume bar in place of the pulseaudio module;
 │                                     #   line/ticks/solid style switchable in Super+A → [v].
 │                                     #   bluetooth.sh — optional D-Bus event stream, power toggle and bluetui launcher.
@@ -623,7 +633,22 @@ The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/
 
 ### App launcher
 
-`Super+R` and the bar's app launcher call `scripts/rofi/rofi_drun.sh`. In `crt`, `dither-flux`, `tron` and `yin` the bar's launcher is the archenemy Æ logo in the rice's colour (left click: apps, right click: power menu); `white-blue`, `white-blue_beta` and `asia-n-rice` have no launcher module. It opens rofi's desktop-entry launcher and gates manually typed commands by checking their first command token against `.desktop` `Exec=` lines. With normal desktop entries present, unmatched commands are ignored. If no `Exec=` entries can be read, the gate allows commands as a compatibility fallback. This is an application launcher, not a shell sandbox.
+`Super+R` and the bar's app launcher call `scripts/rofi/rofi_drun.sh`. In `crt`, `dither-flux`, `tron` and `yin` the bar's launcher is the archenemy Æ logo in the rice's colour (left click: apps, right click: power menu); `white-blue`, `white-blue_beta` and `asia-n-rice` have no launcher module. See "Logo". It opens rofi's desktop-entry launcher and gates manually typed commands by checking their first command token against `.desktop` `Exec=` lines. With normal desktop entries present, unmatched commands are ignored. If no `Exec=` entries can be read, the gate allows commands as a compatibility fallback. This is an application launcher, not a shell sandbox.
+
+## Logo
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/archenemy-ae.svg">
+    <img src="assets/logo/rices/yang.svg" width="96" height="96" alt="archenemy logo: the Æ ligature">
+  </picture>
+</p>
+
+The archenemy mark is the ligature **Æ** — **A**rch**E**nemy: the right leg of the A and the stem of the E are one shared vertical stroke. It is the project's own mark, drawn as plain SVG geometry (no font glyphs), and not the logo of Arch Linux or of any other distribution.
+
+- `assets/logo/archenemy-ae.svg` — the base mark, white on transparency.
+- `assets/logo/rices/<rice>.svg` — the same shape in each rice's colour (`yang` is ready for the planned yin/yang pair's second rice); `assets/logo/README.md` lists the colours and where each one comes from.
+- In the bar, `crt`, `dither-flux`, `tron` and `yin` show it as the app launcher (see "App launcher").
 
 ## Fonts
 
@@ -815,7 +840,7 @@ frozen — bugfixes only).
 
 ## Keyboard shortcuts
 
-These tables describe the six non-beta rices. `white-blue_beta` retains its legacy binds: it has no built-in `Super+A`, `Super+Tab`, `Super+Ctrl+1…4` or power-menu bind. Open settings there through rofi or the `archenemy` alias.
+These tables describe the six non-beta rices. `white-blue_beta` retains its legacy binds: it has no built-in `Super+A`, `Super+C`, `Super+Tab`, `Super+Ctrl+1…4` or power-menu bind. Open settings there through rofi or the `archenemy` alias.
 
 ### Apps
 
@@ -1066,7 +1091,7 @@ Arch Linux is the reference platform. Fedora and NixOS are supported by `install
 
 ## Verification
 
-CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, `#!/usr/bin/env bash` shebangs, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. `run-all.sh` gives every suite `RUN_ALL_TIMEOUT` seconds with stdin from `/dev/null`. The default is `ceil(600 × ARCHENEMY_TEST_TIME_SCALE)`; an explicit `RUN_ALL_TIMEOUT` is the final whole number of seconds (not multiplied) and `0` disables the limit. A suite that does not finish is killed together with its child processes and listed as a suite timeout ("timeout pakietu: przekroczono N s") — a deadline, not proof of a hang; a suite's own exit code 124/137 is reported as a plain failure. For every failing suite the runner prints the exit code, the last 200 lines and the paths of the full `.log` and `.rc` files, which stay in a private `/tmp/archenemy-run-all-*` directory (removed when everything is green), so one slow or hanging regression no longer blocks the whole run and its output is not lost. `ARCHENEMY_TEST_TIME_SCALE` (a finite number from 1 to 10, default 1, never guessed from the load) multiplies only harness watchdogs and readiness deadlines in the suites, via `tests/lib/timing.sh` (`test_timeout`) and `tests/lib/test_timing.py` (`seconds`, `wait_until`); on a slow or busy machine run e.g. `ARCHENEMY_TEST_TIME_SCALE=2 bash tests/run-all.sh`. Product timing contracts (doctor < 5 s, its 4/4.5 s probes, Bluetooth render < 1 s, debounce and reconnect, the 15-second monitor trial) are never scaled and fail as `KONTRAKT`; an expired harness watchdog says `ZABEZPIECZENIE`. Details: `tests/README-timing.md`. Ctrl+C stops the run and the current suite. A suite that exits 0 still counts as ✓, also when it skipped something. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. Suites that must prove they write nothing outside their tree (`install-services.sh`, `rice-autostart.sh`, `shell-platforms.sh`, `runtime-platforms.sh`, `doctor-platforms.sh`, `gaming-diag.sh`) call `test_isolate` first: the suite re-runs in a private user and mount namespace (`unshare -rm`) with an overlay on `/tmp`, `/var`, `/root`, `/home`, `/etc`, `/usr`, `/opt`, `/srv`, `/boot` and `/mnt`, so any write, change or deletion there lands only in a throwaway upper layer in `/dev/shm` and `test_escapes` reports every path outside the test tree as ✗ — the host stays untouched and other processes cannot cause false alarms. Not covered: `/run` (its submounts cannot be overlaid), `/dev/shm`, `/proc`, `/sys` and new names directly in `/`, which those suites check separately. Without user namespaces or overlay (some containers) the suite runs as before and says the isolation is unavailable; `ARCHENEMY_NO_ISOLATE=1` turns it off. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, `#!/usr/bin/env bash` shebangs, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. `run-all.sh` gives every suite `RUN_ALL_TIMEOUT` seconds with stdin from `/dev/null`. The default is `ceil(600 × ARCHENEMY_TEST_TIME_SCALE)`; an explicit `RUN_ALL_TIMEOUT` is the final whole number of seconds (not multiplied) and `0` disables the limit. A suite that does not finish is killed together with its child processes and listed as a suite timeout ("timeout pakietu: przekroczono N s") — a deadline, not proof of a hang; a suite's own exit code 124/137 is reported as a plain failure. For every failing suite the runner prints the exit code, the last 200 lines and the paths of the full `.log` and `.rc` files, which stay in a private `/tmp/archenemy-run-all-*` directory (removed when everything is green), so one slow or hanging regression no longer blocks the whole run and its output is not lost. `ARCHENEMY_TEST_TIME_SCALE` (a finite number from 1 to 10, default 1, never guessed from the load) multiplies only harness watchdogs and readiness deadlines in the suites, via `tests/lib/timing.sh` (`test_timeout`) and `tests/lib/test_timing.py` (`seconds`, `wait_until`); on a slow or busy machine run e.g. `ARCHENEMY_TEST_TIME_SCALE=2 bash tests/run-all.sh`. Product timing contracts (doctor < 5 s, its 4/4.5 s probes, Bluetooth render < 1 s, debounce and reconnect, the 15-second monitor trial) are never scaled and fail as `KONTRAKT`; an expired harness watchdog says `ZABEZPIECZENIE`. Details: `tests/README-timing.md`. Ctrl+C stops the run and the current suite. A suite that exits 0 still counts as ✓, also when it skipped something. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. Suites that must prove they write nothing outside their tree (`install-services.sh`, `rice-autostart.sh`, `shell-platforms.sh`, `runtime-platforms.sh`, `doctor-platforms.sh`, `gaming-diag.sh`, `hm-conflict.sh`, `nix-packages.sh`, `nix-paths.sh`) call `test_isolate` first: the suite re-runs in a private user and mount namespace (`unshare -rm`) with an overlay on `/tmp`, `/var`, `/root`, `/home`, `/etc`, `/usr`, `/opt`, `/srv`, `/boot` and `/mnt`, so any write, change or deletion there lands only in a throwaway upper layer in `/dev/shm` and `test_escapes` reports every path outside the test tree as ✗ — the host stays untouched and other processes cannot cause false alarms. Not covered: `/run` (its submounts cannot be overlaid), `/dev/shm`, `/proc`, `/sys` and new names directly in `/`, which those suites check separately. Without user namespaces or overlay (some containers) the suite runs as before and says the isolation is unavailable; `ARCHENEMY_NO_ISOLATE=1` turns it off. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
 
 `bash tests/secrets.sh` looks for private keys (including armored PGP `PRIVATE KEY BLOCK` headers) and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
 
