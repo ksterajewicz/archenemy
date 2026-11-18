@@ -437,7 +437,27 @@ Rules that follow directly from the table:
   requirement check stays. Until system installers and services get their
   own Fedora/NixOS paths, a step that would call them prints `manual_step`
   instructions there — never `pacman`, `yay`, `systemctl enable` or `ufw`.
+  On NixOS not even as advice: `systemctl enable|disable|start|stop` and
+  `chsh` never appear in the output; give the option instead (mpd socket:
+  home-manager `services.mpd.network.startWhenNeeded = false;` — its socket
+  listens on `listenAddress:port`, default 127.0.0.1 — or
+  `systemd.user.sockets.mpd.enable = false;`, the per-unit `enable` of
+  nixpkgs `nixos/lib/systemd-unit-options.nix` (sharedOptions) that turns the
+  unit into a link to /dev/null; `systemd.user.sockets`/`services` from
+  `nixos/modules/system/boot/systemd/user.nix`; home-manager
+  `modules/services/mpd.nix`).
   A new installer question needs an answer in `tests/install-main.sh`.
+- **A service `✓` needs `is-enabled` AND `is-active`.** `svc_check [--user]
+  <unit>` in the platform block of `install.sh` (0 = both, 1 = enabled but
+  dead, 2 = not enabled / no unit / no user bus) is the only way to claim a
+  service works; an exit code 0 of `systemctl enable --now` proves nothing.
+  Enabled-but-dead = `svc_dead` (warning with a check command, summary entry,
+  no question, no change). `bash tests/install-services.sh` (stateful mock:
+  `MOCK_ENABLE=fail|noop|dead`, `MOCK_ENABLE_SKIP`, `MOCK_NOBUS`) and
+  `INSTALL_SERVICES_REV=<rev>` for Arch parity.
+- **`install/bluetooth-installation.sh` gates itself like the D6 helpers**
+  (`pkg_gate "Bluetooth"`, exit 2 outside Arch, flag untouched); on Arch every
+  failure removes `data/bluetooth-enabled.dat` (`bash tests/bluetooth.sh`).
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

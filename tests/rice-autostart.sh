@@ -32,7 +32,7 @@ if [[ -z "$LUA" ]]; then echo "brak interpretera lua5.4 — pomijam"; exit 0; fi
 source "$REPO/tests/lib/environment.sh"
 # Zapisy wyłącznie pod $T (D7): pusty $T po nieudanym mktemp zamieniałby
 # "$T/…" w ścieżki w / — stąd twarde sprawdzenie i ${T:?} przy każdym zapisie.
-ROOT_BEFORE="$(ls -A / | LC_ALL=C sort)"
+ROOT_BEFORE="$(find / -mindepth 1 -maxdepth 1 -printf "%f\n" | LC_ALL=C sort)"
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || { echo "mktemp -d nie zadziałał — przerywam bez zapisu"; exit 1; }
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
@@ -127,6 +127,7 @@ for cfg in "$REPO"/rices/*/hypr/hyprland.lua; do
         ok "$rice: okno PiP w prawym dolnym rogu (10 px od krawędzi 1920x1080)"
     else fail "$rice: okno PiP nie w rogu: x=${x:-?} y=${y:-?} rozmiar ${w:-?}x${h:-?}"; fi
     [[ "$rice" == white-blue_beta ]] && continue
+    # shellcheck disable=SC2088  # literalna komenda z configu Lua, nie ścieżka powłoki
     n="$(grep -cxF '~/archenemy/scripts/hypr/polkit-agent.sh' <<< "$out")"
     if [[ "$n" -eq 1 ]] && ! grep -q '^systemctl ' <<< "$out"; then ok "$rice: agent polkit przez polkit-agent.sh dokładnie raz, bez gołego systemctl"
     else fail "$rice: polkit-agent.sh $n razy albo goły systemctl w autostarcie"; fi
@@ -140,6 +141,7 @@ echo "== polkit-agent.sh"
 AGENT="$REPO/scripts/hypr/polkit-agent.sh"
 mkdir -p "${T:?}/pbin" "${T:?}/nosysctl" "${T:?}/run" && chmod 700 "${T:?}/run"
 # MOCK_POLKIT: ok | nounit | nobus — jak prawdziwy systemctl (komunikat na stderr, kod ≠ 0).
+# shellcheck disable=SC2016  # treść atrapy: zmienne mają się rozwinąć w atrapie, nie tutaj
 printf '%s\n' '#!/usr/bin/env bash' 'echo "systemctl $*" >> "$POLKIT_CALLS"' \
     'case "${MOCK_POLKIT:-ok}" in' \
     '    nounit) echo "Failed to start hyprpolkitagent.service: Unit hyprpolkitagent.service not found." >&2; exit 5 ;;' \
@@ -183,7 +185,7 @@ if [[ "$(grep -c 'systemctl --user start hyprpolkitagent' "$REPO/rices/white-blu
 else fail "white-blue_beta: zmieniona linia agenta polkit"; fi
 
 # Po biegu w / nie ma nowych wpisów (zapis poza $T = porażka).
-root_new="$(comm -13 <(echo "$ROOT_BEFORE") <(ls -A / | LC_ALL=C sort))"
+root_new="$(comm -13 <(echo "$ROOT_BEFORE") <(find / -mindepth 1 -maxdepth 1 -printf "%f\n" | LC_ALL=C sort))"
 if [[ -z "$root_new" ]]; then ok "żadnych nowych plików w / po biegu"
 else fail "nowe wpisy w / po biegu: ${root_new//$'\n'/ }"; fi
 

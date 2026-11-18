@@ -433,7 +433,8 @@ check "[5] tuned-ppd: odmowa dnf widoczna, podpowiedź dnf swap, bez podmiany" '
 check "[5] font Nerd: instrukcja ręczna, bez COPR fontów" '[[ "$OUT" == *"not installed: ttf-iosevka-nerd"*"install manually"* ]] && ! grep -q "nerd-fonts" <<< "$LOG"'
 check "sudo tylko dla dnf (i sudo -k)"          '[[ -z "$(grep "^sudo" <<< "$LOG" | grep -vE "^sudo (dnf |-k$)")" ]]'
 check "[6]–[10] bez usług, zapory i instalatorów systemowych" '! grep -qE "^systemctl( --user)? (enable|disable|start|stop|restart)|^ufw" <<< "$LOG" && ! asked "CPU microcode|GPU drivers|kernel installer|UFW|Bluetooth|VirtualBox|Enable mpd|Enable NetworkManager"'
-check "[6]/[10] instrukcje zamiast kroków"      '[[ "$OUT" == *"power-profiles-daemon: not done automatically on Fedora"* && "$OUT" == *"Fedora uses firewalld"* && "$OUT" == *"skipped: NetworkManager — not done on Fedora"* ]]'
+# D7: tuned-ppd (atrapa rpm: zainstalowany) rozpoznany w [6] — bez drugiego menedżera profili.
+check "[6]/[10] instrukcje zamiast kroków"      '[[ "$OUT" == *"Power profiles: tuned-ppd (Fedora'"'"'s default) is installed"* && "$OUT" == *"Fedora uses firewalld"* && "$OUT" == *"skipped: NetworkManager — not done on Fedora"* ]]'
 check "[8]/[9] warstwa maszynowa i linki jak na Archu" '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
 check "[11] baner z ostrzeżeniami"              '[[ "$OUT" == *"Setup finished with warnings"* ]]'
 # P2 (przegląd D5): porada przy „brak” bez asus-installation.sh (sudo pacman).

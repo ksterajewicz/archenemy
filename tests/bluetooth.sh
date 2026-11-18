@@ -2,6 +2,13 @@
 # =============================================
 #   archenemy - tests/bluetooth.sh
 #   Atrapy BlueZ, D-Bus, pacmana i systemctl; bez sprzętu i usług hosta.
+#   Pomocnik install/bluetooth-installation.sh (D7): brama platformy pkg_gate
+#   na jawnym os-release (ARCHENEMY_TEST=1 + ARCHENEMY_OS_RELEASE, nie host):
+#   Fedora/NixOS/nieobsługiwana = kod 2, zero wywołań, flaga nietknięta,
+#   instrukcja (Fedora: bluetooth.service, bluez, dbus-tools, bluetui; NixOS:
+#   hardware.bluetooth.enable, pkgs.bluetui; flaga ikony ręcznie); Arch i
+#   pochodna = dawna ścieżka, a porażka (także zapis flagi, brak binarki)
+#   usuwa starą flagę.
 # =============================================
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,9 +30,19 @@ with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
     for name in ['scripts/waybar', 'install', 'data', 'bin', 'home', 'config', 'cache', 'state-home', 'runtime']:
         (root / name).mkdir(parents=True)
-    for name in ['scripts/waybar/bluetooth.sh', 'install/bluetooth-installation.sh']:
+    (root / 'install/lib').mkdir()
+    (root / 'packages').mkdir()
+    for name in ['scripts/waybar/bluetooth.sh', 'install/bluetooth-installation.sh', 'install/lib/pkg.sh', 'packages/platform-map.tsv']:
         shutil.copy2(repo / name, root / name)
-    env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'], MOCK_ROOT=tmp)
+    osr = root / 'os'
+    osr.mkdir()
+    for key, text in {'arch': 'NAME="Arch Linux"\nID=arch\n', 'endeavouros': 'NAME="EndeavourOS"\nID=endeavouros\nID_LIKE=arch\n',
+                      'fedora': 'NAME="Fedora Linux"\nID=fedora\nVERSION_ID=44\n', 'nixos': 'NAME=NixOS\nID=nixos\nVERSION_ID=26.05\n',
+                      'ubuntu': 'NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\n'}.items():
+        (osr / key).write_text(text)
+    real_touch = shutil.which('touch')
+    env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'], MOCK_ROOT=tmp, ARCHENEMY_TEST='1',
+               ARCHENEMY_OS_RELEASE=str(osr / 'arch'), ARCHENEMY_OSTREE_MARKER=str(osr / 'none'))
     for key in ['DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']:
         env.pop(key, None)
     env.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
@@ -61,7 +78,9 @@ printf 'dbus-monitor %s\\n' "$*" >> "$MOCK_ROOT/log"
 [[ "${MOCK_EOF:-0}" == 0 ]] || exit 0
 exec cat "$MOCK_ROOT/events"
 ''',
-        'sudo': '#!/usr/bin/env bash\nexec "$@"\n',
+        'sudo': '#!/usr/bin/env bash\nprintf "sudo %s\\n" "$*" >> "$MOCK_ROOT/log"\nexec "$@"\n',
+        'dnf': '#!/usr/bin/env bash\nprintf "dnf %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
+        'rpm': '#!/usr/bin/env bash\nprintf "rpm %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
         'pacman': '''#!/usr/bin/env bash
 printf 'pacman %s\\n' "$*" >> "$MOCK_ROOT/log"
 if [[ "$1" == -S ]]; then [[ "${FAIL_INSTALL:-0}" == 0 ]]; else [[ "${FAIL_QUERY:-0}" == 0 ]]; fi
@@ -77,6 +96,8 @@ esac
         'bluetui': '#!/usr/bin/env bash\nexit 0\n',
         'alacritty': '#!/usr/bin/env bash\nprintf "alacritty %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
     }
+    # touch z FAIL_TOUCH=1 = błąd zapisu flagi (root omija prawa pliku, więc atrapa).
+    mocks['touch'] = '#!/usr/bin/env bash\n[[ "${FAIL_TOUCH:-0}" == 0 ]] || exit 1\nexec ' + real_touch + ' "$@"\n'
     for name, code in mocks.items():
         f = root / 'bin' / name
         f.write_text(code)
@@ -246,6 +267,47 @@ esac
         if failure is None:
             check('pacman -S --needed bluez bluez-utils dbus bluetui' in log.read_text(), 'pełna opcjonalna transakcja')
             check('is-active --quiet bluetooth' in log.read_text() and 'is-enabled --quiet bluetooth' in log.read_text(), 'weryfikacja aktywności i enable')
+    # D7: stara flaga nie zostaje po porażce na Archu (także błąd zapisu flagi).
+    for failure in ['FAIL_INSTALL', 'FAIL_QUERY', 'FAIL_ENABLE', 'FAIL_ACTIVE', 'FAIL_TOUCH']:
+        flag.touch()
+        result = run(str(installer), extra={failure: '1'})
+        check(result.returncode == 1 and not flag.exists() and '✓' not in result.stdout, 'porażka usuwa starą flagę: ' + failure)
+    # Brak binarki bluetui mimo udanej „instalacji”: bez flagi, polecenie ponowienia.
+    (root / 'bin/bluetui').rename(root / 'bluetui.off')
+    if shutil.which('bluetui', path=os.environ['PATH']) is None:
+        flag.touch()
+        result = run(str(installer))
+        check(result.returncode == 1 and not flag.exists() and 'Retry:' in result.stdout, 'brak binarki bluetui: kod 1, bez flagi')
+    else:
+        print('  - pominięte: bluetui jest w PATH hosta (brak binarki)')
+    (root / 'bluetui.off').rename(root / 'bin/bluetui')
+    # D7: brama platformy pomocnika uruchomionego wprost.
+    for plat in ['fedora', 'nixos', 'ubuntu']:
+        for had_flag in [False, True]:
+            flag.unlink(missing_ok=True)
+            if had_flag:
+                flag.touch()
+            log.write_text('')
+            result = run(str(installer), extra={'ARCHENEMY_OS_RELEASE': str(osr / plat), 'PLATFORM': 'arch', 'PKG_ROUTE': 'arch'})
+            label = 'brama ' + plat + (' (z flagą)' if had_flag else '') + ': '
+            check(result.returncode == 2, label + 'kod 2 mimo odziedziczonego PLATFORM=arch')
+            check(not log.read_text(), label + 'zero wywołań sudo/pacman/dnf/rpm/systemctl/bluetoothctl')
+            check(flag.exists() == had_flag, label + 'flaga ikony nietknięta')
+            check('✓' not in result.stdout and 'nothing was changed' in result.stdout, label + 'bez ✓, „nothing was changed”')
+            out = result.stdout
+            if plat == 'fedora':
+                check(all(t in out for t in ['sudo dnf install bluez dbus-tools', 'sudo systemctl enable --now bluetooth.service',
+                                             'github.com/pythops/bluetui', 'touch ~/archenemy/data/bluetooth-enabled.dat']) and 'pacman' not in out,
+                      label + 'bluez, dbus-tools, bluetooth.service, bluetui z mapy, flaga ręcznie')
+            elif plat == 'nixos':
+                check(all(t in out for t in ['hardware.bluetooth.enable = true;', 'pkgs.bluetui', 'nixos-rebuild switch',
+                                             'touch ~/archenemy/data/bluetooth-enabled.dat']) and 'systemctl' not in out and 'pacman' not in out,
+                      label + 'deklaracja + pkgs.bluetui, flaga ręcznie, bez systemctl')
+            else:
+                check('not supported' in out and 'bluetooth-enabled.dat' not in out, label + 'nieobsługiwana dystrybucja')
+    flag.unlink(missing_ok=True)
+    result = run(str(installer), extra={'ARCHENEMY_OS_RELEASE': str(osr / 'endeavouros')})
+    check(result.returncode == 0 and flag.exists(), 'pochodna Archa (EndeavourOS): ścieżka Archa, flaga po sukcesie')
     # Sprawdzamy także prawdziwy blok [10], w tym odmowę i podsumowanie.
     main = (repo / 'install/install.sh').read_text()
     block = main[main.index('# Bluetooth jest opcjonalny'):main.index('# VirtualBox jest opcjonalny')]
@@ -253,7 +315,8 @@ esac
         flag.unlink(missing_ok=True)
         log.write_text('')
         code = 'SUMMARY_DONE=(); SUMMARY_SKIPPED=();\n' + block + '\nprintf "DONE=%s\\n" "${SUMMARY_DONE[*]}"; printf "SKIPPED=%s\\n" "${SUMMARY_SKIPPED[*]}"'
-        result = subprocess.run(['/bin/bash', '-c', code], env=env | {'ARCHENEMY_DIR': tmp, 'FAIL_INSTALL': str(int(failure))}, input=answer+'\n', text=True, capture_output=True, timeout=10)
+        # Platforma jawnie (Arch bez flagi), bash z PATH — nie FHS-owe /bin/bash.
+        result = subprocess.run([shutil.which('bash'), '-c', code], env=env | {'ARCHENEMY_DIR': tmp, 'FAIL_INSTALL': str(int(failure)), 'PLATFORM': 'arch', 'SKIP_PACKAGES': '0'}, input=answer+'\n', text=True, capture_output=True, timeout=10)
         check(flag.exists() == (answer == 'y' and not failure), 'krok [10]: flaga ' + answer + '/' + str(failure))
         if answer == 'n':
             check(not log.read_text(), 'odmowa [10] bez instalacji')

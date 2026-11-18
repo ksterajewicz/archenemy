@@ -116,6 +116,26 @@ manual_step() {
     return 0
 }
 
+# svc_check [--user] <jednostka> — SAM ODCZYT stanu usługi (D7), bez zmian:
+# 0 = enabled i active, 1 = enabled, ale nie działa (inactive/failed),
+# 2 = nie enabled (albo brak jednostki/busa użytkownika). ✓ usługi dopiero po 0:
+# kod 0 z `systemctl enable --now` ani samo is-enabled nie dowodzą, że usługa
+# działa. Kolejność odczytów: is-enabled, potem is-active (jak dotychczasowe
+# odczyty kroków), a przy „nie enabled” is-active nie pada wcale.
+svc_check() {
+    local -a scope=()
+    [[ "$1" == --user ]] && { scope=(--user); shift; }
+    systemctl "${scope[@]}" is-enabled --quiet "$1" 2>/dev/null || return 2
+    systemctl "${scope[@]}" is-active --quiet "$1" 2>/dev/null || return 1
+    return 0
+}
+# svc_dead <co> <polecenie sprawdzenia> — usługa enabled, ale martwa: ostrzeżenie
+# z poleceniem do ręcznego sprawdzenia i wpis w podsumowaniu, bez ✓ i bez zmian.
+svc_dead() {
+    echo -e "  ${YELLOW}⚠ $1 is enabled but not running — check: $2${NC}"
+    SUMMARY_SKIPPED+=("$1 — enabled but not running, check: $2")
+}
+
 # ─── 1. WELCOME ───────────────────────────────────────────────────────────────
 
 clear
@@ -969,14 +989,51 @@ hw_choice="${hw_choice:-$HW_DEFAULT}"
 # a na ASUS-ach pracuje razem z asusctl (poradnik asus-linux: „designed to work
 # primarily with power-profiles-daemon”) i jest też drogą zapasową, gdy asusd nie żyje.
 setup_universal_ppd() {
-    # Poza Archem usługę włączy dopiero D6; samokontrola niżej i tak odczyta stan.
-    case "$PLATFORM" in
-        fedora) manual_step "power-profiles-daemon" "sudo systemctl enable --now power-profiles-daemon"; return ;;
-        nixos)  manual_step "power-profiles-daemon" "services.power-profiles-daemon.enable = true;"; return ;;
-    esac
+    # Poza Archem usług nie zmieniamy (D7): sam odczyt stanu i instrukcja;
+    # samokontrola niżej i tak odczyta profil.
+    local ppd
+    if [[ "$PLATFORM" != arch ]]; then
+        svc_check power-profiles-daemon; ppd=$?
+        if [[ $ppd -eq 0 ]]; then
+            echo -e "  ${GREEN}✓ power-profiles-daemon enabled and running.${NC}"
+        elif [[ $ppd -eq 1 ]]; then
+            svc_dead "power-profiles-daemon" "systemctl status power-profiles-daemon"
+        elif [[ "$PLATFORM" == nixos ]]; then
+            manual_step "power-profiles-daemon" "services.power-profiles-daemon.enable = true;" summary
+        elif rpm -q tuned-ppd >/dev/null 2>&1; then
+            # Fedora Workstation: tuned-ppd (domyślny menedżer profili, to samo
+            # API D-Bus) wyklucza się z power-profiles-daemon — drugiego menedżera
+            # nie każemy instalować ani włączać. powerprofilesctl (przełącznik na
+            # pasku) jest tylko w pakiecie power-profiles-daemon, stąd jedyna
+            # porada: podmiana zamiast instalacji (packages.fedoraproject.org,
+            # pliki tuned-ppd 2.28 i power-profiles-daemon 0.30, F44).
+            if svc_check tuned-ppd; then
+                echo -e "  ${YELLOW}⚠ Power profiles: tuned-ppd (Fedora's default) is running — archenemy does not install a second profile manager.${NC}"
+            else
+                echo -e "  ${YELLOW}⚠ Power profiles: tuned-ppd (Fedora's default) is installed, but not enabled and running — check: systemctl status tuned-ppd${NC}"
+            fi
+            echo -e "    The bar's profile switcher needs powerprofilesctl, which only power-profiles-daemon has. Optional, replaces tuned-ppd:"
+            echo -e "    sudo dnf swap tuned-ppd power-profiles-daemon && sudo systemctl enable --now power-profiles-daemon"
+            SUMMARY_SKIPPED+=("Power profiles: tuned-ppd kept (no powerprofilesctl for the bar) — optional: sudo dnf swap tuned-ppd power-profiles-daemon && sudo systemctl enable --now power-profiles-daemon")
+        elif pkg_installed power-profiles-daemon >/dev/null 2>&1; then
+            manual_step "power-profiles-daemon" "sudo systemctl enable --now power-profiles-daemon" summary
+        else
+            manual_step "power-profiles-daemon" "$(pkg_hint power-profiles-daemon) && sudo systemctl enable --now power-profiles-daemon" summary
+        fi
+        return
+    fi
     echo -e "  Setting up power-profiles-daemon."
     [[ "$SKIP_PACKAGES" -eq 1 ]] || sudo pacman -S --needed power-profiles-daemon
     sudo systemctl enable --now power-profiles-daemon 2>/dev/null
+    # D7: ✓ i cisza dopiero po odczycie enabled + active; kod 0 bez efektu,
+    # awaria enable albo martwa usługa = ostrzeżenie i wpis w podsumowaniu.
+    svc_check power-profiles-daemon; ppd=$?
+    if [[ $ppd -eq 1 ]]; then
+        svc_dead "power-profiles-daemon" "systemctl status power-profiles-daemon"
+    elif [[ $ppd -eq 2 ]]; then
+        echo -e "  ${YELLOW}⚠ power-profiles-daemon is not enabled — check: systemctl status power-profiles-daemon${NC}"
+        SUMMARY_SKIPPED+=("power-profiles-daemon — not enabled: sudo systemctl enable --now power-profiles-daemon")
+    fi
 }
 
 case "$hw_choice" in
@@ -1433,6 +1490,21 @@ if command -v mpd >/dev/null 2>&1; then
         fi
     fi
 
+    # >>> 8l: usługa mpd (wycinek dla tests/install-services.sh) >>>
+    # Deklaracja usługi użytkownika na NixOS (P3 z przeglądu D5):
+    # `systemctl --user enable mpd` zakłada jednostkę z pakietu, a jednostek
+    # pakietów NixOS nie ładuje z samego environment.systemPackages (do tego jest
+    # systemd.packages; nixpkgs pkgs/by-name/mp/mpd/package.nix ustawia tylko
+    # systemd_system_unit_dir w $out) — nie zgadujemy, deklarujemy; services.mpd
+    # z home-managera pisze WŁASNY mpd.conf do sklepu (modules/services/mpd.nix:
+    # ExecStart … --no-daemon ${mpdConf}). Stąd jawna usługa użytkownika
+    # (systemd.user.services, NixOS nixos/modules/system/boot/systemd/user.nix)
+    # na config archenemy: mpd bierze plik konfiguracji jako argument pozycyjny
+    # (src/CommandLine.cxx).
+    MPD_NIX_DECL="declare it in configuration.nix (it reads archenemy's ~/.config/mpd/mpd.conf):
+      systemd.user.services.mpd = { description = \"Music Player Daemon (archenemy config)\";
+        wantedBy = [ \"default.target\" ]; serviceConfig.ExecStart = \"\${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf\"; };
+      then nixos-rebuild switch. Not home-manager services.mpd: it generates its own mpd.conf."
     if systemctl is-enabled --quiet mpd.service 2>/dev/null || systemctl is-active --quiet mpd.service 2>/dev/null; then
         echo -e "  ${YELLOW}⚠ mpd runs as a SYSTEM service — skipping the user service${NC}"
         echo -e "    (two mpd instances conflict over port 6600 and the sound card). Left as it is."
@@ -1446,41 +1518,53 @@ if command -v mpd >/dev/null 2>&1; then
         echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled: socket activation listens on port 6600 on ALL interfaces${NC}"
         echo -e "    and ignores bind_to_address \"localhost\" from mpd.conf, so mpd (no password) is reachable"
         echo -e "    from your network unless a firewall blocks the port. To keep it local:"
-        echo -e "    systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"
-        SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
-    elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null; then
-        echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
+        if [[ "$PLATFORM" == nixos ]]; then
+            # D7: NixOS bez imperatywnych porad. Gniazdo pochodzi z deklaracji:
+            # home-manager services.mpd.network.startWhenNeeded (modules/services/mpd.nix
+            # — tam ListenStream = listenAddress:port, domyślnie 127.0.0.1) albo
+            # systemd.user.sockets.mpd; opcja jednostki `enable = false` robi z niej
+            # link do /dev/null (nixos/lib/systemd-unit-options.nix, sharedOptions.enable).
+            echo -e "    (check what it listens on: systemctl --user show -p Listen mpd.socket)"
+            echo -e "    remove the socket from your configuration — home-manager: services.mpd.network.startWhenNeeded = false;"
+            echo -e "    NixOS: systemd.user.sockets.mpd.enable = false; — then rebuild, and for the user service $MPD_NIX_DECL"
+            SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 (bind_to_address ignored) — to keep mpd local, remove it from your NixOS/home-manager configuration (services.mpd.network.startWhenNeeded = false; or systemd.user.sockets.mpd.enable = false;) and rebuild")
+        else
+            [[ "$PLATFORM" == fedora ]] && echo -e "    (check what it listens on: systemctl --user show -p Listen mpd.socket)"
+            echo -e "    systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"
+            SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
+        fi
+    elif svc_check --user mpd.service; MPD_SVC=$?; [[ $MPD_SVC -ne 2 ]]; then
+        # D7: ✓ dopiero po enabled + active (dotąd samo is-enabled).
+        if [[ $MPD_SVC -eq 0 ]]; then
+            echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
+        else
+            svc_dead "mpd user service" "systemctl --user status mpd; journalctl --user -u mpd"
+        fi
     elif [[ "$PLATFORM" == nixos ]]; then
-        # P3 z przeglądu D5: `systemctl --user enable mpd` zakłada jednostkę
-        # z pakietu, a jednostek pakietów NixOS nie ładuje z samego
-        # environment.systemPackages (do tego jest systemd.packages; nixpkgs
-        # pkgs/by-name/mp/mpd/package.nix ustawia tylko systemd_system_unit_dir
-        # w $out) — nie zgadujemy, deklarujemy; services.mpd z home-managera pisze WŁASNY
-        # mpd.conf do sklepu (modules/services/mpd.nix: ExecStart … --no-daemon
-        # ${mpdConf}). Stąd jawna usługa użytkownika (systemd.user.services, NixOS
-        # nixos/modules/system/boot/systemd/user.nix) na config archenemy: mpd
-        # bierze plik konfiguracji jako argument pozycyjny (src/CommandLine.cxx).
-        manual_step "mpd user service" "declare it in configuration.nix (it reads archenemy's ~/.config/mpd/mpd.conf):
-      systemd.user.services.mpd = { description = \"Music Player Daemon (archenemy config)\";
-        wantedBy = [ \"default.target\" ]; serviceConfig.ExecStart = \"\${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf\"; };
-      then nixos-rebuild switch. Not home-manager services.mpd: it generates its own mpd.conf."
+        manual_step "mpd user service" "$MPD_NIX_DECL"
+        SUMMARY_SKIPPED+=("mpd user service — not done on NixOS: declare systemd.user.services.mpd (see above), then nixos-rebuild switch")
     elif [[ "$PLATFORM" != arch ]]; then
-        # Usługi poza Archem: etap D7.
-        manual_step "mpd user service" "systemctl --user enable --now mpd"
+        # Fedora: usługi zostają ręczne (D7); pakiet mpd ma jednostkę użytkownika.
+        manual_step "mpd user service" "systemctl --user enable --now mpd.service" summary
     else
         read -rp "  Enable mpd as your user service now (systemctl --user enable --now mpd)? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            if systemctl --user enable --now mpd.service; then
+            if ! systemctl --user enable --now mpd.service; then
+                echo -e "  ${RED}✗ systemctl --user enable --now mpd.service failed — check: journalctl --user -u mpd${NC}"
+                SUMMARY_SKIPPED+=("mpd user service (enable failed — see journalctl --user -u mpd)")
+            elif svc_check --user mpd.service; then
                 echo -e "  ${GREEN}✓ mpd.service (user) enabled${NC}"
                 SUMMARY_DONE+=("mpd user service enabled")
             else
-                echo -e "  ${RED}✗ systemctl --user enable --now mpd.service failed — check: journalctl --user -u mpd${NC}"
-                SUMMARY_SKIPPED+=("mpd user service (enable failed — see journalctl --user -u mpd)")
+                # Kod 0 bez efektu (D7): nie enabled albo nie działa po starcie.
+                echo -e "  ${RED}✗ mpd.service (user) is not enabled and running after systemctl --user enable --now — check: systemctl --user status mpd; journalctl --user -u mpd${NC}"
+                SUMMARY_SKIPPED+=("mpd user service (not running after enable — check: systemctl --user status mpd; journalctl --user -u mpd)")
             fi
         else
             SUMMARY_SKIPPED+=("mpd user service not enabled (your choice): systemctl --user enable --now mpd")
         fi
     fi
+    # <<< 8l: usługa mpd <<<
 fi
 
 if command -v ncmpcpp >/dev/null 2>&1; then
@@ -1875,23 +1959,29 @@ else
 fi
 
 # NetworkManager to twarde wymaganie (moduł sieci waybara, Super+N) — pomijamy
-# tylko, gdy już jest włączony.
-if systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
-    echo -e "  ${GREEN}✓ NetworkManager already enabled.${NC}"
+# tylko, gdy już jest włączony I działa (D7: dotąd samo is-enabled dawało ✓).
+# Włączony, ale martwy: ostrzeżenie bez pytania i bez zmian.
+if svc_check NetworkManager; NM_SVC=$?; [[ $NM_SVC -ne 2 ]]; then
+    if [[ $NM_SVC -eq 0 ]]; then
+        echo -e "  ${GREEN}✓ NetworkManager already enabled.${NC}"
+    else
+        svc_dead "NetworkManager" "systemctl status NetworkManager (network module and Super+N need it)"
+    fi
 elif [[ "$PLATFORM" == fedora ]]; then
-    manual_step "NetworkManager" "sudo systemctl enable --now NetworkManager (network module and Super+N need it)" summary
+    manual_step "NetworkManager" "$(pkg_hint networkmanager) && sudo systemctl enable --now NetworkManager.service (network module and Super+N need it; it takes over from iwd/systemd-networkd)" summary
 elif [[ "$PLATFORM" == nixos ]]; then
     manual_step "NetworkManager" "networking.networkmanager.enable = true; (network module and Super+N need it)" summary
 else
     echo -e "  ${YELLOW}Warning: if you use iwd/systemd-networkd, NetworkManager will take over networking.${NC}"
     read -rp "Enable NetworkManager (required by the network module)? [Y/n]: " ans
     if [[ ! "$ans" =~ ^[Nn]$ ]]; then
-        # Sukces = usługa realnie włączona (is-enabled), nie kod systemctl.
-        if sudo systemctl enable --now NetworkManager && systemctl is-enabled --quiet NetworkManager; then
+        # Sukces = usługa realnie włączona I działa (is-enabled + is-active, D7),
+        # nie kod systemctl.
+        if sudo systemctl enable --now NetworkManager && svc_check NetworkManager; then
             echo -e "  ${GREEN}✓ NetworkManager enabled.${NC}"
             SUMMARY_DONE+=("NetworkManager enabled")
         else
-            echo -e "  ${RED}✗ NetworkManager NOT enabled — check: systemctl status NetworkManager${NC}"
+            echo -e "  ${RED}✗ NetworkManager NOT enabled and running — check: systemctl status NetworkManager${NC}"
             SUMMARY_SKIPPED+=("NetworkManager — enable failed (network module and Super+N will not work): sudo systemctl enable --now NetworkManager")
         fi
     else
@@ -1902,8 +1992,9 @@ fi
 # Bluetooth jest opcjonalny; osobny instalator weryfikuje stan przed flagą.
 # Pomocnik instaluje bluez/bluetui pacmanem i włącza usługę — tylko Arch bez flagi.
 case "$PLATFORM:$SKIP_PACKAGES" in
-    fedora:*) manual_step "Bluetooth (optional)" "sudo dnf install bluez && sudo systemctl enable --now bluetooth; bluetui: see README" ;;
-    nixos:*)  manual_step "Bluetooth (optional)" "hardware.bluetooth.enable = true; plus pkgs.bluetui" ;;
+    # Te same instrukcje wypisuje sam pomocnik uruchomiony wprost (brama D7, kod 2).
+    fedora:*) manual_step "Bluetooth (optional)" "sudo dnf install bluez dbus-tools && sudo systemctl enable --now bluetooth.service; bluetui: $(pkg_hint bluetui); bar icon: touch ~/archenemy/data/bluetooth-enabled.dat" ;;
+    nixos:*)  manual_step "Bluetooth (optional)" "hardware.bluetooth.enable = true; plus pkgs.bluetui, nixos-rebuild switch; bar icon: touch ~/archenemy/data/bluetooth-enabled.dat" ;;
     *:1)      manual_step "Bluetooth (optional)" "bash ~/archenemy/install/bluetooth-installation.sh" ;;
     *)
 read -rp "Set up Bluetooth and its bar icon (bluez, bluez-utils, bluetui)? [y/N]: " ans
@@ -1940,16 +2031,37 @@ esac
 
 # Audio: pavucontrol i moduł głośności waybara mówią po PulseAudio — serwer
 # dostarcza pipewire-pulse (socket użytkownika, na Archu włączany presetem).
+# D7: ✓ dopiero po odczycie active I enabled; działający, ale niewłączony
+# (po ponownym zalogowaniu nie wstanie) = ostrzeżenie, bez zmian.
+AUDIO_UNITS=(pipewire.socket pipewire-pulse.socket wireplumber.service)
+audio_units_ok() {
+    local u
+    for u in "${AUDIO_UNITS[@]}"; do svc_check --user "$u" || return 1; done
+}
 if systemctl --user is-active --quiet pipewire-pulse.socket \
    || systemctl --user is-active --quiet pipewire-pulse.service; then
-    echo -e "  ${GREEN}✓ Audio (pipewire-pulse) already running.${NC}"
+    if systemctl --user is-enabled --quiet pipewire-pulse.socket 2>/dev/null \
+       || systemctl --user is-enabled --quiet pipewire-pulse.service 2>/dev/null; then
+        echo -e "  ${GREEN}✓ Audio (pipewire-pulse) already running.${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ Audio (pipewire-pulse) is running, but not enabled — it will not start at the next login. Check: systemctl --user status pipewire-pulse.socket${NC}"
+        SUMMARY_SKIPPED+=("Audio (pipewire-pulse) — running but not enabled, check: systemctl --user status pipewire-pulse.socket")
+    fi
 elif [[ "$PLATFORM" == nixos ]]; then
     manual_step "Audio (pipewire-pulse)" "services.pipewire.enable = true; services.pipewire.pulse.enable = true;" summary
 elif [[ "$PLATFORM" != arch ]]; then
-    manual_step "Audio (pipewire-pulse)" "systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service" summary
-elif systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service &>/dev/null; then
-    echo -e "  ${GREEN}✓ pipewire-pulse started.${NC}"
-    SUMMARY_DONE+=("Audio: pipewire-pulse started")
+    # Fedora: pakiet RPM to pipewire-pulseaudio, jednostki jak na Archu.
+    manual_step "Audio (pipewire-pulse)" "$(pkg_hint pipewire-pulse) wireplumber, then: systemctl --user enable --now ${AUDIO_UNITS[*]}" summary
+elif systemctl --user enable --now "${AUDIO_UNITS[@]}" &>/dev/null; then
+    if audio_units_ok; then
+        echo -e "  ${GREEN}✓ pipewire-pulse started.${NC}"
+        SUMMARY_DONE+=("Audio: pipewire-pulse started")
+    else
+        # Kod 0 bez efektu albo częściowy start (D7).
+        echo -e "  ${YELLOW}⚠ Audio: systemctl returned success, but ${AUDIO_UNITS[*]} are not all enabled and running.${NC}"
+        echo -e "    Check: systemctl --user status ${AUDIO_UNITS[*]} — or log out and back in."
+        SUMMARY_SKIPPED+=("audio: pipewire-pulse not running after enable — check: systemctl --user status ${AUDIO_UNITS[*]}")
+    fi
 else
     echo -e "  ${YELLOW}⚠ Could not start pipewire-pulse — log out and back in.${NC}"
     SUMMARY_SKIPPED+=("audio: pipewire-pulse (re-login required)")

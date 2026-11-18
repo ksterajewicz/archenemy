@@ -227,7 +227,7 @@ for p in "${NONARCH[@]}"; do
             '[[ "$rest" == "$(<"$T/stdin")" && -z "$done_" ]] && grep -q "^SKIPPED=NetworkManager — not done on" <<< "$skipped" && grep -q "^SKIPPED=Audio (pipewire-pulse) — not done on" <<< "$skipped"'
     done
 done
-MOCK_ENABLED="NetworkManager" MOCK_ACTIVE="pipewire-pulse.socket" step "$P_NIX" step10 ''
+MOCK_ENABLED="NetworkManager pipewire-pulse.socket" MOCK_ACTIVE="NetworkManager pipewire-pulse.socket" step "$P_NIX" step10 ''
 check "[10] NixOS, usługi już działają: tylko odczyty systemctl, podsumowanie puste" \
     'no_mutation && ! grep -q "^sudo" "$CALLS" && grep -q "^systemctl is-enabled --quiet NetworkManager" "$CALLS" && [[ -z "$done_" && -z "$skipped" ]]'
 step "$P_FED" step10 ''
@@ -236,12 +236,12 @@ check "[10] Fedora: firewalld nietknięty, NetworkManager przez systemctl jako p
 step "$P_NIX" step10 ''
 check "[10] NixOS: networking.firewall, networkmanager, pipewire, bluetooth, virtualbox jako opcje" \
     '[[ "$out" == *"networking.firewall"* && "$out" == *"networking.networkmanager.enable = true;"* && "$out" == *"services.pipewire.pulse.enable = true;"* && "$out" == *"hardware.bluetooth.enable = true;"* && "$out" == *"virtualisation.virtualbox.host.enable = true;"* ]]'
-MOCK_ENABLED="NetworkManager" MOCK_ACTIVE="pipewire-pulse.socket" step "$P_ASKIP" step10 'n\n'
+MOCK_ENABLED="NetworkManager pipewire-pulse.socket" MOCK_ACTIVE="NetworkManager pipewire-pulse.socket" step "$P_ASKIP" step10 'n\n'
 check "[10] Arch+skip: Bluetooth i VirtualBox niewywołane, polecenia pomocników jako instrukcja" \
     'no_helpers && [[ "$out" == *"bash ~/archenemy/install/bluetooth-installation.sh"* && "$out" == *"bash ~/archenemy/install/virtualbox-installation.sh"* ]]'
 # Arch: UFW n, NetworkManager włączony, Bluetooth y, VirtualBox y.
 for rc in 0 1 2; do
-    MOCK_ENABLED="NetworkManager" MOCK_ACTIVE="pipewire-pulse.socket" MOCK_VIRTUALBOX_RC=$rc MOCK_BLUETOOTH_RC=$rc \
+    MOCK_ENABLED="NetworkManager pipewire-pulse.socket" MOCK_ACTIVE="NetworkManager pipewire-pulse.socket" MOCK_VIRTUALBOX_RC=$rc MOCK_BLUETOOTH_RC=$rc \
         step "$P_ARCH" step10 'n\ny\ny\n'
     case $rc in
         0) want='^DONE=VirtualBox installed \(vboxdrv loaded\)' ;;
@@ -257,7 +257,7 @@ for rc in 0 1 2; do
         check "[10] Arch, Bluetooth kod $rc → SKIPPED, bez DONE" 'grep -q "^SKIPPED=Bluetooth — setup incomplete" <<< "$skipped" && ! grep -q "^DONE=Bluetooth" <<< "$done_"'
     fi
 done
-MOCK_ENABLED="NetworkManager" MOCK_ACTIVE="pipewire-pulse.socket" step "$P_ARCH" step10 'n\nn\nn\n'
+MOCK_ENABLED="NetworkManager pipewire-pulse.socket" MOCK_ACTIVE="NetworkManager pipewire-pulse.socket" step "$P_ARCH" step10 'n\nn\nn\n'
 check "[10] Arch, odmowa Bluetooth i VirtualBox: pomocniki niewywołane, bez wpisów" \
     'no_helpers && ! grep -qE "^(DONE|SKIPPED)=(VirtualBox|Bluetooth)" <<< "$done_"$'"'"'\n'"'"'"$skipped"'
 
