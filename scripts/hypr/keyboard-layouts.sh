@@ -32,9 +32,32 @@ DAT="$ARCHENEMY_DIR/data/keyboard-layouts.dat"
 LUA="$ARCHENEMY_DIR/config/hypr/keyboard-layouts.lua"
 DEFAULT="pl,us"
 MAX=4
-# Lista układów XKB z xkeyboard-config (zależność libxkbcommon/Hyprlanda);
-# hak dla testów. Brak pliku = akceptujemy kod o poprawnej składni.
-XKB_RULES="${ARCHENEMY_XKB_RULES:-/usr/share/X11/xkb/rules/evdev.lst}"
+# Lista układów XKB z xkeyboard-config (zależność libxkbcommon/Hyprlanda).
+# Kolejność: ARCHENEMY_XKB_RULES (ustawienie użytkownika, np. na NixOS
+# environment.sessionVariables z ${pkgs.xkeyboard_config}, i hak testów) →
+# FHS /usr/share (Arch, Fedora — dokładnie jak dotąd) → bez FHS (NixOS, D10):
+# $XKB_CONFIG_ROOT, potem profile Nix od najbardziej osobistego (te same co
+# SHELL_NIX_PROFILES w shell-rc.sh) — xkeyboard_config jest w core
+# nix/packages.nix. Brak pliku = akceptujemy kod o poprawnej składni.
+# ARCHENEMY_FS_ROOT (tylko z ARCHENEMY_TEST=1) poprzedza ścieżki bezwzględne.
+xkb_rules_path() {
+    local root="" user c
+    [[ -n "${ARCHENEMY_XKB_RULES:-}" ]] && { printf '%s\n' "$ARCHENEMY_XKB_RULES"; return; }
+    [[ "${ARCHENEMY_TEST:-}" == 1 ]] && root="${ARCHENEMY_FS_ROOT:-}"
+    if [[ -r "$root/usr/share/X11/xkb/rules/evdev.lst" ]]; then
+        printf '%s\n' "$root/usr/share/X11/xkb/rules/evdev.lst"; return
+    fi
+    user="$(id -un 2>/dev/null)"; user="${user:-${USER:-}}"
+    for c in ${XKB_CONFIG_ROOT:+"$root$XKB_CONFIG_ROOT/rules/evdev.lst"} \
+             "$HOME/.nix-profile/share/X11/xkb/rules/evdev.lst" \
+             "$HOME/.local/state/nix/profile/share/X11/xkb/rules/evdev.lst" \
+             "$root/etc/profiles/per-user/$user/share/X11/xkb/rules/evdev.lst" \
+             "$root/run/current-system/sw/share/X11/xkb/rules/evdev.lst"; do
+        [[ -r "$c" ]] && { printf '%s\n' "$c"; return; }
+    done
+    printf '%s\n' "$root/usr/share/X11/xkb/rules/evdev.lst"
+}
+XKB_RULES="$(xkb_rules_path)"
 
 # Gotowe układy w TUI (europejskie + angielski US/UK). Inny kod XKB można
 # wpisać ręcznie — sprawdzany w evdev.lst.

@@ -437,6 +437,14 @@ Rules that follow directly from the table:
   generator (`NIXPKGS_REV`); without `nix` the test is a text parser
   (`tests/lib/nix_packages.py`) — evaluation and build come with CI (D11/D12).
   No own flake or home-manager module.
+- **No FHS paths on NixOS (D10).** A data file under `/usr/share` keeps its
+  Arch path first and falls back to Nix profiles (`~/.nix-profile`,
+  `~/.local/state/nix/profile`, `/etc/profiles/per-user/$USER`,
+  `/run/current-system/sw`) only when it is missing — e.g. `xkb_rules_path`
+  in `keyboard-layouts.sh` (after `ARCHENEMY_XKB_RULES`, then
+  `$XKB_CONFIG_ROOT`). The script resolves it itself, so the TUI and Hyprland
+  binds need no session variable. Test hook `ARCHENEMY_FS_ROOT` only with
+  `ARCHENEMY_TEST=1` (`bash tests/nix-paths.sh`).
 - **`install.sh` per platform:** Arch and Arch derivatives (`ID_LIKE=arch`)
   keep the old code of steps [2]/[4]/[5] — same questions, commands and
   output (compare with `INSTALL_MAIN_REV=<rev> INSTALL_MAIN_SAVE=<dir>
