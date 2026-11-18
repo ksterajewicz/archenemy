@@ -90,14 +90,15 @@ printf 'NAME=Ubuntu\nID=ubuntu\nID_LIKE=debian\n'            > "$OS/ubuntu"
 E="$T/etc"; B="$T/boot"; M="$T/modules"; S="$T/sys"
 reset_system() {
     rm -rf "${E:?}" "${B:?}" "${M:?}" "${S:?}"; : > "$CALLS"
-    mkdir -p "$E/modprobe.d" "$B/grub" "$B/loader/entries" "$M/$MOCK_KVER" "$S"
+    mkdir -p "$E/modprobe.d" "$B/loader/entries" "$M/$MOCK_KVER" "$S"
     printf '[options]\n#[multilib]\n#Include = /etc/pacman.d/mirrorlist\n' > "$E/pacman.conf"
     printf 'MODULES=()\nHOOKS=(base udev)\n' > "$E/mkinitcpio.conf"
-    echo "# TEST grub.cfg" > "$B/grub/grub.cfg"
+    # BOOT=sdboot: bez grub.cfg (wykrycie systemd-boot po loader/entries).
+    [[ "${BOOT:-grub}" == grub ]] && { mkdir -p "$B/grub"; echo "# TEST grub.cfg" > "$B/grub/grub.cfg"; }
     printf 'title TEST\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\n' > "$B/loader/entries/arch.conf"
     : > "$B/initramfs-linux.img"
     echo linux > "$M/$MOCK_KVER/pkgbase"; : > "$M/$MOCK_KVER/nvidia.ko"; echo 7.2.16 > "$M/$MOCK_KVER/vboxdrv.ko"
-    cpu GenuineIntel
+    cpu "${CPU_VENDOR:-GenuineIntel}"
 }
 cpu() { printf 'processor\t: 0\nvendor_id\t: %s\n' "$1" > "$T/cpuinfo"; }
 snap() { (cd "$T" && find etc boot modules sys -printf '%p %m %s\n' | sort; find etc boot modules sys -type f -exec md5sum {} + | sort); }
@@ -151,12 +152,17 @@ parity() {
     local a_out a_rc a_calls a_after
     run "$script" arch "$answers" "$@"
     a_out="$out"; a_rc="$rc"; a_calls="$calls"; a_after="$after"
-    check "$label: Arch — brama otwarta (pomocnik działa dalej)" '[[ -n "$a_calls" && "$a_out" != *"nothing was changed"* ]]'
+    check "$label: Arch — brama otwarta (pomocnik działa dalej)" '[[ ( -n "$a_calls" || -n "$a_out" ) && "$a_out" != *"nothing was changed"* ]]'
     run "$script" endeavouros "$answers" "$@"
     check "$label: EndeavourOS (ID_LIKE=arch) = Arch (wyjście, kod, wywołania, atrapy)" \
         '[[ "$out" == "$a_out" && "$rc" == "$a_rc" && "$calls" == "$a_calls" && "$after" == "$a_after" ]]'
     if [[ -n "${HELPER_GATES_REV:-}" ]]; then
         local os base="$BASE/install/${script##*/install/}"
+        # Wrapper z $T (wywołania biblioteki): ta sama treść z install/ z rewizji.
+        if [[ "$script" == "$T"/* ]]; then
+            base="$T/base-${script##*/}"
+            sed "s|$REPO/install/|$BASE/install/|g" "$script" > "$base"
+        fi
         for os in arch endeavouros; do
             run "$script" "$os" "$answers" "$@"
             local n_norm="$norm" n_rc="$rc" n_calls="$calls" n_after="$after"
@@ -209,6 +215,88 @@ no_lib "$GPU"
 parity "GPU NVIDIA zainstalowana, „zostaw”, lib32 tak" "$GPU" '3\ny\n'
 parity "GPU nowa instalacja open-dkms, tak, lib32 nie" "$GPU" '1\ny\nn\n'
 parity "GPU bez lspci" "$GPU" 'y\ny\ny\n' PATH="$NOLSPCI_PATH"
+
+CPU="$REPO/install/cpudrivers-installation.sh"
+KI="$REPO/install/kernel-install.sh"
+BL="$REPO/install/bootloader.sh"
+
+echo "== CPU: cpudrivers-installation.sh wprost"
+for row in "${CLOSED[@]}"; do
+    os="${row%%|*}"; head="${row#*|}"
+    for CPU_VENDOR in GenuineIntel AuthenticAMD TESTVENDOR; do
+        run "$CPU" "$os" 'y\ny\n'
+        gated "CPU $os, $CPU_VENDOR, „y”: kod 2 przed pytaniem, bez pacmana i GRUB-a" "$head"
+    done
+    CPU_VENDOR=GenuineIntel
+    run "$CPU" "$os" 'y\n' PLATFORM=arch
+    gated "CPU $os z odziedziczonym PLATFORM=arch: brama zamknięta" "$head"
+done
+run "$CPU" fedora 'y\n'
+gated "CPU Fedora: microcode_ctl / linux-firmware zarządzane przez Fedorę" "microcode_ctl" "linux-firmware" "sudo dnf upgrade"
+run "$CPU" nixos 'y\n'
+gated "CPU NixOS: hardware.cpu.{intel,amd}.updateMicrocode" "hardware.cpu.intel.updateMicrocode = true;" "hardware.cpu.amd.updateMicrocode = true;"
+check "CPU NixOS/Fedora: bez porad initrd systemd-boot" '[[ "$out" != *initrd* ]]'
+no_lib "$CPU"
+for CPU_VENDOR in GenuineIntel AuthenticAMD TESTVENDOR; do
+    parity "CPU $CPU_VENDOR, „y”, GRUB" "$CPU" 'y\n'
+    parity "CPU $CPU_VENDOR, „n”" "$CPU" 'n\n'
+done
+CPU_VENDOR=AuthenticAMD BOOT=sdboot parity "CPU AMD, „y”, systemd-boot" "$CPU" 'y\n'
+unset CPU_VENDOR
+
+echo "== Jądro: kernel-install.sh wprost"
+for row in "${CLOSED[@]}"; do
+    os="${row%%|*}"; head="${row#*|}"
+    for ans in '1\ny\n' '2\ny\n' '3\ny\n' 'y\ny\n'; do
+        run "$KI" "$os" "$ans"
+        gated "jądro $os, odpowiedzi ${ans//\\n/ }: kod 2, bez pacmana i GRUB-a" "$head"
+    done
+done
+run "$KI" fedora '2\ny\n'
+gated "jądro Fedora: własne jądro Fedory, bez zen/lts" "package kernel" "sudo dnf upgrade"
+run "$KI" nixos '2\ny\n'
+gated "jądro NixOS: boot.kernelPackages" "boot.kernelPackages = pkgs.linuxPackages_zen;" "pkgs.linuxPackages_latest"
+no_lib "$KI"
+for ans in '1\ny\n' '2\ny\n' '3\ny\n' '2\nn\n' '\n'; do
+    parity "jądro, odpowiedzi ${ans//\\n/ }" "$KI" "$ans"
+done
+BOOT=sdboot parity "jądro zen, systemd-boot" "$KI" '2\ny\n'
+
+echo "== Bootloader: install/bootloader.sh — start, source, regenerate_bootloader"
+# Wywołania biblioteki: start wprost, samo source (wołający żyje dalej) i
+# source + regenerate_bootloader przy rozpoznanym GRUB-ie albo systemd-boot.
+printf 'source "%s"; echo "after-source rc=$?"\n' "$BL" > "$T/bl-source.sh"
+printf 'source "%s"; regenerate_bootloader "TEST ctx"; echo "regen rc=$?"\n' "$BL" > "$T/bl-regen.sh"
+for row in "${CLOSED[@]}"; do
+    os="${row%%|*}"; head="${row#*|}"
+    run "$BL" "$os" 'y\n'
+    check "bootloader.sh $os wprost: kod 0, bez wyjścia, zero wywołań, /boot nietknięty" \
+        '[[ "$rc" == 0 && -z "$out" && -z "$calls" && "$after" == "$before" ]]'
+    run "$T/bl-source.sh" "$os" 'y\n'
+    check "bootloader.sh $os po source: wołający żyje dalej, zero wywołań" \
+        '[[ "$out" == "after-source rc=0"$'"'"'\n'"'"' && -z "$calls" && "$after" == "$before" ]]'
+    for BOOT in grub sdboot; do
+        run "$T/bl-regen.sh" "$os" 'y\n'
+        rc="${out##*regen rc=}"; rc="${rc%%$'\n'*}"
+        gated "regenerate_bootloader $os, $BOOT: kod 2, bez grub-mkconfig/bootctl, /boot nietknięty" "$head" "Boot configuration (TEST ctx)"
+        check "regenerate_bootloader $os, $BOOT: bez archowych porad initrd/kernel-install" \
+            '[[ "$out" != *initrd* && "$out" != *"grub-mkconfig -o"* && "$out" != *"kernel-install add"* ]]'
+    done
+    unset BOOT
+done
+run "$T/bl-regen.sh" fedora ''
+check "regenerate_bootloader Fedora: kernel-install/BLS i grub2-mkconfig jako porada" '[[ "$out" == *"kernel-install, BLS"* && "$out" == *"sudo grub2-mkconfig -o /boot/grub2/grub.cfg"* ]]'
+run "$T/bl-regen.sh" nixos ''
+check "regenerate_bootloader NixOS: nixos-rebuild boot, /boot nie ręcznie" '[[ "$out" == *"nixos-rebuild boot"* && "$out" == *"Do not edit /boot by hand."* ]]'
+mkdir -p "$T/bl-nolib"; cp "$BL" "$T/bl-nolib/"
+printf 'source "%s"; echo "after-source rc=$?"; regenerate_bootloader "TEST ctx"; echo "regen rc=$?"\n' "$T/bl-nolib/bootloader.sh" > "$T/bl-nolib-call.sh"
+run "$T/bl-nolib-call.sh" arch ''
+check "bootloader.sh bez install/lib/pkg.sh: source bez błędu, regenerate → ✗, kod 1, zero wywołań" \
+    '[[ "$out" == *"after-source rc=0"* && "$out" == *"pkg.sh is not loaded"* && "$out" == *"regen rc=1"* && -z "$calls" && "$after" == "$before" ]]'
+for BOOT in grub sdboot; do
+    parity "regenerate_bootloader, $BOOT" "$T/bl-regen.sh" ''
+done
+unset BOOT
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

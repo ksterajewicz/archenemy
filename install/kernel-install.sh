@@ -11,6 +11,30 @@ set -uo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
+# ─── PLATFORMA (D6) ───────────────────────────────────────────────────────────
+# Jądra i nagłówki to pakiety pacmana + regeneracja GRUB-a — kod Archa.
+# Platformę wykrywa pkg_gate z install/lib/pkg.sh — ta sama funkcja wyboru
+# ścieżki co w install.sh, nie odziedziczona zmienna PLATFORM.
+# Poza Archem i pochodnymi: instrukcja i kod 2, zanim padnie pytanie.
+# shellcheck source=install/lib/pkg.sh
+if ! source "$(dirname "$(readlink -f "$0")")/lib/pkg.sh"; then
+    echo -e "${RED}✗ Cannot load install/lib/pkg.sh — platform unknown, nothing was changed.${NC}"
+    exit 1
+fi
+if ! pkg_gate "Alternative kernel"; then
+    case "$PKG_ROUTE" in
+        fedora)
+            echo "    Fedora ships its own kernel (package kernel, updated with sudo dnf upgrade);"
+            echo "    linux-zen and linux-lts are not available there, and archenemy installs no other kernel." ;;
+        nixos)
+            echo "    In configuration.nix, then nixos-rebuild boot:"
+            echo "      boot.kernelPackages = pkgs.linuxPackages_zen;      # zen"
+            echo "      boot.kernelPackages = pkgs.linuxPackages_latest;   # newest stable"
+            echo "    Without the option NixOS uses its default LTS kernel (pkgs.linuxPackages)." ;;
+    esac
+    exit 2
+fi
+
 # Wspólna obsługa bootloadera (regeneracja configu po instalacji kernela).
 source "$(dirname "$(readlink -f "$0")")/bootloader.sh"
 

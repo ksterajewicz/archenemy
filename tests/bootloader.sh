@@ -13,7 +13,8 @@
 #   haki ARCHENEMY_BOOT_DIR / ARCHENEMY_CPUINFO, działające tylko
 #   z ARCHENEMY_TEST=1. Przed pierwszym biegiem test sprawdza, że sudo,
 #   pacman, grub-mkconfig i bootctl to atrapy — inaczej odmawia (jako root
-#   prawdziwe sudo naprawdę zainstalowałoby pakiet).
+#   prawdziwe sudo naprawdę zainstalowałoby pakiet). Platforma: jawny
+#   os-release Archa; bramy innych platform — tests/helper-gates.sh.
 #   Uruchom: bash tests/bootloader.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -100,7 +101,10 @@ untouched() { [[ "$(snap)" == "$before" ]] && ! grep -q '^grub-mkconfig' "$MOCK_
 regenerated() { grep -qx "grub-mkconfig -o $B/grub/grub.cfg" "$MOCK_LOG"; }
 installed() { grep -qx "sudo pacman -S --needed $*" "$MOCK_LOG"; }
 no_install() { ! grep -q '^pacman -S' "$MOCK_LOG"; }
-export ARCHENEMY_TEST=1 ARCHENEMY_BOOT_DIR="$B"
+# Jawny Arch (brama platformy D6, install/lib/pkg.sh): wynik nie zależy od
+# dystrybucji hosta. Inne platformy: tests/helper-gates.sh.
+printf 'NAME="Arch Linux"\nID=arch\n' > "$T/os-release-arch"
+export ARCHENEMY_TEST=1 ARCHENEMY_BOOT_DIR="$B" ARCHENEMY_OS_RELEASE="$T/os-release-arch"
 # lib '<kod>' — kod w świeżym bashu z wczytanym install/bootloader.sh.
 lib() { bash -c 'source "$0"; '"$1" "$BL" 2>&1; }
 cpuinfo() { printf 'processor\t: 0\nvendor_id\t: %s\nmodel name\t: TEST CPU\n' "$1" > "$T/cpuinfo"; }

@@ -11,6 +11,29 @@ set -uo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
+# ─── PLATFORMA (D6) ───────────────────────────────────────────────────────────
+# Mikrokod to pakiet pacmana + regeneracja GRUB-a — kod Archa.
+# Platformę wykrywa pkg_gate z install/lib/pkg.sh — ta sama funkcja wyboru
+# ścieżki co w install.sh, nie odziedziczona zmienna PLATFORM.
+# Poza Archem i pochodnymi: instrukcja i kod 2, zanim padnie pytanie.
+# shellcheck source=install/lib/pkg.sh
+if ! source "$(dirname "$(readlink -f "$0")")/lib/pkg.sh"; then
+    echo -e "${RED}✗ Cannot load install/lib/pkg.sh — platform unknown, nothing was changed.${NC}"
+    exit 1
+fi
+if ! pkg_gate "CPU microcode"; then
+    case "$PKG_ROUTE" in
+        fedora)
+            echo "    Fedora installs and updates CPU microcode itself (Intel: microcode_ctl,"
+            echo "    AMD: linux-firmware) and loads it at boot — keep it current: sudo dnf upgrade" ;;
+        nixos)
+            echo "    In configuration.nix, then nixos-rebuild boot:"
+            echo "      hardware.cpu.intel.updateMicrocode = true;   # Intel"
+            echo "      hardware.cpu.amd.updateMicrocode = true;     # AMD" ;;
+    esac
+    exit 2
+fi
+
 # Wspólna obsługa bootloadera (regeneracja configu po instalacji mikrokodu).
 source "$(dirname "$(readlink -f "$0")")/bootloader.sh"
 
