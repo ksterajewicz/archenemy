@@ -670,9 +670,22 @@ on a real machine. Verification has three levels:
    new consumer needs all three. **`bash tests/run-all.sh` runs every
    suite** (updater on real git, rice switcher, per-rice autostart on a
    fake `hl` API, GPU installer on a fake `/etc`, repo hygiene, …) — keep
-   it green. Each suite gets `RUN_ALL_TIMEOUT` seconds (default 600) and
-   is then killed and reported as hung, so a suite must not wait for input
-   (its stdin is `/dev/null`). In suites with `pipefail`, capture a script's output into a
+   it green. Each suite gets `RUN_ALL_TIMEOUT` seconds (default
+   `ceil(600 × ARCHENEMY_TEST_TIME_SCALE)`; an explicit value is final, `0` = no
+   limit) and is then killed and reported as a suite timeout ("timeout
+   pakietu", not "hung"), so a suite must not wait for input (its stdin is
+   `/dev/null`). A failing suite's full log and `.rc` stay in
+   `/tmp/archenemy-run-all-*` (paths printed with the last 200 lines) — read
+   the full log before guessing. Harness watchdogs and readiness waits in a
+   suite go through `tests/lib/timing.sh` (`test_timeout <base s> …`, then
+   `test_timing_init "$T"` and `test_timing_ok` in the result line) or
+   `tests/lib/test_timing.py` (`seconds()`, `wait_until`, `Lines`), scaled by
+   `ARCHENEMY_TEST_TIME_SCALE` (1..10, default 1); wait for a state (file, log
+   line, PID) with a deadline instead of a bare `sleep`. **Never scale a
+   product timing contract** (doctor < 5 s, probes 4/4.5 s, Bluetooth render
+   < 1 s, debounce/reconnect, the 15 s monitor trial): check it separately
+   and label it `KONTRAKT`; an expired watchdog says `ZABEZPIECZENIE`
+   (`tests/README-timing.md`). In suites with `pipefail`, capture a script's output into a
    variable instead of `… | grep -q` (SIGPIPE turns a pass into a fail).
    A suite that must prove it writes only under its `$T` calls
    `test_isolate "$REPO/tests/<suite>.sh" "$@"` right after sourcing

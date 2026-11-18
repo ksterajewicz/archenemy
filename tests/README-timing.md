@@ -17,7 +17,16 @@ multiple lines already buffered in the harness. File waits bypass PATH mocks
 of `sleep`.
 
 The doctor, Bluetooth, monitor settings, shell settings, appbinds menu and
-bars/dither suites use these helpers. The renderer arguments, resolutions,
+bars/dither suites use these helpers, and so do the later platform suites:
+`doctor-platforms.sh` (run limit 10 × S; the doctor **<5 s** contract
+unscaled), `gaming-diag.sh` (30 × S per run; the 8-second bound of a run with
+one hung source and its 1-second `ARCHENEMY_QUERY_TIMEOUT` unscaled, since a
+larger bound would no longer tell a working query limit from the 30-second
+hang fixture), `runtime-platforms.sh` (mouse settings 15 × S, orphan guard
+20 × S) and `shell-platforms.sh` (shell settings 15 × S). Python imports of
+`test_timing` do not write `__pycache__` (`lib/timing.sh` exports
+`PYTHONDONTWRITEBYTECODE=1`; isolated suites would report it as a write
+outside their tree). The renderer arguments, resolutions,
 simulated duration, frame rate and image assertions remain unchanged. Bars has
 a 600-second watchdog per render; dither has 120 seconds per render. These are
 harness safeguards, not performance promises. A shorter enclosing suite limit
