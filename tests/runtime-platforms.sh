@@ -44,7 +44,7 @@ fi
 BASE=""
 if [[ -n "${RUNTIME_PLATFORMS_REV:-}" ]]; then
     BASE="$T/base"; mkdir -p "$BASE"
-    git -C "$REPO" archive "$RUNTIME_PLATFORMS_REV" scripts | tar -x -C "$BASE" || exit 1
+    git -C "$REPO" archive "$RUNTIME_PLATFORMS_REV" scripts install packages | tar -x -C "$BASE" || exit 1   # od D8 skrypty czytają install/lib/pkg.sh
     echo "  (parytet Archa z rewizją $RUNTIME_PLATFORMS_REV)"
 fi
 

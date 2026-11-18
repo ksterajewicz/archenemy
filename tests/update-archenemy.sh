@@ -313,7 +313,7 @@ check "Ubuntu: aktualizacja i tak udana" '[[ "$out" == *"✓ Updated"* ]]'
 if [[ -n "${UPDATE_ARCHENEMY_REV:-}" ]]; then
     echo "== parytet Archa z $UPDATE_ARCHENEMY_REV"
     mkdir -p "$T/base"
-    git -C "$REPO" archive "$UPDATE_ARCHENEMY_REV" scripts/appbinds | tar -x -C "$T/base" || { echo "✗ brak $UPDATE_ARCHENEMY_REV"; exit 1; }
+    git -C "$REPO" archive "$UPDATE_ARCHENEMY_REV" scripts install packages | tar -x -C "$T/base" || { echo "✗ brak $UPDATE_ARCHENEMY_REV"; exit 1; }
     parity_case() {   # parity_case <etykieta> <plik upstream> <klawisze>
         fresh_clone dev
         [[ -n "$2" ]] && upstream_commit dev "$2" "par-${2//\//-}"
