@@ -146,7 +146,7 @@ archenemy/
 │       # mouse.lua (mouse settings, written by Super+A → [m]; missing = rice defaults),
 │       # keyboard-layouts.lua (1–4 layouts in order, Super+A → [k]; missing = pl,us),
 │       # hyprpaper.conf (hyprpaper doesn't migrate to Lua; rices point to it
-│       # via a symlink), hyprlock-background-<rice>.conf ×5 (one per rice except beta)
+│       # via a symlink), hyprlock-background-<rice>.conf ×6 (one per rice except beta)
 │       # (hyprlock background; rices point to it via `source =`)
 ├── rices/
 │   ├── white-blue/                   # Default rice: alacritty, fastfetch, hypr(+hyprlock), mako,
@@ -660,7 +660,7 @@ Nothing here is required: `mpd`, `mpc`, `ncmpcpp` (and `mpv`) live in `packages/
 ## Clipboard history
 
 `Super+C` opens `scripts/rofi/rofi_clipboard.sh` in the current rice's rofi theme
-(all five non-beta rices). Select an entry to copy its full text or image, then
+(all six non-beta rices). Select an entry to copy its full text or image, then
 paste with `Ctrl+V`. Esc closes the menu. Text previews occupy one line; image
 previews use the shared thumbnail library with a time budget and a private,
 temporary cache under `$XDG_CACHE_HOME` (default `~/.cache`), removed on exit.
@@ -687,7 +687,7 @@ bluetui from Extra. Nothing is enabled by default. The separate installer
 `data/bluetooth-enabled.dat` (machine state, covered by `/data/` in `.gitignore`).
 Failures appear in the installer summary with a command to retry.
 
-Reload waybar after installation (or switch rice with `Super+T`). The five
+Reload waybar after installation (or switch rice with `Super+T`). The six
 non-beta rices include `custom/bluetooth`; it emits empty text without the
 flag, `bluetoothctl`, `timeout` (coreutils), Python or a controller. With a
 controller it shows off, on or connected, with connected device names in the tooltip. Updates come
@@ -734,7 +734,7 @@ frozen — bugfixes only).
 
 ## Keyboard shortcuts
 
-These tables describe the five non-beta rices. `white-blue_beta` retains its legacy binds: it has no built-in `Super+A`, `Super+Tab`, `Super+Ctrl+1…4` or power-menu bind. Open settings there through rofi or the `archenemy` alias.
+These tables describe the six non-beta rices. `white-blue_beta` retains its legacy binds: it has no built-in `Super+A`, `Super+Tab`, `Super+Ctrl+1…4` or power-menu bind. Open settings there through rofi or the `archenemy` alias.
 
 ### Apps
 
