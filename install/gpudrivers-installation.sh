@@ -9,6 +9,32 @@ set -uo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
+# ─── PLATFORMA (D6) ───────────────────────────────────────────────────────────
+# Wszystko niżej to kod Archa: pacman, [multilib] w pacman.conf, modprobe.d,
+# mkinitcpio. Platformę wykrywa pkg_gate z install/lib/pkg.sh — ta sama funkcja
+# wyboru ścieżki co w install.sh, nie odziedziczona zmienna PLATFORM. Poza
+# Archem i pochodnymi: instrukcja i kod 2 („krok ręczny”), zanim padnie
+# jakiekolwiek pytanie albo polecenie.
+# shellcheck source=install/lib/pkg.sh
+if ! source "$(dirname "$(readlink -f "$0")")/lib/pkg.sh"; then
+    echo -e "${RED}✗ Cannot load install/lib/pkg.sh — platform unknown, nothing was changed.${NC}"
+    exit 1
+fi
+if ! pkg_gate "GPU drivers"; then
+    case "$PKG_ROUTE" in
+        fedora)
+            echo "    AMD/Intel: Mesa is part of Fedora; 32-bit for Steam/Proton:"
+            echo "      sudo dnf install mesa-dri-drivers.i686 mesa-vulkan-drivers.i686"
+            echo "    NVIDIA: enable RPM Fusion, then install akmod-nvidia: https://rpmfusion.org/Howto/NVIDIA" ;;
+        nixos)
+            echo "    In configuration.nix, then nixos-rebuild switch:"
+            echo "      hardware.graphics.enable = true; hardware.graphics.enable32Bit = true;"
+            echo "    NVIDIA: services.xserver.videoDrivers = [ \"nvidia\" ];"
+            echo "      hardware.nvidia.open = true; hardware.nvidia.modesetting.enable = true;" ;;
+    esac
+    exit 2
+fi
+
 # Haki testowe (tests/gpudrivers.sh): katalog /etc i katalog modułów jądra
 # podmieniane na atrapę w mktemp — TYLKO przy ARCHENEMY_TEST=1 (K10, audyt
 # bezpieczeństwa 2026-11-14): zmienna odziedziczona przypadkiem ze
@@ -46,7 +72,7 @@ echo ""
 
 PKGS=()
 HAS_NVIDIA=0
-PKG_FAILED=0
+DRIVER_PKG_FAILED=0
 # Każdy krok zakończony „✗” ustawia STEP_FAILED; kod wyjścia skryptu to
 # kontrakt z install.sh [6.5]: 0 = gotowe albo pominięte z wyboru,
 # 1 = coś się nie udało (dotąd zawsze 0 — podsumowanie milczało, Z8).
@@ -150,7 +176,7 @@ if [[ ${#PKGS[@]} -gt 0 ]]; then
     if sudo pacman -S --needed "${PKGS[@]}"; then
         echo -e "${GREEN}✓ GPU drivers installed.${NC}"
     else
-        PKG_FAILED=1
+        DRIVER_PKG_FAILED=1
         STEP_FAILED=1
         echo -e "${RED}✗ Package installation failed — leaving initramfs unchanged. Fix the pacman error and run this script again.${NC}"
     fi
@@ -243,7 +269,7 @@ if [[ "$HAS_NVIDIA" -eq 1 ]]; then
     # 2) Moduły NVIDIA w initramfs (wczesny KMS)
     MKINIT="$ETC_DIR/mkinitcpio.conf"
     NV_MISSING="$(nvidia_module_missing)"
-    if [[ "$PKG_FAILED" -eq 1 ]]; then
+    if [[ "$DRIVER_PKG_FAILED" -eq 1 ]]; then
         echo -e "  ${YELLOW}⚠ Skipping initramfs modules — driver installation failed.${NC}"
     elif [[ -n "$NV_MISSING" ]]; then
         # Moduł w MODULES bez zbudowanego modułu = mkinitcpio z błędem

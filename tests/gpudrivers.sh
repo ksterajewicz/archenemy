@@ -5,7 +5,8 @@
 #   na ATRAPACH: sudo, pacman, lspci, modinfo, mkinitcpio w PATH, a /etc
 #   i katalog modułów jądra podmienione hakami ARCHENEMY_ETC_DIR /
 #   ARCHENEMY_MODULES_DIR na katalogi w mktemp. Bez roota, bez sieci,
-#   bez dotykania prawdziwego systemu.
+#   bez dotykania prawdziwego systemu. Platforma: jawny os-release Archa
+#   (ARCHENEMY_OS_RELEASE), bramy innych platform — tests/helper-gates.sh.
 #
 #   Powód powstania (audyt 2026-09-23): wynik `pacman -S` niesprawdzany
 #   („✓” zawsze), warianty *-dkms bez nagłówków jądra, a MODULES +
@@ -107,8 +108,12 @@ setup() {   # setup <kernele z modułem…> -- <kernele bez modułu…>
         echo "${k%-*}" > "$T/modules/$k/pkgbase"   # linux-lts-6.12 → linux-lts
         [[ "$with" -eq 1 ]] && : > "$T/modules/$k/nvidia.ko"
     done
-    export ARCHENEMY_TEST=1 ARCHENEMY_ETC_DIR="$T/etc" ARCHENEMY_MODULES_DIR="$T/modules"
+    export ARCHENEMY_TEST=1 ARCHENEMY_ETC_DIR="$T/etc" ARCHENEMY_MODULES_DIR="$T/modules" \
+        ARCHENEMY_OS_RELEASE="$T/os-release-arch"
 }
+# Jawny Arch (brama platformy D6, install/lib/pkg.sh): wynik nie zależy od
+# dystrybucji hosta. Inne platformy: tests/helper-gates.sh.
+printf 'NAME="Arch Linux"\nID=arch\n' > "$T/os-release-arch"
 # stdin: wariant (1 = open-dkms), potwierdzenie instalacji, odpowiedź lib32
 run_gpu() { printf '%b' "$1" | bash "$GPU" 2>&1; }
 

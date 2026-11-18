@@ -409,6 +409,15 @@ Rules that follow directly from the table:
   through `pkg.sh`; other distributions are refused before any write.
   The path comes from `pkg_route` (the same function in `install.sh` and in
   the system helpers), never from an inherited `PLATFORM`.
+- **System helpers in `install/` gate themselves.** A helper that installs
+  packages or writes system state starts with `pkg_gate` (after sourcing
+  `install/lib/pkg.sh`, exit 1 if that fails), before any question or
+  command: outside Arch and its derivatives it prints the Fedora/NixOS
+  instruction and exits 2, with zero `sudo`/`pacman`/`systemctl`/
+  `modprobe`/`usermod`/`mkinitcpio`/`grub-mkconfig` calls. Arch behaviour
+  stays identical (`HELPER_GATES_REV=<rev> bash tests/helper-gates.sh`);
+  helper tests model Arch with an explicit os-release
+  (`ARCHENEMY_OS_RELEASE`), so they do not depend on the host.
   On Fedora/NixOS step [2b] checks versions before the first write (running
   Hyprland and the Fedora package ≥ 0.56, hyprpaper ≥ 0.8.2 — `min_version`
   in the map); incompatible or undeterminable version (also a failing
