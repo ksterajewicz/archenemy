@@ -64,7 +64,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # Wartość pliku sysfs albo „-” (brak pliku = funkcja nieobecna, nie błąd).
 sysval() { [[ -r "$1" ]] && tr -d '\n' <"$1" 2>/dev/null || printf -- '-'; }
 # Zapytanie bazy pakietów/systemd z limitem: zawieszone źródło = błąd, nie cisza.
-q() { if have timeout; then timeout "$QT" "$@"; else "$@"; fi; }
+# W --doctor limit trzyma doctor (0,35 s, sprzątanie grupy) — bez procesu timeout.
+q() { if [[ "$MODE" != doctor ]] && have timeout; then timeout "$QT" "$@"; else "$@"; fi; }
 
 # Czego nie sprawdzono: klucz (kontrakt znacznika) i powód (sekcja kompletność).
 NOT_CHECKED=()
