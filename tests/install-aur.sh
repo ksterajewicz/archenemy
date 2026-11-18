@@ -156,6 +156,8 @@ INST="$REPO/install/install.sh"
   sed -n "1,$((W-1))p" "$INST" | sed '/^if \[\[ \$EUID -eq 0 \]\]; then$/,/^fi$/d'
   sed -n "${S4},$((S6-1))p" "$INST" ) > "$T/step4-5.sh"
 H4="$T/home4"; mkdir -p "$H4/archenemy/rices" "$H4/archenemy/packages" "$T/bin4"
+# Nagłówek wykrywa dystrybucję (D5): atrapa os-release Archa, nie maszyna testu.
+printf 'ID=arch\n' > "$T/os-release-arch"
 PATH="$ORIG_PATH" ln -s "$REPO/install" "$H4/archenemy/install"
 echo testpkg > "$H4/archenemy/packages/requirements-pacman.txt"
 printf '#!/usr/bin/env bash\nexec "$MOCK_BIN/git" "$@"\n' > "$T/bin4/git"
@@ -186,7 +188,8 @@ run_int() {   # run_int <znacznik albo pusto> <odpowiedzi> [zmienna=wartość…
                   sleep 0.1
               done)
     feeder=$!
-    timeout 30 env --default-signal=INT HOME="$H4" PATH="$T/bin4:$T/sys" "$@" \
+    timeout 30 env --default-signal=INT HOME="$H4" PATH="$T/bin4:$T/sys" \
+        ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release-arch" "$@" \
         setsid bash -c 'echo $$ > "$1"; exec bash "$2"' _ "$T/int.pid" "$T/step4-5.sh" \
         <&3 >"$T/int.out" 2>&1
     RC=$?

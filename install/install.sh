@@ -3,6 +3,10 @@
 # =============================================
 #   archenemy - install.sh
 #   Installs dependencies and sets up symlinks
+#   Usage: install.sh [--skip-packages]
+#     --skip-packages  install no packages at all (Hyprland, yay, requirements,
+#                      extras, ad-hoc packages of later steps) — requirements
+#                      are still checked and reported. Always on for NixOS.
 # =============================================
 
 # -e is intentionally omitted: this installer has many optional steps and a
@@ -18,12 +22,21 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 
-# Hasło sudo unieważniane na KAŻDYM wyjściu (K18; I4 z przeglądu 2026-11-15):
-# Ctrl+C, exit z [2], przerwanie przez `set -u` — nie tylko na zwykłym końcu.
-# `trap … EXIT` zastępuje poprzednią pułapkę, więc pułapki z [3] (katalog
-# monitors.new) też kończą się `sudo -k`; zmieniasz jedną — zmień wszystkie
-# (pilnuje tests/install-guards.sh).
-trap 'sudo -k 2>/dev/null' EXIT
+# ─── FLAGI ────────────────────────────────────────────────────────────────────
+# Przed czymkolwiek innym: nieznana opcja = odmowa, nic nie zapisane.
+usage() {
+    echo "Usage: install.sh [--skip-packages]"
+    echo "  --skip-packages  do not install any package (requirements are still checked);"
+    echo "                   always on for NixOS"
+}
+SKIP_PACKAGES=0
+for arg in "$@"; do
+    case "$arg" in
+        --skip-packages) SKIP_PACKAGES=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Error: unknown option: $arg"; usage; exit 1 ;;
+    esac
+done
 
 ARCHENEMY_DIR="$HOME/archenemy"
 RICES_DIR="$ARCHENEMY_DIR/rices"
@@ -54,6 +67,56 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# ─── PLATFORMA (D5, inne dystrybucje EKSPERYMENTALNE) ─────────────────────────
+# install/lib/pkg.sh wykrywa dystrybucję z os-release, zanim cokolwiek zapiszemy.
+# Arch i jego pochodne (EndeavourOS, Manjaro… — decyzja właściciela 2026-11-17)
+# idą DOTYCHCZASOWYM kodem kroków [2]/[4]/[5]: te same pytania, komendy i skutki;
+# biblioteki używa tylko Fedora i NixOS. Inna dystrybucja = odmowa tutaj.
+# shellcheck source=install/lib/pkg.sh
+if ! source "$ARCHENEMY_DIR/install/lib/pkg.sh"; then
+    echo "Error: cannot load $ARCHENEMY_DIR/install/lib/pkg.sh — is the repo complete?"
+    exit 1
+fi
+if pkg_arch_derivative; then
+    PLATFORM=arch
+elif pkg_detect; then
+    PLATFORM="$PKG_PLATFORM"
+else
+    echo "Error: nothing was installed or changed."
+    exit 1
+fi
+case "$PLATFORM" in
+    fedora) PLATFORM_NAME="Fedora" ;;
+    nixos)  PLATFORM_NAME="NixOS"; SKIP_PACKAGES=1 ;;   # deklaratywnie: nigdy instalacji
+    *)      PLATFORM_NAME="Arch Linux" ;;
+esac
+# Etykieta komunikatów o krokach pominiętych przez platformę albo flagę.
+PLATFORM_LABEL="$PLATFORM_NAME"
+[[ "$PLATFORM" == arch ]] && PLATFORM_LABEL="Arch Linux with --skip-packages"
+
+# Hasło sudo unieważniane na KAŻDYM wyjściu (K18; I4 z przeglądu 2026-11-15):
+# Ctrl+C, exit z [2], przerwanie przez `set -u` — nie tylko na zwykłym końcu.
+# Tylko tam, gdzie instalator używa sudo (P4 z przeglądu D5): Arch (także
+# z --skip-packages: usługi w [6]–[10]) i Fedora z instalacją dnf. NixOS
+# i Fedora z --skip-packages nie wołają sudo wcale — więc i `sudo -k`. Przed
+# wykryciem platformy sudo nie pada, pułapka nie jest potrzebna.
+# `trap … EXIT` zastępuje poprzednią pułapkę, więc pułapki z [3] (katalog
+# monitors.new) też kończą się `sudo -k` z tym samym warunkiem; zmieniasz
+# jedną — zmień wszystkie (pilnuje tests/install-guards.sh).
+USES_SUDO=1
+[[ "$PLATFORM" != arch && "$SKIP_PACKAGES" -eq 1 ]] && USES_SUDO=0
+[[ "$USES_SUDO" == 0 ]] || trap 'sudo -k 2>/dev/null' EXIT
+
+# manual_step <co> <jak zrobić to ręcznie> [summary] — zamiast kroku, którego na
+# tej platformie (albo z --skip-packages) instalator nie wykonuje. Instalatory
+# systemowe i usługi z kroków [6]–[10] działają dziś tylko na Archu; Fedora/NixOS
+# dostaną je w etapach D6/D7 planu. „summary” = wpis w podsumowaniu [11].
+manual_step() {
+    echo -e "  ${YELLOW}⚠ $1: not done automatically on $PLATFORM_LABEL — $2${NC}"
+    [[ "${3:-}" == summary ]] && SUMMARY_SKIPPED+=("$1 — not done on $PLATFORM_LABEL: $2")
+    return 0
+}
+
 # ─── 1. WELCOME ───────────────────────────────────────────────────────────────
 
 clear
@@ -65,12 +128,51 @@ echo "  └───────────────────────
 echo -e "${NC}"
 echo -e "  Welcome to archenemy install script!"
 echo ""
+# Na Archu bez flagi nic nowego na ekranie (wyjście identyczne z dotychczasowym).
+if [[ "$PLATFORM" != arch ]]; then
+    echo -e "  ${YELLOW}$PLATFORM_NAME support is experimental — Arch Linux remains the reference platform.${NC}"
+fi
+if [[ "$PLATFORM" == nixos ]]; then
+    echo -e "  ${YELLOW}NixOS is declarative: archenemy installs nothing (--skip-packages is always on).${NC}"
+    echo -e "  ${YELLOW}It checks the requirements and tells you what to add to your configuration.${NC}"
+elif [[ "$SKIP_PACKAGES" -eq 1 ]]; then
+    echo -e "  ${YELLOW}--skip-packages: no package will be installed; requirements are only checked.${NC}"
+fi
+[[ "$PLATFORM" != arch || "$SKIP_PACKAGES" -eq 1 ]] && echo ""
 sleep 3
 
 # ─── 2. CHECK HYPRLAND ────────────────────────────────────────────────────────
 
 if ! command -v hyprctl &>/dev/null; then
     echo -e "${RED}Hyprland is not installed.${NC}"
+    if [[ "$SKIP_PACKAGES" -eq 1 ]]; then
+        # Bez instalacji nie ma czego dalej konfigurować: instrukcja i koniec.
+        case "$PLATFORM" in
+            arch)   echo -e "Install it yourself: sudo pacman -S --needed hyprland" ;;
+            nixos)  echo -e "$(pkg_hint hyprland) — archenemy needs Hyprland 0.56 or newer"
+                    echo -e "(nixos-26.05 ships 0.55.4: use nixos-unstable or the Hyprland flake)." ;;
+            *)      echo -e "Install it yourself (Hyprland 0.56 or newer): $(pkg_hint hyprland)" ;;
+        esac
+        echo -e "${YELLOW}Then reboot, log in to Hyprland and run install.sh again.${NC}"
+        exit 1
+    fi
+    if [[ "$PLATFORM" == fedora ]]; then
+        # Hyprland Fedory jest za stary (< 0.56, Lua): jedyne źródło to COPR
+        # nett00n/hyprland — pkg_install_extra pokazuje je i pyta [y/N].
+        echo -e "Fedora's own Hyprland is older than 0.56, which archenemy needs."
+        pkg_install_extra hyprland
+        case $? in
+            0)  echo ""
+                echo -e "${GREEN}Hyprland installed.${NC}"
+                echo -e "${YELLOW}Please reboot and log in to Hyprland. Then run install.sh again.${NC}"
+                exit 0 ;;
+            3)  echo -e "${YELLOW}Exiting.${NC}"
+                exit 0 ;;
+            *)  echo ""
+                echo -e "${RED}✗ Hyprland installation failed — check the dnf output above and retry.${NC}"
+                exit 1 ;;
+        esac
+    fi
     echo -e "Do you allow me to install Hyprland? It is required for this to work."
     read -rp "[y/N]: " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
@@ -92,6 +194,81 @@ if ! command -v hyprctl &>/dev/null; then
 fi
 
 echo -e "${GREEN}✓ Hyprland found.${NC}"
+
+# ─── 2b. ZGODNOŚĆ WERSJI (Fedora, NixOS) ──────────────────────────────────────
+# P1 z przeglądu D5: PRZED pierwszym zapisem (mkdir data/monitors w [3]).
+# Configi Lua potrzebują Hyprlanda ≥ min z mapy (0.56) — DZIAŁAJĄCEJ instancji
+# (to ona przeładuje config w [11]) i, na Fedorze, pakietu (wejdzie po
+# ponownym logowaniu); tapety — hyprpapera ≥ 0.8.2 (packages/platform-map.tsv).
+# Niezgodność = komunikat, kod 1, zero zapisów i instalacji. Brak hyprpapera
+# zgłasza [5] (Fedora doinstaluje go z COPR, który ma wersję z mapy). Wersja
+# NIEUSTALONA (NixOS: hyprpaper spoza sklepu Nix, Fedora: błąd zapytania rpm
+# o hyprpaper albo hyprland) też = odmowa (Dodatek 3 i B1 do D5F): zgodności
+# nie da się potwierdzić przed zapisami. Brak pakietu hyprland na Fedorze
+# (Hyprland spoza rpm) odmową nie jest — decyduje działająca sesja.
+# Arch BEZ tej kontroli (parytet z bazą; wersje trzyma repozytorium Archa).
+# hypr_running_version — wersja z 1. linii `hyprctl version`: „Hyprland <wersja>
+# built from branch …” (src/helpers/SystemInfo.cpp, v0.56.2 i v0.57.1).
+hypr_running_version() {
+    local out
+    out="$(hyprctl version 2>/dev/null)" || return 1
+    [[ "${out%%$'\n'*}" =~ ^Hyprland\ v?([0-9]+(\.[0-9]+)+)([[:space:]]|$) ]] || return 1
+    printf '%s\n' "${BASH_REMATCH[1]}"
+}
+if [[ "$PLATFORM" != arch ]]; then
+    VERSION_PROBLEMS=()
+    HYPR_NOTE=""
+    HYPR_MIN="$(pkg_min_version hyprland)" || HYPR_MIN=0.56
+    PAPER_MIN="$(pkg_min_version hyprpaper)" || PAPER_MIN=0.8.2
+    if [[ "$PLATFORM" == nixos ]]; then
+        HYPR_UPGRADE="nixos-26.05 ships 0.55.4: use nixos-unstable or the Hyprland flake (programs.hyprland.package)"
+    else
+        HYPR_UPGRADE="upgrade from COPR: $(pkg_hint hyprland)"
+    fi
+    if HYPR_RUN="$(hypr_running_version)"; then
+        if ! pkg_version_ge "$HYPR_RUN" "$HYPR_MIN"; then
+            VERSION_PROBLEMS+=("running Hyprland is $HYPR_RUN — archenemy needs $HYPR_MIN or newer (Lua configs)")
+        fi
+    else
+        VERSION_PROBLEMS+=("cannot read the version of the running Hyprland (hyprctl version) — run install.sh inside a Hyprland $HYPR_MIN+ session")
+    fi
+    if [[ "$PLATFORM" == fedora ]]; then
+        # B1 (przegląd D5F): rc 1 (brak pakietu, np. Hyprland spoza rpm) —
+        # bez odmowy, decyduje działająca sesja, pakiet zgłosi [5]; rc 2
+        # (błąd zapytania rpm, pusta wersja) — nieustalona = odmowa.
+        HYPR_PKG="$(pkg_version hyprland)"
+        case $? in
+            0) [[ -n "${HYPR_RUN:-}" ]] && ! pkg_version_ge "$HYPR_RUN" "$HYPR_MIN" \
+                   && HYPR_UPGRADE="Hyprland $HYPR_PKG is installed — log out and back in to Hyprland, then run install.sh again" ;;
+            1) HYPR_NOTE="hyprland package not installed — checked in [5]" ;;
+            3) VERSION_PROBLEMS+=("installed Hyprland package is $HYPR_PKG — archenemy needs $HYPR_MIN or newer") ;;
+            *) VERSION_PROBLEMS+=("cannot determine the installed Hyprland package version (rpm -q hyprland failed) — archenemy needs $HYPR_MIN or newer; $(pkg_hint hyprland)") ;;
+        esac
+    fi
+    PAPER_VER="$(pkg_version hyprpaper)"
+    case $? in
+        0) PAPER_NOTE="hyprpaper $PAPER_VER" ;;
+        1) PAPER_NOTE="hyprpaper not installed yet (checked in [5])" ;;
+        3) PAPER_NOTE=""
+           VERSION_PROBLEMS+=("hyprpaper is $PAPER_VER — archenemy needs $PAPER_MIN or newer; $(pkg_hint hyprpaper)") ;;
+        *) PAPER_NOTE=""
+           if [[ "$PLATFORM" == nixos ]]; then
+               PAPER_WHY="it does not resolve to a Nix store path /nix/store/<hash>-hyprpaper-<version>"
+           else
+               PAPER_WHY="rpm -q hyprpaper failed"
+           fi
+           VERSION_PROBLEMS+=("cannot determine the hyprpaper version — archenemy needs $PAPER_MIN or newer ($PAPER_WHY); $(pkg_hint hyprpaper)") ;;
+    esac
+    if ((${#VERSION_PROBLEMS[@]})); then
+        for p in "${VERSION_PROBLEMS[@]}"; do echo -e "${RED}✗ $p${NC}"; done
+        # Bez powtórki: przy błędzie rpm podpowiedź pakietu jest już w komunikacie.
+        [[ "${VERSION_PROBLEMS[*]}" == *Hyprland* && "${VERSION_PROBLEMS[*]}" != *"$(pkg_hint hyprland)"* ]] \
+            && echo -e "  Hyprland: $HYPR_UPGRADE"
+        echo -e "${YELLOW}Nothing was installed or changed.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Hyprland $HYPR_RUN (running${HYPR_NOTE:+; $HYPR_NOTE})${PAPER_NOTE:+, $PAPER_NOTE} — versions compatible.${NC}"
+fi
 echo ""
 
 # ─── 3. CHECK MONITORS ────────────────────────────────────────────────────────
@@ -178,8 +355,8 @@ mkdir -p "$DATA_DIR/monitors"
 # Katalog po biegu zabitym bez trapa (SIGKILL) sprzątamy tu; własny — trapem.
 rm -rf "$DATA_DIR"/monitors.new.*
 MON_TMP="$(mktemp -d "$DATA_DIR/monitors.new.XXXXXX")"
-# Ta pułapka zastępuje tę spod strażnika roota — `sudo -k` musi zostać (K18).
-trap 'rm -rf "$MON_TMP"; sudo -k 2>/dev/null' EXIT
+# Ta pułapka zastępuje tę spod wykrycia platformy — `sudo -k` (z warunkiem USES_SUDO) musi zostać (K18).
+trap 'rm -rf "$MON_TMP"; [[ "${USES_SUDO:-1}" == 0 ]] || sudo -k 2>/dev/null' EXIT
 # Podmiana: stare .dat (także po monitorach, których już nie ma — inaczej
 # wallpaper switcher mógłby wybrać odłączony monitor jako primary/secondary)
 # znikają w tej samej chwili, w której wchodzą nowe (mv w obrębie data/ =
@@ -189,7 +366,7 @@ commit_monitor_dats() {
     mv "$MON_TMP"/*.dat "$DATA_DIR/monitors/"
     rmdir "$MON_TMP"
     # Katalog już pusty i usunięty — wraca sama pułapka sudo (K18).
-    trap 'sudo -k 2>/dev/null' EXIT
+    trap '[[ "${USES_SUDO:-1}" == 0 ]] || sudo -k 2>/dev/null' EXIT
 }
 
 declare -A MON_RES
@@ -444,20 +621,29 @@ echo ""
 # shellcheck source=install/lib/aur.sh
 source "$ARCHENEMY_DIR/install/lib/aur.sh"
 
+if [[ "$PLATFORM" != arch ]]; then
+    echo -e "${CYAN}[4] AUR helper (yay): not used on $PLATFORM_NAME.${NC}"
+else
 echo -e "${CYAN}[4] Checking yay...${NC}"
 
 if ! command -v yay &>/dev/null; then
     echo -e "${YELLOW}yay not found.${NC}"
-    read -rp "Install yay? [y/N]: " ans
+    if [[ "$SKIP_PACKAGES" -eq 1 ]]; then
+        echo -e "${YELLOW}⚠ Not installed (--skip-packages) — AUR packages will be skipped without yay.${NC}"
+        ans=n
+    else
+        read -rp "Install yay? [y/N]: " ans
+    fi
     if [[ "$ans" =~ ^[Yy]$ ]]; then
         sudo pacman -S --needed git base-devel
         # Budowa w mktemp -d z przeglądem PKGBUILD (install/lib/aur.sh, K6+K7).
         aur_bootstrap_yay
     else
-        echo -e "${YELLOW}⚠ AUR packages will be skipped without yay.${NC}"
+        [[ "$SKIP_PACKAGES" -eq 1 ]] || echo -e "${YELLOW}⚠ AUR packages will be skipped without yay.${NC}"
     fi
 else
     echo -e "${GREEN}✓ yay found.${NC}"
+fi
 fi
 
 echo ""
@@ -467,6 +653,101 @@ echo ""
 echo -e "${CYAN}[5] Checking requirements...${NC}"
 echo ""
 
+# list_ids <plik…> — wpisy list pakietów tak jak czytają je pętle Archa niżej
+# (pierwsze słowo linii, bez pustych i komentarzy); id mapy = nazwa z listy.
+list_ids() {
+    local f pkg
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+            pkg="${pkg%%[[:space:]]*}"
+            [[ -z "$pkg" || "$pkg" == \#* ]] && continue
+            printf '%s\n' "$pkg"
+        done < "$f"
+    done
+}
+
+# platform_check <id…> — Fedora/NixOS: stan każdego id przez pkg_installed;
+# wynik w PLAT_MISSING (brak albo błąd zapytania) i PLAT_UNCHECKED (bez sondy).
+platform_check() {
+    local id
+    PLAT_MISSING=(); PLAT_UNCHECKED=()
+    for id in "$@"; do
+        pkg_installed "$id"
+        case $? in
+            0) echo -e "  ${GREEN}✓ $id${NC}" ;;
+            1) PLAT_MISSING+=("$id"); echo -e "  ${RED}✗ missing: $id${NC}" ;;
+            3) PLAT_UNCHECKED+=("$id"); echo -e "  ${YELLOW}? not checked: $id — $(pkg_hint "$id")${NC}" ;;
+            *) PLAT_MISSING+=("$id"); echo -e "  ${RED}✗ cannot query: $id${NC}" ;;
+        esac
+    done
+}
+
+# platform_install <etykieta> <id…> — Fedora: domyślne repo przez pkg_install,
+# COPR nett00n/hyprland i repo Brave przez pkg_install_extra (każde źródło
+# osobno [y/N]); sukces = ponowny odczyt pkg_installed. power-profiles-daemon
+# osobną transakcją: tuned-ppd (domyślny na Fedora Workstation) jest z nim
+# sprzeczny, dnf odmawia, a instalator NIE podmienia pakietów (bez
+# --allowerasing; decyzja właściciela 2026-11-17) — reszta nie przepada przez
+# tę jedną odmowę. Niezainstalowane: podpowiedź i wpis w podsumowaniu.
+platform_install() {
+    local label="$1" id
+    shift
+    local -a main=() ppd=() still=()
+    local ppd_conflict=0
+    for id in "$@"; do
+        if [[ "$id" == power-profiles-daemon ]]; then ppd+=("$id"); else main+=("$id"); fi
+    done
+    if ((${#main[@]})); then
+        pkg_install "${main[@]}"
+        if ((${#PKG_SKIPPED[@]})); then
+            local -a rest=("${PKG_SKIPPED[@]}")
+            pkg_install_extra "${rest[@]}"
+        fi
+    fi
+    if ((${#ppd[@]})) && ! pkg_install power-profiles-daemon \
+            && rpm -q tuned-ppd >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠ power-profiles-daemon conflicts with tuned-ppd (Fedora's default), and archenemy${NC}"
+        echo -e "  ${YELLOW}  does not replace installed packages. The bar's profile switcher needs powerprofilesctl:${NC}"
+        echo -e "  ${YELLOW}  sudo dnf swap tuned-ppd power-profiles-daemon${NC}"
+        SUMMARY_SKIPPED+=("power-profiles-daemon — conflicts with tuned-ppd, switch manually: sudo dnf swap tuned-ppd power-profiles-daemon")
+        ppd_conflict=1
+    fi
+    for id in "$@"; do
+        pkg_installed "$id" >/dev/null 2>&1 || still+=("$id")
+    done
+    for id in "${still[@]}"; do
+        [[ "$id" == power-profiles-daemon && $ppd_conflict -eq 1 ]] && continue
+        echo -e "  ${RED}✗ not installed: $id${NC} — $(pkg_hint "$id")"
+        SUMMARY_SKIPPED+=("$label not installed: $id — $(pkg_hint "$id")")
+    done
+}
+
+if [[ "$PLATFORM" != arch ]]; then
+    mapfile -t REQ_IDS < <(list_ids "$PACMAN_REQ" "$AUR_REQ")
+    platform_check "${REQ_IDS[@]}"
+    if [[ ${#PLAT_MISSING[@]} -gt 0 ]]; then
+        echo ""
+        if [[ "$PLATFORM" == nixos ]]; then
+            # pkg_install na NixOS niczego nie zmienia — wypisuje, co dodać do konfiguracji.
+            pkg_install "${PLAT_MISSING[@]}"
+            SUMMARY_SKIPPED+=("REQUIRED packages missing — add them to your NixOS configuration: ${PLAT_MISSING[*]}")
+        elif [[ "$SKIP_PACKAGES" -eq 1 ]]; then
+            for id in "${PLAT_MISSING[@]}"; do echo "  $id: $(pkg_hint "$id")"; done
+            SUMMARY_SKIPPED+=("REQUIRED packages not installed (--skip-packages): ${PLAT_MISSING[*]}")
+        else
+            read -rp "Install missing packages with dnf? [Y/n]: " ans
+            if [[ ! "$ans" =~ ^[Nn]$ ]]; then
+                platform_install "REQUIRED package" "${PLAT_MISSING[@]}"
+            else
+                SUMMARY_SKIPPED+=("REQUIRED packages skipped by request: ${PLAT_MISSING[*]}")
+            fi
+        fi
+    fi
+    if [[ ${#PLAT_UNCHECKED[@]} -gt 0 && "$PLATFORM" == fedora ]]; then
+        SUMMARY_SKIPPED+=("Not checked on Fedora (install manually, see README): ${PLAT_UNCHECKED[*]}")
+    fi
+else
 MISSING_PACMAN=()
 if [[ -f "$PACMAN_REQ" ]]; then
     while IFS= read -r pkg || [[ -n "$pkg" ]]; do
@@ -481,7 +762,11 @@ if [[ -f "$PACMAN_REQ" ]]; then
     done < "$PACMAN_REQ"
 fi
 
-if [[ ${#MISSING_PACMAN[@]} -gt 0 ]]; then
+if [[ ${#MISSING_PACMAN[@]} -gt 0 && "$SKIP_PACKAGES" -eq 1 ]]; then
+    echo ""
+    echo -e "  ${YELLOW}⚠ Not installed (--skip-packages): sudo pacman -S --needed ${MISSING_PACMAN[*]}${NC}"
+    SUMMARY_SKIPPED+=("REQUIRED pacman packages not installed (--skip-packages): ${MISSING_PACMAN[*]} (sudo pacman -S --needed ${MISSING_PACMAN[*]})")
+elif [[ ${#MISSING_PACMAN[@]} -gt 0 ]]; then
     echo ""
     # Pakiety WYMAGANE → default-Yes; odmowę i niepowodzenie rejestrujemy
     # w SUMMARY_SKIPPED (dotąd default-No bez śladu — nieudana/odrzucona
@@ -514,7 +799,11 @@ if [[ -f "$AUR_REQ" ]]; then
     done < "$AUR_REQ"
 fi
 
-if [[ ${#MISSING_AUR[@]} -gt 0 ]]; then
+if [[ ${#MISSING_AUR[@]} -gt 0 && "$SKIP_PACKAGES" -eq 1 ]]; then
+    echo ""
+    echo -e "  ${YELLOW}⚠ Not installed (--skip-packages): yay -S --needed ${MISSING_AUR[*]}${NC}"
+    SUMMARY_SKIPPED+=("REQUIRED AUR packages not installed (--skip-packages): ${MISSING_AUR[*]} (yay -S --needed ${MISSING_AUR[*]})")
+elif [[ ${#MISSING_AUR[@]} -gt 0 ]]; then
     echo ""
     # Jak wyżej: wymagane → default-Yes + rejestr niepowodzeń w SUMMARY_SKIPPED.
     read -rp "Install missing AUR packages with yay? [Y/n]: " ans
@@ -532,8 +821,37 @@ if [[ ${#MISSING_AUR[@]} -gt 0 ]]; then
         SUMMARY_SKIPPED+=("REQUIRED AUR packages skipped by request: ${MISSING_AUR[*]}")
     fi
 fi
+fi
 
 echo ""
+# ─── 5b. ADDITIONAL PACKAGES ──────────────────────────────────────────────────
+
+if [[ "$PLATFORM" == nixos ]]; then
+    echo -e "  Additional packages: add the ones you want from packages/additional-packages-*.txt"
+    echo -e "  to your NixOS configuration (archenemy installs nothing on NixOS)."
+elif [[ "$SKIP_PACKAGES" -eq 1 ]]; then
+    echo -e "  Additional packages: skipped (--skip-packages)."
+elif [[ "$PLATFORM" == fedora ]]; then
+    read -rp "Would you like to install additional useful packages? [y/N]: " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+        mapfile -t ADD_IDS < <(list_ids "$ARCHENEMY_DIR/packages/additional-packages-pacman.txt" \
+                                        "$ARCHENEMY_DIR/packages/additional-packages-aur.txt")
+        echo ""
+        echo -e "  ${CYAN}Additional programs:${NC}"
+        for i in "${!ADD_IDS[@]}"; do printf "    %2d) %s\n" "$((i+1))" "${ADD_IDS[$i]}"; done
+        echo ""
+        read -rp "  Pick numbers (e.g. 1 3 7), Enter to skip: " -a picks
+        sel_ids=()
+        for n in "${picks[@]}"; do
+            [[ "$n" =~ ^[0-9]+$ ]] || continue
+            idx=$((10#$n - 1))
+            (( idx >= 0 && idx < ${#ADD_IDS[@]} )) || continue
+            sel_ids+=("${ADD_IDS[$idx]}")
+        done
+        # Pakiety spoza repo Fedory (RPM Fusion, producenci) dostają podpowiedź.
+        [[ ${#sel_ids[@]} -gt 0 ]] && platform_install "Additional package" "${sel_ids[@]}"
+    fi
+else
 read -rp "Would you like to install additional useful packages? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     ADD_PACMAN="$ARCHENEMY_DIR/packages/additional-packages-pacman.txt"
@@ -623,6 +941,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         fi
     fi
 fi
+fi
 
 echo ""
 
@@ -651,8 +970,13 @@ hw_choice="${hw_choice:-$HW_DEFAULT}"
 # a na ASUS-ach pracuje razem z asusctl (poradnik asus-linux: „designed to work
 # primarily with power-profiles-daemon”) i jest też drogą zapasową, gdy asusd nie żyje.
 setup_universal_ppd() {
+    # Poza Archem usługę włączy dopiero D6; samokontrola niżej i tak odczyta stan.
+    case "$PLATFORM" in
+        fedora) manual_step "power-profiles-daemon" "sudo systemctl enable --now power-profiles-daemon"; return ;;
+        nixos)  manual_step "power-profiles-daemon" "services.power-profiles-daemon.enable = true;"; return ;;
+    esac
     echo -e "  Setting up power-profiles-daemon."
-    sudo pacman -S --needed power-profiles-daemon
+    [[ "$SKIP_PACKAGES" -eq 1 ]] || sudo pacman -S --needed power-profiles-daemon
     sudo systemctl enable --now power-profiles-daemon 2>/dev/null
 }
 
@@ -663,12 +987,19 @@ case "$hw_choice" in
         echo ""
         # Kod wyjścia to kontrakt (0 gotowe, 2 potrzebny restart, inaczej porażka),
         # opis w skrypcie. Decyzja właściciela 2026-10-14: pakiety z repo, nie z AUR.
+        # Instalator ASUS instaluje pakiety i startuje asusd — tylko Arch bez flagi.
+        if [[ "$PLATFORM" != arch ]]; then
+            manual_step "ASUS tools (asusctl)" "$(pkg_hint asusctl)" summary
+        elif [[ "$SKIP_PACKAGES" -eq 1 ]]; then
+            manual_step "ASUS tools (asusctl)" "bash ~/archenemy/install/asus-installation.sh" summary
+        else
         bash "$ARCHENEMY_DIR/install/asus-installation.sh"
         case $? in
             0) SUMMARY_DONE+=("ASUS: asusctl + rog-control-center from the Arch repo, asusd running") ;;
             2) SUMMARY_SKIPPED+=("ASUS: packages installed, asusd not running yet: reboot") ;;
             *) SUMMARY_SKIPPED+=("ASUS: installation failed, profiles via power-profiles-daemon (retry: bash ~/archenemy/install/asus-installation.sh)") ;;
         esac
+        fi
         setup_universal_ppd
         ;;
     2)
@@ -696,7 +1027,15 @@ echo "$HW_PROFILE" > "$DATA_DIR/hardware.dat"
 PROFILE_CHECK="$(bash "$ARCHENEMY_DIR/scripts/waybar/profile-get.sh" 2>/dev/null)"
 if [[ -z "$PROFILE_CHECK" || "$PROFILE_CHECK" == "brak" ]]; then
     echo -e "  ${RED}✗ Profile switcher is not working (profile-get.sh → \"brak\").${NC}"
-    echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Other devices: systemctl enable --now power-profiles-daemon."
+    # Porada per platforma (P2 z przeglądu D5): asus-installation.sh woła
+    # `sudo pacman -S`, więc poza Archem — instrukcje z manual_step kroku [6].
+    case "$PLATFORM" in
+        fedora) echo -e "    ASUS: $(pkg_hint asusctl). Other devices: sudo systemctl enable --now power-profiles-daemon"
+                echo -e "    (if tuned-ppd is installed, first: sudo dnf swap tuned-ppd power-profiles-daemon)." ;;
+        nixos)  echo -e "    Set in configuration.nix, then nixos-rebuild switch — ASUS: services.asusd.enable = true;"
+                echo -e "    and services.power-profiles-daemon.enable = true;. Other devices: services.power-profiles-daemon.enable = true;" ;;
+        *)      echo -e "    ASUS: bash ~/archenemy/install/asus-installation.sh. Other devices: systemctl enable --now power-profiles-daemon." ;;
+    esac
     SUMMARY_SKIPPED+=("Hardware profile: $HW_PROFILE — profile tool is NOT responding, the bar will show \"brak\"")
 else
     SUMMARY_DONE+=("Hardware profile: $HW_PROFILE (active profile: $PROFILE_CHECK)")
@@ -722,6 +1061,12 @@ run_driver_installer() {   # run_driver_installer <etykieta> <skrypt w install/>
     esac
 }
 
+# Instalatory sterowników i jądra (pacman, mkinitcpio, GRUB) — tylko Arch bez flagi.
+case "$PLATFORM:$SKIP_PACKAGES" in
+    fedora:*) manual_step "CPU microcode, GPU drivers, kernel" "use Fedora's tools (NVIDIA: RPM Fusion), see README" ;;
+    nixos:*)  manual_step "CPU microcode, GPU drivers, kernel" "set them in your NixOS configuration (hardware.*, boot.kernelPackages)" ;;
+    *:1)      manual_step "CPU microcode, GPU drivers, kernel" "bash ~/archenemy/install/{cpudrivers-installation,gpudrivers-installation,kernel-install}.sh" ;;
+    *)
 read -rp "  Run CPU microcode installer? [y/N]: " ans
 [[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "CPU microcode" cpudrivers-installation.sh
 
@@ -730,6 +1075,8 @@ read -rp "  Run GPU drivers installer? [y/N]: " ans
 
 read -rp "  Run kernel installer? [y/N]: " ans
 [[ "$ans" =~ ^[Yy]$ ]] && run_driver_installer "Kernel" kernel-install.sh
+        ;;
+esac
 
 echo ""
 
@@ -1104,6 +1451,23 @@ if command -v mpd >/dev/null 2>&1; then
         SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
     elif systemctl --user is-enabled --quiet mpd.service 2>/dev/null; then
         echo -e "  ${GREEN}✓ mpd user service already enabled${NC}"
+    elif [[ "$PLATFORM" == nixos ]]; then
+        # P3 z przeglądu D5: `systemctl --user enable mpd` zakłada jednostkę
+        # z pakietu, a jednostek pakietów NixOS nie ładuje z samego
+        # environment.systemPackages (do tego jest systemd.packages; nixpkgs
+        # pkgs/by-name/mp/mpd/package.nix ustawia tylko systemd_system_unit_dir
+        # w $out) — nie zgadujemy, deklarujemy; services.mpd z home-managera pisze WŁASNY
+        # mpd.conf do sklepu (modules/services/mpd.nix: ExecStart … --no-daemon
+        # ${mpdConf}). Stąd jawna usługa użytkownika (systemd.user.services, NixOS
+        # nixos/modules/system/boot/systemd/user.nix) na config archenemy: mpd
+        # bierze plik konfiguracji jako argument pozycyjny (src/CommandLine.cxx).
+        manual_step "mpd user service" "declare it in configuration.nix (it reads archenemy's ~/.config/mpd/mpd.conf):
+      systemd.user.services.mpd = { description = \"Music Player Daemon (archenemy config)\";
+        wantedBy = [ \"default.target\" ]; serviceConfig.ExecStart = \"\${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf\"; };
+      then nixos-rebuild switch. Not home-manager services.mpd: it generates its own mpd.conf."
+    elif [[ "$PLATFORM" != arch ]]; then
+        # Usługi poza Archem: etap D7.
+        manual_step "mpd user service" "systemctl --user enable --now mpd"
     else
         read -rp "  Enable mpd as your user service now (systemctl --user enable --now mpd)? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
@@ -1456,48 +1820,58 @@ echo -e "${CYAN}[10] Optional configuration...${NC}"
 # „y” znów wołał `ufw default deny incoming` / `allow outgoing` i po cichu
 # nadpisywał polityki ustawione przez użytkownika (audyt 2026-11-05, S7).
 # Stan czyta `ufw status` (wymaga roota); bez ufw albo bez odczytu = pytanie.
-UFW_STATUS=""
-command -v ufw >/dev/null 2>&1 && UFW_STATUS="$(sudo ufw status verbose 2>/dev/null)"
-if grep -q '^Status: active' <<< "$UFW_STATUS"; then
-    echo -e "  ${GREEN}✓ UFW firewall already active — your policies and rules are left as they are.${NC}"
-    UFW_DEFAULTS="$(sed -n 's/^Default: //p' <<< "$UFW_STATUS")"
-    [[ -n "$UFW_DEFAULTS" ]] && echo "    Default: $UFW_DEFAULTS"
-    if ! systemctl is-enabled --quiet ufw 2>/dev/null; then
-        echo -e "  ${YELLOW}⚠ ufw.service is not enabled — the firewall will be off after a reboot.${NC}"
-        SUMMARY_SKIPPED+=("UFW is active now but does not start at boot: sudo systemctl enable ufw")
-    fi
-    ans=n
+# Zapora poza Archem: Fedora ma firewalld, NixOS networking.firewall — UFW nie
+# instalujemy i nie włączamy (D6). --skip-packages bez ufw: nie pytamy.
+if [[ "$PLATFORM" == fedora ]]; then
+    manual_step "Firewall" "Fedora uses firewalld, left as it is (archenemy does not install UFW)"
+elif [[ "$PLATFORM" == nixos ]]; then
+    manual_step "Firewall" "set networking.firewall in your NixOS configuration"
+elif [[ "$SKIP_PACKAGES" -eq 1 ]] && ! command -v ufw >/dev/null 2>&1; then
+    manual_step "UFW firewall" "ufw is not installed — run install.sh again after: sudo pacman -S --needed ufw"
 else
-    # Skutki włączenia wprost: domyślne polityki ORAZ /etc/ufw/sysctl.conf,
-    # który ufw nakłada przy starcie (rp_filter=1 zamiast 2 z systemd,
-    # accept_redirects=0) — plan bezpieczeństwa 2026-11-14 (Y1).
-    echo "  UFW firewall: blocks incoming connections, outgoing stay allowed. Starting it"
-    echo "  also applies /etc/ufw/sysctl.conf (strict reverse-path filtering rp_filter=1,"
-    echo "  ICMP redirects ignored), which some VPN setups do not like. Serving anything"
-    echo "  to your LAN (Steam Remote Play and LAN game transfers, KDE Connect, LocalSend)"
-    echo "  stops working until you allow it with: sudo ufw allow ..."
-    read -rp "Enable the UFW firewall with these defaults? [y/N]: " ans
-fi
-if [[ "$ans" =~ ^[Yy]$ ]]; then
-    # Każdy krok sprawdzany osobno — dotąd „✓ UFW configured" leciało nawet
-    # gdy pacman/ufw/systemctl zawiodły (audyt 2026-09-25). Sukces = ufw
-    # zgłasza „Status: active" I usługa jest włączona, nie kod wyjścia.
-    UFW_FAIL=""
-    if ! sudo pacman -S --needed ufw; then
-        UFW_FAIL="pacman (ufw package)"
-    elif ! sudo ufw default deny incoming || ! sudo ufw default allow outgoing; then
-        UFW_FAIL="ufw default deny/allow"
-    elif ! sudo ufw enable || ! sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-        UFW_FAIL="ufw enable (status is not 'active')"
-    elif ! sudo systemctl enable ufw || ! systemctl is-enabled --quiet ufw; then
-        UFW_FAIL="systemctl enable ufw"
-    fi
-    if [[ -z "$UFW_FAIL" ]]; then
-        echo -e "  ${GREEN}✓ UFW configured.${NC}"
-        SUMMARY_DONE+=("UFW configured")
+    UFW_STATUS=""
+    command -v ufw >/dev/null 2>&1 && UFW_STATUS="$(sudo ufw status verbose 2>/dev/null)"
+    if grep -q '^Status: active' <<< "$UFW_STATUS"; then
+        echo -e "  ${GREEN}✓ UFW firewall already active — your policies and rules are left as they are.${NC}"
+        UFW_DEFAULTS="$(sed -n 's/^Default: //p' <<< "$UFW_STATUS")"
+        [[ -n "$UFW_DEFAULTS" ]] && echo "    Default: $UFW_DEFAULTS"
+        if ! systemctl is-enabled --quiet ufw 2>/dev/null; then
+            echo -e "  ${YELLOW}⚠ ufw.service is not enabled — the firewall will be off after a reboot.${NC}"
+            SUMMARY_SKIPPED+=("UFW is active now but does not start at boot: sudo systemctl enable ufw")
+        fi
+        ans=n
     else
-        echo -e "  ${RED}✗ UFW NOT configured — failed: $UFW_FAIL${NC}"
-        SUMMARY_SKIPPED+=("UFW — failed: $UFW_FAIL (finish manually: sudo ufw enable && sudo systemctl enable ufw)")
+        # Skutki włączenia wprost: domyślne polityki ORAZ /etc/ufw/sysctl.conf,
+        # który ufw nakłada przy starcie (rp_filter=1 zamiast 2 z systemd,
+        # accept_redirects=0) — plan bezpieczeństwa 2026-11-14 (Y1).
+        echo "  UFW firewall: blocks incoming connections, outgoing stay allowed. Starting it"
+        echo "  also applies /etc/ufw/sysctl.conf (strict reverse-path filtering rp_filter=1,"
+        echo "  ICMP redirects ignored), which some VPN setups do not like. Serving anything"
+        echo "  to your LAN (Steam Remote Play and LAN game transfers, KDE Connect, LocalSend)"
+        echo "  stops working until you allow it with: sudo ufw allow ..."
+        read -rp "Enable the UFW firewall with these defaults? [y/N]: " ans
+    fi
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+        # Każdy krok sprawdzany osobno — dotąd „✓ UFW configured" leciało nawet
+        # gdy pacman/ufw/systemctl zawiodły (audyt 2026-09-25). Sukces = ufw
+        # zgłasza „Status: active" I usługa jest włączona, nie kod wyjścia.
+        UFW_FAIL=""
+        if [[ "$SKIP_PACKAGES" -eq 0 ]] && ! sudo pacman -S --needed ufw; then
+            UFW_FAIL="pacman (ufw package)"
+        elif ! sudo ufw default deny incoming || ! sudo ufw default allow outgoing; then
+            UFW_FAIL="ufw default deny/allow"
+        elif ! sudo ufw enable || ! sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+            UFW_FAIL="ufw enable (status is not 'active')"
+        elif ! sudo systemctl enable ufw || ! systemctl is-enabled --quiet ufw; then
+            UFW_FAIL="systemctl enable ufw"
+        fi
+        if [[ -z "$UFW_FAIL" ]]; then
+            echo -e "  ${GREEN}✓ UFW configured.${NC}"
+            SUMMARY_DONE+=("UFW configured")
+        else
+            echo -e "  ${RED}✗ UFW NOT configured — failed: $UFW_FAIL${NC}"
+            SUMMARY_SKIPPED+=("UFW — failed: $UFW_FAIL (finish manually: sudo ufw enable && sudo systemctl enable ufw)")
+        fi
     fi
 fi
 
@@ -1505,6 +1879,10 @@ fi
 # tylko, gdy już jest włączony.
 if systemctl is-enabled --quiet NetworkManager 2>/dev/null; then
     echo -e "  ${GREEN}✓ NetworkManager already enabled.${NC}"
+elif [[ "$PLATFORM" == fedora ]]; then
+    manual_step "NetworkManager" "sudo systemctl enable --now NetworkManager (network module and Super+N need it)" summary
+elif [[ "$PLATFORM" == nixos ]]; then
+    manual_step "NetworkManager" "networking.networkmanager.enable = true; (network module and Super+N need it)" summary
 else
     echo -e "  ${YELLOW}Warning: if you use iwd/systemd-networkd, NetworkManager will take over networking.${NC}"
     read -rp "Enable NetworkManager (required by the network module)? [Y/n]: " ans
@@ -1523,6 +1901,12 @@ else
 fi
 
 # Bluetooth jest opcjonalny; osobny instalator weryfikuje stan przed flagą.
+# Pomocnik instaluje bluez/bluetui pacmanem i włącza usługę — tylko Arch bez flagi.
+case "$PLATFORM:$SKIP_PACKAGES" in
+    fedora:*) manual_step "Bluetooth (optional)" "sudo dnf install bluez && sudo systemctl enable --now bluetooth; bluetui: see README" ;;
+    nixos:*)  manual_step "Bluetooth (optional)" "hardware.bluetooth.enable = true; plus pkgs.bluetui" ;;
+    *:1)      manual_step "Bluetooth (optional)" "bash ~/archenemy/install/bluetooth-installation.sh" ;;
+    *)
 read -rp "Set up Bluetooth and its bar icon (bluez, bluez-utils, bluetui)? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     if bash "$ARCHENEMY_DIR/install/bluetooth-installation.sh"; then
@@ -1531,11 +1915,18 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         SUMMARY_SKIPPED+=("Bluetooth — setup incomplete; retry: bash ~/archenemy/install/bluetooth-installation.sh")
     fi
 fi
+        ;;
+esac
 
 # VirtualBox jest opcjonalny i NIE leży w additional-packages: sam pakiet bez
 # nagłówków jądra i modułu vboxdrv nie uruchomi żadnej maszyny. Pakiety,
 # nagłówki, moduł i grupę vboxusers załatwia osobny skrypt; kod wyjścia to
 # kontrakt (0 gotowe, 2 potrzebny restart, inaczej porażka) — opis w skrypcie.
+case "$PLATFORM:$SKIP_PACKAGES" in
+    fedora:*) manual_step "VirtualBox (optional)" "see VirtualBox's Linux downloads (RPM Fusion has it too)" ;;
+    nixos:*)  manual_step "VirtualBox (optional)" "virtualisation.virtualbox.host.enable = true;" ;;
+    *:1)      manual_step "VirtualBox (optional)" "bash ~/archenemy/install/virtualbox-installation.sh" ;;
+    *)
 read -rp "Install Oracle VirtualBox (virtual machines)? [y/N]: " ans
 if [[ "$ans" =~ ^[Yy]$ ]]; then
     bash "$ARCHENEMY_DIR/install/virtualbox-installation.sh"
@@ -1545,12 +1936,18 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         *) SUMMARY_SKIPPED+=("VirtualBox — installation failed (details above; retry: bash ~/archenemy/install/virtualbox-installation.sh)") ;;
     esac
 fi
+        ;;
+esac
 
 # Audio: pavucontrol i moduł głośności waybara mówią po PulseAudio — serwer
 # dostarcza pipewire-pulse (socket użytkownika, na Archu włączany presetem).
 if systemctl --user is-active --quiet pipewire-pulse.socket \
    || systemctl --user is-active --quiet pipewire-pulse.service; then
     echo -e "  ${GREEN}✓ Audio (pipewire-pulse) already running.${NC}"
+elif [[ "$PLATFORM" == nixos ]]; then
+    manual_step "Audio (pipewire-pulse)" "services.pipewire.enable = true; services.pipewire.pulse.enable = true;" summary
+elif [[ "$PLATFORM" != arch ]]; then
+    manual_step "Audio (pipewire-pulse)" "systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service" summary
 elif systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service &>/dev/null; then
     echo -e "  ${GREEN}✓ pipewire-pulse started.${NC}"
     SUMMARY_DONE+=("Audio: pipewire-pulse started")
@@ -1615,8 +2012,8 @@ echo -e "${NC}"
 # Koniec pracy z sudo (K18): unieważnij zapamiętane hasło, żeby przez
 # następne minuty żaden inny proces użytkownika nie dostał roota bez pytania.
 # Już tutaj, przed ostatnim pytaniem; przerwane biegi łapie pułapka EXIT
-# spod strażnika roota.
-sudo -k 2>/dev/null
+# ustawiona po wykryciu platformy. Bez sudo w tym biegu (USES_SUDO=0) — nic.
+[[ "$USES_SUDO" == 0 ]] || sudo -k 2>/dev/null
 
 # Pasek, tapetę, powiadomienia, OSD i schowek rice uruchamia w
 # hl.on("hyprland.start"), a reload tego zdarzenia nie wywołuje. Po pierwszej

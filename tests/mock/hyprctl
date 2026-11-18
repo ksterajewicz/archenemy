@@ -189,4 +189,11 @@ M
     WS="workspace"; [[ "${MOCK_HYPRLAND:-}" == 0.56 ]] && WS="workspace ID"
     if [[ "${MOCK_WS:-}" == stale ]]; then echo "$WS 22 (22) on monitor eDP-1:"; else echo "$WS 2 (2) on monitor eDP-1:"; fi ;;
   dispatch) echo "dispatch $*" >> "${MOCK_LOG:-/dev/null}" ;;
+  # Pierwsza linia jak src/helpers/SystemInfo.cpp (v0.56.2 i v0.57.1):
+  # "Hyprland <wersja> built from branch … at commit … (…)."; MOCK_HYPRLAND_VERSION
+  # = wersja DZIAŁAJĄCEJ instancji (install.sh poza Archem), „none” = brak odpowiedzi.
+  version)
+    [[ "${MOCK_HYPRLAND_VERSION:-}" == none ]] && exit 1
+    printf 'Hyprland %s built from branch main at commit 0123456789abcdef  (mock).\nDate: 2026-11-01\nTag: v%s, commits: 1\n' \
+        "${MOCK_HYPRLAND_VERSION:-0.57.1}" "${MOCK_HYPRLAND_VERSION:-0.57.1}" ;;
 esac

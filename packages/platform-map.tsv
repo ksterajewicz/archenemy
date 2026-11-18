@@ -1,0 +1,130 @@
+# archenemy — mapa pakietów Arch → Fedora / NixOS (EKSPERYMENTALNE; Arch jest platformą referencyjną).
+# Źródłem prawdy dla Archa zostają cztery listy packages/*.txt — ta mapa ich nie zastępuje.
+# Plik to DANE: czyta go install/lib/pkg.sh zwykłym `read` (nigdy eval/source); pilnuje tests/platform-map.sh.
+# Kolumny rozdziela JEDEN tabulator; puste pole = „-” (bash `read` z IFS=tab skleja puste pola).
+# Kolumny:
+#   id            nazwa z list Archa (albo z instalacji doraźnej w install/*.sh) — klucz API pkg.sh
+#   arch_name     dokładna nazwa pakietu Archa (pacman -Qi / pacman -S / yay -S)
+#   arch_source   pacman | aur
+#   fedora_names  dokładne nazwy RPM rozdzielone spacją (jeden id → wiele pakietów) albo „-”
+#   fedora_source fedora | copr:nett00n/hyprland | vendor:brave (oba opt-in, decyzja 2026-11-17)
+#                 | rpmfusion-free | rpmfusion-nonfree (instalator ich nie włącza) | „-”
+#   nix_attr      atrybut(y) nixpkgs rozdzielone spacją; przy nixos=system-managed ścieżka opcji NixOS
+#                 (np. programs.hyprland.enable) albo „-” = część bazowego systemu
+#   check         sonda obecności poza bazą pakietów: cmd:a,b (wszystkie w PATH) | font:<rodzina> (fc-list) | „-”
+#   min_version   najniższa sprawdzona wersja (porównanie sort -V) albo „-”
+#   status        fedora=<s>;nixos=<s>, s: ok | manual | unavailable | system-managed
+#   source_url    dowód źródła/nazwy (mdapi Fedory, COPR, producent, poradnik) — odczyt 2026-11-17
+# Weryfikacja nazw: Fedora 43/44/45 przez mdapi.fedoraproject.org, COPR nett00n/hyprland przez repodata,
+# nixpkgs nixos-26.05 @ f6840765 i nixos-unstable @ d5cc6833 (raport D3). Hyprland w nixos-26.05 to 0.55.4 < 0.56.
+# id	arch_name	arch_source	fedora_names	fedora_source	nix_attr	check	min_version	status	source_url
+# ── requirements-pacman.txt ──
+hyprland	hyprland	pacman	hyprland	copr:nett00n/hyprland	programs.hyprland.enable	cmd:hyprctl	0.56	fedora=ok;nixos=system-managed	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+hyprpaper	hyprpaper	pacman	hyprpaper	copr:nett00n/hyprland	hyprpaper	cmd:hyprpaper	0.8.2	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+hyprlock	hyprlock	pacman	hyprlock	copr:nett00n/hyprland	programs.hyprlock.enable	cmd:hyprlock	-	fedora=ok;nixos=system-managed	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+hyprpolkitagent	hyprpolkitagent	pacman	hyprpolkitagent	copr:nett00n/hyprland	hyprpolkitagent	-	-	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+waybar	waybar	pacman	waybar	fedora	waybar	cmd:waybar	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/waybar
+rofi	rofi	pacman	rofi	fedora	rofi	cmd:rofi	2.0	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/rofi
+alacritty	alacritty	pacman	alacritty	fedora	alacritty	cmd:alacritty	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/alacritty
+fastfetch	fastfetch	pacman	fastfetch	fedora	fastfetch	cmd:fastfetch	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/fastfetch
+neovim	neovim	pacman	neovim	fedora	neovim	cmd:nvim	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/neovim
+mako	mako	pacman	mako	fedora	mako	cmd:mako	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/mako
+thunar	thunar	pacman	Thunar	fedora	thunar	cmd:thunar	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/Thunar
+cliphist	cliphist	pacman	cliphist	copr:nett00n/hyprland	cliphist	cmd:cliphist	-	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+wl-clipboard	wl-clipboard	pacman	wl-clipboard	fedora	wl-clipboard	cmd:wl-copy	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/wl-clipboard
+hyprshot	hyprshot	pacman	hyprshot	copr:nett00n/hyprland	hyprshot	cmd:hyprshot	-	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+pipewire-pulse	pipewire-pulse	pacman	pipewire-pulseaudio	fedora	services.pipewire.pulse.enable	cmd:pipewire-pulse	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/pipewire-pulseaudio
+libpulse	libpulse	pacman	pulseaudio-libs-devel pulseaudio-utils	fedora	libpulseaudio pulseaudio	cmd:pactl	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/pulseaudio-libs-devel
+wireplumber	wireplumber	pacman	wireplumber	fedora	services.pipewire.wireplumber.enable	cmd:wpctl	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/wireplumber
+pavucontrol	pavucontrol	pacman	pavucontrol	fedora	pavucontrol	cmd:pavucontrol	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/pavucontrol
+playerctl	playerctl	pacman	playerctl	fedora	playerctl	cmd:playerctl	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/playerctl
+brightnessctl	brightnessctl	pacman	brightnessctl	fedora	brightnessctl	cmd:brightnessctl	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/brightnessctl
+swayosd	swayosd	pacman	swayosd	copr:nett00n/hyprland	swayosd	cmd:swayosd-client	-	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+power-profiles-daemon	power-profiles-daemon	pacman	power-profiles-daemon	fedora	services.power-profiles-daemon.enable	cmd:powerprofilesctl	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/power-profiles-daemon
+libnotify	libnotify	pacman	libnotify	fedora	libnotify	cmd:notify-send	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/libnotify
+socat	socat	pacman	socat	fedora	socat	cmd:socat	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/socat
+util-linux	util-linux	pacman	util-linux-core	fedora	-	cmd:flock,setsid	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/util-linux-core
+xdg-desktop-portal-hyprland	xdg-desktop-portal-hyprland	pacman	xdg-desktop-portal-hyprland	copr:nett00n/hyprland	programs.hyprland.enable	-	-	fedora=ok;nixos=system-managed	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+networkmanager	networkmanager	pacman	NetworkManager	fedora	networking.networkmanager.enable	cmd:nmcli	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/NetworkManager
+networkmanager-dmenu	networkmanager-dmenu	pacman	-	-	networkmanager_dmenu	cmd:networkmanager_dmenu	-	fedora=manual;nixos=ok	https://github.com/firecat53/networkmanager-dmenu
+ufw	ufw	pacman	firewalld	fedora	networking.firewall.enable	-	-	fedora=system-managed;nixos=system-managed	https://docs.fedoraproject.org/en-US/quick-docs/firewalld/
+pciutils	pciutils	pacman	pciutils	fedora	pciutils	cmd:lspci	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/pciutils
+base-devel	base-devel	pacman	gcc make pkgconf-pkg-config	fedora	gcc gnumake pkg-config	cmd:gcc,make,pkg-config	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/gcc
+wayland	wayland	pacman	wayland-devel	fedora	wayland wayland-scanner	cmd:wayland-scanner	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/wayland-devel
+mesa	mesa	pacman	mesa-dri-drivers libglvnd-devel	fedora	libGL	-	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/libglvnd-devel
+python	python	pacman	python3	fedora	python3	cmd:python3	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/python3
+gtk3	gtk3	pacman	gtk3	fedora	gtk3	cmd:gtk-launch	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/gtk3
+git	git	pacman	git	fedora	git	cmd:git	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/git
+ttf-iosevka-nerd	ttf-iosevka-nerd	pacman	-	-	nerd-fonts.iosevka	font:Iosevka Nerd Font	-	fedora=manual;nixos=ok	https://github.com/ryanoasis/nerd-fonts/releases
+ttf-jetbrains-mono-nerd	ttf-jetbrains-mono-nerd	pacman	-	-	nerd-fonts.jetbrains-mono	font:JetBrainsMono Nerd Font	-	fedora=manual;nixos=ok	https://github.com/ryanoasis/nerd-fonts/releases
+ttf-nerd-fonts-symbols-mono	ttf-nerd-fonts-symbols-mono	pacman	-	-	nerd-fonts.symbols-only	font:Symbols Nerd Font Mono	-	fedora=manual;nixos=ok	https://github.com/ryanoasis/nerd-fonts/releases
+noto-fonts	noto-fonts	pacman	google-noto-sans-fonts google-noto-serif-fonts google-noto-sans-mono-fonts	fedora	noto-fonts	font:Noto Sans	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/google-noto-sans-fonts
+papirus-icon-theme	papirus-icon-theme	pacman	papirus-icon-theme	fedora	papirus-icon-theme	-	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/papirus-icon-theme
+coreutils	coreutils	pacman	coreutils	fedora	-	cmd:sha256sum	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/coreutils
+procps-ng	procps-ng	pacman	procps-ng	fedora	-	cmd:pgrep	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/procps-ng
+# ── requirements-aur.txt ──
+brave-bin	brave-bin	aur	brave-browser	vendor:brave	brave	cmd:brave	-	fedora=ok;nixos=ok	https://brave.com/linux/
+# ── additional-packages-pacman.txt (pavucontrol ma wiersz wyżej) ──
+veracrypt	veracrypt	pacman	-	-	veracrypt	cmd:veracrypt	-	fedora=manual;nixos=ok	https://veracrypt.io/en/Downloads.html
+discord	discord	pacman	discord	rpmfusion-nonfree	discord	cmd:discord	-	fedora=manual;nixos=ok	https://rpmfusion.org/Configuration
+btop	btop	pacman	btop	fedora	btop	cmd:btop	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/btop
+signal-desktop	signal-desktop	pacman	-	-	signal-desktop	cmd:signal-desktop	-	fedora=manual;nixos=ok	https://flathub.org/apps/org.signal.Signal
+keepassxc	keepassxc	pacman	keepassxc	fedora	keepassxc	cmd:keepassxc	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/keepassxc
+proton-vpn-gtk-app	proton-vpn-gtk-app	pacman	-	-	proton-vpn	-	-	fedora=manual;nixos=ok	https://protonvpn.com/support/official-linux-vpn-fedora
+libreoffice-fresh	libreoffice-fresh	pacman	libreoffice	fedora	libreoffice	cmd:libreoffice	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/libreoffice
+qbittorrent	qbittorrent	pacman	qbittorrent	fedora	qbittorrent	cmd:qbittorrent	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/qbittorrent
+vlc	vlc	pacman	vlc	fedora	vlc	cmd:vlc	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/vlc
+mpv	mpv	pacman	mpv	fedora	mpv	cmd:mpv	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/mpv
+mpd	mpd	pacman	mpd	fedora	mpd	cmd:mpd	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/mpd
+mpc	mpc	pacman	mpc	fedora	mpc	cmd:mpc	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/mpc
+ncmpcpp	ncmpcpp	pacman	ncmpcpp	fedora	ncmpcpp	cmd:ncmpcpp	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/ncmpcpp
+zsh	zsh	pacman	zsh	fedora	zsh	cmd:zsh	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/zsh
+zsh-autosuggestions	zsh-autosuggestions	pacman	zsh-autosuggestions	fedora	zsh-autosuggestions	-	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/zsh-autosuggestions
+zsh-syntax-highlighting	zsh-syntax-highlighting	pacman	zsh-syntax-highlighting	fedora	zsh-syntax-highlighting	-	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/zsh-syntax-highlighting
+zsh-completions	zsh-completions	pacman	-	-	zsh-completions	-	-	fedora=unavailable;nixos=ok	https://github.com/zsh-users/zsh-completions
+fd	fd	pacman	fd-find	fedora	fd	cmd:fd	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/fd-find
+ripgrep	ripgrep	pacman	ripgrep	fedora	ripgrep	cmd:rg	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/ripgrep
+zoxide	zoxide	pacman	zoxide	fedora	zoxide	cmd:zoxide	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/zoxide
+libratbag	libratbag	pacman	libratbag-ratbagd	fedora	services.ratbagd.enable	cmd:ratbagctl	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/libratbag-ratbagd
+hyprpicker	hyprpicker	pacman	hyprpicker	copr:nett00n/hyprland	hyprpicker	cmd:hyprpicker	-	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
+nm-connection-editor	nm-connection-editor	pacman	nm-connection-editor	fedora	networkmanagerapplet	cmd:nm-connection-editor	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/nm-connection-editor
+mangohud	mangohud	pacman	mangohud	fedora	mangohud	cmd:mangohud	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/mangohud
+steam	steam	pacman	steam	rpmfusion-nonfree	programs.steam.enable	cmd:steam	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+gamemode	gamemode	pacman	gamemode	fedora	programs.gamemode.enable	cmd:gamemoderun	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/gamemode
+lib32-gamemode	lib32-gamemode	pacman	-	-	-	-	-	fedora=manual;nixos=unavailable	https://mdapi.fedoraproject.org/f44/pkg/gamemode
+gamescope	gamescope	pacman	gamescope	fedora	gamescope	cmd:gamescope	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/gamescope
+bluez	bluez	pacman	bluez	fedora	hardware.bluetooth.enable	cmd:bluetoothctl	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/bluez
+bluez-utils	bluez-utils	pacman	bluez	fedora	hardware.bluetooth.enable	cmd:bluetoothctl	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/bluez
+dbus	dbus	pacman	dbus	fedora	-	cmd:dbus-send	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/dbus
+bluetui	bluetui	pacman	-	-	bluetui	cmd:bluetui	-	fedora=manual;nixos=ok	https://github.com/pythops/bluetui
+# ── additional-packages-aur.txt ──
+megasync	megasync	aur	-	-	megasync	cmd:megasync	-	fedora=manual;nixos=ok	https://mega.io/desktop
+protonup-qt	protonup-qt	aur	-	-	protonup-qt	-	-	fedora=manual;nixos=ok	https://flathub.org/apps/net.davidotek.pupgui2
+rustdesk-bin	rustdesk-bin	aur	-	-	rustdesk	cmd:rustdesk	-	fedora=manual;nixos=ok	https://github.com/rustdesk/rustdesk/releases
+vscodium-bin	vscodium-bin	aur	-	-	vscodium	cmd:codium	-	fedora=manual;nixos=ok	https://vscodium.com/
+# ── instalacje doraźne w install/*.sh (poza listami): yay, ASUS, mikrokod, jądra, GPU, VirtualBox ──
+yay	yay	aur	-	-	-	cmd:yay	-	fedora=unavailable;nixos=unavailable	https://aur.archlinux.org/packages/yay
+asusctl	asusctl	pacman	-	-	services.asusd.enable	cmd:asusctl	-	fedora=manual;nixos=system-managed	https://asus-linux.org/guides/fedora-guide/
+rog-control-center	rog-control-center	pacman	-	-	services.asusd.enable	cmd:rog-control-center	-	fedora=manual;nixos=system-managed	https://asus-linux.org/guides/fedora-guide/
+intel-ucode	intel-ucode	pacman	microcode_ctl	fedora	hardware.cpu.intel.updateMicrocode	-	-	fedora=system-managed;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/microcode_ctl
+amd-ucode	amd-ucode	pacman	linux-firmware	fedora	hardware.cpu.amd.updateMicrocode	-	-	fedora=system-managed;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/linux-firmware
+linux	linux	pacman	kernel	fedora	boot.kernelPackages	-	-	fedora=system-managed;nixos=system-managed	https://docs.fedoraproject.org/en-US/fedora/latest/system-administrator-guide/kernel-module-driver-configuration/Working_with_the_GRUB_2_Boot_Loader/
+linux-zen	linux-zen	pacman	-	-	boot.kernelPackages	-	-	fedora=unavailable;nixos=system-managed	https://docs.fedoraproject.org/en-US/fedora/latest/system-administrator-guide/kernel-module-driver-configuration/Working_with_the_GRUB_2_Boot_Loader/
+linux-lts	linux-lts	pacman	-	-	boot.kernelPackages	-	-	fedora=unavailable;nixos=system-managed	https://docs.fedoraproject.org/en-US/fedora/latest/system-administrator-guide/kernel-module-driver-configuration/Working_with_the_GRUB_2_Boot_Loader/
+linux-headers	linux-headers	pacman	kernel-devel	fedora	boot.kernelPackages	-	-	fedora=system-managed;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/kernel-devel
+linux-zen-headers	linux-zen-headers	pacman	-	-	boot.kernelPackages	-	-	fedora=unavailable;nixos=system-managed	https://docs.fedoraproject.org/en-US/fedora/latest/system-administrator-guide/kernel-module-driver-configuration/Working_with_the_GRUB_2_Boot_Loader/
+linux-lts-headers	linux-lts-headers	pacman	-	-	boot.kernelPackages	-	-	fedora=unavailable;nixos=system-managed	https://docs.fedoraproject.org/en-US/fedora/latest/system-administrator-guide/kernel-module-driver-configuration/Working_with_the_GRUB_2_Boot_Loader/
+nvidia-dkms	nvidia-dkms	pacman	-	-	hardware.nvidia.open	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Howto/NVIDIA
+nvidia-open-dkms	nvidia-open-dkms	pacman	-	-	hardware.nvidia.open	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Howto/NVIDIA
+nvidia-utils	nvidia-utils	pacman	-	-	hardware.nvidia.open	cmd:nvidia-smi	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Howto/NVIDIA
+lib32-nvidia-utils	lib32-nvidia-utils	pacman	-	-	hardware.graphics.enable32Bit	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Howto/NVIDIA
+vulkan-radeon	vulkan-radeon	pacman	-	-	hardware.graphics.enable	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+libva-mesa-driver	libva-mesa-driver	pacman	-	-	hardware.graphics.enable	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+vulkan-intel	vulkan-intel	pacman	-	-	hardware.graphics.enable	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+intel-media-driver	intel-media-driver	pacman	-	-	hardware.graphics.enable	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+lib32-mesa	lib32-mesa	pacman	-	-	hardware.graphics.enable32Bit	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+lib32-vulkan-radeon	lib32-vulkan-radeon	pacman	-	-	hardware.graphics.enable32Bit	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+lib32-vulkan-intel	lib32-vulkan-intel	pacman	-	-	hardware.graphics.enable32Bit	-	-	fedora=manual;nixos=system-managed	https://rpmfusion.org/Configuration
+virtualbox	virtualbox	pacman	-	-	virtualisation.virtualbox.host.enable	cmd:VBoxManage	-	fedora=manual;nixos=system-managed	https://www.virtualbox.org/wiki/Linux_Downloads
+virtualbox-host-dkms	virtualbox-host-dkms	pacman	-	-	virtualisation.virtualbox.host.enable	-	-	fedora=manual;nixos=system-managed	https://www.virtualbox.org/wiki/Linux_Downloads
+virtualbox-guest-iso	virtualbox-guest-iso	pacman	-	-	virtualisation.virtualbox.host.enable	-	-	fedora=manual;nixos=system-managed	https://www.virtualbox.org/wiki/Linux_Downloads

@@ -38,9 +38,10 @@ cut_step() {
 
 # run_step <wycinek> <stdin> [kod przed wycinkiem] → stdout+stderr; SUMMARY_*
 # do $T/summary. Kolory puste, ARCHENEMY_DIR = atrapa repo; install/lib/aur.sh
-# jak w install.sh.
+# jak w install.sh; platforma Arch bez --skip-packages (ścieżki innych platform:
+# tests/install-platforms.sh).
 run_step() {
-    ARCHENEMY_DIR="$A" GREEN='' NC='' YELLOW='' RED='' CYAN='' BLUE='' \
+    ARCHENEMY_DIR="$A" GREEN='' NC='' YELLOW='' RED='' CYAN='' BLUE='' PLATFORM=arch SKIP_PACKAGES=0 \
     bash -c 'declare -a SUMMARY_DONE=() SUMMARY_SKIPPED=(); source "$3"; eval "$4"; source "$1"
              printf "DONE=%s\n" "${SUMMARY_DONE[@]}" > "$2"; printf "SKIPPED=%s\n" "${SUMMARY_SKIPPED[@]}" >> "$2"' \
         _ "$1" "$T/summary" "$REPO/install/lib/aur.sh" "${3:-}" <<<"$2" 2>&1
@@ -83,8 +84,8 @@ printf 'megasync\n' > "$A/packages/additional-packages-aur.txt"
 
 # ─── [5] dodatki: wynik pacmana i yay w podsumowaniu (Z3) ────────────────────
 echo "== [5] dodatkowe pakiety"
-cut_step '^read -rp "Would you like to install additional useful packages' '^# ─── 6\. DEVICE DETECTION' "$T/step5.sh"
-check "wycinek [5] (dodatki) znaleziony"         '[[ -s "$T/step5.sh" ]]'
+cut_step '^# ─── 5b\. ADDITIONAL PACKAGES' '^# ─── 6\. DEVICE DETECTION' "$T/step5.sh"
+check "wycinek [5] (dodatki) znaleziony, składnia poprawna" '[[ -s "$T/step5.sh" ]] && bash -n "$T/step5.sh"'
 
 : > "$MOCK_LOG"
 out=$(MOCK_PACMAN_UNKNOWN=badname run_step "$T/step5.sh" $'y\n1 3\n')

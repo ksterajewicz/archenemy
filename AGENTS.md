@@ -383,6 +383,41 @@ Rules that follow directly from the table:
   `packages/additional-packages-*.txt` (optional — guarded with
   `command -v X && X`). Don't add dependencies "while you're at it" — every
   new one needs a stated reason.
+- **Fedora/NixOS (experimental, Arch is the reference):** a new package on
+  any of the four lists, in `config/shell/cli-tools.tsv` or a literal
+  `pacman -S --needed`/`PKGS=(…)` in `install/`/`scripts/` needs a row in
+  `packages/platform-map.tsv` (`bash tests/platform-map.sh` fails otherwise).
+  Ten tab-separated fields, `-` for an empty one (bash `read` with a tab IFS
+  merges empty fields); unknown Fedora/NixOS equivalents are `manual`,
+  `unavailable` or `system-managed`, never a `-git` stand-in. The map is data
+  — never `eval`/`source` it. `install/lib/pkg.sh` must keep Arch on the exact
+  installer commands; on Fedora no `-y`/`--skip-*`/`--allowerasing`, success =
+  `rpm -q` of every name, and `fedora_source=fedora` installs only with
+  `--repo=fedora --repo=updates` (COPR/Brave without `--repo`; still to be
+  checked on a live Fedora: dependencies that exist only outside
+  fedora/updates would make dnf refuse the transaction); the map is validated as a whole (split lists with
+  `read -ra`, never an unquoted `for w in $list`; known statuses/sources only,
+  consistent fields — `nixos=ok` only with a nixpkgs attribute —, HTTPS
+  `source_url`, unique ids); `rpm`/`pacman` queries run with `LC_ALL=C`
+  and read stdout + exit code — a query error is 2, never 0 or 1; COPR `nett00n/hyprland` and the Brave repo only via
+  `pkg_install_extra` after an explicit `y`; NixOS never mutates the system
+  (`bash tests/pkg.sh`).
+- **`install.sh` per platform:** Arch and Arch derivatives (`ID_LIKE=arch`)
+  keep the old code of steps [2]/[4]/[5] — same questions, commands and
+  output (compare with `INSTALL_MAIN_REV=<rev> INSTALL_MAIN_SAVE=<dir>
+  bash tests/install-main.sh`, README "Verification"). Fedora/NixOS go
+  through `pkg.sh`; other distributions are refused before any write.
+  On Fedora/NixOS step [2b] checks versions before the first write (running
+  Hyprland and the Fedora package ≥ 0.56, hyprpaper ≥ 0.8.2 — `min_version`
+  in the map); incompatible or undeterminable version (also a failing
+  `rpm -q hyprland`/`hyprpaper`) = exit 1, nothing written; a missing
+  hyprland or hyprpaper package is left to [5] (for hyprland the running
+  session decides). No such gate on Arch.
+  `--skip-packages` (always on for NixOS) never installs a package, but the
+  requirement check stays. Until system installers and services get their
+  own Fedora/NixOS paths, a step that would call them prints `manual_step`
+  instructions there — never `pacman`, `yay`, `systemctl enable` or `ufw`.
+  A new installer question needs an answer in `tests/install-main.sh`.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing
@@ -413,7 +448,10 @@ so these rules are tested, not just conventions:
 - **`install.sh` never runs as root** (EUID guard at the top): it asks for
   sudo itself, and makepkg/yay must never build AUR packages as root. It
   drops the cached sudo password on every exit: an `EXIT` trap with
-  `sudo -k` right after the guard. A later `trap … EXIT` (the step [3]
+  `sudo -k` right after platform detection — only where the run uses sudo
+  (Arch, also with `--skip-packages`; Fedora without it). NixOS and Fedora
+  with `--skip-packages` never call sudo, not even `sudo -k`
+  (`USES_SUDO=0`); nothing before platform detection calls sudo. A later `trap … EXIT` (the step [3]
   `monitors.new` cleanup) replaces it, so every such trap must keep
   `sudo -k` (`bash tests/install-guards.sh`).
 - **AUR goes through `install/lib/aur.sh` only.** yay is cloned from the
