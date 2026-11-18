@@ -30,6 +30,9 @@ ok() { if [[ "$2" == 1 ]]; then PASS=$((PASS+1)); echo "OK   $1"; else FAIL=$((F
 skip() { SKIP=$((SKIP+1)); echo "? skip: $1"; }
 
 export HOME="$T/home"
+# Platforma jawnie (D8): porada libratbag zależy od os-release, nie od hosta.
+printf 'ID=arch\n' > "$T/os-release"
+export ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release"
 mkdir -p "$HOME/archenemy" "$T/bin" "$T/rb"
 DAT="$HOME/archenemy/data/mouse-sensitivity.dat"
 LUA="$HOME/archenemy/config/hypr/mouse.lua"

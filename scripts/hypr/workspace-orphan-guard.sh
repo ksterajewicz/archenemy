@@ -278,9 +278,27 @@ if command -v socat >/dev/null 2>&1 && [[ -S "$SOCK" ]]; then
     done
 else
     # Awaryjnie (brak socat / socketa): sonda co 2 s. Zdarzeniowo jest lepiej —
-    # sonda scala z opóźnieniem, więc widać "przeskakujące" okna. Daj znać.
+    # sonda scala z opóźnieniem, więc widać "przeskakujące" okna. Daj znać —
+    # JEDNYM powiadomieniem, które mówi, czego naprawdę brak (D8): narzędzia
+    # (porada per platforma z pkg_route; Arch — dotychczasowy tekst) albo
+    # gniazda zdarzeń Hyprlanda (instalacja socat by tu nie pomogła).
+    if ! command -v socat >/dev/null 2>&1; then
+        guard_route=""
+        guard_lib="$(dirname "${BASH_SOURCE[0]}")/../../install/lib/pkg.sh"
+        # shellcheck source=../../install/lib/pkg.sh
+        if [[ -r "$guard_lib" ]] && source "$guard_lib" && pkg_route 2>/dev/null; then guard_route="$PKG_ROUTE"; fi
+        case "$guard_route" in
+            arch)   guard_fix="sudo pacman -S socat i przeloguj" ;;
+            fedora) guard_fix="$(pkg_hint socat) i przeloguj" ;;
+            nixos)  guard_fix="dodaj pkgs.socat do environment.systemPackages albo home.packages, przebuduj i przeloguj" ;;
+            *)      guard_fix="zainstaluj socat narzędziami dystrybucji i przeloguj" ;;
+        esac
+        guard_msg="workspace-guard: brak socat — działam sondą co 2 s (szybciej: $guard_fix)."
+    else
+        guard_msg="workspace-guard: brak gniazda zdarzeń Hyprlanda (.socket2.sock) — działam sondą co 2 s; socat jest zainstalowany."
+    fi
     command -v notify-send >/dev/null 2>&1 && \
-        notify-send -u low "archenemy" "workspace-guard: brak socat — działam sondą co 2 s (szybciej: sudo pacman -S socat i przeloguj)."
+        notify-send -u low "archenemy" "$guard_msg"
     # Kontrola żywotności: po śmierci Hyprlanda hyprctl przestaje odpowiadać —
     # bez wyjścia martwy demon trzymałby flock w XDG_RUNTIME_DIR i głodził
     # guarda następnej sesji (tryb socat kończy się sam na EOF socketa).

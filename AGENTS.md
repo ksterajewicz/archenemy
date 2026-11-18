@@ -430,6 +430,17 @@ Rules that follow directly from the table:
   through `pkg.sh`; other distributions are refused before any write.
   The path comes from `pkg_route` (the same function in `install.sh` and in
   the system helpers), never from an inherited `PLATFORM`.
+- **Runtime scripts detect the platform themselves (D8).** `shell-settings.sh`,
+  `mouse-settings.sh`, `workspace-orphan-guard.sh` and `update-archenemy.sh`
+  source `install/lib/pkg.sh` relative to their own directory and call
+  `pkg_route`; an inherited `PLATFORM`/`PKG_ROUTE` never decides. Arch and
+  derivatives keep the pre-D8 texts and commands byte for byte
+  (`SHELL_PLATFORMS_REV`, `RUNTIME_PLATFORMS_REV`, `UPDATE_ARCHENEMY_REV`
+  parity in the tests); Fedora/NixOS advice comes from the map (`pkg_hint`)
+  or a NixOS option; nothing is installed or enabled from these menus except
+  the consented `[h]` installs on Arch/Fedora. The guard's fallback sends one
+  notification that tells a missing `socat` from a missing Hyprland socket.
+  `bash tests/runtime-platforms.sh`, `bash tests/shell-platforms.sh`.
 - **System helpers in `install/` gate themselves.** A helper that installs
   packages or writes system state starts with `pkg_gate` (after sourcing
   `install/lib/pkg.sh`, exit 1 if that fails), before any question or

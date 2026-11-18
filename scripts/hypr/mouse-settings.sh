@@ -337,6 +337,22 @@ pick_device() {
     MENU_DEV="${devices[$TUI_MENU_INDEX]}"
 }
 
+# Porada sprzętowego DPI per platforma (D8): ta sama pkg_route co instalator;
+# Arch i pochodne — dotychczasowy tekst. Nic nie instaluje i nie włącza usługi
+# (opt-in sprzętowego DPI zostaje po stronie użytkownika).
+ratbag_hint() {
+    local lib route=""
+    lib="$(dirname "$SELF")/../../install/lib/pkg.sh"
+    # shellcheck source=../../install/lib/pkg.sh
+    if [[ -r "$lib" ]] && source "$lib" && pkg_route 2>/dev/null; then route="$PKG_ROUTE"; fi
+    case "$route" in
+        arch) echo "sudo pacman -S libratbag" ;;
+        fedora) echo "$(pkg_hint libratbag) (provides ratbagctl)" ;;
+        nixos) echo "services.ratbagd.enable = true; in configuration.nix, then nixos-rebuild switch" ;;
+        *) echo "install libratbag (ratbagctl and ratbagd) with your distribution's tools" ;;
+    esac
+}
+
 menu() {
     # shellcheck source=/dev/null
     source "$(dirname "$SELF")/../appbinds/lib/tui.sh"
@@ -375,7 +391,7 @@ menu() {
             echo -e "  ${YELLOW}⚠ white-blue_beta does not read these settings, switch rice with Super+T.${NC}"
         fi
         if ! command -v ratbagctl >/dev/null 2>&1; then
-            echo -e "  ${CYAN}Real hardware DPI and polling rate: sudo pacman -S libratbag${NC}"
+            echo -e "  ${CYAN}Real hardware DPI and polling rate: $(ratbag_hint)${NC}"
         elif [[ -z "$dev" ]]; then
             echo -e "  ${CYAN}libratbag sees no supported mouse, so DPI here is emulated.${NC}"
         fi

@@ -26,6 +26,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
 
 pause() { read -rp "  Press Enter to go back..." _; }
 
+# Platforma (D8): ta sama pkg_route co instalator — od niej zależy, co
+# obiecujemy o install.sh. Arch i pochodne: dotychczasowe teksty i zakres
+# ostrzeżenia (install/, packages/); NixOS dokłada nix/ (deklaracje pakietów).
+UPD_ROUTE=""
+# shellcheck source=../../install/lib/pkg.sh
+if [[ -r "$(dirname "${BASH_SOURCE[0]}")/../../install/lib/pkg.sh" ]] \
+        && source "$(dirname "${BASH_SOURCE[0]}")/../../install/lib/pkg.sh" && pkg_route 2>/dev/null; then
+    UPD_ROUTE="$PKG_ROUTE"
+fi
+RISKY_PATHS=(install/ packages/)
+[[ "$UPD_ROUTE" == nixos ]] && RISKY_PATHS+=(nix/)
+
 clear
 tui_header "update archenemy"
 
@@ -85,7 +97,7 @@ else
     new_log="$(git -C "$ARCHENEMY_DIR" log --oneline --no-decorate -n 30 "HEAD..origin/$target" 2>/dev/null)"
     sed 's/^/    /' <<< "$new_log"
     (( new_count > 30 )) && echo "    … and $((new_count - 30)) more"
-    risky="$(git -C "$ARCHENEMY_DIR" diff --name-only "HEAD...origin/$target" -- install/ packages/ 2>/dev/null)"
+    risky="$(git -C "$ARCHENEMY_DIR" diff --name-only "HEAD...origin/$target" -- "${RISKY_PATHS[@]}" 2>/dev/null)"
     if [[ -n "$risky" ]]; then
         echo -e "  ${YELLOW}⚠ This update changes the installer or package lists — review before running install.sh:${NC}"
         head -n 20 <<< "$risky" | sed 's/^/    /'
@@ -209,14 +221,30 @@ if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/d
     [[ "${removed:-0}" -gt 0 ]] && summary+="$(plural "$removed" commit) rolled back, "
     echo -e "  This update: ${summary}${stat:-no file changes}."
     if [[ -n "$risky" ]]; then
-        echo -e "  ${YELLOW}⚠ install/ or packages/ changed ($(plural "$(grep -c . <<< "$risky")" file)) — review before running install.sh:${NC}"
-        echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages"
+        if [[ "$UPD_ROUTE" == nixos ]]; then
+            echo -e "  ${YELLOW}⚠ install/, packages/ or nix/ changed ($(plural "$(grep -c . <<< "$risky")" file)) — review before running install.sh or rebuilding:${NC}"
+            echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages nix"
+        else
+            echo -e "  ${YELLOW}⚠ install/ or packages/ changed ($(plural "$(grep -c . <<< "$risky")" file)) — review before running install.sh:${NC}"
+            echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages"
+        fi
     fi
 fi
 # Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
 # z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go
 # uruchomić. Przypomnienie o zaległym biegu daje machine-layer-check.sh.
-if confirm "Run install.sh now to regenerate machine files? It will ask for sudo." N; then
+# Zgoda na aktualizację ≠ zgoda na instalator ani na dodatkowe repozytoria:
+# tekst mówi, co instalator zrobi na tej platformie; dodatkowe źródła Fedory
+# (COPR, Brave) i tak pytają osobno w install.sh.
+case "$UPD_ROUTE" in
+    arch)   install_q="Run install.sh now to regenerate machine files? It will ask for sudo." ;;
+    fedora) install_q="Run install.sh now to regenerate machine files? It will ask for sudo (dnf); extra repositories are asked about separately." ;;
+    nixos)  install_q="Run install.sh now to regenerate machine files? On NixOS it installs nothing and does not use sudo; packages go into your configuration." ;;
+    *)      install_q="" ;;
+esac
+if [[ -z "$install_q" ]]; then
+    echo -e "  ${YELLOW}install.sh supports Arch Linux, Fedora and NixOS only — it would refuse this distribution, so it is not offered here.${NC}"
+elif confirm "$install_q" N; then
     # -f, nie -x: uruchamiamy przez `bash`, bit wykonywania nie jest potrzebny
     # (brak bitu w indeksie gita blokował tu instalację — audyt 2026-09-23).
     if [[ -f "$ARCHENEMY_DIR/install/install.sh" ]]; then

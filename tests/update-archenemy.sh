@@ -34,6 +34,11 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export HOME="$T/home"
 A="$HOME/archenemy"
+# Platforma jawnie (D8): Arch, chyba że scenariusz poda inny os-release.
+mkdir -p "$T/os"
+printf 'ID=arch\n' > "$T/os/arch"; printf 'ID=endeavouros\nID_LIKE=arch\n' > "$T/os/endeavouros"
+printf 'ID=fedora\nVERSION_ID=44\n' > "$T/os/fedora"; printf 'ID=nixos\n' > "$T/os/nixos"; printf 'ID=ubuntu\n' > "$T/os/ubuntu"
+export ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os/arch"
 g() { git -C "$1" "${@:2}" >/dev/null 2>&1; }
 
 # ─── origin: main (stary) ← dev (nowszy o 2 commity) ─────────────────────────
@@ -55,6 +60,7 @@ fresh_clone() {   # fresh_clone <gałąź>
 upstream_commit() {   # upstream_commit <gałąź> <plik> <treść> — nowy commit na origin
     local w="$T/w"
     rm -rf "$w"; git clone -q -b "$1" "$T/origin.git" "$w"
+    mkdir -p "$(dirname "$w/$2")"
     echo "$3" > "$w/$2"; g "$w" add -A; g "$w" commit -m "up-$3"; g "$w" push origin "$1"
 }
 run_upd() {   # run_upd <klawisze> — stdin: wybór gałęzi, odpowiedzi, Entery
@@ -274,6 +280,56 @@ fresh_clone dev
 check "install.sh w klonie jest 100644"        '[[ ! -x "$A/install/install.sh" ]]'
 out=$(run_upd '1y\n')
 check "instalator uruchomiony"                 '[[ "$out" == *INSTALL-RAN* ]]'
+
+# D8: porada o instalatorze i zakres ostrzeżenia zależą od pkg_route (os-release),
+# nie od zmiennych odziedziczonych po instalatorze. Arch: teksty i zakres bez zmian.
+echo "== D8: platformy (Arch, EndeavourOS, Fedora, NixOS, Ubuntu)"
+upd_os() {   # upd_os <os> <klawisze> — bieg aktualizatora z danym os-release
+    printf '%b' "$2" | ARCHENEMY_OS_RELEASE="$T/os/$1" PLATFORM=arch PKG_ROUTE=arch bash "${UPDV:-$UPD}" 2>&1
+}
+fresh_clone dev
+upstream_commit dev nix/packages.nix d8-nix
+snapA="$T/snap-d8"; rm -rf "$snapA"; cp -a "$A" "$snapA"
+out=$(upd_os nixos '1n\n'); pre=$(before_question)
+check "NixOS: zmiana nix/ ostrzega przed pull i nad pytaniem" '[[ "$out" == *"⚠ This update changes the installer or package lists"* && "$out" == *"nix/packages.nix"* && "$pre" == *"install/, packages/ or nix/ changed (1 file)"* && "$pre" == *"-- install packages nix"* ]]'
+check "NixOS: pytanie bez obietnicy sudo, domyślnie N" '[[ "$out" == *"On NixOS it installs nothing and does not use sudo"* && "$out" != *"will ask for sudo"* && "$out" == *"[y/N]"* && "$out" != *INSTALL-RAN* ]]'
+rm -rf "$A"; cp -a "$snapA" "$A"
+out=$(upd_os arch '1n\n')
+check "Arch: nix/ poza zakresem ostrzeżenia (jak przed D8), pytanie o sudo" '[[ "$out" != *"changes the installer"* && "$out" == *"It will ask for sudo."* ]]'
+arch_out="$out"
+rm -rf "$A"; cp -a "$snapA" "$A"
+out=$(upd_os endeavouros '1n\n')
+check "EndeavourOS = Arch (całe wyjście)" '[[ "$out" == "$arch_out" ]]'
+rm -rf "$A"; cp -a "$snapA" "$A"
+out=$(upd_os fedora '1n\n')
+check "Fedora: sudo przez dnf, dodatkowe repozytoria osobno" '[[ "$out" == *"It will ask for sudo (dnf); extra repositories are asked about separately."* && "$out" != *"or nix/"* ]]'
+rm -rf "$A"; cp -a "$snapA" "$A"
+out=$(upd_os ubuntu '1y\n')
+check "Ubuntu: instalator nie oferowany, „y” go nie uruchamia" '[[ "$out" == *"install.sh supports Arch Linux, Fedora and NixOS only"* && "$out" != *"Run install.sh now"* && "$out" != *INSTALL-RAN* ]]'
+check "Ubuntu: aktualizacja i tak udana" '[[ "$out" == *"✓ Updated"* ]]'
+
+# Parytet z bazą (UPDATE_ARCHENEMY_REV=<rewizja>): te same scenariusze Archa na
+# aktualizatorze z rewizji, na identycznej kopii klonu — całe wyjście równe.
+if [[ -n "${UPDATE_ARCHENEMY_REV:-}" ]]; then
+    echo "== parytet Archa z $UPDATE_ARCHENEMY_REV"
+    mkdir -p "$T/base"
+    git -C "$REPO" archive "$UPDATE_ARCHENEMY_REV" scripts/appbinds | tar -x -C "$T/base" || { echo "✗ brak $UPDATE_ARCHENEMY_REV"; exit 1; }
+    parity_case() {   # parity_case <etykieta> <plik upstream> <klawisze>
+        fresh_clone dev
+        [[ -n "$2" ]] && upstream_commit dev "$2" "par-${2//\//-}"
+        rm -rf "$snapA"; cp -a "$A" "$snapA"
+        local head_out base_out
+        head_out=$(upd_os arch "$3")
+        rm -rf "$A"; cp -a "$snapA" "$A"
+        base_out=$(UPDV="$T/base/scripts/appbinds/update-archenemy.sh" upd_os arch "$3")
+        check "Arch $1 = $UPDATE_ARCHENEMY_REV (całe wyjście)" '[[ "$head_out" == "$base_out" ]]'
+    }
+    parity_case "zwykła zmiana, N" f.txt '1n\n'
+    parity_case "zmiana install/, N" install/x.sh '1n\n'
+    parity_case "zmiana packages/, Enter" packages/y.txt '1\n\n'
+    parity_case "zmiana nix/, N" nix/packages.nix '1n\n'
+    parity_case "bez nowych commitów, y" '' '1y\n'
+fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
