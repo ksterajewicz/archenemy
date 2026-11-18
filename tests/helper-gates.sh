@@ -97,7 +97,8 @@ reset_system() {
     [[ "${BOOT:-grub}" == grub ]] && { mkdir -p "$B/grub"; echo "# TEST grub.cfg" > "$B/grub/grub.cfg"; }
     printf 'title TEST\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\n' > "$B/loader/entries/arch.conf"
     : > "$B/initramfs-linux.img"
-    echo linux > "$M/$MOCK_KVER/pkgbase"; : > "$M/$MOCK_KVER/nvidia.ko"; echo 7.2.16 > "$M/$MOCK_KVER/vboxdrv.ko"
+    [[ -n "${NO_PKGBASE:-}" ]] || echo linux > "$M/$MOCK_KVER/pkgbase"
+    : > "$M/$MOCK_KVER/nvidia.ko"; echo 7.2.16 > "$M/$MOCK_KVER/vboxdrv.ko"
     cpu "${CPU_VENDOR:-GenuineIntel}"
 }
 cpu() { printf 'processor\t: 0\nvendor_id\t: %s\n' "$1" > "$T/cpuinfo"; }
@@ -319,6 +320,33 @@ check "ASUS NixOS: bez sudo w instrukcji" '[[ "$out" != *sudo* ]]'
 no_lib "$ASUS"
 parity "ASUS porzucone pakiety, „y”" "$ASUS" 'y\n'
 parity "ASUS porzucone pakiety, „n”" "$ASUS" 'n\n'
+
+VB="$REPO/install/virtualbox-installation.sh"
+
+echo "== VirtualBox: virtualbox-installation.sh wprost"
+for row in "${CLOSED[@]}"; do
+    os="${row%%|*}"; head="${row#*|}"
+    for ans in 'y\ny\n' ''; do
+        run "$VB" "$os" "$ans"
+        gated "VirtualBox $os (jądro z pkgbase), odpowiedzi ${ans//\\n/ }: kod 2, zero pacman/modprobe/usermod" "$head"
+        NO_PKGBASE=1 run "$VB" "$os" "$ans"
+        gated "VirtualBox $os (bez pkgbase), odpowiedzi ${ans//\\n/ }: kod 2, bez instalacji mimo braku jądra Archa" "$head"
+    done
+    run "$VB" "$os" 'y\n' PLATFORM=arch
+    gated "VirtualBox $os z odziedziczonym PLATFORM=arch: brama zamknięta" "$head"
+done
+run "$VB" fedora 'y\n'
+gated "VirtualBox Fedora: Oracle/RPM Fusion, vboxusers jako porada" "https://www.virtualbox.org/wiki/Linux_Downloads" "akmod-VirtualBox" "sudo usermod -aG vboxusers tester"
+check "VirtualBox Fedora: bez archowych nagłówków (pacman, -headers)" '[[ "$out" != *pacman* && "$out" != *-headers* ]]'
+run "$VB" nixos 'y\n'
+gated "VirtualBox NixOS: virtualisation.virtualbox.host + vboxusers" "virtualisation.virtualbox.host.enable = true;" 'users.extraGroups.vboxusers.members = [ "tester" ];'
+check "VirtualBox NixOS: bez sudo w instrukcji" '[[ "$out" != *sudo* ]]'
+run "$VB" fedora 'y\n' -u USER
+check "VirtualBox bez \$USER: <your-user>, bez wywołania id" '[[ "$out" == *"vboxusers <your-user>"* && -z "$calls" ]]'
+no_lib "$VB"
+parity "VirtualBox, „y” na grupę" "$VB" 'y\n'
+parity "VirtualBox, odmowa grupy" "$VB" 'n\n'
+NO_PKGBASE=1 parity "VirtualBox bez pkgbase" "$VB" 'y\n'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

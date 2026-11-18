@@ -6,7 +6,8 @@
 #   usermod w PATH, a katalog modułów jądra i /sys/module podmienione
 #   hakami ARCHENEMY_MODULES_DIR / ARCHENEMY_SYSMODULE_DIR na katalogi
 #   w mktemp (działają tylko z ARCHENEMY_TEST=1). Bez roota, bez sieci,
-#   bez dotykania prawdziwego systemu.
+#   bez dotykania prawdziwego systemu. Platforma: jawny os-release Archa;
+#   bramy innych platform — tests/helper-gates.sh.
 #
 #   Pilnuje: nagłówków każdego jądra w transakcji, sukcesu = vboxdrv
 #   realnie załadowany (nie kod pacmana), kodu 2 przy jądrze bez restartu
@@ -106,8 +107,12 @@ setup() {   # setup <działające jądro> <kernele z modułem…> -- <kernele be
         echo "${k%-*}" > "$T/modules/$k/pkgbase"   # linux-lts-6.12 → linux-lts
         [[ "$with" -eq 1 ]] && echo "7.2.16" > "$T/modules/$k/vboxdrv.ko"
     done
-    export ARCHENEMY_TEST=1 ARCHENEMY_MODULES_DIR="$T/modules" ARCHENEMY_SYSMODULE_DIR="$T/sys"
+    export ARCHENEMY_TEST=1 ARCHENEMY_MODULES_DIR="$T/modules" ARCHENEMY_SYSMODULE_DIR="$T/sys" \
+        ARCHENEMY_OS_RELEASE="$T/os-release-arch"
 }
+# Jawny Arch (brama platformy D6, install/lib/pkg.sh): wynik nie zależy od
+# dystrybucji hosta. Inne platformy: tests/helper-gates.sh.
+printf 'NAME="Arch Linux"\nID=arch\n' > "$T/os-release-arch"
 # stdin: odpowiedź na pytanie o vboxusers; kod wyjścia w $rc
 run_vb() { out=$(printf '%b' "$1" | bash "$VB" 2>&1); rc=$?; }
 

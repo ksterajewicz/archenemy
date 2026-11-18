@@ -17,11 +17,37 @@
 #   0 — vboxdrv załadowany w działającym jądrze, VirtualBox gotowy
 #   1 — instalacja pakietów albo budowa modułu nie powiodła się
 #   2 — pakiety i moduł są, ale vboxdrv nie działa w bieżącym jądrze
-#       (jądro zaktualizowane bez restartu albo stara wersja modułu) — restart
+#       (jądro zaktualizowane bez restartu albo stara wersja modułu) — restart;
+#       poza Archem: krok ręczny, nic nie zmieniono (brama platformy D6)
 
 set -uo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+
+# ─── PLATFORMA (D6) ───────────────────────────────────────────────────────────
+# Wszystko niżej to kod Archa: sudo pacman (DKMS + nagłówki jąder z pkgbase),
+# modprobe i usermod. Platformę wykrywa pkg_gate z install/lib/pkg.sh — ta sama
+# funkcja wyboru ścieżki co w install.sh, nie odziedziczona zmienna PLATFORM.
+# Poza Archem i pochodnymi: instrukcja i kod 2, zanim padnie pytanie albo
+# polecenie (także `id`: nazwa użytkownika tylko z $USER).
+# shellcheck source=install/lib/pkg.sh
+if ! source "$(dirname "$(readlink -f "$0")")/lib/pkg.sh"; then
+    echo -e "${RED}✗ Cannot load install/lib/pkg.sh — platform unknown, nothing was changed.${NC}"
+    exit 1
+fi
+if ! pkg_gate "VirtualBox"; then
+    case "$PKG_ROUTE" in
+        fedora)
+            echo "    VirtualBox is not in Fedora's repositories: Oracle's RPM or RPM Fusion"
+            echo "    (VirtualBox with akmod-VirtualBox): https://www.virtualbox.org/wiki/Linux_Downloads"
+            echo "    USB in virtual machines: sudo usermod -aG vboxusers ${USER:-<your-user>}, then log in again." ;;
+        nixos)
+            echo "    In configuration.nix, then nixos-rebuild switch:"
+            echo "      virtualisation.virtualbox.host.enable = true;"
+            echo "      users.extraGroups.vboxusers.members = [ \"${USER:-<your-user>}\" ];" ;;
+    esac
+    exit 2
+fi
 
 # Haki testowe (tests/virtualbox.sh): katalog modułów jądra i /sys/module
 # podmieniane na atrapę w mktemp — TYLKO przy ARCHENEMY_TEST=1, tak jak
