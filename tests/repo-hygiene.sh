@@ -69,6 +69,27 @@ done < <(git -C "$REPO" ls-files -s -z)
 if [[ -z "$bad" && ${#bash_files[@]} -gt 0 ]]; then ok "${#bash_files[@]} plików: pierwsza linia = #!/usr/bin/env bash"
 else fail "pierwsza linia skryptu bash inna niż #!/usr/bin/env bash:$bad"; fi
 
+echo "== bez /bin/bash i stałych /usr/bin/<program> w plikach sesji (NixOS, D10)"
+# Nie tylko pierwsza linia: wywołania w treści (exec, bash -c, pola Exec=,
+# hl.dsp.exec_cmd, systemd) też trafiają na NixOS w nieistniejącą ścieżkę.
+# Pliki, które wykonuje sesja i instalator: scripts/ install/ rices/ config/
+# nix/ src/flux-wall/tools/. Dozwolone: /usr/bin/env (standard także na
+# NixOS), /bin/sh (jest na NixOS), ścieżki z prefiksem (${pkgs.x}/bin/x,
+# /run/current-system/sw/bin/…, $HOME/bin/…). Komentarze też liczą się
+# — dziś nie ma żadnego trafienia, a porada „chsh -s /bin/bash” w kodzie
+# byłaby na NixOS błędna (D8: pkgs.bashInteractive).
+FHS_BIN_RE='(^|[^A-Za-z0-9_.}/$-])/(bin/bash|usr/bin/[a-df-z][A-Za-z0-9_.+-]*|usr/bin/e[a-mo-z][A-Za-z0-9_.+-]*|usr/bin/en[a-uw-z][A-Za-z0-9_.+-]*|usr/bin/env[A-Za-z0-9_.+-]+)'
+fhs_hits() { grep -nE "$FHS_BIN_RE"; }
+miss="$(printf '%s\n' '#!/usr/bin/env bash' '${pkgs.bash}/bin/bash' '/run/current-system/sw/bin/bash' \
+    '$HOME/bin/bash' '/usr/local/bin/bash' 'exec /bin/sh -c x' 'ExecStart=${pkgs.mpd}/bin/mpd' | fhs_hits | wc -l)"
+hits="$(printf '%s\n' 'exec /bin/bash -c x' '"/usr/bin/bash" x' 'chsh -s /bin/bash' 'Exec=/usr/bin/alacritty' \
+    'x=/usr/bin/envsubst' '/usr/bin/sed -n p' | fhs_hits | wc -l)"
+if [[ "$hits" == 6 && "$miss" == 0 ]]; then ok "wzorzec łapie /bin/bash, /usr/bin/bash i /usr/bin/<program>, przepuszcza env, /bin/sh i ścieżki z prefiksem"
+else fail "wzorzec FHS: trafienia $hits/6, fałszywe $miss/0"; fi
+bad="$(git -C "$REPO" grep -nE "$FHS_BIN_RE" -- 'scripts/*' 'install/*' 'rices/*' 'config/*' 'nix/*' 'src/flux-wall/tools/*' || true)"
+if [[ -z "$bad" ]]; then ok "pliki sesji: brak /bin/bash i stałych /usr/bin/<program>"
+else fail "ścieżka FHS w pliku sesji: ${bad//$'\n'/ | }"; fi
+
 echo "== hyprctl dispatch w składni Lua"
 # Config w Lua: `hyprctl dispatch X` = hl.dispatch(X). Stara forma
 # (`dispatch workspace 2`) to błąd składni Lua, a skrypty zwykle tłumią wyjście,

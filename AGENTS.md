@@ -363,6 +363,11 @@ Rules that follow directly from the table:
   the kernel executes them too. `tests/repo-hygiene.sh` rejects any fixed bash
   shebang and starts every shebang inside a user/mount namespace where
   `/usr/bin/bash` is masked (skip when `unshare -rm` is unavailable).
+  Inside files the session runs (`scripts/`, `install/`, `rices/`, `config/`,
+  `nix/`, `src/flux-wall/tools/`) there is no `/bin/bash`, `/usr/bin/bash`
+  or fixed `/usr/bin/<program>` either — not even in a comment or an advice
+  text (D10, `git grep` in `tests/repo-hygiene.sh`); `/usr/bin/env`,
+  `/bin/sh` and prefixed paths (`${pkgs.x}/bin/x`) are fine.
 - **Report real state, not exit codes.** Anything that pipes a command
   through `sed`/`tee` needs `pipefail` (the updater used to print "✓
   updated" after a failed pull); success is an observed state (`HEAD ==
