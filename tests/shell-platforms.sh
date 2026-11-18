@@ -51,7 +51,7 @@ fi
 BASE=""
 if [[ -n "${SHELL_PLATFORMS_REV:-}" ]]; then
     BASE="$T/src/base"; mkdir -p "$BASE"
-    git -C "$REPO" archive "$SHELL_PLATFORMS_REV" scripts config | tar -x -C "$BASE" || { echo "✗ brak $SHELL_PLATFORMS_REV"; exit 1; }
+    git -C "$REPO" archive "$SHELL_PLATFORMS_REV" scripts config install packages | tar -x -C "$BASE" || { echo "✗ brak $SHELL_PLATFORMS_REV"; exit 1; }
     echo "  (parytet Archa z rewizją $SHELL_PLATFORMS_REV)"
 fi
 
@@ -163,7 +163,9 @@ fresh() {
     [[ -d "$from/scripts/hypr/lib" ]] && cp -r "$from/scripts/hypr/lib" "$A/scripts/hypr/"
     cp "$from/config/shell/zsh-defaults.zsh" "$from/config/shell/emacs-default-bindings.txt" \
        "$from/config/shell/cli-tools.tsv" "$from/config/shell/cli-tools-v1.tsv" "$A/config/shell/"
-    if [[ "$code" == cur ]]; then
+    # Baza sprzed D8 nie czyta pkg.sh (kopia nieszkodliwa); baza od D8 tak — bez
+    # niej porównanie wychodziło „nieobsługiwana dystrybucja” (D10).
+    if [[ -d "$from/install/lib" ]]; then
         mkdir -p "$A/install" "$A/packages"
         cp -r "$from/install/lib" "$A/install/"
         cp "$from/packages/platform-map.tsv" "$A/packages/"
