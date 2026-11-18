@@ -86,6 +86,10 @@ archenemy/
 ├── THIRD-PARTY.md                   # Bundled third-party files (Wayland protocol XML, lazy.nvim bootstrap,
 │                                    #   networkmanager-dmenu config, ZLE table): source, version, license
 │                                    #   and full notices; optional CLI tools installed from packages.
+├── assets/
+│   └── logo/                         # The project mark Æ (own SVG geometry, no fonts): archenemy-ae.svg (white base),
+│                                     #   rices/<rice>.svg (same shape in each rice's colour, yang included);
+│                                     #   README.md — colours and where each one comes from.
 ├── install/
 │   ├── install.sh                    # Main installer. Walks you through the whole setup.
 │   ├── bootloader.sh                 # Library: detects the bootloader and regenerates its config (GRUB
