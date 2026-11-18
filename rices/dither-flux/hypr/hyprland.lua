@@ -49,7 +49,7 @@ hl.on("hyprland.start", function()
     -- pod spodem jako fallback. Brak binarki = cicho nic.
     hl.exec_cmd("mako")
     hl.exec_cmd("swayosd-server")
-    hl.exec_cmd("systemctl --user start hyprpolkitagent")
+    hl.exec_cmd("~/archenemy/scripts/hypr/polkit-agent.sh")
     hl.exec_cmd("wl-paste --type text  --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)

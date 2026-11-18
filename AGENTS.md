@@ -310,6 +310,15 @@ Rules that follow directly from the table:
   (it would start twice); `bash tests/rice-autostart.sh` checks "exactly
   once" per rice. The same file starts the `Super+Tab` history daemon
   (`scripts/hypr/window-history.sh`), whose bind lives in every parity rice.
+- **The polkit agent starts through `scripts/hypr/polkit-agent.sh`** in every
+  parity rice's `hl.on("hyprland.start")` (white-blue_beta is frozen and keeps
+  the old bare line). It runs `systemctl --user start hyprpolkitagent` (no
+  enable, no unit created); a missing unit, no user bus or no `systemctl`
+  never surfaces in the session: exit 0, one quiet line in
+  `<private session dir>/archenemy-polkit-agent.log` (`scripts/lib/runtime-dir.sh`;
+  no private dir = no log, never shared `/tmp`). Don't put a bare
+  `systemctl` in a rice's autostart; `bash tests/rice-autostart.sh` checks it,
+  and that no new entry appears in `/` after the run.
 - **`window-history.sh` must capture a window's command while it is open.**
   After `closewindow` the window is gone from `hyprctl clients` and the
   process is often dead, so the daemon snapshots argv/cwd from `/proc` on

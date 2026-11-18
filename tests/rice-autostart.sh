@@ -16,6 +16,11 @@
 #   w którym `%` nie jest operatorem — błąd wyrażenia tylko centruje okno, bez
 #   wpisu w configerrors. Test liczy pozycję okna na ekranie 1920x1080, jak
 #   zrobiłby Hyprland: okno PiP ma stać w prawym dolnym rogu, 10 px od krawędzi.
+#   Agent polkit (D7, C-D7: nowe wywołanie w yin): każdy aktywny rice startuje
+#   go DOKŁADNIE RAZ przez scripts/hypr/polkit-agent.sh, nie gołym systemctl.
+#   Skrypt na atrapie systemctl: sukces = cisza; brak jednostki, brak busa
+#   użytkownika i brak systemctl = kod 0, nic na wyjściu, jedna linia w logu
+#   prywatnego katalogu sesji; bez takiego katalogu — bez logu i bez /tmp.
 #   Uruchom: bash tests/rice-autostart.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -25,7 +30,10 @@ LUA="$(command -v lua5.4 || command -v lua || true)"
 if [[ -z "$LUA" ]]; then echo "brak interpretera lua5.4 — pomijam"; exit 0; fi
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
-T="$(mktemp -d)"
+# Zapisy wyłącznie pod $T (D7): pusty $T po nieudanym mktemp zamieniałby
+# "$T/…" w ścieżki w / — stąd twarde sprawdzenie i ${T:?} przy każdym zapisie.
+ROOT_BEFORE="$(ls -A / | LC_ALL=C sort)"
+T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || { echo "mktemp -d nie zadziałał — przerywam bez zapisu"; exit 1; }
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
 
@@ -119,10 +127,65 @@ for cfg in "$REPO"/rices/*/hypr/hyprland.lua; do
         ok "$rice: okno PiP w prawym dolnym rogu (10 px od krawędzi 1920x1080)"
     else fail "$rice: okno PiP nie w rogu: x=${x:-?} y=${y:-?} rozmiar ${w:-?}x${h:-?}"; fi
     [[ "$rice" == white-blue_beta ]] && continue
+    n="$(grep -cxF '~/archenemy/scripts/hypr/polkit-agent.sh' <<< "$out")"
+    if [[ "$n" -eq 1 ]] && ! grep -q '^systemctl ' <<< "$out"; then ok "$rice: agent polkit przez polkit-agent.sh dokładnie raz, bez gołego systemctl"
+    else fail "$rice: polkit-agent.sh $n razy albo goły systemctl w autostarcie"; fi
     n="$(grep -cx 'BIND SUPER + TAB => ~/archenemy/scripts/hypr/window-history.sh restore' <<< "$out")"
     if [[ "$n" -eq 1 ]]; then ok "$rice: Super+Tab → window-history.sh restore"
     else fail "$rice: bind Super+Tab $n razy (ma być 1)"; fi
 done
+
+# ─── scripts/hypr/polkit-agent.sh na atrapie systemctl ───────────────────────
+echo "== polkit-agent.sh"
+AGENT="$REPO/scripts/hypr/polkit-agent.sh"
+mkdir -p "${T:?}/pbin" "${T:?}/nosysctl" "${T:?}/run" && chmod 700 "${T:?}/run"
+# MOCK_POLKIT: ok | nounit | nobus — jak prawdziwy systemctl (komunikat na stderr, kod ≠ 0).
+printf '%s\n' '#!/usr/bin/env bash' 'echo "systemctl $*" >> "$POLKIT_CALLS"' \
+    'case "${MOCK_POLKIT:-ok}" in' \
+    '    nounit) echo "Failed to start hyprpolkitagent.service: Unit hyprpolkitagent.service not found." >&2; exit 5 ;;' \
+    '    nobus)  echo "Failed to connect to bus: No medium found" >&2; exit 1 ;;' \
+    'esac' 'exit 0' > "${T:?}/pbin/systemctl"
+chmod +x "${T:?}/pbin/systemctl"
+# Wąski PATH: tylko to, czego skrypt potrzebuje (bez systemctl hosta).
+for c in bash env date dirname cat stat mkdir; do
+    ln -sf "$(command -v "$c")" "${T:?}/pbin/$c"; ln -sf "$(command -v "$c")" "${T:?}/nosysctl/$c"
+done
+export POLKIT_CALLS="${T:?}/polkit-calls"
+polkit_run() {   # polkit_run <stan> <PATH> <XDG_RUNTIME_DIR> — wynik w $p_rc, $p_out, $p_log
+    : > "$POLKIT_CALLS"; rm -f "${T:?}/run/archenemy-polkit-agent.log"
+    p_out="$(MOCK_POLKIT="$1" PATH="$2" XDG_RUNTIME_DIR="$3" ARCHENEMY_RUNTIME_SYSTEM="${T:?}/none" \
+        TMPDIR="${T:?}/tmpdir" "${T:?}/pbin/bash" "$AGENT" 2>&1)"; p_rc=$?
+    p_log="$(cat "${T:?}/run/archenemy-polkit-agent.log" 2>/dev/null)"
+}
+polkit_run ok "${T:?}/pbin" "${T:?}/run"
+if [[ $p_rc -eq 0 && -z "$p_out" && -z "$p_log" && "$(<"$POLKIT_CALLS")" == "systemctl --user start hyprpolkitagent" ]]; then
+    ok "polkit-agent.sh: jednostka jest — start użytkownika, bez enable, cisza, bez logu"
+else fail "polkit-agent.sh ok: rc=$p_rc out=$p_out log=$p_log calls=$(<"$POLKIT_CALLS")"; fi
+for st in nounit nobus; do
+    polkit_run "$st" "${T:?}/pbin" "${T:?}/run"
+    if [[ $p_rc -eq 0 && -z "$p_out" && "$(grep -c . <<< "$p_log")" -eq 1 && "$p_log" == *"start hyprpolkitagent failed"* ]] \
+        && ! grep -qE 'enable|daemon-reload' "$POLKIT_CALLS"; then
+        ok "polkit-agent.sh $st: kod 0, nic na wyjściu sesji, jedna linia w logu"
+    else fail "polkit-agent.sh $st: rc=$p_rc out=$p_out log=$p_log"; fi
+done
+polkit_run ok "${T:?}/nosysctl" "${T:?}/run"
+if [[ $p_rc -eq 0 && -z "$p_out" && "$p_log" == *"start hyprpolkitagent failed"* ]]; then
+    ok "polkit-agent.sh bez systemctl w PATH: kod 0, cisza, wpis w logu"
+else fail "polkit-agent.sh bez systemctl: rc=$p_rc out=$p_out log=$p_log"; fi
+# Brak katalogu sesji, a w TMPDIR cudzy (zły) katalog archenemy-<UID>: bez logu i bez /tmp.
+mkdir -p "${T:?}/tmpdir/archenemy-$UID" && chmod 755 "${T:?}/tmpdir/archenemy-$UID"
+polkit_run nounit "${T:?}/pbin" ""
+if [[ $p_rc -eq 0 && -z "$p_out" && -z "$(find "${T:?}/tmpdir" -type f)" ]]; then
+    ok "polkit-agent.sh bez prywatnego katalogu sesji: kod 0, cisza, żadnego logu"
+else fail "polkit-agent.sh bez katalogu sesji: rc=$p_rc out=$p_out pliki=$(find "${T:?}/tmpdir" -type f)"; fi
+if [[ "$(grep -c 'systemctl --user start hyprpolkitagent' "$REPO/rices/white-blue_beta/hypr/hyprland.lua")" -eq 1 ]]; then
+    ok "white-blue_beta zamrożona: dawna linia bez zmian"
+else fail "white-blue_beta: zmieniona linia agenta polkit"; fi
+
+# Po biegu w / nie ma nowych wpisów (zapis poza $T = porażka).
+root_new="$(comm -13 <(echo "$ROOT_BEFORE") <(ls -A / | LC_ALL=C sort))"
+if [[ -z "$root_new" ]]; then ok "żadnych nowych plików w / po biegu"
+else fail "nowe wpisy w / po biegu: ${root_new//$'\n'/ }"; fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
