@@ -25,7 +25,7 @@ if ! pkg_gate "CPU microcode"; then
     case "$PKG_ROUTE" in
         fedora)
             echo "    Fedora installs and updates CPU microcode itself (Intel: microcode_ctl,"
-            echo "    AMD: linux-firmware) and loads it at boot — keep it current: sudo dnf upgrade" ;;
+            echo "    AMD: amd-ucode-firmware from linux-firmware) and loads it at boot — keep it current: sudo dnf upgrade" ;;
         nixos)
             echo "    In configuration.nix, then nixos-rebuild boot:"
             echo "      hardware.cpu.intel.updateMicrocode = true;   # Intel"

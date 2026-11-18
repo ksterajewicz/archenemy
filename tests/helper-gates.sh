@@ -284,7 +284,8 @@ for row in "${CLOSED[@]}"; do
     gated "CPU $os z odziedziczonym PLATFORM=arch: brama zamknięta" "$head"
 done
 run "$CPU" fedora 'y\n'
-gated "CPU Fedora: microcode_ctl / linux-firmware zarządzane przez Fedorę" "microcode_ctl" "linux-firmware" "sudo dnf upgrade"
+# Uwaga przeglądu Codexa D6: podpakiet AMD Fedory to amd-ucode-firmware (z linux-firmware).
+gated "CPU Fedora: microcode_ctl / amd-ucode-firmware zarządzane przez Fedorę" "microcode_ctl" "amd-ucode-firmware from linux-firmware" "sudo dnf upgrade"
 run "$CPU" nixos 'y\n'
 gated "CPU NixOS: hardware.cpu.{intel,amd}.updateMicrocode" "hardware.cpu.intel.updateMicrocode = true;" "hardware.cpu.amd.updateMicrocode = true;"
 check "CPU NixOS/Fedora: bez porad initrd systemd-boot" '[[ "$out" != *initrd* ]]'
