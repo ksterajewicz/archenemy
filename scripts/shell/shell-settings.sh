@@ -18,6 +18,16 @@
 #   (getent), bo $SHELL zostaje stary do ponownego zalogowania; sukces chsh =
 #   odczyt passwd równy wyborowi, nie kod wyjścia.
 #
+#   Platforma (D8): ta sama pkg_route (install/lib/pkg.sh) co instalator
+#   i pomocnicy, nigdy odziedziczone PLATFORM. Arch i pochodne idą DOKŁADNIE
+#   dotychczasowym kodem (pacman, chsh) — pytania, wywołania i pliki jak przed
+#   D8. Fedora: pakiety przez pkg_install (dnf, rpm -q), te same zgody i ich
+#   domyślne odpowiedzi; pakiet bez RPM z repozytoriów Fedory = porada bez
+#   pytania. NixOS: nic nie instaluje i nie zmienia passwd — tylko deklaracje
+#   (users.users.<name>.shell, programs.zsh.enable, pkgs.*). Brak biblioteki
+#   albo inna dystrybucja: żadnej instalacji, porada. Stan (plugins.zsh,
+#   cli-tools.*) zapisywany dopiero po potwierdzonej obecności pakietu/pliku.
+#
 #   Kody wyjścia: 0 zrobione albo świadomie anulowane, 1 błąd.
 # =============================================
 
@@ -31,6 +41,17 @@ ZSHRC="$HOME/.zshrc"
 source "$SELF_DIR/lib/shell-rc.sh"
 # shellcheck source=../appbinds/lib/tui.sh
 source "$SELF_DIR/../appbinds/lib/tui.sh"
+
+# ROUTE: arch | fedora | nixos | "" (biblioteki brak albo dystrybucja
+# nieobsługiwana — wtedy nic nie instalujemy). Sam odczyt os-release.
+ROUTE=""
+# shellcheck source=../../install/lib/pkg.sh
+if [[ -r "$SELF_DIR/../../install/lib/pkg.sh" ]] && source "$SELF_DIR/../../install/lib/pkg.sh" \
+        && pkg_route 2>/dev/null; then
+    ROUTE="$PKG_ROUTE"
+fi
+# shellcheck disable=SC2034  # czyta shell-rc.sh (shell_plugins_text)
+SHELL_PLUGIN_PLATFORM="$ROUTE"
 
 # Ścieżka do wyświetlenia: ~ zamiast katalogu domowego.
 tilde() { printf '%s' "${1/#$HOME/\~}"; }
@@ -90,7 +111,12 @@ plugin_set() {
         echo -e "  ${RED}✗ $(tilde "$SHELL_PLUGINS") contains custom content. Move it aside before using this menu; your file was kept.${NC}"
         return 1
     fi
-    if [[ "$enabled" == 1 ]]; then
+    if [[ "$enabled" == 1 && "$ROUTE" != arch ]]; then
+        plugin_ready "$plugin"
+        case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
+        shellrc_ensure >/dev/null || return 1
+        ensure_block "$ZSHRC" zsh || return 1
+    elif [[ "$enabled" == 1 ]]; then
         if ! command -v pacman >/dev/null 2>&1; then
             echo -e "  ${RED}✗ pacman is unavailable. Install ${plugin} on Arch, then try again.${NC}"
             return 1
@@ -114,6 +140,67 @@ plugin_set() {
     [[ -z "$bak" ]] || printf '  Backup: %s\n' "$(tilde "$bak")"
     printf '  %s: %s\n' "$plugin" "$([[ "$enabled" == 1 ]] && echo enabled || echo disabled)"
     reload_hint
+}
+
+# Opcje NixOS/home-manager, które same ładują wtyczkę (nixpkgs nixos-26.05
+# nixos/modules/programs/zsh/zsh-autosuggestions.nix i zsh-syntax-highlighting.nix,
+# home-manager modules/programs/zsh/default.nix; odczyt 2026-11-18).
+nix_plugin_option() {
+    case "$1" in
+        zsh-autosuggestions) echo 'programs.zsh.autosuggestions.enable = true;  (home-manager: programs.zsh.autosuggestion.enable = true;)' ;;
+        zsh-syntax-highlighting) echo 'programs.zsh.syntaxHighlighting.enable = true;  (home-manager: the same option)' ;;
+    esac
+}
+
+# plugin_ready <wtyczka> — poza Archem: 0 pakiet i plik wtyczki są (można
+# zapisać stan), 1 nie (komunikat już wypisany), 2 użytkownik odmówił.
+plugin_ready() {
+    local plugin="$1" st src
+    case "$ROUTE" in
+        fedora)
+            if ! pkg_installable "$plugin" 2>/dev/null; then
+                printf "  %s is not in Fedora's repositories: %s\n" "$plugin" "$(pkg_hint "$plugin" 2>/dev/null)"
+                echo '  archenemy installs nothing else; plugin remains disabled.'
+                return 1
+            fi
+            pkg_installed "$plugin"; st=$?
+            if ((st == 1)); then
+                printf '  Required command: %s\n' "$(pkg_hint "$plugin")"
+                confirm "Install ${plugin}?" N || { echo '  Cancelled; plugin remains disabled.'; return 2; }
+                if ! command -v sudo >/dev/null 2>&1 || ! pkg_install "$plugin"; then
+                    echo -e "  ${RED}✗ ${plugin} was not installed; plugin remains disabled.${NC}"
+                    return 1
+                fi
+            elif ((st != 0)); then
+                echo -e "  ${RED}✗ Could not check whether ${plugin} is installed (rpm query failed); plugin remains disabled.${NC}"
+                return 1
+            fi
+            if ! shell_plugin_found fedora "$plugin" >/dev/null; then
+                echo -e "  ${RED}✗ ${plugin} is installed, but $(shell_plugin_paths fedora "$plugin" | head -n1) is missing; plugin remains disabled.${NC}"
+                return 1
+            fi ;;
+        nixos)
+            if [[ "$plugin" == zsh-completions ]]; then
+                echo '  On NixOS zsh itself loads completions from your Nix profiles (programs.zsh.enable),'
+                echo '  so there is nothing to enable here. Add the package declaratively:'
+                printf '    %s\n' "$(pkg_hint zsh-completions)"
+                return 1
+            fi
+            if ! src="$(shell_plugin_found nixos "$plugin")"; then
+                echo "  NixOS is declarative: archenemy installs nothing, and ${plugin} is not in your Nix profiles. Either"
+                printf '    let NixOS load it (and leave it off here): %s\n' "$(nix_plugin_option "$plugin")"
+                printf '    or %s, rebuild, then enable it here again.\n' "$(pkg_hint "$plugin")"
+                [[ "$plugin" == zsh-syntax-highlighting ]] && \
+                    echo '    (environment.systemPackages also needs environment.pathsToLink = [ "/share/zsh-syntax-highlighting" ];)'
+                echo '  Plugin remains disabled.'
+                return 1
+            fi
+            printf '  Found in your Nix profile: %s\n' "$(tilde "$src")" ;;
+        *)
+            echo -e "  ${RED}✗ archenemy installs packages only on Arch, Fedora and NixOS. Install ${plugin} with your distribution's tools; plugin remains disabled.${NC}"
+            return 1 ;;
+    esac
+    return 0
 }
 
 plugins_menu() {
@@ -154,7 +241,13 @@ cli_tool_set() {
         printf '  CLI settings contain custom content or a symlink. Move the file aside; your file was kept.\n'
         return 1
     fi
-    if [[ "$enabled" == 1 ]]; then
+    if [[ "$enabled" == 1 && "$ROUTE" != arch ]]; then
+        if ! command -v "${CLI_COMMANDS[$i]}" >/dev/null 2>&1; then
+            cli_install "$i"
+            case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
+        fi
+        shellrc_ensure >/dev/null && ensure_block "$(rc_of "$kind")" "$kind" || return 1
+    elif [[ "$enabled" == 1 ]]; then
         if ! command -v "${CLI_COMMANDS[$i]}" >/dev/null 2>&1; then
             printf '  Required command: sudo pacman -S --needed %s\n' "${CLI_PACKAGES[$i]}"
             confirm "Install ${CLI_NAMES[$i]}?" Y || { echo '  Cancelled; tool remains disabled.'; return 0; }
@@ -174,6 +267,37 @@ cli_tool_set() {
     [[ -z "$bak" ]] || printf '  Backup: %s\n' "$(tilde "$bak")"
     printf '  %s (%s): %s\n' "${CLI_NAMES[$i]}" "$kind" "$([[ "$enabled" == 1 ]] && echo enabled || echo disabled)"
     reload_hint
+}
+
+# cli_install <indeks> — poza Archem, brak komendy: 0 zainstalowane i komenda
+# jest w PATH (fd-find → fd, ripgrep → rg), 1 nie, 2 odmowa. Pakiet = id mapy
+# (kolumna pacman package katalogu).
+cli_install() {
+    local i="$1" pkg="${CLI_PACKAGES[$1]}" cmd="${CLI_COMMANDS[$1]}" name="${CLI_NAMES[$1]}" hint
+    case "$ROUTE" in
+        fedora)
+            if ! pkg_installable "$pkg" 2>/dev/null; then
+                hint="$(pkg_hint "$pkg" 2>/dev/null)" || hint="no entry in packages/platform-map.tsv"
+                printf '  %s cannot be installed automatically on Fedora: %s\n' "$name" "$hint"
+                echo '  Tool remains disabled.'
+                return 1
+            fi
+            printf '  Required command: %s\n' "$(pkg_hint "$pkg")"
+            confirm "Install ${name}?" Y || { echo '  Cancelled; tool remains disabled.'; return 2; }
+            if ! command -v sudo >/dev/null 2>&1 || ! pkg_install "$pkg" || ! command -v "$cmd" >/dev/null 2>&1; then
+                printf '  Installation failed or command %s is unavailable; tool remains disabled.\n' "$cmd"
+                return 1
+            fi ;;
+        nixos)
+            echo "  NixOS is declarative: archenemy installs nothing. Add ${name} to your configuration, rebuild, then enable it here again:"
+            printf '    %s\n' "$(pkg_hint "$pkg" 2>/dev/null || echo "pkgs.$pkg")"
+            echo '  Tool remains disabled.'
+            return 1 ;;
+        *)
+            printf "  %s (command %s) is missing. archenemy installs packages only on Arch, Fedora and NixOS; install it with your distribution's tools.\n" "$name" "$cmd"
+            echo '  Tool remains disabled.'
+            return 1 ;;
+    esac
 }
 
 cli_tools_list() {
@@ -485,7 +609,11 @@ edit_shellrc() {
     # shellcheck disable=SC2034  # skróty odczytuje wspólne tui_menu
     local -a TUI_MENU_KEYS=(e r)
     if ! command -v nvim >/dev/null 2>&1; then
-        echo -e "  ${RED}✗ neovim is missing: sudo pacman -S neovim${NC}"
+        case "$ROUTE" in
+            arch) echo -e "  ${RED}✗ neovim is missing: sudo pacman -S neovim${NC}" ;;
+            fedora|nixos) echo -e "  ${RED}✗ neovim is missing: $(pkg_hint neovim)${NC}" ;;
+            *) echo -e "  ${RED}✗ neovim is missing: install it with your distribution's tools.${NC}" ;;
+        esac
         return 1
     fi
     shellrc_ensure >/dev/null || { echo -e "  ${RED}✗ Cannot create $(tilde "$SHELLRC").${NC}"; return 1; }
@@ -527,6 +655,20 @@ edit_shellrc() {
     done
 }
 
+# NixOS: powłoka logowania wyłącznie deklaratywnie (users.users.<name>.shell;
+# zsh wymaga programs.zsh.enable — inaczej NixOS odrzuca taką konfigurację).
+# Bez ścieżek /bin/… — na NixOS ich nie ma.
+nix_shell_advice() {
+    local target="$1" user pkg=pkgs.bashInteractive
+    [[ "$target" == zsh ]] && pkg=pkgs.zsh
+    user="$(id -un 2>/dev/null)"
+    [[ "$user" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || user="\"<your user name>\""
+    echo -e "  ${CYAN}NixOS sets the login shell declaratively; archenemy does not change passwd. In configuration.nix:${NC}"
+    [[ "$target" == zsh ]] && echo "      programs.zsh.enable = true;"
+    echo "      users.users.${user}.shell = ${pkg};"
+    echo -e "  ${CYAN}Then rebuild (sudo nixos-rebuild switch), log out and back in.${NC}"
+}
+
 # Zmiana powłoki logowania: pakiet (zsh), pliki rc z blokiem, migracja za
 # zgodą, chsh za zgodą, odczyt passwd i instrukcja powrotu.
 switch_shell() {
@@ -541,15 +683,37 @@ switch_shell() {
             echo -e "  ${RED}✗ ${target} is not installed.${NC}"
             return 1
         fi
-        echo -e "  zsh is not installed. It comes from the Arch repo (package ${BOLD}zsh${NC})."
-        if ! confirm "Install it now (sudo pacman -S --needed zsh)?" Y; then
-            echo -e "  ${YELLOW}Cancelled, nothing changed.${NC}"
-            return 0
-        fi
-        if ! sudo pacman -S --needed zsh || ! command -v zsh >/dev/null 2>&1; then
-            echo -e "  ${RED}✗ zsh was not installed, see pacman output above.${NC}"
-            return 1
-        fi
+        case "$ROUTE" in
+            arch)
+                echo -e "  zsh is not installed. It comes from the Arch repo (package ${BOLD}zsh${NC})."
+                if ! confirm "Install it now (sudo pacman -S --needed zsh)?" Y; then
+                    echo -e "  ${YELLOW}Cancelled, nothing changed.${NC}"
+                    return 0
+                fi
+                if ! sudo pacman -S --needed zsh || ! command -v zsh >/dev/null 2>&1; then
+                    echo -e "  ${RED}✗ zsh was not installed, see pacman output above.${NC}"
+                    return 1
+                fi ;;
+            fedora)
+                echo -e "  zsh is not installed. It comes from Fedora's repositories (package ${BOLD}zsh${NC})."
+                if ! confirm "Install it now ($(pkg_hint zsh))?" Y; then
+                    echo -e "  ${YELLOW}Cancelled, nothing changed.${NC}"
+                    return 0
+                fi
+                if ! command -v sudo >/dev/null 2>&1 || ! pkg_install zsh || ! command -v zsh >/dev/null 2>&1; then
+                    echo -e "  ${RED}✗ zsh was not installed, see dnf output above.${NC}"
+                    return 1
+                fi ;;
+            nixos)
+                # Bez binarki nic nie piszemy: bloki rc powstaną przy wyborze
+                # zsh po przebudowie systemu.
+                echo -e "  zsh is not installed. Nothing was changed."
+                nix_shell_advice zsh
+                return 0 ;;
+            *)
+                echo -e "  ${RED}✗ zsh is not installed. archenemy installs packages only on Arch, Fedora and NixOS; install zsh with your distribution's tools, then try again.${NC}"
+                return 1 ;;
+        esac
         echo -e "  ${GREEN}✓ zsh installed.${NC}"
     fi
 
@@ -564,6 +728,12 @@ switch_shell() {
     if [[ "$cur" == "$target" ]]; then
         echo -e "  ${GREEN}✓ ${target} is already your login shell.${NC}"
         relogin_pending && echo -e "  ${CYAN}Log out and back in to start it in new terminals.${NC}"
+        return 0
+    fi
+    # NixOS: passwd zmienia tylko konfiguracja (żadnego chsh, także przy
+    # obecnym zsh i przy powrocie do basha).
+    if [[ "$ROUTE" == nixos ]]; then
+        nix_shell_advice "$target"
         return 0
     fi
     if ! path="$(shell_path_for "$target")"; then

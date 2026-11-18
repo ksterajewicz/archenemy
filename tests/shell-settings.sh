@@ -35,6 +35,13 @@ mkdir -p "$A/config/shell" "$A/scripts" "$BIN"
 mkdir -p "$A/scripts/hypr"; cp -r "$REPO/scripts/shell" "$REPO/scripts/appbinds" "$A/scripts/"; cp -r "$REPO/scripts/hypr/lib" "$A/scripts/hypr/"
 cp "$REPO/config/shell/zsh-defaults.zsh" "$REPO/config/shell/emacs-default-bindings.txt" "$A/config/shell/"
 S="$A/scripts/shell/shell-settings.sh"
+# Platforma jawnie (D8): Arch z os-release w atrapie, biblioteka pakietów i mapa
+# obok skryptów jak w checkoutcie — wynik nie zależy od dystrybucji hosta.
+mkdir -p "$A/install" "$A/packages"
+cp -r "$REPO/install/lib" "$A/install/"
+cp "$REPO/packages/platform-map.tsv" "$A/packages/"
+printf 'ID=arch\n' > "$T/os-release"
+export ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release"
 
 # passwd w pliku: getent czyta, chsh zapisuje (chyba że $T/chsh-fail).
 echo "/usr/bin/bash" > "$T/passwd"

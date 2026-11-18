@@ -25,7 +25,14 @@
 #   względem $HOME, gdy się da — więc przeprowadzka aplikacji (decyzja
 #   2026-11-09: ~/.local/share/archenemy) zmienia tylko tę linię, a ponowny
 #   bieg install.sh sam odświeża bloki w rc-plikach.
-#   Haki testowe: ARCHENEMY_SHELLS_FILE (zamiast /etc/shells).
+#   Haki testowe: ARCHENEMY_SHELLS_FILE (zamiast /etc/shells); przy
+#   ARCHENEMY_TEST=1 także ARCHENEMY_FS_ROOT — prefiks ścieżek bezwzględnych,
+#   pod którymi shell_plugin_found szuka plików wtyczek (/usr/share, /etc, /run).
+#
+#   Ścieżki wtyczek per platforma (D8): SHELL_PLUGIN_PLATFORM ustawia wołający
+#   (shell-settings.sh z pkg_route). Pusta albo arch = zamrożony
+#   shell_plugins_v1_text (FHS Archa) — Arch dostaje bajt w bajt ten sam plik
+#   co przed D8. fedora/nixos = shell_plugins_v2_text z shell_plugin_paths.
 # =============================================
 
 : "${ARCHENEMY_DIR:=$HOME/archenemy}"
@@ -36,6 +43,7 @@ ZSH_DEFAULTS="$SHELL_RC_DIR/zsh-defaults.zsh"
 SHELL_KEYS="$SHELL_RC_DIR/keys.zsh"
 SHELL_PLUGINS="$SHELL_RC_DIR/plugins.zsh"
 SHELL_PLUGIN_NAMES=(zsh-autosuggestions zsh-syntax-highlighting zsh-completions)
+: "${SHELL_PLUGIN_PLATFORM:=}"
 SHELL_BLOCK_BEGIN="# >>> archenemy shell >>>"
 SHELL_BLOCK_END="# <<< archenemy shell <<<"
 # Znacznik aliasu: ląduje w pliku użytkownika, więc po angielsku (właściciel
@@ -176,6 +184,116 @@ EOF
     printf '%s\n' '# <<< archenemy zsh plugins <<<' 'return 0'
 }
 
+# Profile Nix od najbardziej osobistego (kolejność NIX_PROFILES NixOS-a, gdzie
+# późniejszy wygrywa): home-manager/nix profile, profil per-user
+# (users.users.<name>.packages, home-manager useUserPackages), system.
+# shellcheck disable=SC2016  # $HOME/$USER dosłownie: rozwija zsh w wygenerowanym pliku
+SHELL_NIX_PROFILES=('$HOME/.nix-profile' '$HOME/.local/state/nix/profile'
+    '/etc/profiles/per-user/$USER' '/run/current-system/sw')
+
+# shell_plugin_paths <platforma> <wtyczka> — skąd ładować: pliki .zsh (dwie
+# pierwsze wtyczki) albo katalogi fpath (zsh-completions), jedna ścieżka na
+# linię, w kolejności prób. $HOME/$USER zostają dosłownie (rozwija je zsh
+# w wygenerowanym pliku, a shell_plugin_found przy sprawdzeniu). Źródła
+# (odczyt 2026-11-18): Arch — pliki pakietów archlinux.org; Fedora 44 —
+# mdapi …/f44/files/zsh-autosuggestions i zsh-syntax-highlighting
+# (/usr/share/<nazwa>/<nazwa>.zsh; zsh-completions: brak RPM, mapa
+# unavailable); nixpkgs nixos-26.05 pkgs/by-name/zs/*/package.nix:
+# autosuggestions w share/zsh/plugins/<nazwa>/ + dowiązanie share/<nazwa>,
+# syntax-highlighting w share/<nazwa>/, completions w share/zsh/site-functions.
+# Profil systemowy NixOS linkuje tylko wybrane katalogi (system-path.nix;
+# /share/zsh dokłada programs.zsh.enableCompletion), stąd oba warianty.
+# Na NixOS completions z profili dokłada do fpath sam /etc/zshenv
+# (programs.zsh.enable, pętla po NIX_PROFILES) — tu nic dla nich.
+shell_plugin_paths() {
+    local platform="$1" plugin="$2" p
+    case "$platform:$plugin" in
+        fedora:zsh-completions) echo /usr/share/zsh/site-functions ;;
+        fedora:*) echo "/usr/share/$plugin/$plugin.zsh" ;;
+        nixos:zsh-completions) ;;
+        nixos:zsh-autosuggestions)
+            for p in "${SHELL_NIX_PROFILES[@]}"; do
+                echo "$p/share/zsh/plugins/$plugin/$plugin.zsh"
+                echo "$p/share/$plugin/$plugin.zsh"
+            done ;;
+        nixos:*)
+            for p in "${SHELL_NIX_PROFILES[@]}"; do echo "$p/share/$plugin/$plugin.zsh"; done ;;
+        *:zsh-completions) echo /usr/share/zsh/site-functions ;;
+        *) echo "/usr/share/zsh/plugins/$plugin/$plugin.zsh" ;;
+    esac
+}
+
+# shell_plugin_found <platforma> <wtyczka> — pierwsza istniejąca ścieżka
+# z shell_plugin_paths (stdout); 1 = żadnej. Pliku nie wykonujemy.
+# shellcheck disable=SC2016  # wzorce \$HOME/\$USER podmieniamy w tekście ścieżki
+shell_plugin_found() {
+    local t p user root=""
+    user="$(id -un 2>/dev/null)"; user="${user:-${USER:-}}"
+    [[ "${ARCHENEMY_TEST:-}" == 1 ]] && root="${ARCHENEMY_FS_ROOT:-}"
+    while IFS= read -r t; do
+        [[ -n "$t" ]] || continue
+        p="${t//\$HOME/$HOME}"; p="${p//\$USER/$user}"
+        [[ "$t" == /* ]] && p="$root$p"
+        if [[ "$2" == zsh-completions && -d "$p" ]] || [[ "$2" != zsh-completions && -f "$p" ]]; then
+            printf '%s\n' "$p"; return 0
+        fi
+    done < <(shell_plugin_paths "$1" "$2")
+    return 1
+}
+
+# Ścieżka do wygenerowanego pliku: $HOME/$USER rozwija zsh, reszta dosłownie.
+_shell_plugin_quote() {
+    if [[ "$1" == *'$'* ]]; then printf '"%s"' "$1"; else printf '%s' "$1"; fi
+}
+
+# v2 (Fedora, NixOS): te same znaczniki i stany co v1, plus linia platformy;
+# ścieżki z shell_plugin_paths, pierwsza istniejąca wygrywa. Jedna droga
+# ładowania: wtyczki już załadowanej przez system albo home-manager
+# (programs.zsh.autosuggestions.enable / autosuggestion.enable,
+# programs.zsh.syntaxHighlighting.enable) nie ładujemy drugi raz — zsh-
+# autosuggestions definiuje _zsh_autosuggest_start, zsh-syntax-highlighting
+# ustawia ZSH_HIGHLIGHT_VERSION (upstream, odczyt 2026-11-18). Składnia
+# czytelna także dla basha (test ładuje plik w bashu).
+# shellcheck disable=SC2016  # kod zsh do pliku, nie do rozwinięcia tutaj
+shell_plugins_v2_text() {
+    local platform="$1" autosuggestions="$2" highlighting="$3" completions="$4" p any guard
+    printf '%s\n' '# >>> archenemy zsh plugins >>>' \
+        '# Managed by Super+A -> [h] -> 5. Changes keep a dated backup.' \
+        '# Disable a plugin in that menu, then open a new terminal.' \
+        "# archenemy plugin: zsh-autosuggestions=$autosuggestions" \
+        "# archenemy plugin: zsh-syntax-highlighting=$highlighting" \
+        "# archenemy plugin: zsh-completions=$completions" \
+        "# archenemy plugin paths: $platform"
+    echo 'if [[ "${archenemy_plugins_phase:-}" == completion ]]; then'
+    if [[ "$completions" == 1 ]]; then
+        any=0
+        while IFS= read -r p; do
+            [[ -n "$p" ]] || continue
+            any=1
+            p="$(_shell_plugin_quote "$p")"
+            printf '    if [[ -d %s && "${fpath[(Ie)%s]}" == 0 ]]; then\n        fpath+=(%s)\n    fi\n' "$p" "$p" "$p"
+        done < <(shell_plugin_paths "$platform" zsh-completions)
+        ((any)) || echo '    # NixOS: /etc/zshenv already adds share/zsh/site-functions of every Nix profile.'
+    fi
+    printf '%s\n' '    return 0' 'fi'
+    for p in zsh-autosuggestions zsh-syntax-highlighting; do
+        if [[ "$p" == zsh-autosuggestions ]]; then
+            [[ "$autosuggestions" == 1 ]] || continue
+            guard='"${functions[_zsh_autosuggest_start]+x}"'
+        else
+            [[ "$highlighting" == 1 ]] || continue
+            guard='"${ZSH_HIGHLIGHT_VERSION+x}"'
+        fi
+        echo "if [[ -z $guard ]]; then"
+        printf '    for archenemy_plugin_file in'
+        while IFS= read -r any; do printf ' %s' "$(_shell_plugin_quote "$any")"; done < <(shell_plugin_paths "$platform" "$p")
+        printf '; do\n'
+        printf '%s\n' '        if [[ -f "$archenemy_plugin_file" ]]; then source "$archenemy_plugin_file"; break; fi' \
+            '    done' '    unset archenemy_plugin_file' 'fi'
+    done
+    printf '%s\n' '# <<< archenemy zsh plugins <<<' 'return 0'
+}
+
 # Wersja v1 powyżej pozostaje niezmienna: rozpoznaje pliki sprzed sum kontrolnych.
 # Suma obejmuje całą treść, także znaczniki i stan; pliku nigdy nie wykonujemy.
 shell_managed_text() {
@@ -196,7 +314,10 @@ shell_managed_checksum() {
 
 shell_plugins_text() {
     local text
-    text="$(shell_plugins_v1_text "$@")" || return 1
+    case "$SHELL_PLUGIN_PLATFORM" in
+        fedora|nixos) text="$(shell_plugins_v2_text "$SHELL_PLUGIN_PLATFORM" "$@")" || return 1 ;;
+        *) text="$(shell_plugins_v1_text "$@")" || return 1 ;;
+    esac
     shell_managed_text "$text"
 }
 

@@ -16,6 +16,13 @@ mkdir -p "$ARCHENEMY_DIR/config/shell" "$ARCHENEMY_DIR/scripts" "$T/bin"
 cp -r "$REPO/scripts/shell" "$REPO/scripts/appbinds" "$ARCHENEMY_DIR/scripts/"
 cp "$REPO/config/shell/cli-tools-v1.tsv" "$ARCHENEMY_DIR/config/shell/"
 cp "$REPO/config/shell/cli-tools.tsv" "$ARCHENEMY_DIR/config/shell/"
+# Platforma jawnie (D8): Arch z os-release w atrapie, biblioteka pakietów i mapa
+# obok skryptów jak w checkoutcie — wynik nie zależy od dystrybucji hosta.
+mkdir -p "$ARCHENEMY_DIR/install" "$ARCHENEMY_DIR/packages"
+cp -r "$REPO/install/lib" "$ARCHENEMY_DIR/install/"
+cp "$REPO/packages/platform-map.tsv" "$ARCHENEMY_DIR/packages/"
+printf 'ID=arch\n' > "$T/os-release"
+export ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release"
 source "$REPO/scripts/shell/lib/shell-rc.sh"
 PASS=0; FAIL=0
 check() {

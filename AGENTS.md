@@ -243,6 +243,18 @@ Rules that follow directly from the table:
   `compinit`, load plugins at the end of the managed rc block after `shellrc` and CLI
   initialization, and source syntax highlighting last within that block. User
   code after the block still runs later. Skip missing files and preserve user plugin variables.
+  Platform (D8): `shell-settings.sh` takes `pkg_route` from `install/lib/pkg.sh`
+  (never an inherited variable); Arch and derivatives run the pre-D8 code
+  unchanged (pacman/chsh; `SHELL_PLATFORMS_REV=<rev> bash
+  tests/shell-platforms.sh` compares output, commands and HOME files).
+  Fedora/NixOS go through `pkg_installable`/`pkg_installed`/`pkg_install`/
+  `pkg_hint` with the same consents and defaults; state is written only after
+  the package AND the plugin file (`shell_plugin_found`) or the command is
+  confirmed. NixOS: no `chsh`, `sudo` or installation, not even in advice
+  text — `users.users.<name>.shell`, `programs.zsh.enable`, `pkgs.*`.
+  `shell_plugins_v1_text` is frozen (Arch output); new platforms use
+  `shell_plugins_v2_text` with paths from `shell_plugin_paths` only.
+  Runtime tests set os-release explicitly and copy `install/lib` + the map.
   `tests/shell-plugins.sh` uses mocks without requiring zsh or pacman.
 - **Optional CLI tools:** `[h] → 6` uses `tui_menu` for shell selection and each checklist. The trusted catalog `config/shell/cli-tools.tsv` supplies packages, commands, licenses, support and initialization; one row extends the menu without code changes. All tools default off independently for bash/zsh. Only `shell-rc.sh` writes personal `cli-tools.bash` / `cli-tools.zsh`, with marked blocks, dated backups, idempotence and custom-content/symlink refusal. The rc block loads the selected file after `shellrc`. Missing commands require `[Y/n]` before `sudo pacman -S --needed`; verify the command exists afterwards. Disabling removes only the initialization block and keeps packages. Plain PATH tools cannot be hidden per shell. zoxide must preserve `cd` (default `z`/`zi`, never `--cmd cd`). Keep README and THIRD-PARTY license tables in sync. `tests/shell-cli-tools.sh` uses isolated mocks without zsh, pacman or real tools.
 - **New monitor notification:** `hl.on("monitor.added")` in `autostart-common.lua`
