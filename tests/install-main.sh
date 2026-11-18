@@ -252,6 +252,12 @@ snapshot() {
                 -o -path ./archenemy/data/hyprlock-wallpaper.dat \) -prune -o -type f -print0 \
          | xargs -0 sha256sum | sort -k2)
 }
+# snapshot_full — cały $HOME bez wyjątków (także .git kopii, installed-head.dat
+# i hyprlock-wallpaper.dat): bieg odmowy nie może zapisać niczego.
+snapshot_full() {
+    (cd "$HOME" && find . -printf '%p %y %m %l\n' | sort
+     find . -type f -print0 | xargs -0 sha256sum | sort -k2)
+}
 
 # Odpowiedzi: wzorzec (regex na koniec wiersza pytania) <TAB> odpowiedź.
 # Pusta odpowiedź = Enter (wartość domyślna).
@@ -486,9 +492,9 @@ check "pliki w \$HOME bez zmian"                'diff -q "$T/snap.9a" "$T/snap.9
 refused_run() {
     local rr_p="$1" rr_want="$3"
     fresh_state
-    snapshot > "$T/snap.${rr_p}a"
+    snapshot_full > "$T/snap.${rr_p}a"
     run_install "$ANS" "$rr_p"
-    snapshot > "$T/snap.${rr_p}b"
+    snapshot_full > "$T/snap.${rr_p}b"
     check "$2: kod 1, komunikat" '[[ $RC -eq 1 && "$OUT" == *"$rr_want"* && "$OUT" == *"Nothing was installed or changed."* ]]'
     check "$2: żadnych pytań, pliki w \$HOME bez zmian" '[[ -z "$ASKED" ]] && diff -q "$T/snap.${rr_p}a" "$T/snap.${rr_p}b" >/dev/null'
     # Fedora bez --skip-packages używa sudo (dnf), więc jej pułapka woła sudo -k.
