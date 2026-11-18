@@ -20,11 +20,34 @@
 # Kody wyjścia (kontrakt z install.sh [6]):
 #   0 — pakiety z repo, asusd działa
 #   1 — pacman się nie udał albo na maszynie nadal jest paczka z AUR
-#   2 — pakiety są, asusd nie wstał: zwykle wystarczy restart komputera
+#   2 — pakiety są, asusd nie wstał: zwykle wystarczy restart komputera;
+#       poza Archem: krok ręczny, nic nie zmieniono (brama platformy D6)
 
 set -uo pipefail
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+
+# ─── PLATFORMA (D6) ───────────────────────────────────────────────────────────
+# Wszystko niżej to kod Archa: pacman -Qq/-Rns/-S i sudo systemctl start asusd.
+# Platformę wykrywa pkg_gate z install/lib/pkg.sh — ta sama funkcja wyboru
+# ścieżki co w install.sh, nie odziedziczona zmienna PLATFORM. Poza Archem
+# i pochodnymi: instrukcja (ta sama pkg_hint co w install.sh [6]) i kod 2,
+# zanim padnie pytanie o porzucone pakiety albo jakiekolwiek polecenie.
+# shellcheck source=install/lib/pkg.sh
+if ! source "$(dirname "$(readlink -f "$0")")/lib/pkg.sh"; then
+    echo -e "${RED}✗ Cannot load install/lib/pkg.sh — platform unknown, nothing was changed.${NC}"
+    exit 1
+fi
+if ! pkg_gate "ASUS tools (asusctl)"; then
+    case "$PKG_ROUTE" in
+        fedora)
+            echo "    asusctl + rog-control-center: $(pkg_hint asusctl)" ;;
+        nixos)
+            echo "    asusctl + rog-control-center: $(pkg_hint asusctl):"
+            echo "      services.asusd.enable = true;   then nixos-rebuild switch" ;;
+    esac
+    exit 2
+fi
 
 PKGS=(asusctl rog-control-center)
 

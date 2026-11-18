@@ -298,6 +298,28 @@ for BOOT in grub sdboot; do
 done
 unset BOOT
 
+ASUS="$REPO/install/asus-installation.sh"
+
+echo "== ASUS: asus-installation.sh wprost (porzucone pakiety AUR na „dysku”)"
+for row in "${CLOSED[@]}"; do
+    os="${row%%|*}"; head="${row#*|}"
+    for ans in 'y\ny\ny\n' 'n\n' ''; do
+        run "$ASUS" "$os" "$ans"
+        gated "ASUS $os, odpowiedzi ${ans//\\n/ }: kod 2, bez pytania o usuwanie, zero pacman/sudo/systemctl" "$head"
+    done
+    run "$ASUS" "$os" 'y\n' PLATFORM=arch
+    gated "ASUS $os z odziedziczonym PLATFORM=arch: brama zamknięta" "$head"
+done
+run "$ASUS" fedora 'y\n'
+gated "ASUS Fedora: pkg_hint asusctl (przewodnik asus-linux dla Fedory)" "asusctl + rog-control-center: Not packaged for Fedora — install manually: https://asus-linux.org/guides/fedora-guide/"
+check "ASUS Fedora: bez archowych porad (pacman, AUR)" '[[ "$out" != *pacman* && "$out" != *AUR* ]]'
+run "$ASUS" nixos 'y\n'
+gated "ASUS NixOS: services.asusd.enable" "services.asusd.enable = true;" "Configure the NixOS option services.asusd.enable"
+check "ASUS NixOS: bez sudo w instrukcji" '[[ "$out" != *sudo* ]]'
+no_lib "$ASUS"
+parity "ASUS porzucone pakiety, „y”" "$ASUS" 'y\n'
+parity "ASUS porzucone pakiety, „n”" "$ASUS" 'n\n'
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ $FAIL -eq 0 ]]

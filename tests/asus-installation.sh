@@ -2,7 +2,8 @@
 # =============================================
 #   archenemy - tests/asus-installation.sh
 #   Instalator narzędzi ASUS (install/asus-installation.sh) na atrapach pacman,
-#   sudo, systemctl i supergfxctl. Bez roota, bez sieci.
+#   sudo, systemctl i supergfxctl. Bez roota, bez sieci. Platforma: jawny
+#   os-release Archa; bramy innych platform — tests/helper-gates.sh.
 #
 #   Powód powstania: AUR ma kilku dostawców `asusctl` wykluczających się nawzajem,
 #   więc sukces to pakiet o nazwie asusctl, nie cokolwiek, co ją dostarcza.
@@ -25,6 +26,10 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin"
 export MOCK_DB="$T/installed" MOCK_LOG="$T/log"
+# Jawny Arch (brama platformy D6, install/lib/pkg.sh): wynik nie zależy od
+# dystrybucji hosta. Inne platformy: tests/helper-gates.sh.
+printf 'NAME="Arch Linux"\nID=arch\n' > "$T/os-release-arch"
+export ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release-arch"
 printf '#!/usr/bin/env bash\nexec "$@"\n' > "$T/bin/sudo"
 
 # Baza pakietów: plik z nazwami. -Qq <nazwa> znajduje też dostawcę, jak prawdziwy

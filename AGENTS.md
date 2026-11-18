@@ -436,7 +436,8 @@ Rules that follow directly from the table:
   (`scripts/hypr/window-history.sh` keeps commands as base64 with NUL separators).
 - **`asusctl` 6.3.8+ has subcommands only:** `asusctl profile next`, `asusctl profile get`.
   `asusd` starts from a udev rule and its unit has no `[Install]`: `systemctl start`, not
-  `enable`. ASUS packages come from pacman (`install/asus-installation.sh`), never the AUR.
+  `enable`. ASUS packages come from pacman (`install/asus-installation.sh`), never the AUR;
+  outside Arch the helper stops at its platform gate (exit 2, no pacman query).
 - **Monitor positions are logical pixels** (after scale and rotation), and Hyprland only
   warns about overlapping monitors ("this will cause issues"), so `scripts/hypr/monitor-settings.sh` asks mode,
   scale, then position and refuses overlaps. A scale saved as `1.33` (the `.dat`, older
