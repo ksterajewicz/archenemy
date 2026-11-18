@@ -22,6 +22,15 @@
 #     pkg_arch_derivative    0 = pochodna Archa (ID≠arch, ID_LIKE zawiera „arch”: EndeavourOS,
 #                            Manjaro…), 1 = nie; bez komunikatów i bez ustawiania PKG_PLATFORM —
 #                            install.sh prowadzi pochodne starą ścieżką Archa (decyzja 2026-11-17)
+#     pkg_route              ścieżka instalatora: PKG_ROUTE=arch (Arch i pochodne) | fedora | nixos;
+#                            1 = odmowa jak pkg_detect (PKG_ROUTE pusty). Tej samej funkcji używa
+#                            install.sh i każdy pomocnik systemowy install/*.sh — nigdy
+#                            odziedziczonej zmiennej PLATFORM
+#     pkg_gate <co>          brama pomocników systemowych (D6): 0 = Arch/pochodna, pomocnik działa
+#                            jak dotąd; 2 = inna platforma — wypisuje „nic nie zmieniono” i zachętę
+#                            do kroku ręcznego (PKG_ROUTE=fedora|nixos; instrukcję dopisuje
+#                            pomocnik) albo brak wsparcia (PKG_ROUTE pusty). Nic nie pyta, nie
+#                            woła sudo ani żadnego polecenia poza odczytem os-release
 #     pkg_installed <id>     0 jest, 1 brak, 2 błąd zapytania / nieznany id,
 #                            3 nie da się sprawdzić na tej platformie (brak sondy);
 #                            zapytania rpm/pacman z LC_ALL=C — wynik nie zależy od języka
@@ -57,6 +66,7 @@ _pkg_self="${BASH_SOURCE[0]}"
 PKG_LIB_DIR="$(cd "${_pkg_self%/*}" && pwd)"
 unset _pkg_self
 PKG_PLATFORM=""
+PKG_ROUTE=""
 PKG_OS_ID=""
 PKG_OS_VERSION=""
 PKG_SKIPPED=()
@@ -145,6 +155,30 @@ pkg_detect() {
             return 1 ;;
     esac
     return 0
+}
+
+pkg_route() {
+    PKG_ROUTE=""
+    if pkg_arch_derivative; then
+        PKG_ROUTE=arch
+        return 0
+    fi
+    pkg_detect || return 1
+    PKG_ROUTE="$PKG_PLATFORM"
+}
+
+pkg_gate() {
+    local name
+    if pkg_route; then
+        [[ "$PKG_ROUTE" == arch ]] && return 0
+        name=Fedora; [[ "$PKG_ROUTE" == nixos ]] && name=NixOS
+        echo "⚠ $1: archenemy does this automatically only on Arch Linux — nothing was changed on $name."
+        echo "  Do it yourself on $name:"
+    else
+        echo "⚠ $1: this distribution is not supported by archenemy — nothing was changed."
+        echo "  Use your distribution's own tools for it."
+    fi
+    return 2
 }
 
 # ── mapa ─────────────────────────────────────────────────────────────────────

@@ -77,10 +77,9 @@ if ! source "$ARCHENEMY_DIR/install/lib/pkg.sh"; then
     echo "Error: cannot load $ARCHENEMY_DIR/install/lib/pkg.sh — is the repo complete?"
     exit 1
 fi
-if pkg_arch_derivative; then
-    PLATFORM=arch
-elif pkg_detect; then
-    PLATFORM="$PKG_PLATFORM"
+# pkg_route: ta sama funkcja wyboru ścieżki co w pomocnikach install/*.sh (D6).
+if pkg_route; then
+    PLATFORM="$PKG_ROUTE"
 else
     echo "Error: nothing was installed or changed."
     exit 1

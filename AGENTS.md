@@ -407,6 +407,8 @@ Rules that follow directly from the table:
   output (compare with `INSTALL_MAIN_REV=<rev> INSTALL_MAIN_SAVE=<dir>
   bash tests/install-main.sh`, README "Verification"). Fedora/NixOS go
   through `pkg.sh`; other distributions are refused before any write.
+  The path comes from `pkg_route` (the same function in `install.sh` and in
+  the system helpers), never from an inherited `PLATFORM`.
   On Fedora/NixOS step [2b] checks versions before the first write (running
   Hyprland and the Fedora package ≥ 0.56, hyprpaper ≥ 0.8.2 — `min_version`
   in the map); incompatible or undeterminable version (also a failing

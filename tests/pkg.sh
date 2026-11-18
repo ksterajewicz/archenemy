@@ -249,6 +249,36 @@ else
     skip "fallback /usr/lib/os-release: brak unshare -rm"
 fi
 
+echo "== pkg_route / pkg_gate (D6: brama pomocników systemowych install/*.sh)"
+# Każdy wiersz: os-release (| = nowa linia) → oczekiwane PKG_ROUTE, kod pkg_route, kod pkg_gate.
+for row in 'ID=arch=arch=0=0' 'ID=endeavouros|ID_LIKE=arch=arch=0=0' 'ID=manjaro|ID_LIKE="arch"=arch=0=0' \
+           'ID=fedora|VERSION_ID=44=fedora=0=2' 'ID=nixos|VERSION_ID=26.05=nixos=0=2' \
+           'ID=ubuntu|ID_LIKE=debian==1=2' 'ID=fedora|VERSION_ID=44|VARIANT_ID=silverblue==1=2'; do
+    # Rozbiór od końca: <os-release>=<route>=<rc route>=<rc gate>
+    g="${row##*=}"; r1="${row%=*}"; r="${r1##*=}"; r2="${r1%=*}"; want="${r2##*=}"; os="${r2%=*}"
+    IFS='|' read -ra lines <<< "$os"; reset_state; osr "${lines[@]}"
+    run '' 'pkg_route; echo "rc=$? route=[$PKG_ROUTE]"; pkg_gate "TEST step"; echo "gate=$?"'
+    check "${os//|/ } → PKG_ROUTE=[$want], pkg_route $r, pkg_gate $g, zero poleceń" \
+        '[[ "$OUT" == *"rc=$r route=[$want]"* && "$OUT" == *"gate=$g"* && ! -s "$CALLS" ]]'
+done
+osr 'ID=fedora' 'VERSION_ID=44'
+run '' 'pkg_gate "TEST step"; echo "gate=$?"'
+check "Fedora: „nothing was changed on Fedora” i zachęta do kroku ręcznego" '[[ "$OUT" == *"⚠ TEST step: archenemy does this automatically only on Arch Linux — nothing was changed on Fedora."* && "$OUT" == *"Do it yourself on Fedora:"* ]]'
+osr 'ID=nixos'
+run '' 'pkg_gate "TEST step"'
+check "NixOS: „nothing was changed on NixOS”" '[[ "$OUT" == *"nothing was changed on NixOS."* && "$OUT" == *"Do it yourself on NixOS:"* ]]'
+osr 'ID=ubuntu'
+run '' 'pkg_gate "TEST step"'
+check "nieobsługiwane: brak wsparcia + komunikat pkg_detect" '[[ "$OUT" == *"not supported by archenemy — nothing was changed."* && "$OUT" == *"Unsupported distribution (ID=ubuntu)"* ]]'
+osr 'ID=fedora' 'VERSION_ID=44'
+run '' 'PLATFORM=arch PKG_ROUTE=arch PKG_PLATFORM=arch; pkg_gate "TEST step"; echo "gate=$? route=$PKG_ROUTE"'
+check "odziedziczone PLATFORM/PKG_ROUTE/PKG_PLATFORM=arch nie otwierają bramy na Fedorze" '[[ "$OUT" == *"gate=2 route=fedora"* ]]'
+OUT="$(PLATFORM=arch PKG_ROUTE=arch ARCHENEMY_OS_RELEASE="$T/os/os-release" bash -c 'source "$1"; pkg_route >/dev/null 2>&1; echo "route=$PKG_ROUTE"' _ "$LIB")"
+check "ARCHENEMY_OS_RELEASE bez ARCHENEMY_TEST=1 ignorowany przez pkg_route (host ID=${real_id:-?})" \
+    '[[ "$OUT" != "route=fedora" || "$real_id" == fedora ]]'
+check "install.sh wybiera ścieżkę przez pkg_route (ta sama funkcja co pomocniki)" \
+    'grep -q "^if pkg_route; then$" "$REPO/install/install.sh" && grep -q "^    PLATFORM=\"\$PKG_ROUTE\"$" "$REPO/install/install.sh" && ! grep -qE "^(if|elif) pkg_(arch_derivative|detect)" "$REPO/install/install.sh"'
+
 echo "== Arch: te same komendy co install.sh"
 # Wzorce w instalatorze, z którymi pkg.sh ma być zgodny (D5 podmieni je na API).
 INST="$(cat "$REPO/install/install.sh")"
