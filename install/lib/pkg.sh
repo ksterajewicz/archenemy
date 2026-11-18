@@ -46,6 +46,10 @@
 #                            i URL, pyta [y/N] osobno dla każdego źródła; bez „y” nic nie
 #                            włącza. Kody jak pkg_install; inne platformy → 2
 #     pkg_hint <id>          jedna linia: jak zainstalować/skonfigurować na tej platformie
+#     pkg_installable <id>   czy pkg_install zainstaluje id z domyślnego źródła (D8, runtime
+#                            pyta dopiero wtedy): 0 tak (Arch zawsze; Fedora fedora=ok ze źródłem
+#                            fedora), 1 nie (NixOS, manual/unavailable/system-managed, COPR/Brave),
+#                            2 nieznany id / zła mapa, 4 platforma nieobsługiwana; nic nie woła
 #     pkg_version <id>       wypisuje wersję pierwszego pakietu; 0 ok, 1 brak, 2 nie da się
 #                            odczytać (błąd), 3 poniżej min_version z mapy. NixOS: tylko
 #                            nixos=ok z sondą cmd: — wersja ze ścieżki sklepu Nix, do której
@@ -410,6 +414,16 @@ pkg_hint() {
                 *) echo "Not available on NixOS: $url" ;;
             esac ;;
     esac
+}
+
+pkg_installable() {
+    local id="$1"
+    _pkg_ready "$id" || return $?
+    case "$PKG_PLATFORM" in
+        arch) return 0 ;;
+        fedora) [[ "${_PKG_SF[$id]}" == ok && "${_PKG_FSRC[$id]}" == fedora ]] && return 0 ;;
+    esac
+    return 1
 }
 
 # _pkg_nix_version <id> — NixOS: wersja ze ścieżki sklepu, do której prowadzi

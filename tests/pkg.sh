@@ -516,6 +516,28 @@ check "pacman po polsku: brak pakietu → 1 i 1, ta sama komenda co install.sh (
     '[[ "$OUT" == *"a=1"*"b=1"* ]] && has_call "pacman -Qi waybar" && has_call "pacman -Q waybar"'
 reset_state
 
+echo "== pkg_installable (D8: czy runtime może zaproponować instalację)"
+osr 'ID=fedora' 'VERSION_ID=44'
+reset_state
+run '' 'for i in fd ripgrep zsh-autosuggestions zsh-completions hyprpicker steam bluetui libratbag; do pkg_installable "$i"; printf "%s=%s " "$i" "$?"; done'
+check "Fedora: fedora=ok ze źródłem fedora → 0; unavailable/COPR/RPM Fusion/manual → 1; zero poleceń" \
+    '[[ "$OUT" == "fd=0 ripgrep=0 zsh-autosuggestions=0 zsh-completions=1 hyprpicker=1 steam=1 bluetui=1 libratbag=0 " && ! -s "$CALLS" ]]'
+run '' 'pkg_installable bogus; echo "rc=$?"'
+check "Fedora: nieznany id → 2" '[[ "$OUT" == *"rc=2"* ]]'
+osr 'ID=nixos'
+reset_state
+run '' 'for i in fd zsh neovim socat; do pkg_installable "$i"; printf "%s=%s " "$i" "$?"; done'
+check "NixOS: nigdy (1), zero poleceń" '[[ "$OUT" == "fd=1 zsh=1 neovim=1 socat=1 " && ! -s "$CALLS" ]]'
+osr 'ID=arch'
+reset_state
+run '' 'pkg_installable zsh; echo "a=$?"; pkg_installable vscodium-bin; echo "b=$?"'
+check "Arch: pakiety z repo i AUR → 0 (pkg_install ich nie odrzuca), zero poleceń" '[[ "$OUT" == *"a=0"*"b=0"* && ! -s "$CALLS" ]]'
+osr 'ID=ubuntu'
+reset_state
+run '' 'pkg_installable zsh; echo "rc=$?"'
+check "nieobsługiwana dystrybucja → 4, zero poleceń" '[[ "$OUT" == *"rc=4"* && ! -s "$CALLS" ]]'
+reset_state
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗ / $SKIP skip"
 ((FAIL == 0))
