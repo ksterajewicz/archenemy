@@ -81,6 +81,25 @@ fi
 HYPR_ERRORS_BEFORE=""
 [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || HYPR_ERRORS_BEFORE="$(hypr_config_errors)"
 
+# ─── HOME-MANAGER (D10) ───────────────────────────────────────────────────────
+# Przed JAKĄKOLWIEK zmianą (sprzątanie, .bak, ln, .current_rice): folder
+# rice'a, plik w nim albo samo ~/.config jako dowiązanie do /nix/store =
+# zarządza tym home-manager. Wtedy nic nie ruszamy — porada na stderr,
+# powiadomienie (poza trybem „tylko linki”) i kod 3. Bez biblioteki
+# (niepełne drzewo) dawne zachowanie.
+HM_LIB="$ARCHENEMY_DIR/scripts/lib/hm-conflict.sh"
+if [[ -f "$HM_LIB" ]]; then
+    # shellcheck source=../../lib/hm-conflict.sh
+    source "$HM_LIB"
+    mapfile -t HM_HITS < <(hm_rice_conflicts "$RICE_DIR" "$CONFIG_DIR")
+    if (( ${#HM_HITS[@]} > 0 )); then
+        hm_advice "${HM_HITS[@]}" >&2
+        [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || notify-send -u critical "archenemy" \
+            "Rice '$RICE_NAME' not applied: home-manager manages ${HM_HITS[0]/#$HOME/\~} (nothing changed). Remove it from your home-manager configuration, then try again."
+        exit 3
+    fi
+fi
+
 # ─── SYMLINKI ─────────────────────────────────────────────────────────────────
 
 # Sprzątanie: usuń z ~/.config KAŻDY symlink wskazujący na jakikolwiek rice.

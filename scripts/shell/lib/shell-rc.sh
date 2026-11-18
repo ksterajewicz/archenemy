@@ -550,13 +550,31 @@ rc_block_present() {
     [[ -f "$1" ]] && grep -qxF "$SHELL_BLOCK_BEGIN" "$1" && grep -qxF "$SHELL_BLOCK_END" "$1"
 }
 
+# Plik rc z home-managera (programs.bash/zsh): dowiązanie do /nix/store, także
+# przez rodzica albo łańcuch linków (readlink -m działa i dla wiszących).
+# Sklep jest tylko do odczytu, a następny `home-manager switch` i tak by go
+# odtworzył — nie robimy kopii, nie piszemy przez link (D10; ta sama reguła co
+# hm_store_link w scripts/lib/hm-conflict.sh).
+rc_store_managed() {
+    local r store=/nix/store
+    [[ "${ARCHENEMY_TEST:-}" == 1 && -n "${ARCHENEMY_NIX_STORE:-}" ]] && store="$ARCHENEMY_NIX_STORE"
+    r="$(readlink -m -- "$1" 2>/dev/null)" && [[ "$r" == "$store"/* ]]
+}
+
 # Blok w ~/.bashrc albo ~/.zshrc: dopisany, odświeżony albo bez zmian.
 # stdout: created | added | updated | ok | broken (początek bez końca: nie
-# ruszamy, bo nie wiemy, gdzie kończy się blok, a gdzie linie użytkownika).
-# Przy zmianie istniejącego pliku stderr dostaje ścieżkę kopii.
+# ruszamy, bo nie wiemy, gdzie kończy się blok, a gdzie linie użytkownika)
+# | managed (plik z home-managera bez aktualnego bloku: bez zmian i kopii,
+# blok dodaje się po stronie HM — rc_block_text). Przy zmianie istniejącego
+# pliku stderr dostaje ścieżkę kopii.
 rc_block_ensure() {
     local rc="$1" kind="$2" want tmp bak
     want="$(rc_block_text "$kind")"
+    if rc_store_managed "$rc"; then
+        if rc_block_present "$rc" && [[ "$(rc_block_current "$rc")" == "$want" ]]; then echo ok; return 0; fi
+        echo managed
+        return 1
+    fi
     if [[ ! -e "$rc" ]]; then
         {
             if [[ "$kind" == bash ]]; then
@@ -673,6 +691,7 @@ rc_migrate_preview() {
 rc_migrate_apply() {
     local rc="$1" add tmp bak
     local -a nums=()
+    rc_store_managed "$rc" && return 1   # plik z home-managera: niczego nie przenosimy
     mapfile -t nums < <(rc_migrate_candidates "$rc")
     if ((${#nums[@]} == 0)); then echo 0; return 0; fi
     bak="$(rc_backup "$rc")" || return 1

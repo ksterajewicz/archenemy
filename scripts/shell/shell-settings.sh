@@ -340,12 +340,24 @@ cli_tools_menu() {
     done
 }
 
+# Plik rc z home-managera (D10): nie piszemy przez dowiązanie do /nix/store,
+# tylko pokazujemy blok do dodania po stronie HM.
+hm_rc_advice() {
+    local rc="$1" kind="$2" opt="programs.bash.initExtra"
+    [[ "$kind" == zsh ]] && opt="programs.zsh.initContent"
+    echo -e "  ${YELLOW}⚠ $(tilde "$rc") is managed by home-manager (link into /nix/store), left as it is.${NC}"
+    echo -e "    Add these lines to ${opt} in your home-manager configuration, then run home-manager switch:"
+    rc_block_text "$kind" | sed 's/^/      /'
+}
+
 # Blok w pliku rc z komunikatem. Kod 1 tylko przy błędzie.
 ensure_block() {
     local rc="$1" kind="$2" res bak
     res="$(rc_block_ensure "$rc" "$kind" 2>"$TMPD/bak")" || {
         if [[ "$res" == broken ]]; then
             echo -e "  ${RED}✗ $(tilde "$rc") has '${SHELL_BLOCK_BEGIN}' without its end line — fix it by hand.${NC}"
+        elif [[ "$res" == managed ]]; then
+            hm_rc_advice "$rc" "$kind"
         else
             echo -e "  ${RED}✗ Could not write $(tilde "$rc").${NC}"
         fi
@@ -388,6 +400,7 @@ move_legacy_alias() {
 # $1 = powód pytania (tekst). Kod 0 także przy odmowie.
 offer_migration() {
     local why="$1" preview n moved
+    rc_store_managed "$BASHRC" && return 0   # home-manager: linie zostają w jego konfiguracji
     preview="$(rc_migrate_preview "$BASHRC")"
     [[ -n "$preview" ]] || return 0
     n="$(grep -cv '^[[:space:]]*#' <<<"$preview")"

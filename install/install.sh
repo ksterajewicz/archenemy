@@ -58,6 +58,17 @@ if [[ ! -d "$RICES_DIR" || ! -d "$ARCHENEMY_DIR/packages" ]]; then
     echo "Clone it to your home directory: git clone <repo> ~/archenemy"
     exit 1
 fi
+# D10: checkout w /nix/store (np. ~/archenemy jako link z home-managera) jest
+# tylko do odczytu, a instalator i Super+T piszą w nim warstwy osobistą
+# i maszynową (data/, config/, .current_rice) — odmowa, zanim cokolwiek zapiszemy.
+NIX_STORE_DIR=/nix/store
+[[ "${ARCHENEMY_TEST:-}" == 1 && -n "${ARCHENEMY_NIX_STORE:-}" ]] && NIX_STORE_DIR="$ARCHENEMY_NIX_STORE"
+if [[ "$(readlink -m -- "$ARCHENEMY_DIR")" == "$NIX_STORE_DIR"/* ]]; then
+    echo "Error: $ARCHENEMY_DIR points into $NIX_STORE_DIR, which is read-only."
+    echo "archenemy writes its personal and machine layers into the checkout: keep a writable clone,"
+    echo "git clone <repo> ~/archenemy, and do not manage ~/archenemy with home-manager."
+    exit 1
+fi
 
 # Colors
 RED='\033[0;31m'
@@ -1456,8 +1467,20 @@ if command -v mpd >/dev/null 2>&1; then
         echo -e "  ${RED}✗ ~/.config/mpd is not linked to config/mpd — mpd will not read archenemy's config.${NC}"
         SUMMARY_SKIPPED+=("mpd config NOT linked: ln -sT $MPD_CONF_DIR $MPD_USER_DIR (move ~/.config/mpd away first if it exists)")
     }
+    # D10: ~/.config/mpd (albo plik w nim) z home-managera → bez pytania
+    # o podmianę: przeniesienie do .bak i tak cofnąłby następny switch HM.
+    MPD_HM=""
+    if [[ -f "$ARCHENEMY_DIR/scripts/lib/hm-conflict.sh" ]]; then
+        # shellcheck source=../scripts/lib/hm-conflict.sh
+        source "$ARCHENEMY_DIR/scripts/lib/hm-conflict.sh"
+        MPD_HM="$(hm_conflicts "$MPD_USER_DIR" | head -n1)"
+    fi
     if mpd_link_ok; then
         echo -e "  ${GREEN}✓ ~/.config/mpd → config/mpd (already linked)${NC}"
+    elif [[ -n "$MPD_HM" ]]; then
+        echo -e "  ${YELLOW}⚠ ${MPD_HM/#$HOME/\~} is managed by home-manager (link into /nix/store), left as it is.${NC}"
+        echo -e "    To use archenemy's mpd config, remove it from your home-manager configuration and run install.sh again."
+        SUMMARY_SKIPPED+=("mpd config NOT linked: home-manager manages ${MPD_HM/#$HOME/\~} — remove it from your home-manager configuration, then run install.sh again")
     elif [[ -e "$MPD_USER_DIR" || -L "$MPD_USER_DIR" || -e "$HOME/.mpdconf" || -d "$HOME/.mpd" ]]; then
         echo -e "  ${YELLOW}⚠ You already have an mpd config (~/.config/mpd, ~/.mpdconf or ~/.mpd).${NC}"
         [[ -L "$MPD_USER_DIR" && ! -e "$MPD_USER_DIR" ]] \
@@ -1668,13 +1691,20 @@ case "$SHELL_RES" in
     added|updated)
         echo -e "  ${GREEN}✓ ~/.bashrc loads the shared file (archenemy block; backup: ${SHELL_BAK/#$HOME/\~})${NC}"
         SUMMARY_DONE+=("Your ~/.bashrc loads the shared shell file (backup: ${SHELL_BAK/#$HOME/\~})") ;;
+    managed)
+        echo -e "  ${YELLOW}⚠ ~/.bashrc is managed by home-manager (link into /nix/store), left as it is.${NC}"
+        echo -e "    Add these lines to programs.bash.initExtra in your home-manager configuration, then run home-manager switch:"
+        rc_block_text bash | sed 's/^/      /'
+        SUMMARY_SKIPPED+=("Your ~/.bashrc comes from home-manager: add the archenemy block (shown in step [8m]) to programs.bash.initExtra") ;;
     *)
         echo -e "  ${YELLOW}⚠ ~/.bashrc has the start of the archenemy block without its end, left as it is: fix it by hand.${NC}"
         SUMMARY_SKIPPED+=("Your ~/.bashrc has a broken archenemy block (no '$SHELL_BLOCK_END' line) — fix it by hand") ;;
 esac
 # ~/.zshrc tylko odświeżamy, gdy blok już w nim jest; dopisuje go Super+A → [h].
 if rc_block_present "$ZSHRC"; then
-    rc_block_ensure "$ZSHRC" zsh >/dev/null 2>&1
+    if [[ "$(rc_block_ensure "$ZSHRC" zsh 2>/dev/null)" == managed ]]; then
+        SUMMARY_SKIPPED+=("Your ~/.zshrc comes from home-manager and has an old archenemy block: update it in programs.zsh.initContent (Super+A → [h] shows the lines)")
+    fi
 elif [[ "$(basename "${SHELL:-}")" == zsh || -e "$ZSHRC" ]]; then
     SUMMARY_SKIPPED+=("Your ~/.zshrc does not load the shared shell file yet: Super+A → [h] → switch to zsh")
 fi
@@ -1731,6 +1761,15 @@ echo -e "${CYAN}[9] Creating symlinks for rice '$TARGET_RICE'...${NC}"
 # biblioteka kończy się `exit` przy błędzie, a instalator ma iść dalej.
 SWITCH_RICE_LIB="$ARCHENEMY_DIR/scripts/changing-theme-scripts/lib/switch-rice.sh"
 RICES_REAL="$(readlink -f "$RICES_DIR")"
+# D10: home-manager (dowiązania do /nix/store) w miejscu folderu rice'a, w nim
+# albo jako całe ~/.config → nie wołamy biblioteki wcale (ona też by odmówiła
+# z kodem 3): żadnego sprzątania, .bak, linku ani .current_rice, tylko porada.
+HM_HITS=()
+if [[ -f "$ARCHENEMY_DIR/scripts/lib/hm-conflict.sh" ]]; then
+    # shellcheck source=../scripts/lib/hm-conflict.sh
+    source "$ARCHENEMY_DIR/scripts/lib/hm-conflict.sh"
+    mapfile -t HM_HITS < <(hm_rice_conflicts "$RICES_DIR/$TARGET_RICE" "$CONFIG_DIR")
+fi
 LINK_PRE_BAK=()   # cudze rzeczy, które biblioteka zaraz odłoży do .bak (do komunikatu)
 for src in "$RICES_DIR/$TARGET_RICE"/*/; do
     [[ -d "$src" ]] || continue
@@ -1744,7 +1783,14 @@ for src in "$RICES_DIR/$TARGET_RICE"/*/; do
 done
 
 LINK_FAIL=0
-if RICE_NAME="$TARGET_RICE" SWITCH_RICE_LINK_ONLY=1 bash "$SWITCH_RICE_LIB"; then
+if (( ${#HM_HITS[@]} > 0 )); then
+    for name in "${HM_HITS[@]}"; do
+        echo -e "  ${YELLOW}⚠ ${name/#$HOME/\~} is managed by home-manager (link into /nix/store), left as it is.${NC}"
+    done
+    hm_advice "${HM_HITS[@]}" | sed 's/^/    /'
+    SUMMARY_SKIPPED+=("Rice '$TARGET_RICE' NOT linked: home-manager manages ${HM_HITS[0]/#$HOME/\~} — remove it from your home-manager configuration, run home-manager switch, then run install.sh again")
+    LINK_FAIL=2   # podsumowanie już ma wpis z poradą
+elif RICE_NAME="$TARGET_RICE" SWITCH_RICE_LINK_ONLY=1 bash "$SWITCH_RICE_LIB"; then
     # Sukces = zaobserwowany link, nie kod wyjścia biblioteki.
     for src in "$RICES_DIR/$TARGET_RICE"/*/; do
         [[ -d "$src" ]] || continue
@@ -1766,7 +1812,7 @@ else
 fi
 if [[ $LINK_FAIL -eq 0 ]]; then
     SUMMARY_DONE+=("Rice '$TARGET_RICE' symlinked into ~/.config")
-else
+elif [[ $LINK_FAIL -eq 1 ]]; then
     SUMMARY_SKIPPED+=("Rice '$TARGET_RICE' NOT fully linked — run scripts/changing-theme-scripts/$TARGET_RICE.sh (Super+T)")
 fi
 echo ""

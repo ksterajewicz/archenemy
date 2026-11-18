@@ -193,6 +193,17 @@ Rules that follow directly from the table:
   notification, code 1, nothing changed); every background process it starts
   gets `9>&-`, or it would hold the lock for the whole session.
   `bash tests/switch-rice.sh`.
+- **Never touch what home-manager manages (D10).** A link into `/nix/store`
+  (directly, via `~/.config`, a link chain or a file inside a real rice
+  folder) is HM's: `scripts/lib/hm-conflict.sh` (`hm_rice_conflicts`) runs
+  in `lib/switch-rice.sh` after the lock and BEFORE the cleanup loop —
+  conflict = advice on stderr, notification (not in link-only), exit 3, no
+  `.bak`, no `ln`, no `.current_rice`. `install.sh` [9] checks first and
+  does not call the library; [8l] does not offer to replace an HM mpd
+  config; `rc_block_ensure` returns `managed` (no backup, no write through
+  the link) and `rc_migrate_apply` refuses. Never advise HM `force`. Test
+  hook `ARCHENEMY_NIX_STORE` only with `ARCHENEMY_TEST=1`
+  (`bash tests/hm-conflict.sh`).
 - **Session files (locks, Super+Tab state, logs) live only in
   `archenemy_runtime_dir` from `scripts/lib/runtime-dir.sh`**, never in
   `${XDG_RUNTIME_DIR:-/tmp}`: in a shared `/tmp` another user can create the
