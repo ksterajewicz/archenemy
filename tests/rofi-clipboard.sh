@@ -136,7 +136,7 @@ for missing in cliphist wl-copy rofi; do
     case "$missing" in cliphist) package=cliphist;; wl-copy) package=wl-clipboard;; rofi) package=rofi;; esac
     check "missing $missing reports package $package" grep -q "Install package: $package" "$T/stderr"
 done
-for rice in white-blue tron asia-n-rice dither-flux crt; do
+for rice in white-blue tron asia-n-rice dither-flux crt yin; do
     check "Super+C bind in $rice" grep -Fq 'hl.bind(mainMod .. " + C", hl.dsp.exec_cmd("~/archenemy/scripts/rofi/rofi_clipboard.sh"))' "$REPO/rices/$rice/hypr/hyprland.lua"
 done
 if grep -q rofi_clipboard "$REPO/rices/white-blue_beta/hypr/hyprland.lua"; then

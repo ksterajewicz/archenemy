@@ -89,7 +89,7 @@ expect() {
 expect dither-flux ""          --dither
 expect dither-flux bars        --dither
 expect dither-flux "orb-static" --dither
-for r in white-blue tron crt asia-n-rice; do
+for r in white-blue tron crt asia-n-rice yin; do
     expect "$r" bars        --no-dither
     expect "$r" dither-flux --no-dither
 done

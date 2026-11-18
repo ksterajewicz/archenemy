@@ -1,0 +1,52 @@
+/* archenemy - swayosd (yin)
+ * OSD jasności/głośności u dołu wszystkich monitorów. Matowe szkło:
+ * grafit #121215 (alfa 0.80), krawędź = biała linia 1 px (alfa 0.12),
+ * pasek postępu w bieli na łupkowym torze, ikony/etykiety w papierze
+ * #E6E6EA; rogi 12 px jak okna i waybar. */
+
+window#osd {
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(18, 18, 21, 0.80);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.40);
+}
+
+window#osd #container {
+    margin: 16px;
+}
+
+window#osd image,
+window#osd label {
+    color: #e6e6ea;
+}
+
+window#osd progressbar,
+window#osd segmentedprogress {
+    min-height: 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+}
+
+window#osd trough,
+window#osd segment {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: rgba(46, 46, 51, 0.80);
+}
+
+window#osd progress,
+window#osd segment.active {
+    min-height: inherit;
+    border-radius: inherit;
+    border: none;
+    background: #ffffff;
+}
+
+window#osd segment {
+    margin-left: 8px;
+}
+window#osd segment:first-child {
+    margin-left: 0;
+}

@@ -132,7 +132,7 @@ if [[ -r /usr/share/X11/xkb/rules/evdev.lst ]]; then
 fi
 
 # --- rice'y: require + bindy Super+Ctrl+1…4, beta bez ------------------------
-for r in white-blue tron asia-n-rice dither-flux crt; do
+for r in white-blue tron asia-n-rice dither-flux crt yin; do
     f="$REPO/rices/$r/hypr/hyprland.lua"
     n_in="$(grep -n 'kb_layout = "pl,us"' "$f" | head -1 | cut -d: -f1)"
     n_req="$(grep -n 'require_optional(HOME .. "/archenemy/config/hypr/keyboard-layouts.lua")' "$f" | cut -d: -f1)"

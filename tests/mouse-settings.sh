@@ -256,7 +256,7 @@ else
 fi
 
 # --- rice'y: require_optional mouse.lua po bloku input, beta bez ------------
-for r in white-blue tron asia-n-rice dither-flux crt; do
+for r in white-blue tron asia-n-rice dither-flux crt yin; do
     f="$REPO/rices/$r/hypr/hyprland.lua"
     n_in="$(grep -n 'accel_profile = "flat"' "$f" | head -1 | cut -d: -f1)"
     n_req="$(grep -n 'require_optional(HOME .. "/archenemy/config/hypr/mouse.lua")' "$f" | cut -d: -f1)"

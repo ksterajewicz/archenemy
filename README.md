@@ -171,10 +171,16 @@ archenemy/
 │   │                                 #   milford-water palette: zero rounding, no blur or glow,
 │   │                                 #   1px borders, flat panels. Full own layer set (incl. ncmpcpp + mpv colors);
 │   │                                 #   networkmanager-dmenu and ncmpcpp `bindings` from white-blue (symlinks).
-│   └── crt/                          # Blue/cyan phosphor palette: glass islands with glow,
-│                                     #   4px corners, amber #FFB000 for alarms only. Full own
-│                                     #   layer set (incl. ncmpcpp + mpv colors); networkmanager-dmenu
-│                                     #   and ncmpcpp `bindings` from white-blue (symlinks).
+│   ├── crt/                          # Blue/cyan phosphor palette: glass islands with glow,
+│   │                                 #   4px corners, amber #FFB000 for alarms only. Full own
+│   │                                 #   layer set (incl. ncmpcpp + mpv colors); networkmanager-dmenu
+│   │                                 #   and ncmpcpp `bindings` from white-blue (symlinks).
+│   └── yin/                          # Black with a white accent: frosted glass (translucent alacritty +
+│                                     #   strong blur), 12px corners, soft black shadows, greys with even
+│                                     #   lightness steps, ember #E0805A for alarms only. Full own layer
+│                                     #   set; fastfetch with a big character-cell taijitu logo
+│                                     #   (fastfetch/logo.txt) and palette dots; networkmanager-dmenu and
+│                                     #   ncmpcpp `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── archenemy-doctor.sh           # Public, offline installation diagnostics (`archenemy doctor`).
 │   ├── lib/runtime-dir.sh            # Library: the private session directory for locks, state and logs —
@@ -255,7 +261,8 @@ archenemy/
 │   │                                 #   blue-hex honeycomb (gen_hex_wallpaper.py), Tron grid
 │   │                                 #   (gen_tron_wallpaper.py), and generative dither wallpapers
 │   │                                 #   for the dither-flux rice (gen_dither_flux_wallpaper.py),
-│   │                                 #   oscilloscope Lissajous for crt (gen_crt_wallpaper.py);
+│   │                                 #   oscilloscope Lissajous for crt (gen_crt_wallpaper.py),
+│   │                                 #   eclipse for yin (gen_yin_wallpaper.py);
 │   │                                 #   gen_rice_preview.py — the rices' preview.png mock-ups for Super+T
 │   │                                 #   (drawn from each rice's waybar/alacritty/hypr/flux-wall colors);
 │   │                                 #   flux-wall.sh — start/stop the shader-driven wallpaper.
@@ -460,6 +467,8 @@ archenemy/
     ├── tron-grid/                    # Set: Tron grid (neon cyan on #020A0F) — v1/v2 as above.
     ├── crt/                          # Set: oscilloscope — Lissajous trace in phosphor cyan on
     │                                 #   navy glass with a faint graticule — v1/v2 as above.
+    ├── yin/                          # Set: eclipse — a dark disc rimmed by a thin white light on
+    │                                 #   near-black, soft corona; v1/v2 as above (gen_yin_wallpaper.py).
     └── dither-flux/generated/        # NOT in git — created by install.sh [9.7]: 3 forms (flow field ×2,
                                       #   attractor) in a Bayer dither raster, milford-water palette, sized
                                       #   to the REAL monitors. No PNGs of this set in git (2026-09-08).
@@ -527,9 +536,14 @@ scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump
 | `tron` | Tron: Legacy — dark glass `#020A0F`, neon cyan `#00E5FF` with glow, CLU orange `#FF7B1C` for alarms only, near-sharp corners (4–6px). Own waybar theme (with a "portal to the Grid" launcher and glowing HUD islands), rofi (search glyph), fastfetch (Arch logo in neon cyan), alacritty/mako/hyprlock (cinematic look with neon lines)/MangoHud/nvim (hand-tuned colorscheme: neon cyan on `#020A0F`, alarms in CLU orange); networkmanager-dmenu inherits from `white-blue` via a repo symlink. Wallpaper: the `tron-grid` set (generated). ncmpcpp skin (neon cyan accent, plate `#0E2A33` as the empty part of the progress bar, no CLU orange) and mpv OSD (`#CFEEF7` on `#020A0F`). |
 | `asia-n-rice` | Muted mauve/pink (`#b47687`) on dark navy (`#2a3444`), flat look: waybar with rounded islands (14px) and italic window titles, sharp window corners, `#131a2a` border. Look carried over from the author's own earlier rice (`arch_linux_rice-beta1.2`) and rewired onto the archenemy backend: alacritty instead of kitty, rofi instead of wofi, machine layer (GPU/monitors/workspaces) via Lua `require()`, no cava. Own waybar/rofi/mako/hyprlock/alacritty theme in the mauve palette; default fastfetch (no recoloring); own nvim theme (hand-tuned colorscheme in the mauve palette, flat — no bold); MangoHud and networkmanager-dmenu inherit from `white-blue` via symlinks. No wallpaper of its own — uses whatever's current (machine layer). ncmpcpp skin (mauve accent, flat — no bold anywhere) and mpv OSD (`#e8e8e8` on `#182130`). |
 | `crt` | Blue/cyan phosphor CRT — the owner's six `hyprpicker` samples: `#043D7B`/`#0B358B` (glass, plates), `#3069AD` (borders, dim text), `#5695D6` (text), `#36D2D8` (accent, active), `#74DCE2` (bright text); the dark base `#031533` is `#043D7B` darkened in the same hue (the palette has no near-black), and amber `#FFB000` — classic amber phosphor — is the only warm color, reserved for alarms. (The CRT screen shader — scanlines/aperture mask/vignette — was removed on 2026-09-17 at the owner's request: the palette is the point, the "old monitor" look was not.) Glass islands with blur (alpha 0.55) and a cyan glow, 4px corners, 1px gradient borders (`#36D2D8` → `#5695D6`), phosphor glow (`shadow`) around the active window. Full own set: waybar (launcher glyph as a power LED), rofi, alacritty (cool ANSI, still distinguishable), mako, swayosd, hyprlock (glowing clock via label shadow), fastfetch, MangoHud, nvim (hand-tuned colorscheme); networkmanager-dmenu from `white-blue` via symlink. Wallpaper: the `crt` oscilloscope set from `gen_crt_wallpaper.py`; flux-wall animations available in the rice's palette (off by default). ncmpcpp skin (`#5695D6` text, cyan accent, `#0B358B` as the empty part of the progress bar, `#3069AD` frames) and mpv OSD (`#74DCE2` on `#031533`). |
+| `yin` | Black with a white accent, frosted glass — the dark half of a planned yin/yang pair. Near-black `#0C0C0E`, graphite `#121215`/`#1E1E22` plates, slate `#2E2E33`, smoke `#5E5E66`, ash `#8C8C96` (secondary text), paper `#E6E6EA` (text), white `#FFFFFF` (accent: active workspace, cursor, active border, keywords); ember `#E0805A` is the only warm color and is reserved for alarms (critical battery, urgent workspace, critical notifications, errors, the ANSI "red" slot). Glass: alacritty at opacity 0.82 over a strong, grain-free blur (3 passes, brightness 0.85, no vibrancy), translucent waybar/rofi/mako/swayosd plates with a 1px white edge at low alpha, 12px corners everywhere, soft black shadows within the 4px rhythm, no glow. ANSI greys climb in even lightness steps (L\* ≈ 56 → 86, bright one step higher) so `ls`, `git` and syntax stay readable without hue. Full own set: waybar (launcher glyph, white pill for the active workspace), rofi, alacritty, mako, swayosd, hyprlock (a glass panel behind the clock), fastfetch (a big taijitu drawn with half-block characters on the left, two rows of palette dots — alacritty has no image protocol, so no picture logo), MangoHud, nvim (hand-tuned monochrome colorscheme: lightness and bold/italic instead of hue); networkmanager-dmenu and ncmpcpp `bindings` from `white-blue` via symlinks. Wallpaper: the `yin` eclipse set from `gen_yin_wallpaper.py`; flux-wall animations available in the monochrome palette (off by default). ncmpcpp skin and mpv OSD (`#E6E6EA` on `#0C0C0E`) follow the same palette. |
 | `dither-flux` | Dither art + algorithmic art: wallpapers are generative fields (flow field, Clifford attractor) quantized with an 8×8 Bayer raster, in the rainy `milford-water` palette from a Milford Sound frame; the only rice with `FLUX_WALL_DITHER=1`, so shaders with dithering — music visualizations included — use the same 1px Bayer raster (other rices and the `spectrogram` shader use a smooth gradient) — wet mountains `#0F1A24`, steel water `#5C87A3`, mist `#A8C4D4`, foam `#D8E6EE` as an accent; amber `#E0A23C` is the only warm color and is reserved for alarms only. Geometry follows the raster: **zero rounding**, 1px window borders, **blur and shadow disabled** (blur and dither are contradictory materials), waybar/rofi/mako islands as flat, near-opaque panels. Full own set: waybar (with a launcher), rofi, alacritty (ANSI toned to the palette but still distinguishable), mako, swayosd, hyprlock (1px lines, no glow), fastfetch (Arch logo in foam), MangoHud, nvim (hand-tuned colorscheme); networkmanager-dmenu from `white-blue` via symlink. Wallpapers: the `dither-flux` set from `gen_dither_flux_wallpaper.py`. ncmpcpp skin (foam `#D8E6EE` as the accent, water `#5C87A3` as the elapsed bar, plate `#1B3040` as the empty part, flat — no bold) and mpv OSD (foam on `#0F1A24`). |
 
-Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config`. Switching: `Super + T` — the menu shows scripts from `scripts/changing-theme-scripts/` (the `.sh` file name is the menu label: `white-blue`, `tron`, `asia-n-rice`, `dither-flux`, `crt`, `white-blue_beta`). On switching, the old rice's symlinks are cleaned up, so themes don't mix.
+**yin — contrast on glass.** Text must stay at WCAG 4.5:1 or more with the glass over the brightest part of the wallpaper. The worst case is computed from the `yin` wallpaper itself: its brightest pixel is `#D8D8DE` (the rim), and after even a light blur (Gaussian σ = 8 px, weaker than Hyprland's 3 passes) the brightest spot under the glass is `#454548`. With alacritty's 0.82 opacity that makes the effective background `#161618` (solid: `#0C0C0E`). On it: text `#E6E6EA` 14.5:1, the darkest ANSI text grey (blue `#868690`) 5.0:1, ember `#E0805A` 6.4:1, ash `#8C8C96` 5.4:1; black on ember (critical alarms) 6.9:1. Only bright black `#5E5E66` (2.8:1) stays below — it is used for dimmed hints and backgrounds, not for text you read. Even with blur off and the bare rim behind the glass (`#313133`), text keeps 10.4:1. Waybar plates (graphite at alpha 0.62 over the same worst spot, effective `#252528`): paper 12.3:1, module text `#D7D7DC` 10.7:1, ash 4.6:1, ember 5.4:1; rofi (0.72), mako (0.78) and swayosd (0.80) are denser and only higher.
+
+**yin wallpaper source and license.** `wallpapers/yin/*.png` are computed by `scripts/wallpapers/gen_yin_wallpaper.py` in this repository from formulas only (no third-party images, photos, logos or film stills), so they carry no third-party rights and are distributed on the same terms as the rest of the repository; rerun `python3 scripts/wallpapers/gen_yin_wallpaper.py` to rebuild them. The PNGs use an indexed palette (≤ 256 greys), which keeps the pair under 1 MB while the ±½-level random rounding prevents banding in the dark gradient. The fastfetch taijitu in `rices/yin/fastfetch/logo.txt` is a traditional public-domain symbol drawn for this repository.
+
+Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config`. Switching: `Super + T` — the menu shows scripts from `scripts/changing-theme-scripts/` (the `.sh` file name is the menu label: `white-blue`, `tron`, `asia-n-rice`, `dither-flux`, `crt`, `yin`, `white-blue_beta`). On switching, the old rice's symlinks are cleaned up, so themes don't mix.
 
 The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/preview.png` (`RICE_NAME` read from the stub, so the label doesn't have to match the folder). The committed files are **mock-ups** drawn by `scripts/wallpapers/gen_rice_preview.py` from the colors each rice actually declares — the wallpaper motif in the `flux-wall.conf` palette, waybar islands from `waybar/style.css`, a terminal with the border/rounding from `hypr/hyprland.lua` and the ANSI palette from `alacritty/alacritty.toml` (`python3 scripts/wallpapers/gen_rice_preview.py [rice…]` regenerates them). A real screenshot is better: take one with `Super + Print` (drag over the whole screen; it lands in `~/Screenshots`) and copy it over `rices/<rice>/preview.png` — any size works, the menu just scales it. A rice without the file is listed without a picture.
 
@@ -546,7 +560,7 @@ Each rice has a fixed default font. `Super + A` → `[f] fonts` keeps it or repl
 | Rice | Terminal (alacritty) | rofi | waybar | mako | hyprlock |
 |---|---|---|---|---|---|
 | `white-blue` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
-| `tron`, `crt`, `dither-flux` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
+| `tron`, `crt`, `dither-flux`, `yin` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
 | `asia-n-rice` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | IosevkaTerm Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
 | `white-blue_beta` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | from `white-blue` | from `white-blue` |
 
@@ -688,7 +702,7 @@ removing the controller hides it. Beta remains frozen. There is no Bluetooth
 entry in `Super+A` yet. Removing the flag and reloading waybar hides the icon
 without disabling the service; stream processes also accept SIGUSR1 to reread it.
 
-Live-only: in each of the five rices inspect the icon, connect headphones,
+Live-only: in each of the six rices (beta excluded) inspect the icon, connect headphones,
 check the tooltip and both clicks, remove/replug the controller and verify
 `systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
 
