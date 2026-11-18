@@ -104,7 +104,7 @@ ln -s /nix/store/dddd-home-manager-files/.config "$H2/.config"
 HOME="$H2" RICE_NAME=alfa bash "$H2/archenemy/scripts/changing-theme-scripts/lib/switch-rice.sh" 2>"$T/err"; rc=$?
 check "~/.config w sklepie: kod 3, nic nie powstało" '[[ $rc -eq 3 && "$(readlink "$H2/.config")" == /nix/store/dddd-home-manager-files/.config && ! -e "$H2/archenemy/.current_rice" ]]'
 
-echo "== Super+T: tryb "tylko linki" i atrapa sklepu z treścią"
+echo "== Super+T: tryb 'tylko linki' i atrapa sklepu z treścią"
 reset_home
 ST="$T/store"; mkdir -p "$ST/eeee-hm-files/waybar"; echo hm > "$ST/eeee-hm-files/waybar/config"
 ln -s "$ST/eeee-hm-files/waybar" "$C/waybar"
@@ -184,7 +184,7 @@ out="$(ARCHENEMY_DIR="$A" BASHRC="$HOME/.bashrc" GREEN='' NC='' YELLOW='' RED=''
     declare -a SUMMARY_DONE=() SUMMARY_SKIPPED=(); source "$1"; source "$2"
     printf "SKIPPED=%s\n" "${SUMMARY_SKIPPED[@]}"' _ "$REPO/scripts/shell/lib/shell-rc.sh" "$T/step8m.sh" 2>&1)"
 check "⚠ i blok do programs.bash.initExtra"       '[[ "$out" == *"~/.bashrc is managed by home-manager"* && "$out" == *"programs.bash.initExtra"* && "$out" == *"# >>> archenemy shell >>>"* ]]'
-check "podsumowanie bez fałszywego "broken block"" '[[ "$out" == *"SKIPPED=Your ~/.bashrc comes from home-manager"* && "$out" != *"without its end"* ]]'
+check "podsumowanie bez fałszywego broken block" '[[ "$out" == *"SKIPPED=Your ~/.bashrc comes from home-manager"* && "$out" != *"without its end"* ]]'
 check "bez nowej kopii w HOME"                    '[[ $(find "$HOME" -maxdepth 1 -name ".bashrc.bak-*" | wc -l) -eq $n_rcbak ]]'
 
 echo "== install.sh [8l]: ~/.config/mpd z home-managera"

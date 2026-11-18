@@ -80,6 +80,7 @@ echo "== bez /bin/bash i stałych /usr/bin/<program> w plikach sesji (NixOS, D10
 # byłaby na NixOS błędna (D8: pkgs.bashInteractive).
 FHS_BIN_RE='(^|[^A-Za-z0-9_.}/$-])/(bin/bash|usr/bin/[a-df-z][A-Za-z0-9_.+-]*|usr/bin/e[a-mo-z][A-Za-z0-9_.+-]*|usr/bin/en[a-uw-z][A-Za-z0-9_.+-]*|usr/bin/env[A-Za-z0-9_.+-]+)'
 fhs_hits() { grep -nE "$FHS_BIN_RE"; }
+# shellcheck disable=SC2016  # ${pkgs…} i $HOME dosłownie: dane testu wzorca
 miss="$(printf '%s\n' '#!/usr/bin/env bash' '${pkgs.bash}/bin/bash' '/run/current-system/sw/bin/bash' \
     '$HOME/bin/bash' '/usr/local/bin/bash' 'exec /bin/sh -c x' 'ExecStart=${pkgs.mpd}/bin/mpd' | fhs_hits | wc -l)"
 hits="$(printf '%s\n' 'exec /bin/bash -c x' '"/usr/bin/bash" x' 'chsh -s /bin/bash' 'Exec=/usr/bin/alacritty' \
