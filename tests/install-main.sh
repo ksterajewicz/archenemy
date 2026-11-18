@@ -146,7 +146,9 @@ stub lspci 'echo "03:00.0 VGA compatible controller: Advanced Micro Devices, Inc
 for t in gcc wayland-scanner pkg-config mpd ncmpcpp clear notify-send hyprpaper waybar pkill; do stub "$t" 'true'; done
 stub pgrep 'exit 1'
 # Fedora: rpm -q [--qf FMT] <nazwy…> — zainstalowane, chyba że w
-# $MOCK_STATE/rpm-missing; wersja z MOCK_RPM_VERSION_<nazwa> albo MOCK_RPM_VERSION; dnf install usuwa z listy brakujących, a nazwa
+# $MOCK_STATE/rpm-missing; wersja z MOCK_RPM_VERSION_<nazwa> albo MOCK_RPM_VERSION;
+# nazwa z MOCK_RPM_ERROR = błąd zapytania (komunikat na stderr, nic na stdout,
+# kod ≠ 0 — jak uszkodzona baza rpm); dnf install usuwa z listy brakujących, a nazwa
 # z $MOCK_STATE/dnf-conflict kończy transakcję odmową (jak tuned-ppd
 # przeciw power-profiles-daemon); copr/config-manager — tylko zapis.
 stub rpm 'echo "rpm $*" >> "$MOCK_LOG"
@@ -155,7 +157,8 @@ m="$MOCK_STATE/rpm-missing"; touch "$m"
 fmt=""; [[ "$1" == --qf ]] && { fmt="$2"; shift 2; }
 rc=0
 for p in "$@"; do
-  if grep -qxF -- "$p" "$m"; then echo "package $p is not installed"; rc=1
+  if [[ "$p" == "${MOCK_RPM_ERROR:-}" ]]; then echo "error: rpmdbOpen: cannot open Packages index" >&2; rc=1
+  elif grep -qxF -- "$p" "$m"; then echo "package $p is not installed"; rc=1
   elif [[ "$fmt" == *VERSION* ]]; then v="MOCK_RPM_VERSION_${p//-/_}"; echo "${!v:-${MOCK_RPM_VERSION:-0.57.2}}"
   else echo "$p"; fi
 done
@@ -528,6 +531,20 @@ check "Fedora: podpowiedź COPR" '[[ "$OUT" == *"dnf copr enable nett00n/hyprlan
 echo "== bieg 15 (Fedora): hyprpaper 0.8.1 → odmowa"
 ARCHENEMY_OS_RELEASE="$T/os/fedora" MOCK_RPM_VERSION_hyprpaper=0.8.1 \
     refused_run 15 "Fedora, hyprpaper 0.8.1" "hyprpaper is 0.8.1 — archenemy needs 0.8.2 or newer"
+# B1 (przegląd D5F): błąd zapytania rpm o pakiet hyprland (pkg_version rc 2)
+# = wersja nieustalona = odmowa, jak dla hyprpapera; sesja i hyprpaper zgodne.
+echo "== bieg 16 (Fedora): błąd zapytania rpm tylko o hyprland → odmowa"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" MOCK_RPM_ERROR=hyprland \
+    refused_run 16 "Fedora, rpm -q hyprland z błędem" "cannot determine the installed Hyprland package version (rpm -q hyprland failed)"
+check "Fedora: podpowiedź pakietu hyprland (COPR) raz, bez linii upgrade" '[[ "$(grep -c "dnf copr enable nett00n/hyprland" <<< "$OUT")" -eq 1 && "$OUT" != *"Hyprland: upgrade from COPR"* ]]'
+# Brak pakietu hyprland (pkg_version rc 1; Hyprland np. spoza rpm) to nie
+# odmowa: decyduje działająca sesja, a pakiet zgłosi i zaproponuje [5].
+echo "== bieg 17 (Fedora): brak pakietu hyprland, sesja 0.57.1 → dalej"
+fresh_state
+echo hyprland > "$MOCK_STATE/rpm-missing"
+ARCHENEMY_OS_RELEASE="$T/os/fedora" run_install "$ANS" 17
+check "[2b] brak pakietu hyprland: bez odmowy, notka w linii ✓" '[[ "$OUT" == *"✓ Hyprland 0.57.1 (running; hyprland package not installed — checked in [5])"*"versions compatible"* && "$OUT" != *"Nothing was installed or changed."* ]]'
+check "[2b] brak pakietu hyprland: instalator idzie dalej ([3], [5] zgłasza hyprland)" '[[ "$OUT" == *"[3] Detecting monitors"* && "$OUT" == *"COPR nett00n/hyprland not enabled"* ]]'
 fi
 
 echo ""

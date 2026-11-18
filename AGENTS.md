@@ -397,8 +397,10 @@ Rules that follow directly from the table:
   through `pkg.sh`; other distributions are refused before any write.
   On Fedora/NixOS step [2b] checks versions before the first write (running
   Hyprland and the Fedora package ≥ 0.56, hyprpaper ≥ 0.8.2 — `min_version`
-  in the map); incompatible or undeterminable version = exit 1, nothing
-  written. No such gate on Arch.
+  in the map); incompatible or undeterminable version (also a failing
+  `rpm -q hyprland`/`hyprpaper`) = exit 1, nothing written; a missing
+  hyprland or hyprpaper package is left to [5] (for hyprland the running
+  session decides). No such gate on Arch.
   `--skip-packages` (always on for NixOS) never installs a package, but the
   requirement check stays. Until system installers and services get their
   own Fedora/NixOS paths, a step that would call them prints `manual_step`

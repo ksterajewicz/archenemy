@@ -202,8 +202,10 @@ echo -e "${GREEN}✓ Hyprland found.${NC}"
 # ponownym logowaniu); tapety — hyprpapera ≥ 0.8.2 (packages/platform-map.tsv).
 # Niezgodność = komunikat, kod 1, zero zapisów i instalacji. Brak hyprpapera
 # zgłasza [5] (Fedora doinstaluje go z COPR, który ma wersję z mapy). Wersja
-# NIEUSTALONA (NixOS: hyprpaper spoza sklepu Nix, Fedora: błąd zapytania rpm)
-# też = odmowa (Dodatek 3 do D5F): zgodności nie da się potwierdzić przed zapisami.
+# NIEUSTALONA (NixOS: hyprpaper spoza sklepu Nix, Fedora: błąd zapytania rpm
+# o hyprpaper albo hyprland) też = odmowa (Dodatek 3 i B1 do D5F): zgodności
+# nie da się potwierdzić przed zapisami. Brak pakietu hyprland na Fedorze
+# (Hyprland spoza rpm) odmową nie jest — decyduje działająca sesja.
 # Arch BEZ tej kontroli (parytet z bazą; wersje trzyma repozytorium Archa).
 # hypr_running_version — wersja z 1. linii `hyprctl version`: „Hyprland <wersja>
 # built from branch …” (src/helpers/SystemInfo.cpp, v0.56.2 i v0.57.1).
@@ -215,6 +217,7 @@ hypr_running_version() {
 }
 if [[ "$PLATFORM" != arch ]]; then
     VERSION_PROBLEMS=()
+    HYPR_NOTE=""
     HYPR_MIN="$(pkg_min_version hyprland)" || HYPR_MIN=0.56
     PAPER_MIN="$(pkg_min_version hyprpaper)" || PAPER_MIN=0.8.2
     if [[ "$PLATFORM" == nixos ]]; then
@@ -230,11 +233,16 @@ if [[ "$PLATFORM" != arch ]]; then
         VERSION_PROBLEMS+=("cannot read the version of the running Hyprland (hyprctl version) — run install.sh inside a Hyprland $HYPR_MIN+ session")
     fi
     if [[ "$PLATFORM" == fedora ]]; then
+        # B1 (przegląd D5F): rc 1 (brak pakietu, np. Hyprland spoza rpm) —
+        # bez odmowy, decyduje działająca sesja, pakiet zgłosi [5]; rc 2
+        # (błąd zapytania rpm, pusta wersja) — nieustalona = odmowa.
         HYPR_PKG="$(pkg_version hyprland)"
         case $? in
-            3) VERSION_PROBLEMS+=("installed Hyprland package is $HYPR_PKG — archenemy needs $HYPR_MIN or newer") ;;
             0) [[ -n "${HYPR_RUN:-}" ]] && ! pkg_version_ge "$HYPR_RUN" "$HYPR_MIN" \
                    && HYPR_UPGRADE="Hyprland $HYPR_PKG is installed — log out and back in to Hyprland, then run install.sh again" ;;
+            1) HYPR_NOTE="hyprland package not installed — checked in [5]" ;;
+            3) VERSION_PROBLEMS+=("installed Hyprland package is $HYPR_PKG — archenemy needs $HYPR_MIN or newer") ;;
+            *) VERSION_PROBLEMS+=("cannot determine the installed Hyprland package version (rpm -q hyprland failed) — archenemy needs $HYPR_MIN or newer; $(pkg_hint hyprland)") ;;
         esac
     fi
     PAPER_VER="$(pkg_version hyprpaper)"
@@ -253,11 +261,13 @@ if [[ "$PLATFORM" != arch ]]; then
     esac
     if ((${#VERSION_PROBLEMS[@]})); then
         for p in "${VERSION_PROBLEMS[@]}"; do echo -e "${RED}✗ $p${NC}"; done
-        [[ "${VERSION_PROBLEMS[*]}" == *Hyprland* ]] && echo -e "  Hyprland: $HYPR_UPGRADE"
+        # Bez powtórki: przy błędzie rpm podpowiedź pakietu jest już w komunikacie.
+        [[ "${VERSION_PROBLEMS[*]}" == *Hyprland* && "${VERSION_PROBLEMS[*]}" != *"$(pkg_hint hyprland)"* ]] \
+            && echo -e "  Hyprland: $HYPR_UPGRADE"
         echo -e "${YELLOW}Nothing was installed or changed.${NC}"
         exit 1
     fi
-    echo -e "${GREEN}✓ Hyprland $HYPR_RUN (running)${PAPER_NOTE:+, $PAPER_NOTE} — versions compatible.${NC}"
+    echo -e "${GREEN}✓ Hyprland $HYPR_RUN (running${HYPR_NOTE:+; $HYPR_NOTE})${PAPER_NOTE:+, $PAPER_NOTE} — versions compatible.${NC}"
 fi
 echo ""
 
