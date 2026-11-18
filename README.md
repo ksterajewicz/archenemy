@@ -244,6 +244,9 @@ archenemy/
 │   │                                 #   are on the bus, ASUS dgpu_disable / MUX, NVIDIA module vs kernel,
 │   │                                 #   dGPU runtime power, Hyprland's GPU env, package history, load,
 │   │                                 #   and — with a game open — which GPU the game actually renders on.
+│   │                                 #   Per platform (os-release via install/lib/pkg.sh): pacman on Arch,
+│   │                                 #   one `rpm -qa` on Fedora, Nix store paths on NixOS; last line
+│   │                                 #   `diagnosis: complete` (exit 0) or `partial; not checked: …` (exit 2).
 │   │                                 #   keyboard-layouts.sh — Super+A → [k] and Super+Ctrl+1…4: layout list
 │   │                                 #   (data/keyboard-layouts.dat → config/hypr/keyboard-layouts.lua), reload,
 │   │                                 #   read-back; `switch N` = layout #N of the list;
@@ -411,6 +414,12 @@ archenemy/
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
+│                                     #   doctor-platforms.sh — doctor per platform (Arch, derivative, Fedora, Atomic, NixOS,
+│                                     #   unknown) × zero/missing/error/empty/hang/no backend, AUR, multi-RPM, i686,
+│                                     #   --full gaming status, rice yin; DOCTOR_PLATFORMS_REV=<rev> compares Arch.
+│                                     #   gaming-diag.sh — the real gaming-diag.sh on mock commands and a mock
+│                                     #   filesystem root on every platform, --doctor, Super+A "Saved";
+│                                     #   GAMING_DIAG_REV=<rev> compares Arch.
 │                                     #   repo-hygiene.sh — executable bits, `#!/usr/bin/env bash` shebangs (also tested without /bin/bash),
 │                                     #   no /bin/bash or fixed /usr/bin/<program> inside session files (git grep),
 │                                     #   Lua dispatch syntax and installer/doctor language;
@@ -909,21 +918,72 @@ bytes for the rice name), opened without blocking on FIFOs; invalid UTF-8 is
 replaced. Full mode uses `flux-wall.sh doctor-safe`, which never executes rice
 configuration and rejects traversal and configuration symlinks outside the repo.
 Missing Hyprland is reported as `not running`. Exit status is 1 for
-problems (including broken/wrong rice links, config errors and missing required
-packages), otherwise 0. The last line gives the problem count. Origin comparison
+problems (including broken/wrong rice links, config errors, missing required
+packages and a package check that could not run), otherwise 0.
+
+**Required packages per platform.** The platform comes from `/etc/os-release`
+the same way as in the installer (`Platform: arch`, `arch-derivative`, `fedora`,
+`nixos`, `unsupported` — Fedora Atomic or another distribution — or `unknown`;
+the raw os-release is not published). Both `packages/requirements-pacman.txt`
+and `packages/requirements-aur.txt` are required; a missing, empty or invalid
+list is a problem. Every required package gets one state — `checked`, `missing`,
+`unavailable` (could not be checked) or `skipped` (with a reason) — and the line
+`Package check: complete|partial|unavailable (<backend>; N required: …)` sums
+them up. On Arch and its derivatives the check is `pacman -Qq` as before, now
+including the AUR list. On Fedora one `rpm -q` covers every RPM name from
+`packages/platform-map.tsv` (several RPMs per entry; an RPM installed only for
+another architecture, e.g. i686, counts as missing); entries without an RPM use
+the map's command or font probe, and system-managed entries (`ufw` → firewalld)
+are `skipped`, not missing. On NixOS the command and font probes of the map are
+used without the `nix` CLI; system-managed entries are shown as advice (the
+NixOS option to set), entries without a probe as `skipped`. Unknown platforms
+are `unavailable` — a `pacman` found on Fedora, NixOS or an unknown system is
+never queried. A missing backend, a query error, empty or unrecognized query
+output or a timeout is `unavailable` and a problem (`Missing: unknown`), never
+"Missing: 0". Font probes run `fc-list` with its cache directories pointed at
+`/proc`, so a stale fontconfig cache is never written. The Fedora/NixOS backend
+is `pkg_check_ids` in `install/lib/pkg.sh` and shares the probe budget. The last line gives the problem count. Origin comparison
 uses cached refs, so it may predate the latest upstream changes. Generated optional
 shell/music files may be absent without constituting a critical problem. The
 active rice's generated hyprlock background is required (beta uses white-blue). A Lua
 Super+A bind can be counted, but its callback target cannot be verified through
 `hyprctl`; the report explicitly marks that limitation. Existing helpers expect
-`~/archenemy` and are skipped for checkouts elsewhere.
+`~/archenemy` and are skipped for checkouts elsewhere. In full mode gaming-diag
+runs as `gaming-diag.sh --doctor`: only its package and driver checks (no
+`nvidia-smi`, so the dGPU is not woken), printing nothing but its completeness
+line; the report shows `completed` only for `diagnosis: complete`, otherwise
+`partial (not checked: …)` with keys from a fixed list (`platform`, `packages`,
+`foreign`, `nvidia-32bit`, `owners`, `history`, `initramfs`, `vulkan-icd`).
+
+The private dump `Super+A → [i] → 3` (`scripts/hypr/gaming-diag.sh`) follows the
+platform too: on Arch `pacman -Q`, `pacman -Qm` (foreign packages — AUR or any
+other source outside the sync databases, not proof of AUR), `pacman -Qo`,
+`/var/log/pacman.log` and mkinitcpio; on Fedora one `rpm -qa` (versions,
+architectures, packages whose RPM vendor is not "Fedora Project": COPR, RPM
+Fusion, vendors), `rpm -qf`, install times from the rpm database instead of a
+history (no dnf: no network, no cache) and dracut; on NixOS versions from the
+Nix store paths of the commands and of `/run/opengl-driver(-32)`, while AUR,
+package history and initramfs do not apply. NVIDIA 64/32-bit userspace is
+compared on every platform; when neither is installed the dump says whether an
+NVIDIA GPU is on the bus. A missing unit or path is not reported as a failure.
+Whatever could not be checked (query error or timeout, no log, an owner the
+dump cannot recognize, unreadable kernel log, outside Hyprland) is listed under
+"kompletność", and the last line is `diagnosis: complete` (exit 0) or
+`diagnosis: partial; not checked: …` (exit 2). The menu says `✓ Saved` only for
+a complete diagnosis, `⚠ Saved … partial` for an explicitly partial one, and
+`✗` otherwise (the file is kept). The dump stays private: keep it to yourself.
 
 Tests: `bash tests/archenemy-doctor.sh` uses isolated homes and mock commands;
+`bash tests/doctor-platforms.sh` and `bash tests/gaming-diag.sh` cover every
+platform (with `DOCTOR_PLATFORMS_REV=<rev>` / `GAMING_DIAG_REV=<rev>` the Arch
+scenarios are also compared with that revision);
 `bash tests/run-all.sh` includes it automatically. The required `procps-ng`
 package supplies `pgrep` for daemon status; no daemon arguments are published. **Live-only:** on Arch with
 Hyprland running, run both report modes, check the Super+A status against the
 actual shortcut, inspect link/package results, and repeat from a TTY without
-Hyprland. No new settings-menu entry is added.
+Hyprland; on Fedora and NixOS compare both modes with the real packages and
+services, also in the yin rice, and run the private gaming dump before and
+during a game. No new settings-menu entry is added.
 
 ## Updating and supply chain
 
@@ -992,7 +1052,7 @@ Arch Linux is the reference platform. Fedora and NixOS are supported by `install
 
 ## Verification
 
-CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, `#!/usr/bin/env bash` shebangs, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. `run-all.sh` gives every suite `RUN_ALL_TIMEOUT` seconds (default 600; `0` disables the limit) with stdin from `/dev/null`; a suite that does not finish is killed together with its child processes and listed as hung ("zawieszony") with its last output lines, so one hanging regression no longer blocks the whole run. Ctrl+C stops the run and the current suite. A suite that exits 0 still counts as ✓, also when it skipped something. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. Suites that must prove they write nothing outside their tree (`install-services.sh`, `rice-autostart.sh`, `shell-platforms.sh`, `runtime-platforms.sh`) call `test_isolate` first: the suite re-runs in a private user and mount namespace (`unshare -rm`) with an overlay on `/tmp`, `/var`, `/root`, `/home`, `/etc`, `/usr`, `/opt`, `/srv`, `/boot` and `/mnt`, so any write, change or deletion there lands only in a throwaway upper layer in `/dev/shm` and `test_escapes` reports every path outside the test tree as ✗ — the host stays untouched and other processes cannot cause false alarms. Not covered: `/run` (its submounts cannot be overlaid), `/dev/shm`, `/proc`, `/sys` and new names directly in `/`, which those suites check separately. Without user namespaces or overlay (some containers) the suite runs as before and says the isolation is unavailable; `ARCHENEMY_NO_ISOLATE=1` turns it off. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
+CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux` container on pushes to `dev`/`main` and on pull requests, with read-only permissions and no third-party actions (plain `git fetch` of the tested commit). It only complements local runs: installation, sudo, Hyprland and hardware are still checked on a real machine. Run `bash tests/repo-hygiene.sh` for executable bits, `#!/usr/bin/env bash` shebangs, Lua dispatch syntax and installer language, or `bash tests/run-all.sh` for all shell suites. `run-all.sh` gives every suite `RUN_ALL_TIMEOUT` seconds (default 600; `0` disables the limit) with stdin from `/dev/null`; a suite that does not finish is killed together with its child processes and listed as hung ("zawieszony") with its last output lines, so one hanging regression no longer blocks the whole run. Ctrl+C stops the run and the current suite. A suite that exits 0 still counts as ✓, also when it skipped something. Tests use temporary homes, mock commands and temporary git repositories. Suites that create temporary trees source `tests/lib/environment.sh` before `mktemp` and call `test_environment_init "$T"` after installing their cleanup trap: HOME, runtime and temporary paths stay inside the test tree, XDG home overrides and desktop session identifiers are cleared, and locale and shell are fixed. XDG configuration, cache and data paths follow the temporary HOME; individual scenarios may override these defaults. The initial temporary tree is created under `/tmp`, independently of the caller's TMPDIR. Suites that must prove they write nothing outside their tree (`install-services.sh`, `rice-autostart.sh`, `shell-platforms.sh`, `runtime-platforms.sh`, `doctor-platforms.sh`, `gaming-diag.sh`) call `test_isolate` first: the suite re-runs in a private user and mount namespace (`unshare -rm`) with an overlay on `/tmp`, `/var`, `/root`, `/home`, `/etc`, `/usr`, `/opt`, `/srv`, `/boot` and `/mnt`, so any write, change or deletion there lands only in a throwaway upper layer in `/dev/shm` and `test_escapes` reports every path outside the test tree as ✗ — the host stays untouched and other processes cannot cause false alarms. Not covered: `/run` (its submounts cannot be overlaid), `/dev/shm`, `/proc`, `/sys` and new names directly in `/`, which those suites check separately. Without user namespaces or overlay (some containers) the suite runs as before and says the isolation is unavailable; `ARCHENEMY_NO_ISOLATE=1` turns it off. The flux-wall render checks require `make -C src/flux-wall tools`; without it, `flux-wall-bars.sh` and the render part of `flux-wall-dither.sh` skip. C tests run separately with `make -C src/flux-wall test`.
 
 `bash tests/secrets.sh` looks for private keys (including armored PGP `PRIVATE KEY BLOCK` headers) and tokens: high-confidence patterns in tracked files always, and the whole git history through `gitleaks` when it is installed (without it that part is `skip`). `tests/repo-hygiene.sh` also rejects machine data in tracked files — a network interface name in a MangoHud config or a `/home/<login>` path — because the repository is public and such values only work on one machine; MangoHud's `network` line therefore names no interface and shows all of them.
 

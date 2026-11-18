@@ -34,6 +34,10 @@ for name in ['scripts/archenemy-doctor.sh', 'scripts/appbinds/appbinds.sh',
     shutil.copy2(source / name, path)
 (repo / 'packages').mkdir()
 (repo / 'packages/requirements-pacman.txt').write_text('# fixture\nhyprland\nwaybar\n')
+(repo / 'packages/requirements-aur.txt').write_text('# fixture\nbrave-bin\n')
+# D9: platforma z jawnego os-release, nie z hosta.
+(root / 'os-release').write_text('NAME="Arch Linux"\nID=arch\n')
+os.environ.update(ARCHENEMY_TEST='1', ARCHENEMY_OS_RELEASE=str(root / 'os-release'))
 (repo / 'rices/white-blue/hypr').mkdir(parents=True)
 (home / '.config').mkdir()
 (home / '.config/hypr').symlink_to(repo / 'rices/white-blue/hypr')
@@ -61,7 +65,7 @@ esac
 ''',
 'pacman': '''#!/usr/bin/env bash
 [[ "$*" == -Qq ]] || exit 92
-printf 'hyprland\\n'
+printf 'hyprland\\nbrave-bin\\n'
 [[ "${DOCTOR_CASE:-}" == packages ]] || echo waybar
 ''',
 'hyprctl': '''#!/usr/bin/env bash
@@ -153,7 +157,9 @@ env.pop('DOCTOR_BRANCH')
 (bin_dir / 'pacman').rename(bin_dir / 'pacman.disabled')
 old_path = env['PATH']
 env['PATH'] = str(bin_dir)
-assert 'pacman not available' in check('no-pacman', running=False)
+# D9: brak pacmana to niepełna kontrola (problem, kod 1), nie „Missing: 0”.
+out = check('no-pacman', running=False, expected=1)
+assert 'Package check: unavailable' in out and 'Problem: pacman not available' in out, out
 env['PATH'] = old_path
 (bin_dir / 'pacman.disabled').rename(bin_dir / 'pacman')
 (home / '.config/hypr').unlink()

@@ -56,6 +56,11 @@
 #                            prowadzi pierwsza komenda (<hash>-<atrybut>-<wersja>); inaczej 2
 #     pkg_min_version <id>   wypisuje min_version z mapy; 0 jest, 1 brak minimum („-”), 2 zły id
 #     pkg_version_ge <v> <min> 0 = v ≥ min (sort -V, jak pkg_version)
+#     pkg_check_ids <id…>    (D9, archenemy doctor) stan wielu id naraz, tylko odczyt: linie
+#                            „id<TAB>checked|missing|unavailable|skipped<TAB>szczegół”; Fedora
+#                            jednym zapytaniem rpm (architektura systemu albo noarch), NixOS
+#                            sondami z mapy; system-managed = skipped z poradą; błąd zapytania
+#                            = unavailable, nigdy zero braków. 0 ok, 2 zła mapa, 4 inna platforma
 #
 #   NixOS: nigdy nix-env, nix profile ani nixos-rebuild — tylko sondy i podpowiedzi.
 #   Fedora: bez --skip-unavailable/--skip-broken/--allowerasing i bez -y (dnf pyta sam).
@@ -370,6 +375,155 @@ pkg_installed() {
             _pkg_probe "${_PKG_CHECK[$id]}"; return $? ;;
     esac
     return 2
+}
+
+# ── stan wielu pakietów naraz (D9, archenemy doctor) ─────────────────────────
+
+# _pkg_check_probe <id> — stan z sondy mapy (wiersze bez RPM, NixOS): ustawia
+# _PKG_CS/_PKG_CD. Błąd fc-list albo pusta lista fontów = unavailable, nie brak.
+_pkg_check_probe() {
+    local ck="${_PKG_CHECK[$1]}" c
+    local -a cmds
+    case "$ck" in
+        cmd:*)
+            IFS=, read -ra cmds <<< "${ck#cmd:}"
+            for c in "${cmds[@]}"; do
+                if ! command -v "$c" >/dev/null 2>&1; then
+                    _PKG_CS=missing; _PKG_CD="command not found: $c"; return
+                fi
+            done
+            _PKG_CS=checked; _PKG_CD="command found" ;;
+        font:*)
+            if [[ -z "${_PKG_FONTS_DONE:-}" ]]; then
+                _PKG_FONTS_DONE=1; _PKG_FONTS_RC=0
+                if ! command -v fc-list >/dev/null 2>&1; then _PKG_FONTS_RC=3
+                # Bez zapisu cache (doctor): fontconfig przy nieaktualnym cache
+                # zapisuje go w pierwszym zapisywalnym cachedir (XDG_CACHE_HOME,
+                # ~/.fontconfig) — oba wskazują /proc, gdzie nie da się nic
+                # utworzyć; katalogi fontów i konfiguracji użytkownika zostają.
+                else
+                    local cfg="${XDG_CONFIG_HOME:-$HOME/.config}" data="${XDG_DATA_HOME:-$HOME/.local/share}"
+                    _PKG_FONTS="$(HOME=/proc/archenemy-no-font-cache XDG_CACHE_HOME=/proc/archenemy-no-font-cache \
+                        XDG_CONFIG_HOME="$cfg" XDG_DATA_HOME="$data" LC_ALL=C fc-list : family 2>/dev/null)" || _PKG_FONTS_RC=2
+                    [[ -n "$_PKG_FONTS" ]] || _PKG_FONTS_RC=2
+                fi
+            fi
+            case "$_PKG_FONTS_RC" in
+                3) _PKG_CS=unavailable; _PKG_CD="fc-list not available" ;;
+                2) _PKG_CS=unavailable; _PKG_CD="font query failed or returned no fonts" ;;
+                *) if [[ $'\n'"$_PKG_FONTS"$'\n' == *"${ck#font:}"* ]]; then
+                       _PKG_CS=checked; _PKG_CD="font found"
+                   else _PKG_CS=missing; _PKG_CD="font not found: ${ck#font:}"; fi ;;
+            esac ;;
+        *) _PKG_CS=skipped; _PKG_CD="no probe in package map" ;;
+    esac
+}
+
+# pkg_check_ids <id…> — tylko odczyt; jedna linia „id<TAB>stan<TAB>szczegół”
+# na każdy id w kolejności (bez powtórzeń), stan: checked | missing |
+# unavailable | skipped. Fedora: JEDNO `rpm -q --qf '%{NAME} %{ARCH}\n'` dla
+# wszystkich nazw z mapy (wiele RPM na wiersz; nazwa liczy się tylko
+# w architekturze systemu albo noarch — sam i686 = brak), odpowiedź jak
+# w _pkg_rpm_check: obca linia, nazwa bez odpowiedzi albo kod niezgodny
+# z odpowiedziami = unavailable dla wszystkich RPM, nigdy zero braków;
+# wiersze bez RPM — sonda z mapy. NixOS: sondy cmd:/font: z mapy, bez nix CLI.
+# system-managed = skipped z poradą (nie brak), unavailable = skipped.
+# 0 ok, 2 zła mapa (nic nie wypisuje), 4 platforma inna niż fedora/nixos
+# (Arch i pochodne sprawdza archenemy doctor przez pacman -Qq).
+pkg_check_ids() {
+    local id n line rc native out bad=0
+    _pkg_load_map || return 2
+    if [[ -z "$PKG_PLATFORM" ]]; then pkg_detect 2>/dev/null || return 4; fi
+    [[ "$PKG_PLATFORM" == fedora || "$PKG_PLATFORM" == nixos ]] || return 4
+    local -a ids=() names=() all=()
+    local -A seen=() st=() de=() rpm_of=() want=() ok=() other=() miss=()
+    _PKG_FONTS_DONE=""
+    for id in "$@"; do
+        [[ -n "${seen[$id]:-}" ]] && continue
+        seen[$id]=1; ids+=("$id")
+        if [[ -z "${_PKG_ARCH[$id]+x}" ]]; then
+            st[$id]=unavailable; de[$id]="not in package map"; continue
+        fi
+        if [[ "$PKG_PLATFORM" == fedora ]]; then
+            case "${_PKG_SF[$id]}" in
+                system-managed)
+                    st[$id]=skipped; de[$id]="managed by Fedora"
+                    [[ "${_PKG_FNAMES[$id]}" != - ]] && de[$id]+=" (${_PKG_FNAMES[$id]})" ;;
+                unavailable) st[$id]=skipped; de[$id]="not available on Fedora" ;;
+                *)
+                    if [[ "${_PKG_FNAMES[$id]}" != - ]]; then
+                        rpm_of[$id]="${_PKG_FNAMES[$id]}"
+                        read -ra names <<< "${_PKG_FNAMES[$id]}"
+                        for n in "${names[@]}"; do
+                            [[ -n "${want[$n]:-}" ]] || { want[$n]=1; all+=("$n"); }
+                        done
+                    else
+                        _pkg_check_probe "$id"; st[$id]="$_PKG_CS"; de[$id]="$_PKG_CD"
+                        [[ "${_PKG_SF[$id]}" == manual ]] && de[$id]+=" (manual install)"
+                    fi ;;
+            esac
+        else
+            case "${_PKG_SN[$id]}" in
+                system-managed)
+                    st[$id]=skipped
+                    if [[ "${_PKG_NIX[$id]}" == - ]]; then de[$id]="part of the base NixOS system"
+                    else de[$id]="system-managed: NixOS option ${_PKG_NIX[$id]}"; fi ;;
+                unavailable) st[$id]=skipped; de[$id]="not available on NixOS" ;;
+                *) _pkg_check_probe "$id"; st[$id]="$_PKG_CS"; de[$id]="$_PKG_CD" ;;
+            esac
+        fi
+    done
+    if ((${#all[@]})); then
+        if ! command -v rpm >/dev/null 2>&1; then
+            bad="rpm not available"
+        else
+            native="$(uname -m 2>/dev/null)"
+            out="$(LC_ALL=C LANGUAGE='' rpm -q --qf '%{NAME} %{ARCH}\n' "${all[@]}" 2>/dev/null)"; rc=$?
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                if [[ "$line" =~ ^package\ (.+)\ is\ not\ installed$ && -n "${want[${BASH_REMATCH[1]}]:-}" ]]; then
+                    miss[${BASH_REMATCH[1]}]=1
+                elif [[ "$line" =~ ^([^\ ]+)\ ([^\ ]+)$ && -n "${want[${BASH_REMATCH[1]}]:-}" ]]; then
+                    if [[ -n "$native" && ( "${BASH_REMATCH[2]}" == "$native" || "${BASH_REMATCH[2]}" == noarch ) ]]; then
+                        ok[${BASH_REMATCH[1]}]=1
+                    else
+                        other[${BASH_REMATCH[1]}]+="${other[${BASH_REMATCH[1]}]:+,}${BASH_REMATCH[2]}"
+                    fi
+                else
+                    bad="rpm query failed"
+                fi
+            done <<< "$out"
+            for n in "${all[@]}"; do
+                if [[ -n "${miss[$n]:-}" && ( -n "${ok[$n]:-}" || -n "${other[$n]:-}" ) ]] \
+                        || [[ -z "${miss[$n]:-}${ok[$n]:-}${other[$n]:-}" ]]; then
+                    bad="rpm query failed"
+                fi
+            done
+            # rpm: kod = liczba nieznalezionych nazw (0 = wszystkie są).
+            if ((rc == 0)) && ((${#miss[@]})); then bad="rpm query failed"; fi
+            if ((rc != 0)) && ! ((${#miss[@]})); then bad="rpm query failed"; fi
+        fi
+        for id in "${!rpm_of[@]}"; do
+            if [[ "$bad" != 0 ]]; then st[$id]=unavailable; de[$id]="$bad"; continue; fi
+            local lost="" foreign=""
+            read -ra names <<< "${rpm_of[$id]}"
+            for n in "${names[@]}"; do
+                if [[ -n "${miss[$n]:-}" ]]; then lost+="${lost:+ }$n"
+                elif [[ -z "${ok[$n]:-}" ]]; then foreign+="${foreign:+ }$n (${other[$n]})"; fi
+            done
+            if [[ -z "$lost$foreign" ]]; then st[$id]=checked; de[$id]="RPM: ${rpm_of[$id]}"
+            else
+                st[$id]=missing; de[$id]=""
+                [[ -n "$lost" ]] && de[$id]="RPM not installed: $lost"
+                [[ -n "$foreign" ]] && de[$id]+="${de[$id]:+; }RPM only for another architecture: $foreign"
+            fi
+            [[ "${_PKG_SF[$id]}" == manual ]] && de[$id]+=" (manual install)"
+        done
+    fi
+    for id in "${ids[@]}"; do
+        printf '%s\t%s\t%s\n' "$id" "${st[$id]}" "${de[$id]}"
+    done
+    return 0
 }
 
 pkg_hint() {

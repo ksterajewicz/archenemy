@@ -879,21 +879,37 @@ keyboard_layouts_menu() {
 
 # Zrzut do pliku w katalogu domowym i podgląd. Skrypty tylko czytają system; plik
 # zostaje, bo diagnozę porównuje się przed i po zmianie.
+# Trzeci argument „status” (gaming-diag, D9): skrypt podaje kompletność kodem
+# i ostatnią linią „diagnosis: …” — ✓ Saved tylko przy 0 + complete, ⚠ przy
+# 2 + jawnym „partial; not checked: …”; inny kod albo brak znacznika = ✗ (plik
+# zostaje, ale bez „Saved”). workspace-diag nie ma takiego kontraktu (jego kod
+# wyjścia zależy od ostatniego grep), więc zostaje dawne zachowanie.
 run_diag_dump() {
-    local script="$ARCHENEMY_DIR/scripts/hypr/$1" name="$2" out
+    local script="$ARCHENEMY_DIR/scripts/hypr/$1" name="$2" out rc marker
     if [[ ! -f "$script" ]]; then
         echo -e "  ${RED}✗ Missing ${script} — update archenemy ([u]).${NC}"
         return
     fi
     out="$HOME/archenemy-diag-${name}-$(date +%Y%m%d-%H%M%S).txt"
-    bash "$script" > "$out" 2>&1
+    bash "$script" > "$out" 2>&1; rc=$?
     if [[ ! -s "$out" ]]; then
         rm -f "$out"
         echo -e "  ${RED}✗ ${1} produced no output.${NC}"
         return
     fi
     if command -v less &>/dev/null; then less -R "$out"; else cat "$out"; fi
-    echo -e "  ${GREEN}✓ Saved to ${out}${NC}"
+    if [[ "${3:-}" == status ]]; then
+        marker="$(tail -n 1 "$out")"
+        if [[ $rc == 0 && "$marker" == "diagnosis: complete" ]]; then
+            echo -e "  ${GREEN}✓ Saved to ${out}${NC}"
+        elif [[ $rc == 2 && "$marker" =~ ^diagnosis:\ partial\;\ not\ checked:\ ([a-z0-9, -]+)$ ]]; then
+            echo -e "  ${YELLOW}⚠ Saved to ${out} — partial diagnosis, not checked: ${BASH_REMATCH[1]} (see the end of the file).${NC}"
+        else
+            echo -e "  ${RED}✗ ${1} did not finish (exit code ${rc}); its incomplete output is in ${out}.${NC}"
+        fi
+    else
+        echo -e "  ${GREEN}✓ Saved to ${out}${NC}"
+    fi
     echo -e "  ${YELLOW}  It lists your hardware, including monitor serial numbers; keep it private.${NC}"
 }
 
@@ -920,7 +936,7 @@ diagnostics_menu() {
             fi
             ;;
         2) run_diag_dump workspace-diag.sh workspaces ;;
-        3) run_diag_dump gaming-diag.sh gaming ;;
+        3) run_diag_dump gaming-diag.sh gaming status ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;
         *) echo -e "  ${RED}✗ Pick 1, 2 or 3.${NC}" ;;
     esac

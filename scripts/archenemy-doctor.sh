@@ -232,20 +232,129 @@ if canonical:
 else:
     print('  machine-layer-check: skipped (checkout is outside ~/archenemy)')
 
+# Platforma jak pkg_route w install/lib/pkg.sh (os-release bez eval; pochodne
+# Archa idą ścieżką Archa). Publikujemy tylko klasę, nie surowe os-release.
+def platform_route():
+    test = os.environ.get('ARCHENEMY_TEST') == '1'
+    sources = [Path(os.environ['ARCHENEMY_OS_RELEASE'])] if test and os.environ.get('ARCHENEMY_OS_RELEASE') else [Path('/etc/os-release'), Path('/usr/lib/os-release')]
+    text = ''
+    for source in sources:
+        text = read_local(source)
+        if text:
+            break
+    values = {}
+    for line in text.splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+                value = value[1:-1]
+            values.setdefault(key, value)
+    os_id = values.get('ID', '')
+    if not os_id:
+        return 'unknown'
+    if os_id == 'arch':
+        return 'arch'
+    if 'arch' in values.get('ID_LIKE', '').split():
+        return 'arch-derivative'
+    if os_id == 'nixos':
+        return 'nixos'
+    if os_id == 'fedora':
+        marker = Path(os.environ['ARCHENEMY_OSTREE_MARKER']) if test and os.environ.get('ARCHENEMY_OSTREE_MARKER') else Path('/run/ostree-booted')
+        variant = values.get('VARIANT_ID', '')
+        if marker.exists() or 'atomic' in variant or variant in {'silverblue', 'kinoite', 'sericea', 'onyx'}:
+            return 'unsupported'
+        return 'fedora'
+    return 'unsupported'
+
+package_name = re.compile(r'[A-Za-z0-9][A-Za-z0-9+._-]*')
+def required_list(name):
+    entries = [line.split('#', 1)[0].strip() for line in read_local(repo / 'packages' / name).splitlines()]
+    entries = [entry for entry in entries if entry]
+    return entries if entries and all(package_name.fullmatch(e) for e in entries) else None
+
+# Każdy wymagany pakiet ma jawny stan: checked | missing | unavailable | skipped.
+# Brak backendu, błąd zapytania i pusta lista to błąd sondy, nigdy „Missing: 0”.
 section('Required packages')
-if not shutil.which('pacman'):
-    print('  pacman not available')
-else:
-    code, installed = run('pacman', '-Qq', limit=0.4)
-    if code != 0:
-        problem('package query unavailable')
+route = platform_route()
+print('  Platform: ' + route)
+required = []
+broken_lists = 0
+for name in ('requirements-pacman.txt', 'requirements-aur.txt'):
+    entries = required_list(name)
+    if entries is None:
+        broken_lists += 1
+        problem('required package list unreadable, empty or invalid: packages/' + name)
     else:
-        installed = set(installed.splitlines())
-        required = [line.split('#', 1)[0].strip() for line in read_local(repo / 'packages/requirements-pacman.txt').splitlines()]
-        missing_packages = [p for p in required if p and p not in installed]
-        print(f'  Missing: {len(missing_packages)}')
-        for package in missing_packages:
-            problem('required package: ' + safe(package))
+        required += [entry for entry in entries if entry not in required]
+states = {}
+reason = None
+if route in ('arch', 'arch-derivative'):
+    backend = 'pacman'
+    if not shutil.which('pacman'):
+        reason = 'pacman not available'
+    else:
+        code, installed = run('pacman', '-Qq', limit=0.4)
+        installed = set(installed.splitlines()) - {''}
+        if code != 0:
+            reason = 'package query unavailable'
+        elif not installed:
+            reason = 'package query returned no packages'
+    for package in required:
+        states[package] = ('unavailable', reason) if reason else ('checked', '') if package in installed else ('missing', '')
+elif route in ('fedora', 'nixos'):
+    # Backend z install/lib/pkg.sh: jedno zapytanie rpm (Fedora) albo sondy
+    # z mapy (NixOS, bez nix CLI); wyjście to tylko id ze stanem z kontrolowanego zbioru.
+    backend = 'rpm' if route == 'fedora' else 'package map probes, no nix CLI'
+    library = repo / 'install/lib/pkg.sh'
+    code, output = (None, '') if not required or not library.is_file() else run(
+        'bash', '-c', 'source "$1" && shift && pkg_check_ids "$@"', '_', str(library), *required, limit=1.0)
+    detail_ok = re.compile(r'[A-Za-z0-9 .,:;()+_=/-]{0,160}')
+    parsed = {}
+    for line in output.splitlines() if code == 0 else []:
+        fields = line.split('\t')
+        if (len(fields) != 3 or fields[0] not in required or fields[0] in parsed
+                or fields[1] not in ('checked', 'missing', 'unavailable', 'skipped')):
+            parsed = None
+            break
+        parsed[fields[0]] = (fields[1], fields[2] if detail_ok.fullmatch(fields[2]) else 'details withheld')
+    if parsed is not None and set(parsed) != set(required):
+        parsed = None
+    if not library.is_file():
+        reason = 'package library install/lib/pkg.sh missing'
+    elif code is None:
+        reason = 'package query timed out or unavailable'
+    elif code == 2:
+        reason = 'package map unreadable or invalid'
+    elif code != 0 or parsed is None:
+        reason = 'package query output invalid'
+    states = {p: ('unavailable', reason) for p in required} if reason else parsed
+else:
+    # Bez zgadywania: obcy pacman na nieznanym systemie nie jest pytany.
+    backend = 'none'
+    reason = 'unsupported or unknown distribution'
+    states = {p: ('unavailable', reason) for p in required}
+if not required:
+    reason = 'no readable required package list'
+counts = {s: sum(1 for state, _ in states.values() if state == s) for s in ('checked', 'missing', 'unavailable', 'skipped')}
+coverage = ('unavailable' if reason or counts['unavailable'] == len(required) else
+            'complete' if not counts['unavailable'] and not counts['skipped'] and not broken_lists else 'partial')
+print(f'  Package check: {coverage} ({backend}; {len(required)} required: ' + ', '.join(f'{counts[s]} {s}' for s in counts) + ')')
+if coverage == 'unavailable':
+    print('  Missing: unknown')
+    problem(reason or 'package check unavailable')
+else:
+    print(f'  Missing: {counts["missing"]}')
+    for package in required:
+        state, detail = states[package]
+        if state == 'missing':
+            # Arch jak dotąd: sama nazwa; Fedora/NixOS: brakujące RPM / sonda z mapy.
+            problem('required package: ' + safe(package) + (' (' + safe(detail) + ')' if detail else ''))
+    for package in required:
+        state, detail = states[package]
+        if state in ('unavailable', 'skipped'):
+            print(f'  {state.capitalize()}: ' + safe(package) + (' (' + safe(detail) + ')' if detail else ''))
+    for text in sorted({detail for state, detail in states.values() if state == 'unavailable'}):
+        problem(f'package check incomplete: {sum(1 for s, d in states.values() if s == "unavailable" and d == text)} required packages not checked (' + safe(text) + ')')
 
 section('Daemons (current user)')
 for name, pattern in [('waybar', None), ('mako', None), ('hyprpaper', None), ('flux-wall', None), ('window-history', r'window-history\.sh daemon'), ('orphan guard', r'workspace-orphan-guard\.sh')]:
@@ -282,14 +391,26 @@ print('  ASUS profile: ' + (profiles[-1] if profiles else 'unavailable'))
 
 if full:
     section('Existing diagnostics (private contents withheld)')
-    for label, script, extra, needs_session in [('workspace-diag', 'hypr/workspace-diag.sh', [], True), ('gaming-diag', 'hypr/gaming-diag.sh', [], False), ('flux-wall doctor', 'wallpapers/flux-wall.sh', ['doctor-safe'], False)]:
+    # gaming-diag --doctor: tylko sondy pakietów/sterownika, bez wyjścia poza
+    # znacznikiem kompletności; publikujemy wyłącznie klucze z tej listy.
+    gaming_keys = {'platform', 'packages', 'foreign', 'nvidia-32bit', 'owners', 'history', 'initramfs', 'vulkan-icd'}
+    for label, script, extra, needs_session in [('workspace-diag', 'hypr/workspace-diag.sh', [], True), ('gaming-diag', 'hypr/gaming-diag.sh', ['--doctor'], False), ('flux-wall doctor', 'wallpapers/flux-wall.sh', ['doctor-safe'], False)]:
         if not canonical:
             state = 'skipped (checkout is outside ~/archenemy)'
         elif needs_session and not running:
             state = 'not running'
         else:
-            code, _ = run('bash', str(repo / 'scripts' / script), *extra, limit=0.35)
+            code, output = run('bash', str(repo / 'scripts' / script), *extra, limit=0.35)
             state = 'completed' if code == 0 else 'reported unavailable components' if code is not None else 'timed out or unavailable'
+            if label == 'gaming-diag' and code is not None:
+                marker = re.fullmatch(r'diagnosis: (complete|partial; not checked: ([a-z0-9-]+(?:, [a-z0-9-]+)*))', output.strip())
+                items = marker.group(2).split(', ') if marker and marker.group(2) else []
+                if code == 0 and marker and not items:
+                    state = 'completed'
+                elif code == 2 and items and set(items) <= gaming_keys:
+                    state = 'partial (not checked: ' + ', '.join(items) + ')'
+                else:
+                    state = 'reported unavailable components'
         print('  ' + label + ': ' + state)
 print(f'\n{problems} problems found')
 sys.exit(1 if problems else 0)

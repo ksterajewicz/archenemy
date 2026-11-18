@@ -441,6 +441,27 @@ Rules that follow directly from the table:
   and read stdout + exit code — a query error is 2, never 0 or 1; COPR `nett00n/hyprland` and the Brave repo only via
   `pkg_install_extra` after an explicit `y`; NixOS never mutates the system
   (`bash tests/pkg.sh`).
+- **Diagnostics per platform (D9): no check may pass for "nothing found".**
+  `archenemy doctor` gives every required package (both `requirements-*`
+  lists, AUR included) a state `checked|missing|unavailable|skipped`; a
+  missing backend, a query error, empty/unrecognized output or a timeout is
+  `unavailable` + a problem (`Missing: unknown`), never `Missing: 0`. The
+  platform comes from os-release like `pkg_route` (Python copy in the doctor,
+  kept in step by `tests/doctor-platforms.sh`); a `pacman` on Fedora/NixOS/
+  unknown is never queried. Fedora/NixOS go through `pkg_check_ids` in
+  `install/lib/pkg.sh` (one `rpm -q`, map probes, no `nix` CLI, no dnf,
+  `fc-list` without cache writes), inside the doctor's probe budget; publish
+  only ids, fixed states and map-derived details, never raw rpm/fc-list/Nix
+  output. `scripts/hypr/gaming-diag.sh` marks anything it could not check
+  with `mark <key> <reason>` and ends with `diagnosis: complete` (exit 0) or
+  `diagnosis: partial; not checked: …` (exit 2); a missing unit or path is
+  not a failure. Its `--doctor` mode prints only that line, never runs
+  `nvidia-smi`, and the doctor accepts only the keys in `gaming_keys` — a new
+  key in `--doctor` mode needs both. File paths in gaming-diag go through
+  `$R` (test root, `ARCHENEMY_FS_ROOT` only with `ARCHENEMY_TEST=1`); tests
+  must never read the host's `/sys`, `/proc`, journal or package database
+  (`bash tests/doctor-platforms.sh`, `bash tests/gaming-diag.sh`; with
+  `DOCTOR_PLATFORMS_REV`/`GAMING_DIAG_REV` they compare Arch with a revision).
 - **`nix/packages.nix` is generated, never edited by hand (D10).** After
   changing the map run `bash nix/generate-packages.sh`; `tests/nix-packages.sh`
   fails when the file is stale (`--check`). It holds only nixpkgs attributes
