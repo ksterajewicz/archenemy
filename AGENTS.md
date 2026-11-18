@@ -463,7 +463,9 @@ Rules that follow directly from the table:
   On NixOS not even as advice: `systemctl enable|disable|start|stop` and
   `chsh` never appear in the output; give the option instead (mpd socket:
   home-manager `services.mpd.network.startWhenNeeded = false;` — its socket
-  listens on `listenAddress:port`, default 127.0.0.1 — or
+  listens on `listenAddress:port`, default 127.0.0.1, so outside Arch the
+  "reachable from your network" warning needs a non-local address read from
+  `systemctl --user show -p Listen --value mpd.socket` (D7F R5) — or
   `systemd.user.sockets.mpd.enable = false;`, the per-unit `enable` of
   nixpkgs `nixos/lib/systemd-unit-options.nix` (sharedOptions) that turns the
   unit into a link to /dev/null; `systemd.user.sockets`/`services` from

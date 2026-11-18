@@ -102,6 +102,9 @@ fi
 d="${ST:?}/$scope"; mkdir -p "$d"
 cmd="${args[0]:-}"; units=("${args[@]:1}"); units=("${units[@]%.service}")
 case "$cmd" in
+    # show -p Listen --value <gniazdo>: MOCK_LISTEN (jak systemd: „adres (Stream)”),
+    # MOCK_SHOW_RC — kod odczytu (D7F R5).
+    show) [[ -n "${MOCK_LISTEN:-}" ]] && printf '%s\n' "$MOCK_LISTEN"; exit "${MOCK_SHOW_RC:-0}" ;;
     is-enabled) [[ -e "$d/${units[0]}.enabled" ]]; exit ;;
     is-active)  [[ -e "$d/${units[0]}.active" ]]; exit ;;
     enable)
@@ -198,7 +201,7 @@ run() {
     done_="$(grep '^DONE=.' "$T/summary")"
     skipped="$(grep '^SKIPPED=.' "$T/summary")"
 }
-reset() { rm -rf "${ST:?}"; unset MOCK_ENABLE MOCK_ENABLE_SKIP MOCK_NOBUS MOCK_UFW_ACTIVE MOCK_RPM_INSTALLED MOCK_PROFILE MOCK_HELPER_RC MOCK_UFW_FAIL; }
+reset() { rm -rf "${ST:?}"; unset MOCK_LISTEN MOCK_SHOW_RC MOCK_ENABLE MOCK_ENABLE_SKIP MOCK_NOBUS MOCK_UFW_ACTIVE MOCK_RPM_INSTALLED MOCK_PROFILE MOCK_HELPER_RC MOCK_UFW_FAIL; }
 called() { grep -qxF -- "$1" <<< "$calls"; }
 # Mutacje usług i systemu; `sudo -k` z pułapki bloku platformy (Arch, Fedora
 # bez flagi) to nie mutacja — NixOS i Fedora z flagą nie wołają sudo wcale
@@ -279,9 +282,28 @@ for st in enabled active; do
     check "Arch, gniazdo użytkownika $st: ostrzeżenie o 6600 z komendą, bez ✓ i zmian" \
         '[[ "$out" == *"mpd.socket (user) is enabled"* && "$out" == *"systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"* && "$out" != *"✓"* ]] && grep -q "^SKIPPED=mpd.socket listens on port 6600" <<< "$skipped" && no_mutation'
 done
-reset; svc user mpd.socket enabled; nix_run step8l ''
+# D7F R5: na Fedorze i NixOS „wszystkie interfejsy” dopiero po odczycie Listen
+# (home-manager domyślnie słucha na 127.0.0.1); bez odczytu — porada warunkowa.
+for p in nixos fedora; do
+    reset; svc user mpd.socket enabled; export MOCK_LISTEN='[::]:6600 (Stream)'
+    if [[ $p == nixos ]]; then nix_run step8l ''; else run fedora step8l ''; fi
+    check "$p, gniazdo na [::]:6600: ostrzeżenie o sieci z odczytanym adresem, wpis, bez zmian" \
+        '[[ "$out" == *"listens on [::]:6600"*"reachable from your network"* ]] && called "systemctl --user show -p Listen --value mpd.socket" && grep -q "^SKIPPED=mpd.socket listens on \[::\]:6600" <<< "$skipped" && no_mutation'
+    reset; svc user mpd.socket enabled; export MOCK_LISTEN='127.0.0.1:6600 (Stream)'
+    if [[ $p == nixos ]]; then nix_run step8l ''; else run fedora step8l ''; fi
+    check "$p, gniazdo na 127.0.0.1:6600: tylko lokalnie — bez „ALL interfaces”, bez ⚠ i wpisu" \
+        '[[ "$out" == *"listens only locally (127.0.0.1:6600)"* && "$out" != *"ALL interfaces"* && "$out" != *"reachable from your network"* && "$out" != *"⚠ mpd.socket"* ]] && ! grep -q "^SKIPPED=mpd.socket" <<< "$skipped" && no_mutation'
+    reset; svc user mpd.socket enabled; export MOCK_SHOW_RC=1
+    if [[ $p == nixos ]]; then nix_run step8l ''; else run fedora step8l ''; fi
+    check "$p, gniazdo bez odczytu Listen: porada warunkowa, bez twierdzenia o ekspozycji" \
+        '[[ "$out" == *"could not read what it listens on"* && "$out" == *"if it shows [::]:6600 or 0.0.0.0:6600"* && "$out" != *"ALL interfaces"* ]] && grep -q "^SKIPPED=mpd.socket — check what it listens on" <<< "$skipped" && no_mutation'
+done
+reset; svc user mpd.socket enabled; export MOCK_LISTEN='[::]:6600 (Stream)'; nix_run step8l ''
 check "NixOS, gniazdo: deklaratywne wyłączenie (startWhenNeeded / systemd.user.sockets.mpd.enable), bez komend" \
-    '[[ "$out" == *"services.mpd.network.startWhenNeeded = false;"* && "$out" == *"systemd.user.sockets.mpd.enable = false;"* && "$out" == *"systemd.user.services.mpd"* ]] && grep -q "^SKIPPED=mpd.socket listens on port 6600.*NixOS" <<< "$skipped" && nix_clean && no_mutation'
+    '[[ "$out" == *"services.mpd.network.startWhenNeeded = false;"* && "$out" == *"systemd.user.sockets.mpd.enable = false;"* && "$out" == *"systemd.user.services.mpd"* ]] && grep -q "^SKIPPED=mpd.socket listens on .*NixOS" <<< "$skipped" && nix_clean && no_mutation'
+reset; svc user mpd.socket enabled; export MOCK_LISTEN='127.0.0.1:6600 (Stream)'; run arch step8l 'y\n'
+check "Arch: spakowany mpd.socket — ostrzeżenie jak przed D7F, bez odczytu Listen" \
+    '[[ "$out" == *"listens on port 6600 on ALL interfaces"* ]] && ! called "systemctl --user show -p Listen --value mpd.socket"'
 reset; nix_run step8l ''
 check "NixOS, nic: deklaracja systemd.user.services.mpd na ~/.config/mpd/mpd.conf, wpis" \
     '[[ "$out" == *'"'"'${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf'"'"'* ]] && grep -q "^SKIPPED=mpd user service — not done on NixOS" <<< "$skipped" && no_mutation'
@@ -292,8 +314,8 @@ check "NixOS, systemowy mpd: pozostawiony" '[[ "$out" == *"mpd runs as a SYSTEM 
 reset; run fedora step8l 'y\n'
 check "Fedora, nic: porada systemctl --user, wpis, bez pytania i zmian" \
     '[[ "$out" == *"mpd user service: not done automatically on Fedora — systemctl --user enable --now mpd.service"* && "$rest" == "y" ]] && grep -q "^SKIPPED=mpd user service — not done on Fedora" <<< "$skipped" && no_mutation'
-reset; svc user mpd.socket active; run fedora step8l ''
-check "Fedora, gniazdo: polecenie odczytu Listen przed poradą, bez zmian" '[[ "$out" == *"systemctl --user show -p Listen mpd.socket"* ]] && no_mutation'
+reset; svc user mpd.socket active; export MOCK_SHOW_RC=1; run fedora step8l ''
+check "Fedora, gniazdo active, bez odczytu: polecenie odczytu Listen w poradzie, bez zmian" '[[ "$out" == *"systemctl --user show -p Listen mpd.socket"* ]] && no_mutation'
 reset; svc user mpd enabled; run fedora step8l ''
 check "Fedora, usługa martwa: ostrzeżenie, bez ✓" '[[ "$out" == *"mpd user service is enabled but not running"* && "$out" != *"✓"* ]] && no_mutation'
 

@@ -1515,23 +1515,51 @@ if command -v mpd >/dev/null 2>&1; then
         # (src/Listen.cxx) — mpd bez hasła słucha w całej sieci, a instalator
         # mówił „already enabled” (audyt 2026-11-05, S13). Wyboru użytkownika
         # nie zmieniamy: mówimy wprost i podajemy komendę.
-        echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled: socket activation listens on port 6600 on ALL interfaces${NC}"
-        echo -e "    and ignores bind_to_address \"localhost\" from mpd.conf, so mpd (no password) is reachable"
-        echo -e "    from your network unless a firewall blocks the port. To keep it local:"
-        if [[ "$PLATFORM" == nixos ]]; then
-            # D7: NixOS bez imperatywnych porad. Gniazdo pochodzi z deklaracji:
-            # home-manager services.mpd.network.startWhenNeeded (modules/services/mpd.nix
-            # — tam ListenStream = listenAddress:port, domyślnie 127.0.0.1) albo
-            # systemd.user.sockets.mpd; opcja jednostki `enable = false` robi z niej
-            # link do /dev/null (nixos/lib/systemd-unit-options.nix, sharedOptions.enable).
-            echo -e "    (check what it listens on: systemctl --user show -p Listen mpd.socket)"
-            echo -e "    remove the socket from your configuration — home-manager: services.mpd.network.startWhenNeeded = false;"
-            echo -e "    NixOS: systemd.user.sockets.mpd.enable = false; — then rebuild, and for the user service $MPD_NIX_DECL"
-            SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 (bind_to_address ignored) — to keep mpd local, remove it from your NixOS/home-manager configuration (services.mpd.network.startWhenNeeded = false; or systemd.user.sockets.mpd.enable = false;) and rebuild")
-        else
-            [[ "$PLATFORM" == fedora ]] && echo -e "    (check what it listens on: systemctl --user show -p Listen mpd.socket)"
+        if [[ "$PLATFORM" == arch ]]; then
+            echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled: socket activation listens on port 6600 on ALL interfaces${NC}"
+            echo -e "    and ignores bind_to_address \"localhost\" from mpd.conf, so mpd (no password) is reachable"
+            echo -e "    from your network unless a firewall blocks the port. To keep it local:"
             echo -e "    systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"
             SUMMARY_SKIPPED+=("mpd.socket listens on port 6600 on all interfaces (bind_to_address ignored) — to keep mpd local: systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service")
+        else
+            # D7F R5 (przegląd Codexa D7): poza Archem jednostka nie jest ta
+            # z pakietu Archa (home-manager: ListenStream = listenAddress:port,
+            # domyślnie 127.0.0.1) — o ekspozycji mówimy dopiero po odczycie
+            # Listen; bez odczytu porada warunkowa.
+            MPD_LISTEN="$(systemctl --user show -p Listen --value mpd.socket 2>/dev/null)" || MPD_LISTEN=""
+            MPD_EXPOSED=unknown; MPD_ADDRS=""
+            read -ra MPD_TOKENS <<< "$MPD_LISTEN"
+            for t in "${MPD_TOKENS[@]}"; do
+                [[ "$t" == \(* ]] && continue
+                MPD_ADDRS+="${MPD_ADDRS:+ }$t"
+                if [[ "$t" =~ ^(127\.[0-9.]+|\[::1\]|localhost):[0-9]+$ || "$t" == /* || "$t" == @* ]]; then
+                    [[ "$MPD_EXPOSED" == yes ]] || MPD_EXPOSED=no
+                else
+                    MPD_EXPOSED=yes
+                fi
+            done
+            if [[ "$PLATFORM" == nixos ]]; then
+                MPD_FIX="remove the socket from your configuration — home-manager: services.mpd.network.startWhenNeeded = false; NixOS: systemd.user.sockets.mpd.enable = false; — then rebuild, and for the user service $MPD_NIX_DECL"
+                MPD_FIX_SHORT="remove it from your NixOS/home-manager configuration (services.mpd.network.startWhenNeeded = false; or systemd.user.sockets.mpd.enable = false;) and rebuild"
+            else
+                MPD_FIX="systemctl --user disable --now mpd.socket && systemctl --user enable --now mpd.service"
+                MPD_FIX_SHORT="$MPD_FIX"
+            fi
+            case "$MPD_EXPOSED" in
+                yes)
+                    echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled and listens on ${MPD_ADDRS}: mpd (no password) is reachable from your network${NC}"
+                    echo -e "    unless a firewall blocks the port (socket activation ignores bind_to_address \"localhost\"). To keep it local:"
+                    echo -e "    $MPD_FIX"
+                    SUMMARY_SKIPPED+=("mpd.socket listens on ${MPD_ADDRS} (bind_to_address ignored) — to keep mpd local, ${MPD_FIX_SHORT}") ;;
+                no)
+                    echo -e "  mpd.socket (user) is enabled and listens only locally (${MPD_ADDRS}) — left as it is." ;;
+                *)
+                    echo -e "  ${YELLOW}⚠ mpd.socket (user) is enabled; archenemy could not read what it listens on.${NC}"
+                    echo -e "    Check: systemctl --user show -p Listen mpd.socket — if it shows [::]:6600 or 0.0.0.0:6600, mpd (no password)"
+                    echo -e "    is reachable from your network (socket activation ignores bind_to_address \"localhost\"). Then, to keep it local:"
+                    echo -e "    $MPD_FIX"
+                    SUMMARY_SKIPPED+=("mpd.socket — check what it listens on (systemctl --user show -p Listen mpd.socket); if [::]:6600 or 0.0.0.0:6600: ${MPD_FIX_SHORT}") ;;
+            esac
         fi
     elif svc_check --user mpd.service; MPD_SVC=$?; [[ $MPD_SVC -ne 2 ]]; then
         # D7: ✓ dopiero po enabled + active (dotąd samo is-enabled).
