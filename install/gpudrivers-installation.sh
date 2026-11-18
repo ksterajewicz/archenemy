@@ -29,8 +29,16 @@ if ! pkg_gate "GPU drivers"; then
         nixos)
             echo "    In configuration.nix, then nixos-rebuild switch:"
             echo "      hardware.graphics.enable = true; hardware.graphics.enable32Bit = true;"
-            echo "    NVIDIA: services.xserver.videoDrivers = [ \"nvidia\" ];"
-            echo "      hardware.nvidia.open = true; hardware.nvidia.modesetting.enable = true;" ;;
+            # D6F L1 (przegląd Codexa D6): moduł otwarty tylko od Turing, sterownik
+            # jest unfree także z open = true, starsze karty = gałąź legacy
+            # (https://wiki.nixos.org/wiki/NVIDIA; nixos/modules/hardware/video/nvidia.nix).
+            echo "    NVIDIA (unfree: nixpkgs.config.allowUnfree = true; or allowUnfreePredicate for the nvidia packages):"
+            echo "      services.xserver.videoDrivers = [ \"nvidia\" ]; hardware.nvidia.modesetting.enable = true;"
+            echo "      hardware.nvidia.open = true;   only for Turing (GTX 16xx, RTX 20xx) and newer cards"
+            echo "      hardware.nvidia.open = false;  for older cards (Pascal, Maxwell…)"
+            echo "      hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.stable;"
+            echo "        (very old cards need a legacy branch, e.g. nvidiaPackages.legacy_470, with open = false)"
+            echo "      Full guide: https://wiki.nixos.org/wiki/NVIDIA" ;;
     esac
     exit 2
 fi

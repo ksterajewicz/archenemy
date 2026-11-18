@@ -208,7 +208,15 @@ gated "GPU Fedora: Mesa, lib32 (i686) i NVIDIA z RPM Fusion" "mesa-vulkan-driver
 check "GPU Fedora: bez archowych porad (pacman, mkinitcpio, multilib)" '[[ "$out" != *pacman* && "$out" != *mkinitcpio* && "$out" != *multilib* ]]'
 run "$GPU" nixos 'y\n'
 gated "GPU NixOS: opcje hardware.graphics i hardware.nvidia" "hardware.graphics.enable = true;" "hardware.graphics.enable32Bit = true;" \
-    'services.xserver.videoDrivers = [ "nvidia" ];' "hardware.nvidia.open = true;" "hardware.nvidia.modesetting.enable = true;"
+    'services.xserver.videoDrivers = [ "nvidia" ];' "hardware.nvidia.modesetting.enable = true;"
+# D6F L1 (przegląd Codexa): open zależnie od generacji karty, gałąź sterownika,
+# warunek unfree i przewodnik — nie bezwarunkowe open = true.
+check "GPU NixOS: open = true tylko dla Turing i nowszych, open = false dla starszych" \
+    '[[ "$out" == *"hardware.nvidia.open = true;"*"Turing"* && "$out" == *"hardware.nvidia.open = false;"* ]] && ! grep -qE "^ *hardware\.nvidia\.open = true; hardware" <<< "$out"'
+check "GPU NixOS: gałąź sterownika (hardware.nvidia.package, legacy dla starych kart)" \
+    '[[ "$out" == *"hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.stable;"* && "$out" == *"legacy_470"* ]]'
+check "GPU NixOS: warunek unfree i przewodnik NixOS" \
+    '[[ "$out" == *"nixpkgs.config.allowUnfree = true;"* && "$out" == *"allowUnfreePredicate"* && "$out" == *"https://wiki.nixos.org/wiki/NVIDIA"* ]]'
 check "GPU NixOS: bez sudo w instrukcji (deklaratywnie)" '[[ "$out" != *sudo* ]]'
 run "$GPU" ubuntu 'y\n'
 check "GPU Ubuntu: komunikat pkg_detect o nieobsługiwanej dystrybucji" '[[ "$out" == *"Unsupported distribution (ID=ubuntu)"* ]]'
