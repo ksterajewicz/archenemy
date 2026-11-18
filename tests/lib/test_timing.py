@@ -102,7 +102,8 @@ def guard(limit, grace, marker, command):
 
 
 def dialog(script, prefix, prompt, suffix='', delay=0, hup=False, after_prompt=''):
-    proc = subprocess.Popen(['bash', script], stdin=subprocess.PIPE,
+    # Standalone test uruchomiony spod nohup także musi móc dostarczyć HUP.
+    proc = subprocess.Popen(['env', '--default-signal=INT,QUIT,HUP', 'bash', script], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
     output = bytearray()

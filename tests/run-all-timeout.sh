@@ -173,6 +173,18 @@ done
 scaled="$(ARCHENEMY_TEST_TIME_SCALE=2 bash -c 'source "$1"; test_seconds 5' _ "$REPO/tests/lib/timing.sh")"
 check "jawna skala 2: zabezpieczenie 5 s daje 10 s" '[[ "$scaled" == 10 ]]'
 
+mkdir -p "$T/marker-check"
+cat > "$T/marker-check/check.sh" <<'MARKER'
+#!/usr/bin/env bash
+source "$1"
+test_timing_init "$2"
+partial="$(test_timeout 1 bash -c 'printf partial-output; sleep 100')"
+[[ "$partial" == *partial-output* ]] || exit 3
+test_timing_ok
+MARKER
+out="$(test_timeout 5 bash "$T/marker-check/check.sh" "$REPO/tests/lib/timing.sh" "$T/marker-check" 2>&1)"; rc=$?
+check "marker timeoutu z podpowłoki nie pozwala zaliczyć uciętego ekranu" '[[ $rc == 1 && "$out" == *"✗ ZABEZPIECZENIE"* ]]'
+
 python3 - "$REPO/tests/lib" <<'PYLINES'
 import os, sys
 sys.path.insert(0, sys.argv[1])
