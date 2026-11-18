@@ -15,11 +15,14 @@
 # shellcheck disable=SC2016,SC2034  # check() robi eval na cytowanym wyrażeniu
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
@@ -107,10 +110,10 @@ gen_all() {
       mapfile -t e < <(monitor_entries_ordered "$D")
       generate_workspaces_monitors "$WS" "$(cat "$MODE" 2>/dev/null || echo decades)" "${e[@]}" )
 }
-run() { printf "$1" | timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
+run() { printf "$1" | test_timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 get() { grep -m1 "^$2=" "$D/$1.dat" | cut -d= -f2-; }
 unchanged() { cmp -s "$D/eDP-2.dat" "$T/dat.orig" && cmp -s "$LUA" "$T/lua.orig" && cmp -s "$WS" "$T/ws.orig" && [[ "$(ls "$D" | wc -l)" == 2 ]]; }
-summary() { bash "$A/scripts/hypr/monitor-settings.sh" summary; }
+summary() { test_timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" summary; }
 # Skutek zmiany pozycji: wybór użytkownika = .dat = wygenerowany Lua = `hyprctl monitors`.
 # Argumenty: plik .dat (bez rozszerzenia), selektor w Lua, żywa nazwa, pozycja.
 live_pos() { hyprctl monitors | awk -v m="Monitor $1 (ID " 'index($0, m) == 1 { on = 1; next } /^Monitor / { on = 0 } on && $2 == "at" { print $3; exit }'; }
@@ -200,14 +203,14 @@ reset; touch "$T/autoreload"; out="$(run '1\n\n9\n\n\n')"; rm -f "$T/autoreload"
 check "autoreload przed reloadem: błąd cofa (A2)" 'unchanged && [[ "$out" == *"config error"*"bad scale"* ]]'
 reset; touch "$T/dead"; out="$(run '1\n1\n\n\n\n\n')"; rm "$T/dead"
 check "martwy Hyprland cofa"                   'unchanged'
-reset; ( printf '1\n1\n\n\n\n'; /usr/bin/sleep 2 ) | bash "$A/scripts/hypr/monitor-settings.sh" >/dev/null 2>&1 &
-pid=$!
-for _ in $(seq 1 200); do grep -q "hyprctl reload" "$T/log" && break; /usr/bin/sleep 0.02; done
-/usr/bin/sleep 0.2; kill -HUP "$pid"; wait "$pid"
-check "zamknięcie okna cofa"                   'unchanged'
+reset;
+python3 "$TEST_TIMING_LIB" monitor-hup "$A/scripts/hypr/monitor-settings.sh" $'1\n1\n\n\n\n' > "$T/hup.log" 2>&1
+hup_rc=$?
+(( hup_rc == 0 )) || cat "$T/hup.log"
+check "zamknięcie okna cofa"                   '[[ $hup_rc == 0 ]] && grep -q "KONTRAKT: rollback po HUP" "$T/hup.log" && unchanged'
 
 echo "== bez sesji"
-reset; out="$(printf '1\n\n2\n\n\n' | HYPRLAND_INSTANCE_SIGNATURE= bash "$A/scripts/hypr/monitor-settings.sh" 2>&1)"
+reset; out="$(printf '1\n\n2\n\n\n' | HYPRLAND_INSTANCE_SIGNATURE= test_timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" 2>&1)"
 check "bez Hyprlanda brak żywego monitora"     '[[ "$out" == *"not connected"* || "$out" == *"No Hyprland"* ]]'
 
 echo "== walidacja"
@@ -386,7 +389,7 @@ echo "== nowy monitor: lista"
 reset; touch "$T/third"; out="$(run '\n')"
 check "nowy monitor na liście"                 '[[ "$out" == *"3) DP-2"*"new, pick to set up"* ]]'
 check "skrót liczy nowy"                       '[[ "$(summary)" == "2 screens, 1 new" ]]'
-check "podgląd pokazuje nowy"                  '[[ "$(bash "$A/scripts/hypr/monitor-settings.sh" brief)" == *"DP-2  new, needs setup"* ]]'
+check "podgląd pokazuje nowy"                  '[[ "$(test_timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" brief)" == *"DP-2  new, needs setup"* ]]'
 reset
 check "bez nowego skrót jak dawniej"           '[[ "$(summary)" == "2 screens" ]]'
 
@@ -424,12 +427,12 @@ reset; touch "$T/third" "$T/vanish"; out="$(run '3\n\n\n\n\n\n\n\n')"
 check "odpięcie w trakcie cofa"                'unchanged && [[ "$out" == *"DP-2 is gone"* ]]'
 reset; touch "$T/third"; out="$(run '3\n\n')"
 check "przerwany kreator nic nie zapisuje"     'unchanged'
-reset; touch "$T/third"; ( printf '3\n\n\n\n\n\n\n'; /usr/bin/sleep 2 ) | bash "$A/scripts/hypr/monitor-settings.sh" >/dev/null 2>&1 &
-pid=$!
-for _ in $(seq 1 200); do grep -q "hyprctl reload" "$T/log" && break; /usr/bin/sleep 0.02; done
-/usr/bin/sleep 0.2; kill -HUP "$pid"; wait "$pid"
-check "zamknięcie okna cofa dodanie"           'unchanged'
-reset; touch "$T/third"; out="$(printf '3\n\n' | HYPRLAND_INSTANCE_SIGNATURE= bash "$A/scripts/hypr/monitor-settings.sh" 2>&1)"
+reset; touch "$T/third";
+python3 "$TEST_TIMING_LIB" monitor-hup "$A/scripts/hypr/monitor-settings.sh" $'3\n\n\n\n\n\n\n' > "$T/hup.log" 2>&1
+hup_rc=$?
+(( hup_rc == 0 )) || cat "$T/hup.log"
+check "zamknięcie okna cofa dodanie"           '[[ $hup_rc == 0 ]] && grep -q "KONTRAKT: rollback po HUP" "$T/hup.log" && unchanged'
+reset; touch "$T/third"; out="$(printf '3\n\n' | HYPRLAND_INSTANCE_SIGNATURE= test_timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" 2>&1)"
 check "bez sesji odmawia"                      '[[ "$out" == *"No Hyprland session"* ]] && unchanged'
 
 echo "== nowy monitor: przypadki brzegowe"
@@ -449,10 +452,10 @@ check "brakująca rola jest domyślna"           '[[ "$(get DP-2 ROLE)" == secon
 reset; touch "$T/third"; out="$(run '3\n\n\n\n\nprimary\n\ny\n')"
 check "nowy primary zastępuje starego"         '[[ "$(get DP-2 ROLE)" == primary && "$(get eDP-2 ROLE)" == other ]]'
 reset; touch "$T/third"; cp "$T/gen.py" "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"; out="$(run '3\n\n\n\n\n\n\ny\n')"
-for _ in $(seq 1 100); do [[ -s "$T/gen" ]] && break; /usr/bin/sleep 0.02; done
+test_wait_file 2 "$T/gen" || fail "ZABEZPIECZENIE: generator nie zapisał wyniku"
 check "tapety dither pod nowy rozmiar w tle"   'grep -q "m-DP-2:2560x1440" "$T/gen" && [[ "$out" == *"generated in the background"* ]]'
 reset; cp "$T/gen.py" "$A/scripts/wallpapers/gen_dither_flux_wallpaper.py"; out="$(run '1\n1\n\n\n\ny\n')"
-for _ in $(seq 1 100); do [[ -s "$T/gen" ]] && break; /usr/bin/sleep 0.02; done
+test_wait_file 2 "$T/gen" || fail "ZABEZPIECZENIE: generator nie zapisał wyniku"
 check "zmiana rozdzielczości też je generuje"  'grep -q "v1:2560x1440" "$T/gen"'
 
 echo "== numeracja z menu"
@@ -475,7 +478,7 @@ check "ostatni wpis zostaje"                   '[[ -e "$D/DP-9.dat" && "$out" ==
 rm -f "$D/DP-9.dat"
 
 echo "== powiadomienie"
-notify() { bash "$A/scripts/hypr/monitor-settings.sh" notify; }
+notify() { test_timeout 10 bash "$A/scripts/hypr/monitor-settings.sh" notify; }
 reset; touch "$T/third"; echo 100 > "$T/age"; notify
 check "nowy monitor: powiadomienie"            'grep -q "DP-2: Super+A → \[n\]" "$T/notified"'
 reset; echo 100 > "$T/age"; notify
@@ -502,4 +505,4 @@ check "brak danych o monitorach"               '[[ "$out" == *"No monitor data"*
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ $FAIL -eq 0 ]]
+test_timing_ok && [[ $FAIL -eq 0 ]]

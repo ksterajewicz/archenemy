@@ -18,12 +18,15 @@
 # shellcheck disable=SC2016,SC2034,SC2088,SC2059  # check() robi eval; ~ w opisach; printf z wejściem testu
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 REAL_ZSH="$(command -v zsh 2>/dev/null || true)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
@@ -83,13 +86,13 @@ for d in /usr/local/bin /usr/bin /bin; do [[ -x "$d/zsh" ]] || SYS_PATH+="$d:"; 
 export HOME="$H" SHELL=/usr/bin/bash ARCHENEMY_SHELLS_FILE="$T/shells" PATH="$BIN:$T/zbin:${SYS_PATH%:}"
 if command -v zsh >/dev/null 2>&1; then echo "  – zsh w systemie, scenariusz instalacji nieodtwarzalny"; fi
 
-run() { local input="$1"; shift; printf '%b' "$input" | timeout 10 bash "$S" "$@" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
-code() { local input="$1"; shift; printf '%b' "$input" | timeout 10 bash "$S" "$@" >/dev/null 2>&1; }
+run() { local input="$1"; shift; printf '%b' "$input" | test_timeout 10 bash "$S" "$@" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
+code() { local input="$1"; shift; printf '%b' "$input" | test_timeout 10 bash "$S" "$@" >/dev/null 2>&1; }
 
 echo "== wspólne menu strzałkami (stdin bez TTY)"
 nav() {
     local input="$1" initial="${2:-0}"
-    printf '%b' "$input" | timeout 5 bash -c '
+    printf '%b' "$input" | test_timeout 5 bash -c '
         source "$1"
         if tui_menu "$2" first second third >"$3"; then
             printf "%s" "$TUI_MENU_INDEX"
@@ -117,7 +120,7 @@ check "Home/End przesuwają kursor" '[[ "$(nav "\e[F\e[H\n" 1)" == 0 ]]'
 check "q anuluje" '[[ "$(nav "q")" == cancelled ]]'
 check "CR wybiera zaznaczenie" '[[ "$(nav "\r" 1)" == 1 ]]'
 confirm_nav() {
-    printf '%b' "$1" | timeout 5 bash -c 'source "$1"; if confirm "Confirm test?" Y; then echo yes; else echo no; fi' _ "$REPO/scripts/appbinds/lib/tui.sh" 2>/dev/null
+    printf '%b' "$1" | test_timeout 5 bash -c 'source "$1"; if confirm "Confirm test?" Y; then echo yes; else echo no; fi' _ "$REPO/scripts/appbinds/lib/tui.sh" 2>/dev/null
 }
 check "confirm: strzałka w dół i Enter wybierają No" '[[ "$(confirm_nav "\e[B\n")" == no ]]'
 check "confirm: y zachowuje skrót" '[[ "$(confirm_nav "y")" == yes ]]'
@@ -134,8 +137,8 @@ alias archenemy='~/archenemy/scripts/appbinds/appbinds.sh'
 EOF
 
 echo "== stan"
-check "summary: bash"                     '[[ "$(bash "$S" summary)" == "bash; plugins: none" ]]'
-B="$(bash "$S" brief)"
+check "summary: bash"                     '[[ "$(test_timeout 10 bash "$S" summary)" == "bash; plugins: none" ]]'
+B="$(test_timeout 10 bash "$S" brief)"
 check "brief: plik nie wczytywany"        '[[ "$B" == *"~/.bashrc    does not load the shared file"* ]]'
 check "brief: zsh nie zainstalowany"      '[[ "$B" == *"zsh          not installed"* ]]'
 
@@ -168,7 +171,7 @@ check "passwd: zsh"                       '[[ "$(<"$T/passwd")" == "$T/zbin/zsh"
 check "komunikat sukcesu"                 '[[ "$OUT" == *"Login shell: zsh"* ]]'
 check "jak wrócić"                        '[[ "$OUT" == *"Back to bash"* && "$OUT" == *"chsh -s /usr/bin/bash"* ]]'
 check "kopie zapasowe ~/.bashrc"          '[[ -n "$(find "$H" -maxdepth 1 -name ".bashrc.bak-*")" ]]'
-check "summary: zsh, relog"               '[[ "$(bash "$S" summary)" == "zsh, log in again; plugins: none" ]]'
+check "summary: zsh, relog"               '[[ "$(test_timeout 10 bash "$S" summary)" == "zsh, log in again; plugins: none" ]]'
 check "summary po relogu: zsh"            '[[ "$(SHELL=$T/zbin/zsh bash "$S" summary)" == "zsh; plugins: none" ]]'
 OUT2="$(HOME="$H" bash -ic "alias TESTgs" 2>/dev/null)"
 check "bash -i nadal ma TESTgs"           '[[ "$OUT2" == *"git status"* ]]'
@@ -301,7 +304,8 @@ if [[ -n "$REAL_ZSH" ]]; then
 else
     echo "  – zsh -n pominięty: zsh nie jest zainstalowany (live-only)"
 fi
-OUT="$( (printf '41\030'; sleep 0.5; printf '\031\n') | timeout 10 bash "$S" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+OUT="$(python3 "$TEST_TIMING_LIB" shell-key "$S" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"; dialog_rc=$?
+if (( dialog_rc )); then printf '%s\n' "$OUT"; fail "ZABEZPIECZENIE: dialog sekwencji klawisza"; fi
 check "Ctrl+X Ctrl+Y zachowuje odstęp przed Enterem" '[[ "$OUT" == *"Saved key ^X^Y"* && "$(<"$A/config/shell/keys.zsh")" == "bindkey -M emacs '\''^X^Y'\'' vi-cmd-mode" ]]'
 check "wskazówka nowego terminala"         '[[ "$OUT" == *"Takes effect in new terminals"* && "$OUT" == *'"'"'exec $SHELL'"'"'* ]]'
 check "zapis atomowy bez resztek"          '[[ -z "$(find "$A/config/shell" -maxdepth 1 -name "keys.zsh.??????")" ]]'
@@ -333,9 +337,9 @@ OUT="$(run $'42\n')"
 check "przywrócenie usuwa wpis"            '[[ "$OUT" == *"Restored the zsh default key (^X^V)"* && ! -e "$A/config/shell/keys.zsh" ]]'
 check "reset drugi raz bez zmian"          '[[ "$(run $'"'"'42\n'"'"')" == *"Restored the zsh default key (^X^V)"* ]]'
 echo "== menu główne Super+A"
-OUT="$(printf 'q' | ARCHENEMY_TUI_SIZE="40 120" timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+OUT="$(printf 'q' | ARCHENEMY_TUI_SIZE="40 120" test_timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
 check "pozycja [h] shell"                 'grep -qE "h  shell +bash" <<<"$OUT"'
-OUT="$(printf 'h\e' | ARCHENEMY_TUI_SIZE="40 120" timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+OUT="$(printf 'h\e' | ARCHENEMY_TUI_SIZE="40 120" test_timeout 10 bash "$A/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
 check "h otwiera menu powłoki"            '[[ "$OUT" == *"switch to zsh"* ]]'
 
 echo

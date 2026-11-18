@@ -23,6 +23,8 @@
 
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 FW="$REPO/src/flux-wall"
 OFF="$FW/build/offscreen"
 if [[ ! -x "$OFF" ]]; then
@@ -34,11 +36,12 @@ source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 
 FAIL=0
 for size in 1920x1080 2560x1600; do
     mkdir -p "$T/out-$size"
-    if ! "$OFF" "$FW/shaders/bars.frag" -o "$T/out-$size" -s "$size" -f 144 -t 4 --audio synth --dither >"$T/log-$size" 2>&1; then
+    if ! test_timeout 600 "$OFF" "$FW/shaders/bars.frag" -o "$T/out-$size" -s "$size" -f 144 -t 4 --audio synth --dither >"$T/log-$size" 2>&1; then
         echo "  ✗ $size: offscreen padł:"; tail -n 3 "$T/log-$size"; FAIL=1; continue
     fi
     printf '  %s: ' "$size"
@@ -46,4 +49,5 @@ for size in 1920x1080 2560x1600; do
     echo
 done
 (( FAIL == 0 )) && echo "flux-wall bars: OK" || echo "flux-wall bars: BŁĄD"
+test_timing_ok || FAIL=1
 exit $FAIL

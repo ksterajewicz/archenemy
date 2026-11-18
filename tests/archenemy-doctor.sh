@@ -4,6 +4,8 @@
 # =============================================
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 # shellcheck source=lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 T=$(mktemp -d)
@@ -19,6 +21,8 @@ import socket
 import subprocess
 import sys
 import time
+sys.path.insert(0, str(Path(os.environ["DOCTOR_SOURCE"]) / "tests/lib"))
+from test_timing import seconds
 
 root = Path(os.environ['DOCTOR_TEST_TREE'])
 source = Path(os.environ['DOCTOR_SOURCE'])
@@ -127,8 +131,10 @@ def check(case='', full=False, running=True, expected=0, entry=False):
     if full:
         cmd.append('--full')
     start = time.monotonic()
-    result = subprocess.run(cmd, env=current_env, capture_output=True, text=True, timeout=5)
-    assert time.monotonic() - start < 5, 'deadline exceeded'
+    result = subprocess.run(cmd, env=current_env, capture_output=True, text=True, timeout=seconds(10))
+    elapsed = time.monotonic() - start
+    assert elapsed < 5, f'KONTRAKT: doctor < 5 s; {case=}, zmierzono {elapsed:.3f} s'
+    print(f'  ✓ KONTRAKT: doctor {case or "healthy"} {elapsed:.3f} s < 5 s')
     assert result.returncode == expected, (case, result.returncode, result.stdout, result.stderr)
     assert not result.stderr, result.stderr
     assert snapshot() == before, 'diagnostics wrote to the isolated tree'
@@ -184,7 +190,7 @@ assert '0 problems found' in check()
 for active, missing in [('white-blue_beta', False), ('tron', True)]:
     (repo / '.current_rice').write_text(active + '\n')
     result = subprocess.run(['bash', str(repo / 'scripts/hypr/machine-layer-check.sh'), '--doctor'],
-                            env=env, capture_output=True, text=True, timeout=2)
+                            env=env, capture_output=True, text=True, timeout=seconds(2))
     assert result.returncode == int(missing), (active, result)
     assert not result.stdout and not result.stderr
 (repo / '.current_rice').write_text('white-blue\n')
@@ -235,7 +241,7 @@ assert not sentinel.exists()
 private_repo = home / 'SERIAL-EDID-PRIVATE-123' / 'checkout'
 shutil.copytree(repo, private_repo, symlinks=True)
 result = subprocess.run(['bash', str(private_repo / 'scripts/archenemy-doctor.sh')],
-                        env=env, capture_output=True, text=True, timeout=5)
+                        env=env, capture_output=True, text=True, timeout=seconds(10))
 assert not result.stderr and 'Path: [checkout path withheld]' in result.stdout
 assert 'SERIAL-EDID-PRIVATE-123' not in result.stdout
 print('Doctor: all isolated checks passed')

@@ -22,6 +22,8 @@
 
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 FW="$REPO/src/flux-wall"
 OFF="$FW/build/offscreen"
 # shellcheck source=tests/lib/environment.sh
@@ -29,6 +31,7 @@ source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
@@ -69,8 +72,8 @@ run_wrapper() {
     echo "$rice" > "$A/.current_rice"
     if [[ -n "$choice" ]]; then echo "$choice" > "$A/data/flux-wall.dat"; else rm -f "$A/data/flux-wall.dat"; fi
     rm -f "$H/args.log"
-    HOME="$H" XDG_RUNTIME_DIR="$T/run" PATH="$T/bin:$PATH" bash "$A/scripts/wallpapers/flux-wall.sh" autostart
-    for _ in $(seq 1 30); do [[ -s "$H/args.log" ]] && break; sleep 0.1; done
+    HOME="$H" XDG_RUNTIME_DIR="$T/run" PATH="$T/bin:$PATH" test_timeout 10 bash "$A/scripts/wallpapers/flux-wall.sh" autostart
+    test_wait_file 3 "$H/args.log" || return 1
     cat "$H/args.log" 2>/dev/null
 }
 
@@ -125,7 +128,7 @@ else
     PAL="0F1A24,5C87A3,D8E6EE"
     render() {  # render <frag> <katalog> [flaga]
         mkdir -p "$2"
-        "$OFF" "$1" -o "$2" -s 320x180 -f 15 -t 2 --audio synth -p "$PAL" ${3:+"$3"} >"$2/log" 2>&1
+        test_timeout 120 "$OFF" "$1" -o "$2" -s 320x180 -f 15 -t 2 --audio synth -p "$PAL" ${3:+"$3"} >"$2/log" 2>&1
     }
     for frag in "$FW"/shaders/*.frag; do
         n="$(basename "$frag" .frag)"
@@ -162,4 +165,4 @@ fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ $FAIL -eq 0 ]]
+test_timing_ok && [[ $FAIL -eq 0 ]]

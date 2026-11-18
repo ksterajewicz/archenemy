@@ -12,18 +12,22 @@
 # =============================================
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 export REPO
 python - <<'PY'
 import json
 import os
 from pathlib import Path
 import re
-import select
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
+import sys
+sys.path.insert(0, str(Path(os.environ["REPO"]) / "tests/lib"))
+from test_timing import seconds, wait_until, Lines
 
 repo = Path(os.environ['REPO'])
 with tempfile.TemporaryDirectory() as tmp:
@@ -116,7 +120,7 @@ esac
         checks += 1
         print('  ✓ ' + label)
     def run(*args, extra=None):
-        return subprocess.run(args, env=env | (extra or {}), text=True, capture_output=True, timeout=10)
+        return subprocess.run(args, env=env | (extra or {}), text=True, capture_output=True, timeout=seconds(10))
     def status():
         result = run(str(bar), 'status')
         check(result.returncode == 0 and not result.stderr, 'status bez błędów')
@@ -141,8 +145,9 @@ esac
     started = time.monotonic()
     data = status()
     elapsed = time.monotonic() - started
-    check(data['class'] == 'connected' and elapsed < 1,
-          f'pojedynczy render {elapsed:.3f} s < 1 s mimo semantyki wewnętrznego --timeout')
+    check(data['class'] == 'connected', 'pojedynczy render: stan connected')
+    check(elapsed < 1,
+          f'KONTRAKT: pojedynczy render {elapsed:.3f} s < 1 s mimo semantyki wewnętrznego --timeout')
     for value, target in [('disabled', 'on'), ('enabled', 'off')]:
         state.write_text(value)
         log.write_text('')
@@ -158,10 +163,15 @@ esac
     # Strumień reaguje na sygnały magistrali i USR1, bez uruchamiania sondy co sekundę.
     os.mkfifo(root / 'events')
     state.write_text('disabled')
+    holder = os.open(root / 'events', os.O_RDWR | os.O_NONBLOCK)
     proc = subprocess.Popen([str(bar)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-    def receive():
-        assert select.select([proc.stdout], [], [], 5)[0], 'brak aktualizacji strumienia'
-        return json.loads(proc.stdout.readline())
+    reader_proc = None
+    reader = None
+    def receive(base=5):
+        global reader_proc, reader
+        if reader_proc is not proc:
+            reader_proc, reader = proc, Lines(proc.stdout)
+        return json.loads(reader.receive(base))
     try:
         check(receive()['text'] == '', 'strumień: bez flagi pusty tekst')
         flag.touch()
@@ -176,9 +186,14 @@ esac
             state.write_text('connected')
             events.write('signal RSSI changed\n' * 100)
             check(receive()['class'] == 'connected', 'seria 100 zdarzeń odświeża stan końcowy')
-            time.sleep(0.7)
+            # KONTRAKT: okno obserwacji debounce, bez mnożenia przez skalę.
+            until = time.monotonic() + 0.7
+            while reader.ready(max(0, until - time.monotonic())):
+                receive()
+                if time.monotonic() >= until:
+                    break
             renders = log.read_text().count('bluetoothctl show') - before
-            check(1 <= renders <= 2, f'seria 100 zdarzeń daje {renders} render(y), najwyżej 2')
+            check(1 <= renders <= 2, f'KONTRAKT debounce 0,3 s: seria 100 zdarzeń daje {renders} render(y), najwyżej 2')
             flag.unlink()
             proc.send_signal(signal.SIGUSR1)
             check(receive()['text'] == '', 'USR1 ponownie odczytuje flagę')
@@ -186,13 +201,15 @@ esac
             state.write_text('enabled')
             proc.send_signal(signal.SIGUSR1)
             check(receive()['class'] == 'enabled', 'USR1 przywraca ikonę')
-            check(not select.select([proc.stdout], [], [], 0.2)[0], 'strumień bez okresowego odpytywania')
+            check(not reader.ready(0.2), 'strumień bez okresowego odpytywania')
             matches = log.read_text()
             check('org.bluez' in matches and 'PropertiesChanged' in matches and 'ObjectManager' in matches and 'NameOwnerChanged' in matches, 'subskrypcje właściwości, hotplug i restartu BlueZ')
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=5)
-        check(not proc.stderr.read(), 'strumień bez błędów stderr')
+        _, errors = proc.communicate(timeout=seconds(5))
+        check(not errors, 'strumień bez błędów stderr')
+        os.close(holder)
+        check(proc.returncode == 0, 'strumień zakończony bez błędów')
 
     # EOF wymusza opóźniony reconnect i nową migawkę, bez ciasnej pętli.
     state.write_text('enabled')
@@ -202,15 +219,15 @@ esac
         check(receive()['class'] == 'enabled', 'EOF: pierwsza migawka')
         started = time.monotonic()
         before = log.read_text().count('dbus-monitor ')
-        check(not select.select([proc.stdout], [], [], 0.5)[0], 'EOF: brak natychmiastowego reconnectu')
-        assert select.select([proc.stdout], [], [], 7)[0], 'brak reconnectu po EOF'
-        check(json.loads(proc.stdout.readline())['class'] == 'enabled'
+        check(not reader.ready(0.5), 'EOF: brak natychmiastowego reconnectu')
+        data = receive(7)
+        check(data['class'] == 'enabled'
               and time.monotonic() - started >= 4.5
               and log.read_text().count('dbus-monitor ') == before + 1,
-              'EOF: ponowna subskrypcja i migawka po 5 s')
+              'KONTRAKT reconnect 5 s: ponowna subskrypcja i migawka (dolna tolerancja 4,5 s)')
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
-        proc.communicate(timeout=5)
+        proc.communicate(timeout=seconds(5))
 
     # Osobno TERM tylko do rodzica i killpg, zarówno przy nasłuchu, jak i reconnect.
     def children(pid):
@@ -228,28 +245,24 @@ esac
             descendants = []
             try:
                 receive()
-                deadline = time.monotonic() + 3
-                while time.monotonic() < deadline:
-                    descendants = children(proc.pid)
-                    if len(descendants) == 1 and any(('sleep' if eof else 'cat') in
-                                           Path(f'/proc/{pid}/comm').read_text()
-                                           for pid in descendants if Path(f'/proc/{pid}/comm').exists()):
-                        break
-                    time.sleep(0.02)
-                else:
-                    raise AssertionError('nie uruchomiono oczekiwanego potomka')
+                def expected_child():
+                    descendants[:] = children(proc.pid)
+                    return len(descendants) == 1 and any(('sleep' if eof else 'cat') in
+                           Path(f'/proc/{pid}/comm').read_text()
+                           for pid in descendants if Path(f'/proc/{pid}/comm').exists())
+                wait_until(expected_child, 3, 'oczekiwany potomek strumienia')
                 if group:
                     os.killpg(proc.pid, signal.SIGTERM)
                 else:
                     proc.terminate()
-                _, errors = proc.communicate(timeout=3)
+                _, errors = proc.communicate(timeout=seconds(3))
                 check(proc.returncode == 0 and not errors and not any(alive(pid) for pid in descendants),
                       f'sprzątanie potomków: EOF={eof}, killpg={group}')
             finally:
                 os.close(holder)
                 if proc.poll() is None:
                     os.killpg(proc.pid, signal.SIGKILL)
-                    proc.communicate(timeout=3)
+                    proc.communicate(timeout=seconds(3))
                 for pid in descendants:
                     if alive(pid):
                         os.kill(pid, signal.SIGKILL)
@@ -316,7 +329,7 @@ esac
         log.write_text('')
         code = 'SUMMARY_DONE=(); SUMMARY_SKIPPED=();\n' + block + '\nprintf "DONE=%s\\n" "${SUMMARY_DONE[*]}"; printf "SKIPPED=%s\\n" "${SUMMARY_SKIPPED[*]}"'
         # Platforma jawnie (Arch bez flagi), bash z PATH — nie FHS-owe /bin/bash.
-        result = subprocess.run([shutil.which('bash'), '-c', code], env=env | {'ARCHENEMY_DIR': tmp, 'FAIL_INSTALL': str(int(failure)), 'PLATFORM': 'arch', 'SKIP_PACKAGES': '0'}, input=answer+'\n', text=True, capture_output=True, timeout=10)
+        result = subprocess.run([shutil.which('bash'), '-c', code], env=env | {'ARCHENEMY_DIR': tmp, 'FAIL_INSTALL': str(int(failure)), 'PLATFORM': 'arch', 'SKIP_PACKAGES': '0'}, input=answer+'\n', text=True, capture_output=True, timeout=seconds(10))
         check(flag.exists() == (answer == 'y' and not failure), 'krok [10]: flaga ' + answer + '/' + str(failure))
         if answer == 'n':
             check(not log.read_text(), 'odmowa [10] bez instalacji')

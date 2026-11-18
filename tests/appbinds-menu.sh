@@ -12,11 +12,14 @@
 # shellcheck disable=SC2016,SC2034  # check() robi eval na cytowanym wyrażeniu
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
@@ -92,7 +95,7 @@ chmod +x "$T/bin/"*
 export ARCHENEMY_GUARD_SETTLE=0.3
 export HOME="$H" PATH="$T/bin:$PATH" ARCHENEMY_XKB_KEYSYMS="$T/keysyms.h" HYPRLAND_INSTANCE_SIGNATURE=test
 
-tui() { printf "$1" | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
+tui() { printf "$1" | test_timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 reset() { printf -- '-- generated\nlocal mainMod = "SUPER"\n' > "$BINDS"; : > "$T/log"; : > "$T/errors"; }
 
 echo "== [a] dodawanie"
@@ -344,11 +347,11 @@ check "zaznaczenie jedzie z oknem"             '[[ "$(tail -14 <<<"$out")" == *"
 
 echo "== akcent wg rice'a"
 echo white-blue > "$A/.current_rice"
-raw="$(printf q | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1)"
+raw="$(printf q | test_timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1)"
 check "white-blue: bright blue"                '[[ "$raw" == *$'"'"'\e[0;94m'"'"'* ]]'
 check "bez zwykłego ANSI blue"                 '[[ "$raw" != *$'"'"'\e[0;34m'"'"'* ]]'
 echo tron > "$A/.current_rice"
-raw="$(printf q | timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1)"
+raw="$(printf q | test_timeout 10 bash "$REPO/scripts/appbinds/appbinds.sh" 2>&1)"
 check "tron: bright cyan"                      '[[ "$raw" == *$'"'"'\e[0;96m'"'"'* ]]'
 rm "$A/.current_rice"
 
@@ -380,4 +383,4 @@ check "Enter anuluje"                          '[[ "$out" == *"Cancelled"* ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ $FAIL -eq 0 ]]
+test_timing_ok && [[ $FAIL -eq 0 ]]
