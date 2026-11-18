@@ -247,9 +247,22 @@ gated "GPU NixOS: opcje hardware.graphics i hardware.nvidia" "hardware.graphics.
 # D6F L1 (przegląd Codexa): open zależnie od generacji karty, gałąź sterownika,
 # warunek unfree i przewodnik — nie bezwarunkowe open = true.
 check "GPU NixOS: open = true tylko dla Turing i nowszych, open = false dla starszych" \
-    '[[ "$out" == *"hardware.nvidia.open = true;"*"Turing"* && "$out" == *"hardware.nvidia.open = false;"* ]] && ! grep -qE "^ *hardware\.nvidia\.open = true; hardware" <<< "$out"'
+    '[[ "$out" == *"Turing"*"hardware.nvidia.open = true;"* && "$out" == *"hardware.nvidia.open = false;"* && "$(grep -c "hardware.nvidia.open = true;" <<< "$out")" == 1 ]] && ! grep -qE "^ *hardware\.nvidia\.open = true; hardware" <<< "$out"'
 check "GPU NixOS: gałąź sterownika (hardware.nvidia.package, legacy dla starych kart)" \
     '[[ "$out" == *"hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.stable;"* && "$out" == *"legacy_470"* ]]'
+# D7F R2 (przegląd Codexa D7): stable = production (595.x w nixpkgs f6840765)
+# nie obsługuje Pascal/Maxwell — gałąź musi wynikać z generacji karty.
+# gen_branch <generacja> → „open=<…> package=<gałąź>” z bloku tej generacji.
+gen_branch() {
+    awk -v g="$1" '
+        index($0, g) && /:$/ { on = 1; next }
+        on && /hardware\.nvidia\.open = / { o = $0; sub(/.*hardware\.nvidia\.open = /, "", o); sub(/;.*/, "", o) }
+        on && /nvidiaPackages\./ { p = $0; sub(/.*nvidiaPackages\./, "", p); sub(/;.*/, "", p); print "open=" o " package=" p; exit }' <<< "$out"
+}
+check "GPU NixOS: Turing+ → open = true, nvidiaPackages.stable (production)" '[[ "$(gen_branch Turing)" == "open=true package=stable" && "$out" == *"production"* ]]'
+check "GPU NixOS: Pascal/Maxwell → open = false, nvidiaPackages.legacy_580" '[[ "$(gen_branch Pascal)" == "open=false package=legacy_580" ]]'
+check "GPU NixOS: Kepler → open = false, nvidiaPackages.legacy_470" '[[ "$(gen_branch Kepler)" == "open=false package=legacy_470" ]]'
+check "GPU NixOS: uwaga o zależności nazw od wersji nixpkgs (nvidia-x11/default.nix)" '[[ "$out" == *"depend on your nixpkgs version"* && "$out" == *"pkgs/os-specific/linux/nvidia-x11/default.nix"* ]]'
 check "GPU NixOS: warunek unfree i przewodnik NixOS" \
     '[[ "$out" == *"nixpkgs.config.allowUnfree = true;"* && "$out" == *"allowUnfreePredicate"* && "$out" == *"https://wiki.nixos.org/wiki/NVIDIA"* ]]'
 check "GPU NixOS: bez sudo w instrukcji (deklaratywnie)" '[[ "$out" != *sudo* ]]'

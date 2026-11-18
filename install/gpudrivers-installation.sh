@@ -30,14 +30,26 @@ if ! pkg_gate "GPU drivers"; then
             echo "    In configuration.nix, then nixos-rebuild switch:"
             echo "      hardware.graphics.enable = true; hardware.graphics.enable32Bit = true;"
             # D6F L1 (przegląd Codexa D6): moduł otwarty tylko od Turing, sterownik
-            # jest unfree także z open = true, starsze karty = gałąź legacy
-            # (https://wiki.nixos.org/wiki/NVIDIA; nixos/modules/hardware/video/nvidia.nix).
+            # jest unfree także z open = true (https://wiki.nixos.org/wiki/NVIDIA;
+            # nixos/modules/hardware/video/nvidia.nix). D7F R2 (przegląd D7): gałąź
+            # według generacji — nixpkgs f6840765 (2026-11-16),
+            # pkgs/os-specific/linux/nvidia-x11/default.nix: stable = production
+            # (595.x, bez Pascal/Maxwell — NVIDIA 595 README „supported chips”
+            # kieruje je do legacy 580.xx), legacy_580, legacy_470 = ostatnia dla Keplera.
             echo "    NVIDIA (unfree: nixpkgs.config.allowUnfree = true; or allowUnfreePredicate for the nvidia packages):"
             echo "      services.xserver.videoDrivers = [ \"nvidia\" ]; hardware.nvidia.modesetting.enable = true;"
-            echo "      hardware.nvidia.open = true;   only for Turing (GTX 16xx, RTX 20xx) and newer cards"
-            echo "      hardware.nvidia.open = false;  for older cards (Pascal, Maxwell…)"
-            echo "      hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.stable;"
-            echo "        (very old cards need a legacy branch, e.g. nvidiaPackages.legacy_470, with open = false)"
+            echo "      Choose open and the driver branch by your card's generation:"
+            echo "      - Turing and newer (GTX 16xx, RTX 20xx and later):"
+            echo "          hardware.nvidia.open = true;"
+            echo "          hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.stable;   (stable = production)"
+            echo "      - Pascal and Maxwell (GTX 10xx, GTX 9xx, GTX 750):"
+            echo "          hardware.nvidia.open = false;"
+            echo "          hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.legacy_580;"
+            echo "      - Kepler (most GTX 600/700 cards):"
+            echo "          hardware.nvidia.open = false;"
+            echo "          hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.legacy_470;"
+            echo "      Branch names depend on your nixpkgs version: check pkgs/os-specific/linux/nvidia-x11/default.nix"
+            echo "      of the nixpkgs you use (https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/os-specific/linux/nvidia-x11/default.nix)."
             echo "      Full guide: https://wiki.nixos.org/wiki/NVIDIA" ;;
     esac
     exit 2
