@@ -383,7 +383,9 @@ Rules that follow directly from the table:
   — never `eval`/`source` it. `install/lib/pkg.sh` must keep Arch on the exact
   installer commands; on Fedora no `-y`/`--skip-*`/`--allowerasing`, success =
   `rpm -q` of every name, and `fedora_source=fedora` installs only with
-  `--repo=fedora --repo=updates` (COPR/Brave without `--repo`); the map is validated as a whole (split lists with
+  `--repo=fedora --repo=updates` (COPR/Brave without `--repo`; still to be
+  checked on a live Fedora: dependencies that exist only outside
+  fedora/updates would make dnf refuse the transaction); the map is validated as a whole (split lists with
   `read -ra`, never an unquoted `for w in $list`; known statuses/sources only,
   consistent fields — `nixos=ok` only with a nixpkgs attribute —, HTTPS
   `source_url`, unique ids); `rpm`/`pacman` queries run with `LC_ALL=C`
