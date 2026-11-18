@@ -47,12 +47,23 @@ for c in "${SPIES[@]}"; do
 #!/usr/bin/env bash
 name="${0##*/}"
 echo "$name $*" >> "$CALLS"
+# sudo loguje i NIE wykonuje polecenia; `sudo pacman -S` zapisuje tylko stan atrapy bazy.
+[[ "$name" == sudo && "${1:-}" == pacman && "${2:-}" == -S ]] && for a in "${@:3}"; do [[ "$a" == -* ]] || echo "$a" >> "$CALLS.installed"; done
 case "$name" in
-    lspci) printf '%s\n' \
-        '01:00.0 VGA compatible controller: NVIDIA Corporation AD106M [GeForce RTX 4070 Max-Q / Mobile]' \
-        '05:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Radeon 780M' \
-        '00:02.0 VGA compatible controller: Intel Corporation Raptor Lake-P [Iris Xe Graphics]' ;;
-    pacman) [[ "${1:-}" == -Qq && -z "${2:-}" ]] && printf '%s\n' asusctl-git supergfxctl asusctltray-git ;;
+    # MOCK_LSPCI: all (domyślnie: NVIDIA+AMD+Intel) | nvidia | amd | intel —
+    # osobne konfiguracje PCI (uwaga przeglądu Codexa D6: jeden łączny zestaw).
+    lspci)
+        [[ "${MOCK_LSPCI:-all}" == all || "$MOCK_LSPCI" == nvidia ]] && echo '01:00.0 VGA compatible controller: NVIDIA Corporation AD106M [GeForce RTX 4070 Max-Q / Mobile]'
+        [[ "${MOCK_LSPCI:-all}" == all || "$MOCK_LSPCI" == amd ]] && echo '05:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Radeon 780M'
+        [[ "${MOCK_LSPCI:-all}" == all || "$MOCK_LSPCI" == intel ]] && echo '00:02.0 VGA compatible controller: Intel Corporation Raptor Lake-P [Iris Xe Graphics]'
+        true ;;
+    # pacman -Qi: zainstalowany, chyba że nazwa jest w MOCK_PKG_MISSING i nie
+    # „zainstalowało” jej wcześniejsze (sudo) pacman -S tego biegu (uwaga
+    # przeglądu Codexa D6: NVIDIA w parytecie była zawsze zainstalowana).
+    pacman)
+        if [[ "${1:-}" == -Qq && -z "${2:-}" ]]; then printf '%s\n' asusctl-git supergfxctl asusctltray-git
+        elif [[ "${1:-}" == -Qi && " ${MOCK_PKG_MISSING:-} " == *" ${2:-} "* ]] && ! grep -qxF -- "${2:-}" "$CALLS.installed" 2>/dev/null; then exit 1
+        fi ;;
     id) [[ "${1:-}" == -un ]] && echo tester || echo "tester wheel" ;;
     uname) echo "${MOCK_KVER:-6.16.1-arch1-1}" ;;
     supergfxctl) echo Hybrid ;;
@@ -89,7 +100,7 @@ printf 'NAME=Ubuntu\nID=ubuntu\nID_LIKE=debian\n'            > "$OS/ubuntu"
 
 E="$T/etc"; B="$T/boot"; M="$T/modules"; S="$T/sys"
 reset_system() {
-    rm -rf "${E:?}" "${B:?}" "${M:?}" "${S:?}"; : > "$CALLS"
+    rm -rf "${E:?}" "${B:?}" "${M:?}" "${S:?}" "${CALLS:?}.installed"; : > "$CALLS"
     mkdir -p "$E/modprobe.d" "$B/loader/entries" "$M/$MOCK_KVER" "$S"
     printf '[options]\n#[multilib]\n#Include = /etc/pacman.d/mirrorlist\n' > "$E/pacman.conf"
     printf 'MODULES=()\nHOOKS=(base udev)\n' > "$E/mkinitcpio.conf"
@@ -222,6 +233,10 @@ for row in "${CLOSED[@]}"; do
     gated "GPU $os z odziedziczonym PLATFORM=arch: brama nadal zamknięta" "$head"
     run "$GPU" "$os" 'y\ny\ny\n' PATH="$NOLSPCI_PATH"
     gated "GPU $os bez lspci: bez instalacji pciutils" "$head"
+    for gpu in nvidia amd intel; do
+        run "$GPU" "$os" '1\ny\ny\ny\n' MOCK_LSPCI=$gpu MOCK_PKG_MISSING="nvidia-open-dkms nvidia-dkms nvidia-open nvidia"
+        gated "GPU $os, tylko $gpu (osobny zestaw PCI), NVIDIA niezainstalowana: brama zamknięta" "$head"
+    done
 done
 run "$GPU" fedora 'y\n'
 gated "GPU Fedora: Mesa, lib32 (i686) i NVIDIA z RPM Fusion" "mesa-vulkan-drivers.i686" "akmod-nvidia" "https://rpmfusion.org/Howto/NVIDIA"
@@ -242,7 +257,15 @@ run "$GPU" ubuntu 'y\n'
 check "GPU Ubuntu: komunikat pkg_detect o nieobsługiwanej dystrybucji" '[[ "$out" == *"Unsupported distribution (ID=ubuntu)"* ]]'
 no_lib "$GPU"
 parity "GPU NVIDIA zainstalowana, „zostaw”, lib32 tak" "$GPU" '3\ny\n'
-parity "GPU nowa instalacja open-dkms, tak, lib32 nie" "$GPU" '1\ny\nn\n'
+parity "GPU NVIDIA zainstalowana, wybór open-dkms, tak, lib32 nie" "$GPU" '1\ny\nn\n'
+NV_ALL="nvidia-open-dkms nvidia-dkms nvidia-open nvidia"
+run "$GPU" arch '1\ny\nn\n' MOCK_PKG_MISSING="$NV_ALL"
+check "GPU Arch, NVIDIA niezainstalowana: rzeczywista ścieżka nowej instalacji (pacman -S nvidia-open-dkms)" \
+    '[[ "$out" != *"NVIDIA driver already installed"* ]] && grep -q "^sudo pacman -S .*nvidia-open-dkms" <<< "$calls"'
+parity "GPU nowa instalacja open-dkms (NVIDIA niezainstalowana), tak, lib32 nie" "$GPU" '1\ny\nn\n' MOCK_PKG_MISSING="$NV_ALL"
+for gpu in nvidia amd intel; do
+    parity "GPU tylko $gpu (osobny zestaw PCI), tak, lib32 tak" "$GPU" 'y\ny\ny\ny\n' MOCK_LSPCI=$gpu MOCK_PKG_MISSING="$NV_ALL"
+done
 parity "GPU bez lspci" "$GPU" 'y\ny\ny\n' PATH="$NOLSPCI_PATH"
 
 CPU="$REPO/install/cpudrivers-installation.sh"
