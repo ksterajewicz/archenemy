@@ -37,13 +37,17 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 test_isolate "$REPO/tests/gaming-diag.sh" "$@"   # D7F R3: zapisy poza $T wykrywalne
-# Limity czasu testu w jednym miejscu (do przepięcia na ARCHENEMY_TEST_TIME_SCALE).
-RUN_LIMIT=30        # s — jeden bieg gaming-diag na atrapach
-HANG_QT=1           # s — ARCHENEMY_QUERY_TIMEOUT w scenariuszach zawieszenia
-HANG_MAX=8          # s — górna granica całego biegu z jednym zawieszonym źródłem
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
+# Limity czasu testu w jednym miejscu (tests/README-timing.md).
+RUN_LIMIT=30        # s — ZABEZPIECZENIE: jeden bieg gaming-diag na atrapach (test_timeout, × ARCHENEMY_TEST_TIME_SCALE)
+HANG_QT=1           # s — ARCHENEMY_QUERY_TIMEOUT w scenariuszach zawieszenia (parametr produktu, bez skali)
+HANG_MAX=8          # s — KONTRAKT: górna granica całego biegu z jednym zawieszonym źródłem; bez skali —
+                    #     większa granica przestałaby odróżniać działający limit zapytań od atrapy „sleep 30”
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || exit 1
 trap 'rm -rf "${T:?}"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 export TZ=UTC
 
 PASS=0; FAIL=0
@@ -234,10 +238,10 @@ gd() {
     while (($#)) && [[ "$1" != -- ]]; do vars+=("$1"); shift; done
     (($#)) && { shift; args=("$@"); }
     : > "$GD_LOG"
-    OUT="$(env -i HOME="$HOME" TZ=UTC LC_ALL=C.UTF-8 TMPDIR="$TMPDIR" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" GD_LOG="$GD_LOG" \
+    OUT="$(test_timeout "$RUN_LIMIT" env -i HOME="$HOME" TZ=UTC LC_ALL=C.UTF-8 TMPDIR="$TMPDIR" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" GD_LOG="$GD_LOG" \
         PATH="${GD_PATH:-$BIN}:$SYSBIN" ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release" \
         ARCHENEMY_FS_ROOT="$FSR" ARCHENEMY_NIX_STORE="$T/nix/store" "${vars[@]}" \
-        timeout "$RUN_LIMIT" bash "${GD_SCRIPT:-$A/scripts/hypr/gaming-diag.sh}" "${args[@]}" 2>&1)"
+        bash "${GD_SCRIPT:-$A/scripts/hypr/gaming-diag.sh}" "${args[@]}" 2>&1)"
     RC=$?
     OUT="${OUT//"$FSR"/}"
     LAST="${OUT##*$'\n'}"
@@ -297,7 +301,7 @@ check "Arch bez /usr/lib/modprobe.d: trafienie z /etc bez fałszywego „(nic)�
 mkroot "$FSR" gpu
 start=$SECONDS
 gd "${SESSION[@]}" GD_PACMAN=hang ARCHENEMY_QUERY_TIMEOUT="$HANG_QT"
-check "Arch zawieszony pacman: limit zapytań, partial, bieg < ${HANG_MAX} s" '[[ $RC == 2 && "$LAST" == *packages* && $((SECONDS - start)) -lt $HANG_MAX ]]'
+check "Arch zawieszony pacman: limit zapytań, partial, KONTRAKT: bieg < ${HANG_MAX} s" '[[ $RC == 2 && "$LAST" == *packages* && $((SECONDS - start)) -lt $HANG_MAX ]]'
 osr 'NAME="EndeavourOS"' ID=endeavouros ID_LIKE=arch
 gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1
 check "pochodna Archa (ID_LIKE=arch): ścieżka Archa, komplet" '[[ $RC == 0 && $(calls pacman) -gt 0 ]] && has "mkinitcpio:"'
@@ -334,7 +338,7 @@ gd "${SESSION[@]}" GD_RPMQF=fail GD_NV64=1 GD_NV32=1
 check "Fedora rpm -qf błąd: partial owners" '[[ "$LAST" == "diagnosis: partial; not checked: owners" ]]'
 start=$SECONDS
 gd "${SESSION[@]}" GD_RPM=hang ARCHENEMY_QUERY_TIMEOUT="$HANG_QT"
-check "Fedora zawieszony rpm: partial, bieg < ${HANG_MAX} s" '[[ $RC == 2 && "$LAST" == *packages* && $((SECONDS - start)) -lt $HANG_MAX ]]'
+check "Fedora zawieszony rpm: partial, KONTRAKT: bieg < ${HANG_MAX} s" '[[ $RC == 2 && "$LAST" == *packages* && $((SECONDS - start)) -lt $HANG_MAX ]]'
 osr ID=fedora VARIANT_ID=silverblue
 gd "${SESSION[@]}"
 check "Fedora Atomic: nieobsługiwana, bez rpm i pacmana" '[[ $RC == 2 && "$LAST" == *platform* && $(calls rpm) == 0 && $(calls pacman) == 0 ]]'
@@ -467,4 +471,4 @@ elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay)"
 else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ "$FAIL" -eq 0 ]]
+test_timing_ok && [[ "$FAIL" -eq 0 ]]

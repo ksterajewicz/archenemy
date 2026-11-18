@@ -31,6 +31,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 test_isolate "$REPO/tests/doctor-platforms.sh" "$@"   # D7F R3: zapisy poza $T wykrywalne
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"   # walidacja skali i PYTHONDONTWRITEBYTECODE dla importu test_timing
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || exit 1
 trap 'rm -rf "${T:?}"' EXIT
 test_environment_init "$T" || exit 1
@@ -45,9 +47,12 @@ import subprocess
 import sys
 import time
 
-# Limity czasu testu w jednym miejscu (do przepięcia na ARCHENEMY_TEST_TIME_SCALE).
-RUN_LIMIT = 10.0      # s — twardy limit jednego biegu doctora w teście
-DEADLINE = 5.0        # s — kontrakt: doctor kończy się przed 4,5 s (+ start Pythona)
+sys.path.insert(0, str(Path(os.environ['DOCTOR_SOURCE']) / 'tests/lib'))
+from test_timing import seconds
+
+# Limity czasu testu w jednym miejscu (tests/README-timing.md).
+RUN_LIMIT = seconds(10.0)  # s — ZABEZPIECZENIE: twardy limit jednego biegu doctora (× ARCHENEMY_TEST_TIME_SCALE)
+DEADLINE = 5.0             # s — KONTRAKT: doctor kończy się przed 4,5 s (+ start Pythona); bez skali
 
 root = Path(os.environ['DOCTOR_TEST_TREE'])
 source = Path(os.environ['DOCTOR_SOURCE'])
@@ -258,13 +263,13 @@ def doctor(label, *, full=False, expected=None, env=None, path=None, contains=()
     try:
         result = subprocess.run(cmd, env=current, capture_output=True, text=True, timeout=RUN_LIMIT)
     except subprocess.TimeoutExpired:
-        bad(label, 'hung past test limit')
+        bad(label, f'ZABEZPIECZENIE: hung past test limit {RUN_LIMIT:g} s')
         return '', None, ''
     elapsed = time.monotonic() - start
     out = result.stdout
     errors = []
     if elapsed >= DEADLINE:
-        errors.append(f'took {elapsed:.2f} s')
+        errors.append(f'KONTRAKT: doctor < {DEADLINE:g} s, took {elapsed:.2f} s')
     if expected is not None and result.returncode != expected:
         errors.append(f'rc {result.returncode} != {expected}')
     if result.stderr:

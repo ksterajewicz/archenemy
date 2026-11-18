@@ -26,9 +26,12 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 test_isolate "$REPO/tests/runtime-platforms.sh" "$@"   # D7F R3: zapisy poza $T wykrywalne
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"   # limity harnessu × ARCHENEMY_TEST_TIME_SCALE (tests/README-timing.md)
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || exit 1
 trap 'rm -rf "${T:?}"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
@@ -71,8 +74,8 @@ mouse() {   # mouse <os> [kod: cur|base] — menu (Enter = Back) → $OUT, wywo�
     local ms="$SRC/scripts/hypr/mouse-settings.sh"
     [[ "${2:-cur}" == base ]] && ms="$BASE/scripts/hypr/mouse-settings.sh"
     rm -rf "${T:?}/home"; mkdir -p "$T/home/archenemy"; : > "$CALLS"
-    OUT="$(printf '8\n' | HOME="$T/home" ARCHENEMY_OS_RELEASE="$T/os/$1" PATH="$T/bin:/usr/bin:/bin" \
-        timeout 15 bash "$ms" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+    OUT="$(printf '8\n' | test_timeout 15 env HOME="$T/home" ARCHENEMY_OS_RELEASE="$T/os/$1" PATH="$T/bin:/usr/bin:/bin" \
+        bash "$ms" 2>&1 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')"
     C="$(cat "$CALLS")"
 }
 if command -v ratbagctl >/dev/null 2>&1 && [[ "$(command -v ratbagctl)" != "$T"/* ]]; then
@@ -119,7 +122,7 @@ printf '#!/usr/bin/env bash\necho "socat $*" >> "${CALLS:?}"\nexit 0\n' > "$T/sb
 for c in sudo pacman dnf systemctl nix-env; do cp "$T/bin/$c" "$T/gbin/$c"; done
 find "$T/gbin" "$T/sbin" -maxdepth 1 -type f -exec chmod +x {} +   # nie przez dowiązania do /usr/bin
 
-TIMEOUT_BIN="$(command -v timeout)"; BASH_BIN="$(command -v bash)"
+BASH_BIN="$(command -v bash)"   # timeout i env z PATH testu (test_timeout), nie z $path guarda
 guard() {   # guard <os> <socat: yes|no> <socket: yes|no> [kod] → $RC, $N (powiadomienia), $C
     local g="$SRC/scripts/hypr/workspace-orphan-guard.sh" path="$T/gbin"
     [[ "${4:-cur}" == base ]] && g="$BASE/scripts/hypr/workspace-orphan-guard.sh"
@@ -128,7 +131,7 @@ guard() {   # guard <os> <socat: yes|no> <socket: yes|no> [kod] → $RC, $N (pow
     [[ "$2" == yes ]] && path="$T/sbin:$path"
     [[ "$3" == yes ]] && python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$T/run/hypr/sig/.socket2.sock"
     HOME="$T/home" XDG_RUNTIME_DIR="$T/run" HYPRLAND_INSTANCE_SIGNATURE=sig ARCHENEMY_OS_RELEASE="$T/os/$1" \
-        PATH="$path" "$TIMEOUT_BIN" 20 "$BASH_BIN" "$g" < /dev/null > "$T/guard-out" 2>&1
+        test_timeout 20 env PATH="$path" "$BASH_BIN" "$g" < /dev/null > "$T/guard-out" 2>&1
     RC=$?
     N="$(cat "$CALLS.notify" 2>/dev/null)"
     C="$(grep -vE '^hyprctl monitors$' "$CALLS")"
@@ -172,4 +175,4 @@ elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay)"
 else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ "$FAIL" -eq 0 ]]
+test_timing_ok && [[ "$FAIL" -eq 0 ]]

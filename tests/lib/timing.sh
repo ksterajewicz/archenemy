@@ -3,6 +3,9 @@
 TEST_TIMING_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test_timing.py"
 ARCHENEMY_TEST_TIME_SCALE="$(python3 "$TEST_TIMING_LIB" scale)" || exit 2
 export ARCHENEMY_TEST_TIME_SCALE
+# Import test_timing z Pythona pakietu nie zostawia tests/lib/__pycache__ w repo
+# (pakiety z test_isolate liczą to jako zapis poza $T).
+export PYTHONDONTWRITEBYTECODE=1
 # API timeout przyjmuje ułamkowe sekundy; nie zaokrąglamy w dół.
 test_seconds() { awk -v base="$1" -v scale="$ARCHENEMY_TEST_TIME_SCALE" 'BEGIN { printf "%.17g\n", base * scale }'; }
 test_timeout() {

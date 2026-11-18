@@ -27,9 +27,12 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 test_isolate "$REPO/tests/shell-platforms.sh" "$@"   # D7F R3: zapisy poza $T wykrywalne
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"   # limity harnessu × ARCHENEMY_TEST_TIME_SCALE (tests/README-timing.md)
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || exit 1
 trap 'rm -rf "${T:?}"' EXIT
 test_environment_init "$T" || exit 1
+test_timing_init "$T"
 ROOT_BEFORE="$(find / -mindepth 1 -maxdepth 1 2>/dev/null | sort)"
 
 PASS=0; FAIL=0
@@ -179,7 +182,7 @@ fresh() {
 # run <wejście> [argumenty] — wyjście (bez kolorów) w $OUT, kod w $RC.
 run() {
     local input="$1"; shift
-    OUT="$(printf '%b' "$input" | timeout 15 bash "$A/scripts/shell/shell-settings.sh" "$@" 2>&1 | sed -E -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/bak-[0-9_]+(-[0-9]+)?/bak-<ts>/g'; exit "${PIPESTATUS[1]}")"
+    OUT="$(printf '%b' "$input" | test_timeout 15 bash "$A/scripts/shell/shell-settings.sh" "$@" 2>&1 | sed -E -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/bak-[0-9_]+(-[0-9]+)?/bak-<ts>/g'; exit "${PIPESTATUS[1]}")"
     RC=$?
 }
 calls() { cat "$CALLS"; }
@@ -405,4 +408,4 @@ elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay)"
 else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ "$FAIL" -eq 0 ]]
+test_timing_ok && [[ "$FAIL" -eq 0 ]]

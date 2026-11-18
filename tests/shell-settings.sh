@@ -344,4 +344,4 @@ check "h otwiera menu powłoki"            '[[ "$OUT" == *"switch to zsh"* ]]'
 
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"
-[[ "$FAIL" -eq 0 ]]
+test_timing_ok && [[ "$FAIL" -eq 0 ]]
