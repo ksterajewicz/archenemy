@@ -613,6 +613,13 @@ on a real machine. Verification has three levels:
    is then killed and reported as hung, so a suite must not wait for input
    (its stdin is `/dev/null`). In suites with `pipefail`, capture a script's output into a
    variable instead of `… | grep -q` (SIGPIPE turns a pass into a fail).
+   A suite that must prove it writes only under its `$T` calls
+   `test_isolate "$REPO/tests/<suite>.sh" "$@"` right after sourcing
+   `tests/lib/environment.sh` and checks `test_escapes "$T"` before its
+   result line (overlay namespace, D7F R3; 2 = isolation unavailable → say
+   so, never ✓). Write mocks with the Write tool, never nested heredocs in a
+   shell command; `chmod` only regular files in a mock `bin` that also holds
+   symlinks to real tools (`chmod` follows them into `/usr/bin`).
 3. **The real test** — `install.sh` and rice switching (`Super+T`) need a
    live Arch + Hyprland machine. If you don't have one, **say so
    explicitly** and write out exact "live-only" steps for a human to check

@@ -33,6 +33,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INST="${INSTALL_SERVICES_SRC:-$REPO/install/install.sh}"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
+# D7F R3: cały pakiet w przestrzeni nazw z overlayem (zapisy poza $T wykrywalne, host nietknięty).
+test_isolate "$REPO/tests/install-services.sh" "$@"
 ROOT_BEFORE="$(find / -mindepth 1 -maxdepth 1 -printf "%f\n" | LC_ALL=C sort)"
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || { echo "mktemp -d nie zadziałał — przerywam bez zapisu"; exit 1; }
 trap 'rm -rf "${T:?}"' EXIT
@@ -471,6 +473,10 @@ if [[ -n "$REV" ]]; then
     reset
 fi
 
+# D7F R3: żadnej zmiany poza $T w nakrytych katalogach (także głęboko: /tmp/<cudzy>/…, /root/…).
+if escaped="$(test_escapes "$T")"; then ok "zero zapisów poza \$T w: $(test_isolation_dirs)"
+elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay): sprawdzane tylko nazwy w /"
+else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 root_new="$(comm -13 <(echo "$ROOT_BEFORE") <(find / -mindepth 1 -maxdepth 1 -printf "%f\n" | LC_ALL=C sort))"
 check "żadnych nowych plików w / po biegu${root_new:+: ${root_new//$'\n'/ }}" '[[ -z "$root_new" ]]'
 

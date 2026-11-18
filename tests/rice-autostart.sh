@@ -30,6 +30,8 @@ LUA="$(command -v lua5.4 || command -v lua || true)"
 if [[ -z "$LUA" ]]; then echo "brak interpretera lua5.4 — pomijam"; exit 0; fi
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
+# D7F R3: cały pakiet w przestrzeni nazw z overlayem (zapisy poza $T wykrywalne, host nietknięty).
+test_isolate "$REPO/tests/rice-autostart.sh" "$@"
 # Zapisy wyłącznie pod $T (D7): pusty $T po nieudanym mktemp zamieniałby
 # "$T/…" w ścieżki w / — stąd twarde sprawdzenie i ${T:?} przy każdym zapisie.
 ROOT_BEFORE="$(find / -mindepth 1 -maxdepth 1 -printf "%f\n" | LC_ALL=C sort)"
@@ -185,6 +187,10 @@ if [[ "$(grep -c 'systemctl --user start hyprpolkitagent' "$REPO/rices/white-blu
 else fail "white-blue_beta: zmieniona linia agenta polkit"; fi
 
 # Po biegu w / nie ma nowych wpisów (zapis poza $T = porażka).
+# D7F R3: żadnej zmiany poza $T w nakrytych katalogach (także głęboko: /tmp/<cudzy>/…, /root/…).
+if escaped="$(test_escapes "$T")"; then ok "zero zapisów poza \$T w: $(test_isolation_dirs)"
+elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay): sprawdzane tylko nazwy w /"
+else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 root_new="$(comm -13 <(echo "$ROOT_BEFORE") <(find / -mindepth 1 -maxdepth 1 -printf "%f\n" | LC_ALL=C sort))"
 if [[ -z "$root_new" ]]; then ok "żadnych nowych plików w / po biegu"
 else fail "nowe wpisy w / po biegu: ${root_new//$'\n'/ }"; fi

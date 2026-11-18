@@ -25,6 +25,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
+test_isolate "$REPO/tests/runtime-platforms.sh" "$@"   # D7F R3: zapisy poza $T wykrywalne
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || exit 1
 trap 'rm -rf "${T:?}"' EXIT
 test_environment_init "$T" || exit 1
@@ -116,7 +117,7 @@ EOF
 printf '#!/usr/bin/env bash\nexit 0\n' > "$T/gbin/sleep"
 printf '#!/usr/bin/env bash\necho "socat $*" >> "${CALLS:?}"\nexit 0\n' > "$T/sbin/socat"
 for c in sudo pacman dnf systemctl nix-env; do cp "$T/bin/$c" "$T/gbin/$c"; done
-chmod +x "$T/gbin/"* "$T/sbin/"*
+find "$T/gbin" "$T/sbin" -maxdepth 1 -type f -exec chmod +x {} +   # nie przez dowiązania do /usr/bin
 
 TIMEOUT_BIN="$(command -v timeout)"; BASH_BIN="$(command -v bash)"
 guard() {   # guard <os> <socat: yes|no> <socket: yes|no> [kod] → $RC, $N (powiadomienia), $C
@@ -166,6 +167,9 @@ done
 check "workspaces.lua startuje guard ze wspólnego scripts/hypr" 'grep -qF "~/archenemy/scripts/hypr/workspace-orphan-guard.sh" "$REPO/config/hypr/workspaces.lua"'
 check "TUI: [h]/[m]/[u] → wspólne skrypty z poradami per platforma" 'grep -qF "h) bash \"\$ARCHENEMY_DIR/scripts/shell/shell-settings.sh\"" "$REPO/scripts/appbinds/appbinds.sh" && grep -qF "m) bash \"\$ARCHENEMY_DIR/scripts/hypr/mouse-settings.sh\"" "$REPO/scripts/appbinds/appbinds.sh" && grep -qF "u) bash \"\$ARCHENEMY_DIR/scripts/appbinds/update-archenemy.sh\"" "$REPO/scripts/appbinds/appbinds.sh"'
 
+if escaped="$(test_escapes "$T")"; then ok "zero zapisów poza \$T w: $(test_isolation_dirs)"
+elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay)"
+else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ "$FAIL" -eq 0 ]]

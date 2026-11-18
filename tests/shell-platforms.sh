@@ -26,6 +26,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
+test_isolate "$REPO/tests/shell-platforms.sh" "$@"   # D7F R3: zapisy poza $T wykrywalne
 T="$(mktemp -d)" && [[ -n "$T" && -d "$T" && "$T" != / ]] || exit 1
 trap 'rm -rf "${T:?}"' EXIT
 test_environment_init "$T" || exit 1
@@ -146,7 +147,7 @@ for c in nix-env nix nixos-rebuild; do
     printf '#!/usr/bin/env bash\necho "%s $*" >> "${CALLS:?}"\n' "$c" > "$BIN/$c"
 done
 printf '#!/usr/bin/env bash\nexit 0\n' > "$BIN/clear"
-chmod +x "$BIN"/*
+find "$BIN" -maxdepth 1 -type f -exec chmod +x {} +   # nie przez dowiązania do /usr/bin
 export PATH="$BIN:$ZBIN" SHELL=/usr/bin/bash TERM=xterm ARCHENEMY_SHELLS_FILE="$T/shells"
 
 # ─── świeży HOME i bieg ──────────────────────────────────────────────────────
@@ -397,6 +398,9 @@ check "NixOS: profile od osobistego do systemowego, oba układy autosuggestions"
 
 ROOT_AFTER="$(find / -mindepth 1 -maxdepth 1 2>/dev/null | sort)"
 check "żadnych nowych plików w /" '[[ "$ROOT_AFTER" == "$ROOT_BEFORE" ]]'
+if escaped="$(test_escapes "$T")"; then ok "zero zapisów poza \$T w: $(test_isolation_dirs)"
+elif [[ $? == 2 ]]; then echo "  – izolacja niedostępna (unshare/overlay)"
+else fail "zapisy poza \$T: ${escaped//$'\n'/ }"; fi
 echo
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 [[ "$FAIL" -eq 0 ]]
