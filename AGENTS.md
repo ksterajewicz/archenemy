@@ -481,7 +481,9 @@ Rules that follow directly from the table:
   enabled and active; never combine "some unit active" with "some unit
   enabled". `bash tests/install-services.sh` (stateful mock:
   `MOCK_ENABLE=fail|noop|dead`, `MOCK_ENABLE_SKIP`, `MOCK_NOBUS`) and
-  `INSTALL_SERVICES_REV=<rev>` for Arch parity.
+  `INSTALL_SERVICES_REV=<rev>` for Arch parity (base calls a subsequence,
+  extra calls only state reads; a scenario with an intended output change
+  needs a `DIFF_OK` pattern that every differing line matches).
 - **`install/bluetooth-installation.sh` gates itself like the D6 helpers**
   (`pkg_gate "Bluetooth"`, exit 2 outside Arch, flag untouched); on Arch every
   failure removes `data/bluetooth-enabled.dat` (`bash tests/bluetooth.sh`).

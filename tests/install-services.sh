@@ -125,7 +125,9 @@ name="${0##*/}"
 echo "$name $*" >> "${CALLS:?}"
 case "$name" in
     sudo) [[ "${1:-}" == -k ]] && exit 0; exec "$@" ;;
-    ufw)  [[ "${1:-}" == status && -n "${MOCK_UFW_ACTIVE:-}" ]] && printf 'Status: active\nDefault: deny (incoming), allow (outgoing)\n' ;;
+    # MOCK_UFW_FAIL=<podkomenda> — ta podkomenda ufw kończy się kodem 1 (osobne awarie UFW, R4).
+    ufw)  [[ -n "${MOCK_UFW_FAIL:-}" && "${1:-}" == "$MOCK_UFW_FAIL" ]] && exit 1
+          [[ "${1:-}" == status && -n "${MOCK_UFW_ACTIVE:-}" ]] && printf 'Status: active\nDefault: deny (incoming), allow (outgoing)\n' ;;
     rpm)
         [[ "${1:-}" == -q ]] || exit 2; shift
         [[ "${1:-}" == --qf ]] && shift 2
@@ -149,7 +151,8 @@ mkdir -p "$A/install/lib" "$A/packages" "$A/scripts/waybar" "$A/data"
 cp "$REPO/install/lib/pkg.sh" "$A/install/lib/"
 cp "$REPO/packages/platform-map.tsv" "$A/packages/"
 for n in bluetooth-installation virtualbox-installation asus-installation; do
-    printf '#!/usr/bin/env bash\necho "RUN %s" >> "$CALLS"\nexit 0\n' "$n" > "$A/install/$n.sh"
+    # MOCK_HELPER_RC — kod wyjścia pomocnika (kontrakt 0/2/inne, parytet R4).
+    printf '#!/usr/bin/env bash\necho "RUN %s" >> "$CALLS"\nexit "${MOCK_HELPER_RC:-0}"\n' "$n" > "$A/install/$n.sh"
 done
 printf '#!/usr/bin/env bash\necho "${MOCK_PROFILE:-balanced}"\n' > "$A/scripts/waybar/profile-get.sh"
 chmod +x "$A/install/"*.sh "$A/scripts/waybar/profile-get.sh"
@@ -193,7 +196,7 @@ run() {
     done_="$(grep '^DONE=.' "$T/summary")"
     skipped="$(grep '^SKIPPED=.' "$T/summary")"
 }
-reset() { rm -rf "${ST:?}"; unset MOCK_ENABLE MOCK_ENABLE_SKIP MOCK_NOBUS MOCK_UFW_ACTIVE MOCK_RPM_INSTALLED MOCK_PROFILE; }
+reset() { rm -rf "${ST:?}"; unset MOCK_ENABLE MOCK_ENABLE_SKIP MOCK_NOBUS MOCK_UFW_ACTIVE MOCK_RPM_INSTALLED MOCK_PROFILE MOCK_HELPER_RC MOCK_UFW_FAIL; }
 called() { grep -qxF -- "$1" <<< "$calls"; }
 # Mutacje usług i systemu; `sudo -k` z pułapki bloku platformy (Arch, Fedora
 # bez flagi) to nie mutacja — NixOS i Fedora z flagą nie wołają sudo wcale
@@ -399,14 +402,50 @@ if [[ -n "$REV" ]]; then
         "[10] NM działa, audio działa|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|same"
         "[10] sam socket pulse, backend martwy (naprawione fałszywe ✓)|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both|MOCK_UFW_ACTIVE=1|diff"
         "[10] aktywny wyłączony socket + martwa usługa (naprawione fałszywe ✓)|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:active user:pipewire-pulse:enabled user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|diff"
+        "[10] sama usługa pulse działa|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse:both user:pipewire:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|same"
+        "[10] Bluetooth i VirtualBox: zgoda|step10|y\ny\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|same"
+        "[10] Bluetooth i VirtualBox: pomocniki kod 2|step10|y\ny\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1 MOCK_HELPER_RC=2|same"
+        "[10] Bluetooth i VirtualBox: pomocniki zawodzą|step10|y\ny\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1 MOCK_HELPER_RC=1|same"
+        "[10] UFW zgoda, awaria default|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_FAIL=default|same"
+        "[10] UFW zgoda, status nieaktywny po enable|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both||same"
+        "[10] UFW zgoda, awaria enable|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_FAIL=enable|same"
+        "[10] UFW zgoda, awaria systemctl enable ufw|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1 MOCK_ENABLE=fail|same"
+        "[6] ASUS, pomocnik 0|step6|1\n|||same"
+        "[6] ASUS, pomocnik 2 (restart)|step6|1\n||MOCK_HELPER_RC=2|same"
+        "[6] ASUS, pomocnik zawodzi|step6|1\n||MOCK_HELPER_RC=1|same"
+        "[6] HP Omen|step6|2\n|||same"
         "[10] NM zgoda, audio enable|step10|\nn\nn\n|system:ufw:enabled|MOCK_UFW_ACTIVE=1|same"
         "[10] NM awaria enable, audio awaria|step10|\nn\nn\n|system:ufw:enabled|MOCK_UFW_ACTIVE=1 MOCK_ENABLE=fail|diff"
         "[10] NM odmowa|step10|n\nn\nn\n|system:ufw:enabled user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|same"
         "[10] UFW pytanie, zgoda|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both||same"
         "[10] UFW odmowa, brak busa|step10|n\nn\nn\n|system:NetworkManager:both|MOCK_NOBUS=1|same"
     )
-    # Odczyty, które D7 dodaje (is-enabled/is-active), odjęte z obu stron.
-    reads_out() { grep -vE '^systemctl( --user)? is-(enabled|active) ' <<< "$1"; }
+    # Dozwolona treść różnicy wyjścia/podsumowania w scenariuszach „diff”
+    # (R4, przegląd D7: sama liczba wierszy niczego nie dowodzi). Zero różnic
+    # też przechodzi — wobec 0a3ca91 PPD i NM już są po D7.
+    declare -A DIFF_OK=(
+        ["PPD awaria enable"]='power-profiles-daemon'
+        ["[10] NM awaria enable, audio awaria"]='NetworkManager'
+        ["[10] sam socket pulse, backend martwy (naprawione fałszywe ✓)"]='Audio'
+        ["[10] aktywny wyłączony socket + martwa usługa (naprawione fałszywe ✓)"]='Audio'
+    )
+    # calls_parity <baza> <bieżące> — wywołania bazy są podciągiem bieżących
+    # (ta sama kolejność, nic nie usunięte ani przestawione), a nadwyżka to
+    # wyłącznie odczyty stanu `systemctl [--user] is-enabled|is-active --quiet`
+    # (R4: dawny filtr usuwał odczyty po obu stronach i mógł ukryć zmianę).
+    calls_parity() {
+        local -a r c; local i=0 j=0
+        mapfile -t r <<< "$1"; mapfile -t c <<< "$2"
+        while (( j < ${#c[@]} )); do
+            if (( i < ${#r[@]} )) && [[ "${c[j]}" == "${r[i]}" ]]; then i=$((i + 1))
+            elif [[ ! "${c[j]}" =~ ^systemctl\ (--user\ )?is-(enabled|active)\ --quiet\  ]]; then return 1
+            fi
+            j=$((j + 1))
+        done
+        (( i == ${#r[@]} ))
+    }
+    # diff_only <wzorzec> <baza> <bieżące> — każdy różniący się wiersz pasuje do wzorca.
+    diff_only() { ! diff <(echo "$2") <(echo "$3") | grep '^[<>]' | grep -vE -- "$1" | grep -q .; }
     prompts() { grep '^ASK: ' <<< "$1"; }
     for sc in "${SCEN[@]}"; do
         IFS='|' read -r name step input states envs outmode <<< "$sc"
@@ -420,11 +459,13 @@ if [[ -n "$REV" ]]; then
             for e in $envs; do unset "${e%%=*}"; done
         done
         check "parytet $name: te same pytania, ta sama reszta stdin" '[[ "$(prompts "$o_cur")" == "$(prompts "$o_rev")" && "$r_cur" == "$r_rev" ]]'
-        check "parytet $name: te same wywołania (bez odczytów stanu)" '[[ "$(reads_out "$c_cur")" == "$(reads_out "$c_rev")" ]]'
+        check "parytet $name: wywołania bazy w tej samej kolejności, nadwyżka tylko z odczytów stanu" 'calls_parity "$c_rev" "$c_cur"'
         if [[ "$outmode" == same ]]; then
             check "parytet $name: to samo wyjście i podsumowanie" '[[ "$o_cur" == "$o_rev" && "$s_cur" == "$s_rev" ]]'
         else
-            echo "    (zamierzona różnica wyjścia: $(diff <(echo "$o_rev") <(echo "$o_cur") | grep -c '^[<>]') wierszy)"
+            pat="${DIFF_OK[$name]:?brak wzorca różnicy dla $name}"
+            check "parytet $name: różnice wyjścia i podsumowania tylko w wierszach „$pat” ($(diff <(echo "$o_rev") <(echo "$o_cur") | grep -c '^[<>]') wierszy)" \
+                'diff_only "$pat" "$o_rev" "$o_cur" && diff_only "$pat" "$s_rev" "$s_cur"'
         fi
     done
     reset
