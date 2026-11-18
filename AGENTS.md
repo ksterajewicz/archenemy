@@ -475,7 +475,11 @@ Rules that follow directly from the table:
   dead, 2 = not enabled / no unit / no user bus) is the only way to claim a
   service works; an exit code 0 of `systemctl enable --now` proves nothing.
   Enabled-but-dead = `svc_dead` (warning with a check command, summary entry,
-  no question, no change). `bash tests/install-services.sh` (stateful mock:
+  no question, no change). Audio "already running" (D7F R1) needs the SAME
+  pulse unit (socket or service) enabled and active AND the backend —
+  `pipewire.socket` or `pipewire.service`, plus `wireplumber.service` — each
+  enabled and active; never combine "some unit active" with "some unit
+  enabled". `bash tests/install-services.sh` (stateful mock:
   `MOCK_ENABLE=fail|noop|dead`, `MOCK_ENABLE_SKIP`, `MOCK_NOBUS`) and
   `INSTALL_SERVICES_REV=<rev>` for Arch parity.
 - **`install/bluetooth-installation.sh` gates itself like the D6 helpers**

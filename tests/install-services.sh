@@ -297,7 +297,8 @@ echo "== [10] zapora, NetworkManager, audio"
 # Wspólne tło biegów Archa: aktywna i włączona UFW (bez pytania o nią),
 # odpowiedzi kolejno: NetworkManager (gdy pyta), Bluetooth n, VirtualBox n.
 arch10() { svc system ufw enabled; MOCK_UFW_ACTIVE=1 run arch step10 "$1"; }
-audio_ok() { svc user pipewire-pulse.socket both; }
+# Działające audio = pulse (socket) i backend (pipewire.socket, wireplumber), każde enabled+active (D7F R1).
+audio_ok() { svc user pipewire-pulse.socket both; svc user pipewire.socket both; svc user wireplumber both; }
 reset; svc system NetworkManager both; audio_ok; arch10 'n\nn\n'
 check "Arch, NM enabled+active: ✓ already, bez pytania" '[[ "$out" == *"✓ NetworkManager already enabled."* ]] && ! grep -q "^ASK: Enable NetworkManager" <<< "$out" && ! grep -q "NetworkManager" <<< "$(mutations)"'
 reset; svc system NetworkManager enabled; audio_ok; arch10 'n\nn\n'
@@ -314,7 +315,25 @@ done
 reset; audio_ok; arch10 'n\nn\nn\n'
 check "Arch, NM odmowa: bez enable, wpis" '! grep -q "enable --now NetworkManager" <<< "$calls" && grep -q "^SKIPPED=NetworkManager (network module" <<< "$skipped"'
 reset; svc system NetworkManager both; audio_ok; arch10 'n\nn\n'
-check "Arch, audio: socket active+enabled → ✓ already, bez enable" '[[ "$out" == *"✓ Audio (pipewire-pulse) already running."* ]] && ! grep -q "^systemctl --user enable" <<< "$calls"'
+check "Arch, audio: socket pulse + backend enabled+active → ✓ already, bez enable" '[[ "$out" == *"✓ Audio (pipewire-pulse) already running."* ]] && ! grep -q "^systemctl --user enable" <<< "$calls" && called "systemctl --user is-active --quiet wireplumber.service"'
+reset; svc system NetworkManager both; svc user pipewire-pulse both; svc user pipewire both; svc user wireplumber both; arch10 'n\nn\n'
+check "Arch, audio: sama usługa pulse i usługa pipewire enabled+active → ✓" '[[ "$out" == *"✓ Audio (pipewire-pulse) already running."* ]] && ! grep -q "^SKIPPED=Audio" <<< "$skipped"'
+# D7F R1 (odtworzenie proby-uslug.py): ✓ wymaga tej samej jednostki enabled+active
+# i żywego backendu — na każdej platformie (gałąź stoi przed podziałem platform).
+for p in arch fedora nixos; do
+    reset; svc system NetworkManager both; svc system ufw enabled
+    svc user pipewire-pulse.socket active; svc user pipewire-pulse enabled; svc user pipewire.socket both; svc user wireplumber both
+    MOCK_UFW_ACTIVE=1 run "$p" step10 'n\nn\n'
+    check "$p, audio: aktywny wyłączony socket + włączona martwa usługa → ⚠, wpis, bez ✓ i zmian" \
+        '[[ "$out" != *"✓ Audio"* && "$out" == *"no unit is both enabled and running"* ]] && grep -q "^SKIPPED=Audio (pipewire-pulse) — no unit both enabled and running" <<< "$skipped" && ! grep -q "^systemctl --user enable" <<< "$calls"'
+    reset; svc system NetworkManager both; svc system ufw enabled
+    svc user pipewire-pulse.socket both; svc user pipewire.socket enabled; svc user wireplumber enabled
+    MOCK_UFW_ACTIVE=1 run "$p" step10 'n\nn\n'
+    check "$p, audio: socket pulse działa, pipewire i wireplumber martwe → ⚠ backendu, wpis, bez ✓" \
+        '[[ "$out" != *"✓ Audio"* && "$out" == *"backend (pipewire, wireplumber) is not enabled and running"* ]] && grep -q "^SKIPPED=Audio — pipewire/wireplumber not enabled and running" <<< "$skipped" && called "systemctl --user is-active --quiet pipewire.socket" && ! grep -q "^systemctl --user enable" <<< "$calls"'
+done
+reset; svc system NetworkManager both; svc user pipewire-pulse.socket both; svc user pipewire.socket both; svc user wireplumber enabled; arch10 'n\nn\n'
+check "Arch, audio: tylko wireplumber martwy → ⚠ backendu, bez ✓" '[[ "$out" != *"✓ Audio"* && "$out" == *"backend (pipewire, wireplumber)"* ]]'
 reset; svc system NetworkManager both; svc user pipewire-pulse.socket active; arch10 'n\nn\n'
 check "Arch, audio: socket active, nie enabled → ostrzeżenie, wpis, bez ✓ i zmian" \
     '[[ "$out" == *"Audio (pipewire-pulse) is running, but not enabled"* && "$out" != *"✓ Audio"* ]] && grep -q "^SKIPPED=Audio (pipewire-pulse) — running but not enabled" <<< "$skipped" && ! grep -q "^systemctl --user enable" <<< "$calls"'
@@ -348,7 +367,7 @@ check "Fedora, NM enabled-but-dead: ostrzeżenie, bez ✓, zero mutacji" '[[ "$o
 reset; svc system ufw both; MOCK_UFW_ACTIVE=1 nix_run step10 'y\ny\ny\ny\n'
 check "NixOS, aktywna UFW: networking.firewall, opcje NM/pipewire/bluetooth, zero mutacji, bez pytań" \
     '[[ "$out" == *"networking.firewall"* && "$out" == *"networking.networkmanager.enable = true;"* && "$out" == *"services.pipewire.pulse.enable = true;"* && "$out" == *"hardware.bluetooth.enable = true;"* && "$out" == *"data/bluetooth-enabled.dat"* && "$rest" == "$(<"$T/stdin")" ]] && no_mutation'
-reset; svc system NetworkManager both; svc user pipewire-pulse.socket both; nix_run step10 ''
+reset; svc system NetworkManager both; audio_ok; nix_run step10 ''
 check "NixOS, zadeklarowane usługi działają: ✓ po odczycie, bez porad i wpisów sieci/audio" \
     '[[ "$out" == *"✓ NetworkManager already enabled."* && "$out" == *"✓ Audio (pipewire-pulse) already running."* ]] && ! grep -qE "^SKIPPED=(NetworkManager|Audio)" <<< "$skipped"'
 reset; svc system NetworkManager enabled; svc user pipewire-pulse.socket active; nix_run step10 ''
@@ -377,11 +396,13 @@ if [[ -n "$REV" ]]; then
         "mpd systemowy active + użytkownika|step8l|y\n|system:mpd:active user:mpd:both||same"
         "mpd gniazdo enabled|step8l|y\n|user:mpd.socket:enabled||same"
         "mpd gniazdo active|step8l|y\n|user:mpd.socket:active||same"
-        "[10] NM działa, audio działa|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both|MOCK_UFW_ACTIVE=1|same"
+        "[10] NM działa, audio działa|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|same"
+        "[10] sam socket pulse, backend martwy (naprawione fałszywe ✓)|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:both|MOCK_UFW_ACTIVE=1|diff"
+        "[10] aktywny wyłączony socket + martwa usługa (naprawione fałszywe ✓)|step10|n\nn\n|system:ufw:enabled system:NetworkManager:both user:pipewire-pulse.socket:active user:pipewire-pulse:enabled user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|diff"
         "[10] NM zgoda, audio enable|step10|\nn\nn\n|system:ufw:enabled|MOCK_UFW_ACTIVE=1|same"
         "[10] NM awaria enable, audio awaria|step10|\nn\nn\n|system:ufw:enabled|MOCK_UFW_ACTIVE=1 MOCK_ENABLE=fail|diff"
-        "[10] NM odmowa|step10|n\nn\nn\n|system:ufw:enabled user:pipewire-pulse.socket:both|MOCK_UFW_ACTIVE=1|same"
-        "[10] UFW pytanie, zgoda|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both||same"
+        "[10] NM odmowa|step10|n\nn\nn\n|system:ufw:enabled user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both|MOCK_UFW_ACTIVE=1|same"
+        "[10] UFW pytanie, zgoda|step10|y\nn\nn\n|system:NetworkManager:both user:pipewire-pulse.socket:both user:pipewire.socket:both user:wireplumber:both||same"
         "[10] UFW odmowa, brak busa|step10|n\nn\nn\n|system:NetworkManager:both|MOCK_NOBUS=1|same"
     )
     # Odczyty, które D7 dodaje (is-enabled/is-active), odjęte z obu stron.

@@ -2038,11 +2038,29 @@ audio_units_ok() {
     local u
     for u in "${AUDIO_UNITS[@]}"; do svc_check --user "$u" || return 1; done
 }
+# D7F R1 (przegląd Codexa): „already running” = TA SAMA jednostka pulse
+# (socket albo usługa) enabled i active ORAZ backend: pipewire (socket albo
+# usługa) i wireplumber.service, każdy enabled i active. Dawne „(socket LUB
+# usługa active) I (socket LUB usługa enabled)” dawało ✓ dla aktywnego, ale
+# wyłączonego socketu przy martwej włączonej usłudze, a backendu nie czytało.
+audio_backend_ok() {
+    { svc_check --user pipewire.socket || svc_check --user pipewire.service; } \
+        && svc_check --user wireplumber.service
+}
 if systemctl --user is-active --quiet pipewire-pulse.socket \
    || systemctl --user is-active --quiet pipewire-pulse.service; then
-    if systemctl --user is-enabled --quiet pipewire-pulse.socket 2>/dev/null \
-       || systemctl --user is-enabled --quiet pipewire-pulse.service 2>/dev/null; then
-        echo -e "  ${GREEN}✓ Audio (pipewire-pulse) already running.${NC}"
+    if svc_check --user pipewire-pulse.socket || svc_check --user pipewire-pulse.service; then
+        if audio_backend_ok; then
+            echo -e "  ${GREEN}✓ Audio (pipewire-pulse) already running.${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ Audio: pipewire-pulse is running, but its backend (pipewire, wireplumber) is not enabled and running. Check: systemctl --user status pipewire.socket wireplumber.service${NC}"
+            SUMMARY_SKIPPED+=("Audio — pipewire/wireplumber not enabled and running, check: systemctl --user status pipewire.socket wireplumber.service")
+        fi
+    elif systemctl --user is-enabled --quiet pipewire-pulse.socket 2>/dev/null \
+         || systemctl --user is-enabled --quiet pipewire-pulse.service 2>/dev/null; then
+        # Coś jest enabled, coś active — ale nie ta sama jednostka.
+        echo -e "  ${YELLOW}⚠ Audio (pipewire-pulse): no unit is both enabled and running (the running one will not start at the next login). Check: systemctl --user status pipewire-pulse.socket pipewire-pulse.service${NC}"
+        SUMMARY_SKIPPED+=("Audio (pipewire-pulse) — no unit both enabled and running, check: systemctl --user status pipewire-pulse.socket pipewire-pulse.service")
     else
         echo -e "  ${YELLOW}⚠ Audio (pipewire-pulse) is running, but not enabled — it will not start at the next login. Check: systemctl --user status pipewire-pulse.socket${NC}"
         SUMMARY_SKIPPED+=("Audio (pipewire-pulse) — running but not enabled, check: systemctl --user status pipewire-pulse.socket")
