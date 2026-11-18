@@ -169,11 +169,20 @@ def main():
     elif mode == 'wait-pid':
         def stopped():
             stat = Path('/proc') / args[1] / 'stat'
-            return not stat.exists() or stat.read_text().rsplit(') ', 1)[1].startswith('Z')
+            try:
+                state = stat.read_text().rsplit(') ', 1)[1]
+            except (FileNotFoundError, ProcessLookupError):
+                # PID może zniknąć między sprawdzeniem ścieżki a open/read.
+                return True
+            return state.startswith('Z')
         wait_until(stopped, float(args[0]), 'koniec PID ' + args[1])
     elif mode == 'wait-file':
-        wait_until(lambda: Path(args[1]).exists() and Path(args[1]).stat().st_size > 0,
-                   float(args[0]), 'plik ' + args[1])
+        def ready_file():
+            try:
+                return Path(args[1]).stat().st_size > 0
+            except FileNotFoundError:
+                return False
+        wait_until(ready_file, float(args[0]), 'plik ' + args[1])
     else:
         raise ValueError('nieznana operacja: ' + mode)
     return 0
