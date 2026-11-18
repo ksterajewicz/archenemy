@@ -120,11 +120,19 @@ run() {
     out="${all%%@@RC=*}"
     rc="${all#*@@RC=}"; rc="${rc%%@@*}"
     rest="${all#*@@RC=*@@}"; rest="${rest#$'\n'}"
-    # Komunikaty basha („<skrypt>: line N: …”) bez ścieżki i numeru linii —
-    # brama przesuwa linie, a parytet porównuje zachowanie, nie numerację.
-    norm="$(sed -E 's|^[^ ]*: line [0-9]+: |<bash>: |' <<< "$out")"
+    norm="$(norm_out <<< "$out")"
     after="$(snap)"
     calls="$(<"$CALLS")"
+}
+# norm_out — komunikaty basha („<skrypt>: line N: …”) do porównania z bazą:
+# znane katalogi robocze (kopia bazy, repo, $T, wrapper base-<nazwa>) →
+# wspólne <dir>/, numer linii → <N> (brama przesuwa linie). Względna nazwa
+# pliku ZOSTAJE (D6F L2, przegląd Codexa: dawne `s|^[^ ]*: line N: |<bash>: |`
+# zrównywało komunikaty różnych plików, np. bootloader.sh i lib/pkg.sh).
+BASE="$T/base"
+norm_out() {
+    sed -E -e "s|$BASE/|<dir>/|g" -e "s|$REPO/|<dir>/|g" -e "s|$T/base-|<dir>/|g" -e "s|$T/|<dir>/|g" \
+        -e 's|^(<dir>/[^ :]+): line [0-9]+: |\1: line <N>: |'
 }
 # gated <etykieta> <oczekiwany tekst…> — po `run`: kod 2, zero wywołań, migawka
 # bez zmian, stdin nietknięty, „nothing was changed”, bez ✓ i każdy tekst w $out.
@@ -173,8 +181,20 @@ parity() {
         done
     fi
 }
+# Samotest normalizacji (D6F L2, odtworzenie L2-normalizacja.py odwrócone):
+# różne pliki z tym samym komunikatem pozostają różne, ten sam plik z innym
+# katalogiem i numerem linii — równy, zmiana treści komunikatu widoczna.
+n1="$(norm_out <<< "$BASE/install/bootloader.sh: line 81: write failed")"
+n2="$(norm_out <<< "$REPO/install/lib/pkg.sh: line 475: write failed")"
+n3="$(norm_out <<< "$REPO/install/bootloader.sh: line 90: write failed")"
+n4="$(norm_out <<< "$REPO/install/bootloader.sh: line 90: permission denied")"
+check "normalizacja: różne pliki z tym samym komunikatem pozostają różne" '[[ "$n1" != "$n2" && "$n2" == "<dir>/install/lib/pkg.sh: line <N>: write failed" ]]'
+check "normalizacja: ten sam plik, inny katalog i numer linii → równe" '[[ "$n1" == "$n3" && "$n1" == "<dir>/install/bootloader.sh: line <N>: write failed" ]]'
+check "normalizacja: zmiana treści komunikatu widoczna" '[[ "$n3" != "$n4" ]]'
+check "normalizacja: wrapper bazy (\$T/base-<nazwa>) = wrapper bieżący" '[[ "$(norm_out <<< "$T/base-w.sh: line 3: x")" == "$(norm_out <<< "$T/w.sh: line 5: x")" ]]'
+
 if [[ -n "${HELPER_GATES_REV:-}" ]]; then
-    BASE="$T/base"; mkdir -p "$BASE"
+    mkdir -p "$BASE"
     if ! git -C "$REPO" archive "$HELPER_GATES_REV" install | tar -x -C "$BASE"; then
         echo "✗ nie da się wypakować install/ z $HELPER_GATES_REV"; exit 1
     fi
