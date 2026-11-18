@@ -503,6 +503,11 @@ nix_hyprpaper 0.8.1
 PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" \
     refused_run 11 "NixOS, hyprpaper 0.8.1" "hyprpaper is 0.8.1 — archenemy needs 0.8.2 or newer"
 nix_hyprpaper 0.8.4
+echo "== bieg 11b (NixOS): hyprpaper spoza sklepu Nix (wersja nieustalona) → odmowa"
+# Bez $T/nixbin: hyprpaper z PATH to atrapa w $T/bin, nie <sklep>/<hash>-hyprpaper-<wersja>.
+ARCHENEMY_OS_RELEASE="$T/os/nixos" \
+    refused_run 11b "NixOS, hyprpaper o nieustalonej wersji" "cannot determine the hyprpaper version — archenemy needs 0.8.2 or newer"
+check "NixOS: podpowiedź pakietu z nixpkgs" '[[ "$OUT" == *"pkgs.hyprpaper"* ]]'
 echo "== bieg 12 (NixOS): wersji działającego Hyprlanda nie da się odczytać → odmowa"
 PATH="$T/nixbin:$PATH" ARCHENEMY_OS_RELEASE="$T/os/nixos" MOCK_HYPRLAND_VERSION=none \
     refused_run 12 "NixOS, hyprctl version bez odpowiedzi" "cannot read the version of the running Hyprland"

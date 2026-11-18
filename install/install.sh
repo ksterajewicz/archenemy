@@ -201,8 +201,9 @@ echo -e "${GREEN}✓ Hyprland found.${NC}"
 # (to ona przeładuje config w [11]) i, na Fedorze, pakietu (wejdzie po
 # ponownym logowaniu); tapety — hyprpapera ≥ 0.8.2 (packages/platform-map.tsv).
 # Niezgodność = komunikat, kod 1, zero zapisów i instalacji. Brak hyprpapera
-# zgłasza [5] (Fedora doinstaluje go z COPR, który ma wersję z mapy); wersji
-# nieznanej (NixOS: hyprpaper spoza sklepu Nix) nie blokujemy — ostrzeżenie.
+# zgłasza [5] (Fedora doinstaluje go z COPR, który ma wersję z mapy). Wersja
+# NIEUSTALONA (NixOS: hyprpaper spoza sklepu Nix, Fedora: błąd zapytania rpm)
+# też = odmowa (Dodatek 3 do D5F): zgodności nie da się potwierdzić przed zapisami.
 # Arch BEZ tej kontroli (parytet z bazą; wersje trzyma repozytorium Archa).
 # hypr_running_version — wersja z 1. linii `hyprctl version`: „Hyprland <wersja>
 # built from branch …” (src/helpers/SystemInfo.cpp, v0.56.2 i v0.57.1).
@@ -243,8 +244,12 @@ if [[ "$PLATFORM" != arch ]]; then
         3) PAPER_NOTE=""
            VERSION_PROBLEMS+=("hyprpaper is $PAPER_VER — archenemy needs $PAPER_MIN or newer; $(pkg_hint hyprpaper)") ;;
         *) PAPER_NOTE=""
-           echo -e "  ${YELLOW}⚠ hyprpaper version could not be read — archenemy needs $PAPER_MIN or newer.${NC}"
-           SUMMARY_SKIPPED+=("hyprpaper version not checked (could not be read) — archenemy needs $PAPER_MIN or newer") ;;
+           if [[ "$PLATFORM" == nixos ]]; then
+               PAPER_WHY="it does not resolve to a Nix store path /nix/store/<hash>-hyprpaper-<version>"
+           else
+               PAPER_WHY="rpm -q hyprpaper failed"
+           fi
+           VERSION_PROBLEMS+=("cannot determine the hyprpaper version — archenemy needs $PAPER_MIN or newer ($PAPER_WHY); $(pkg_hint hyprpaper)") ;;
     esac
     if ((${#VERSION_PROBLEMS[@]})); then
         for p in "${VERSION_PROBLEMS[@]}"; do echo -e "${RED}✗ $p${NC}"; done
