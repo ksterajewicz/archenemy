@@ -124,6 +124,11 @@ archenemy/
 │   ├── additional-packages-aur.txt   # Optional packages (AUR).
 │   └── platform-map.tsv              # EXPERIMENTAL Arch → Fedora / NixOS package map (data, one row per
 │                                     #   list entry, CLI catalog package and ad-hoc install); Arch keeps using the four lists.
+├── nix/
+│   ├── packages.nix                  # EXPERIMENTAL NixOS / home-manager package list `{ pkgs }: { core fonts build
+│   │                                 #   optional }`, GENERATED from platform-map.tsv (nixos=ok rows only) — packages,
+│   │                                 #   never options or services; see "Other distributions" → NixOS.
+│   └── generate-packages.sh          # Regenerates packages.nix; `--check` = 1 when it is out of date.
 ├── config/
 │   ├── applications/
 │   │   └── ncmpcpp.desktop           # rofi (drun) / [p] autostart entry for ncmpcpp; install.sh [8l]
@@ -467,6 +472,9 @@ archenemy/
 │                                     #   platform-map.sh — packages/platform-map.tsv: 10 tab-separated fields, every
 │                                     #   entry of the four lists, cli-tools.tsv and literal ad-hoc installs has a
 │                                     #   row, no dead rows, no -git, only the approved COPR; negative cases → ✗.
+│                                     #   nix-packages.sh — nix/packages.nix without nix (text parser
+│                                     #   tests/lib/nix_packages.py): current vs the map, balanced syntax, only
+│                                     #   pkgs.<attr>, no options/"-"/duplicates, all 66 attrs, groups; mutations → ✗.
 │                                     #   pkg.sh — install/lib/pkg.sh on fake os-release/sudo/pacman/yay/dnf/rpm/nix-*:
 │                                     #   Arch uses the old commands, Fedora exact RPM names without masking flags,
 │                                     #   COPR/Brave only after "y", NixOS never mutates, unsupported ID → refusal;
@@ -934,6 +942,38 @@ Arch Linux is the reference platform. Fedora and NixOS are supported by `install
   - **Nerd Fonts (manual):** archenemy does not enable an unofficial font COPR. Download `Iosevka`, `JetBrainsMono` and `NerdFontsSymbolsOnly` from the [Nerd Fonts releases](https://github.com/ryanoasis/nerd-fonts/releases/latest), extract them into `~/.local/share/fonts/`, run `fc-cache -f`, and check with `fc-list : family | grep -E 'Iosevka Nerd Font|JetBrainsMono Nerd Font|Symbols Nerd Font Mono'`. Run `install.sh` again afterwards: the check in [5] then shows them as present.
   - Other packages without a Fedora package in the default repositories (for example `bluetui`, some optional programs) are listed with a link to install them by hand; the summary shows every required one that is still missing.
 - **NixOS.** NixOS is declarative, so `--skip-packages` is always on: archenemy never runs `nix-env`, `nix profile` or `nixos-rebuild`, runs nothing with `sudo` (not even `sudo -k`), and enables no service. Step [2] stops with instructions when Hyprland is missing (`programs.hyprland.enable`; nixos-26.05 ships Hyprland 0.55.4, below the 0.56 Lua configuration archenemy needs — use nixos-unstable, which has 0.57.2, or the Hyprland flake). Step [5] checks commands and fonts and prints what to add to `environment.systemPackages`/`home.packages` or which NixOS option to set; entries it cannot probe are shown with `?`. Steps [6]–[10] print the NixOS options to set instead (`services.power-profiles-daemon.enable`, `networking.networkmanager.enable`, `services.pipewire.pulse.enable`, …). For the optional mpd it prints a user service that reads archenemy's config — `systemd.user.services.mpd = { wantedBy = [ "default.target" ]; serviceConfig.ExecStart = "${pkgs.mpd}/bin/mpd --no-daemon %h/.config/mpd/mpd.conf"; };` — rather than home-manager's `services.mpd`, which generates its own `mpd.conf` ([module source](https://github.com/nix-community/home-manager/blob/master/modules/services/mpd.nix)).
+  - **Package list: `nix/packages.nix`.** A function `{ pkgs }:` that returns four groups: `core` (what the desktop needs at runtime), `fonts`, `build` (compiler and headers for `src/flux-wall`) and `optional` — a named set, so you pick optional programs explicitly (`with archenemy.optional; [ btop mpv ]`); nothing optional is added by default. It is generated from the `nixos=ok` rows of `packages/platform-map.tsv` (`bash nix/generate-packages.sh`; `--check` fails when it is out of date), deduplicated, plus two attributes the map does not have because Arch's base system provides them: `xkeyboard_config` (the layout list for `Super+A → [k]`) and `zlib` (flux-wall tools). It contains **only packages**: it does not enable Hyprland, the screen-sharing portal, PAM for hyprlock, audio, NetworkManager, Bluetooth, power profiles or any other service — those stay NixOS / home-manager options and are set separately: `programs.hyprland.enable = true;` (also installs `xdg-desktop-portal-hyprland`), `programs.hyprlock.enable = true;` (PAM), `services.pipewire = { enable = true; pulse.enable = true; wireplumber.enable = true; };`, `networking.networkmanager.enable = true;`, `services.power-profiles-daemon.enable = true;`, `hardware.bluetooth.enable = true;`, and `programs.zsh.enable = true;` when zsh is your login shell. Fonts belong in `fonts.packages` on NixOS (in `home.packages` with `fonts.fontconfig.enable = true;` in home-manager). Some optional programs are unfree in nixpkgs (for example `discord`, `megasync`) and need `nixpkgs.config.allowUnfreePredicate`.
+  - **Pin nixpkgs** to the revision the attribute names were checked against instead of a moving channel: nixos-unstable at `d5cc6833999746cffdfe0598f7bc801a57b887a9` (2026-11-13; Hyprland 0.57.2, hyprpaper 0.8.5). A newer revision may rename or drop an attribute; the list has not been evaluated by Nix yet (planned in CI), so no compatibility with other revisions is claimed. NixOS without flakes (`/etc/nixos/configuration.nix`):
+
+    ```nix
+    { pkgs, ... }:
+    let
+      # nixos-unstable, 2026-11-13. Add  sha256 = "...";  printed by
+      # nix-prefetch-url --unpack <url>  to make the download tamper-proof.
+      pinned = import (builtins.fetchTarball
+        "https://github.com/NixOS/nixpkgs/archive/d5cc6833999746cffdfe0598f7bc801a57b887a9.tar.gz")
+        { system = pkgs.stdenv.hostPlatform.system; };
+      archenemy = import /home/you/archenemy/nix/packages.nix { pkgs = pinned; };
+    in {
+      environment.systemPackages = archenemy.core ++ (with archenemy.optional; [ btop mpv ]);
+      fonts.packages = archenemy.fonts;
+    }
+    ```
+
+    home-manager (`home.nix`):
+
+    ```nix
+    { pkgs, ... }:
+    let archenemy = import /home/you/archenemy/nix/packages.nix { inherit pkgs; };
+    in {
+      home.packages = archenemy.core ++ archenemy.fonts ++ (with archenemy.optional; [ btop ]);
+      fonts.fontconfig.enable = true;
+    }
+    ```
+
+    In a flake, pin the input instead — `inputs.nixpkgs.url = "github:NixOS/nixpkgs/d5cc6833999746cffdfe0598f7bc801a57b887a9";` — and, because pure evaluation cannot import `/home/…`, add the repository as a non-flake input: `inputs.archenemy = { url = "git+file:///home/you/archenemy"; flake = false; };`, then `import "${inputs.archenemy}/nix/packages.nix" { inherit pkgs; }`. That copies only tracked files into the store; the checkout itself stays a writable `~/archenemy` (never a `/nix/store` path). archenemy ships no flake and no home-manager module of its own.
+  - **`build`** is meant for a shell, not for the system profile — headers in `environment.systemPackages` are not visible to `pkg-config`: `nix-shell -E 'let pkgs = import <nixpkgs> {}; in pkgs.mkShell { packages = (import ./nix/packages.nix { inherit pkgs; }).build; }' --run 'make -C src/flux-wall'` from `~/archenemy`.
+  - The installer neither reads nor applies this list and still never runs `nix-env`, `nix profile` or `nixos-rebuild`: you apply your configuration yourself.
 - `install/lib/pkg.sh`: `pkg_detect` reads `ID`/`VERSION_ID` from `/etc/os-release` (fallback `/usr/lib/os-release`) without `eval` and accepts only `arch`, `fedora` and `nixos`; `pkg_arch_derivative` recognizes `ID_LIKE=arch`, which `install.sh` sends down the unchanged Arch path. `pkg_route` is that choice as one function (`PKG_ROUTE=arch` for Arch and derivatives, `fedora`, `nixos`, or code 1 = refused); `install.sh` and every system helper in `install/` call it, never an inherited `PLATFORM` variable. `pkg_gate <step>` is the helpers' entry gate: 0 on Arch and derivatives, otherwise it prints that nothing was changed and returns 2, without a question or any command beyond reading os-release. On Arch the library runs exactly the installer's commands (`pacman -Qi`, `sudo pacman -S --needed`, `yay -S --needed` through `install/lib/aur.sh`). COPR and the Brave repository are handled only by `pkg_install_extra`, after an explicit `y`. The map is validated as a whole before anything runs: package lists are split without filename expansion, and an unknown status or source, inconsistent fields (for example `fedora=ok` without RPM names or with an RPM Fusion source, or `nixos=ok` with a NixOS option such as `services.x.enable` instead of a nixpkgs attribute), a `source_url` that is not HTTPS or a duplicate id rejects the whole map (code 2). Package queries run `rpm`/`pacman` with `LC_ALL=C` and read only their standard output and exit code, so the result does not depend on the user's language: "not installed" is code 1, and a database or query error is code 2, never "installed" or "missing". After `dnf install`, success is what `rpm -q` reports; if dnf failed but every name is installed, the result is 0 with a warning. For `fedora_source=fedora`, `pkg_install` limits dnf to `--repo=fedora --repo=updates` (`PKG_FEDORA_REPOS`); COPR and Brave packages (`pkg_install_extra`) are installed without `--repo`, after their repository is enabled. Test-only overrides (`ARCHENEMY_OS_RELEASE`, `ARCHENEMY_PKG_MAP`, …) work only with `ARCHENEMY_TEST=1`. `pkg_version` reads the installed version (pacman, `rpm -q`, or on NixOS the Nix store path of the entry's first command, only for `nixos=ok` rows whose store name equals the nixpkgs attribute) and returns 3 below `min_version`; `pkg_min_version` and `pkg_version_ge` expose the minimum and the `sort -V` comparison. `pkg_installable <id>` answers, without running anything, whether `pkg_install` would install that id from the platform's default source (0 on Arch; on Fedora only `fedora=ok` rows from Fedora's repositories; never on NixOS) — the runtime menus offer an installation only then. Tests: `bash tests/platform-map.sh`, `bash tests/pkg.sh`, `bash tests/helper-gates.sh` (system helpers run directly), `bash tests/install-platforms.sh` (steps [6], [6.5] and [10] on Arch, EndeavourOS, Arch with `--skip-packages`, Fedora with and without it, and NixOS: no helper starts outside Arch, no `sudo` beyond Fedora's `sudo -k`, no false "done" in the summary, helper exit codes 0/1/2 → summary on Arch), and the platform runs of `bash tests/install-main.sh` (Arch with AUR and extras, EndeavourOS identical to Arch, Fedora, Fedora with `--skip-packages`, NixOS, Arch with `--skip-packages`, Ubuntu refused, Fedora/NixOS with too old Hyprland or hyprpaper refused before any write).
 
 ## Verification

@@ -425,6 +425,18 @@ Rules that follow directly from the table:
   and read stdout + exit code — a query error is 2, never 0 or 1; COPR `nett00n/hyprland` and the Brave repo only via
   `pkg_install_extra` after an explicit `y`; NixOS never mutates the system
   (`bash tests/pkg.sh`).
+- **`nix/packages.nix` is generated, never edited by hand (D10).** After
+  changing the map run `bash nix/generate-packages.sh`; `tests/nix-packages.sh`
+  fails when the file is stale (`--check`). It holds only nixpkgs attributes
+  of `nixos=ok` rows (groups core/fonts/build from `requirements-*`, optional
+  as a named set from `additional-*`), deduplicated, plus the reasoned
+  extras in `NIX_EXTRA` — never a `programs.*`/`services.*`/`hardware.*`/
+  `networking.*`/`boot.*`/`virtualisation.*` option or `-`; enabling Hyprland,
+  the portal, PAM, audio and services stays a NixOS/home-manager option in
+  README. Names are checked against the pinned nixpkgs revision in the
+  generator (`NIXPKGS_REV`); without `nix` the test is a text parser
+  (`tests/lib/nix_packages.py`) — evaluation and build come with CI (D11/D12).
+  No own flake or home-manager module.
 - **`install.sh` per platform:** Arch and Arch derivatives (`ID_LIKE=arch`)
   keep the old code of steps [2]/[4]/[5] — same questions, commands and
   output (compare with `INSTALL_MAIN_REV=<rev> INSTALL_MAIN_SAVE=<dir>
