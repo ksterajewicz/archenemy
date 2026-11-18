@@ -17,6 +17,8 @@
 # shellcheck disable=SC2016,SC2034,SC1111  # check() robi eval (zmienne żyją w eval); „” w etykietach to tekst
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/timing.sh
+source "$REPO/tests/lib/timing.sh"
 # shellcheck source=tests/lib/environment.sh
 source "$REPO/tests/lib/environment.sh"
 T="$(mktemp -d)"
@@ -24,6 +26,9 @@ T="$(mktemp -d)"
 # (każda sekcja z wiszącymi pakietami we własnym katalogu pids*).
 cleanup() {
     local f
+    for f in "$T"/retained-*; do
+        [[ -f "$f" ]] && rm -rf "$(<"$f")"
+    done
     for f in "$T"/pids*/*.pid; do
         [[ -f "$f" ]] && kill -KILL "$(<"$f")" 2>/dev/null
     done
@@ -35,7 +40,12 @@ test_environment_init "$T" || exit 1
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
-check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
+check() {
+    if [[ -n "${out:-}" ]]; then
+        sed -n 's|^    pełne wyjście: \(/tmp/archenemy-run-all-[^/]*\)/.*|\1|p' <<< "$out" | while IFS= read -r d; do printf '%s\n' "$d" > "$T/retained-${d##*/}"; done
+    fi
+    if eval "$2"; then ok "$1"; else fail "$1"; fi
+}
 # proc_state <pid> — litera stanu z /proc/<pid>/stat: pole po ostatnim „) ”,
 # bo nazwa procesu w nawiasie może mieć spacje. Brak procesu = kod 1.
 proc_state() {
@@ -58,15 +68,30 @@ export PIDS="$T/pids" RAN="$T/ran"
 mkdir -p "$PIDS"
 
 echo "== 0: alive() a zombie (kontener CI bez --init)"
-# Zombie na zawołanie: rodzic po exec (sleep 5) nigdy nie woła wait na dziecko.
-( sleep 0.1 & echo $! > "$T/zombie.pid"; exec sleep 5 ) &
+# Zombie na zawołanie: rodzic nie woła wait i żyje aż do cleanup.
+python3 - "$T" <<'PYZ' &
+import os, pathlib, signal, sys
+root = pathlib.Path(sys.argv[1])
+child = os.fork()
+if child == 0:
+    os._exit(0)
+(root / 'zombie.pid').write_text(str(child))
+signal.pause()  # rodzic żyje aż do jawnego cleanup, nie przez magiczne 5 s
+PYZ
 zparent=$!
 echo "$zparent" > "$T/zparent.pid"
-zst=""
-for _ in $(seq 50); do
-    [[ -s "$T/zombie.pid" ]] && zst="$(proc_state "$(<"$T/zombie.pid")")" && [[ "$zst" == Z ]] && break
-    sleep 0.1
-done
+python3 - "$TEST_TIMING_LIB" "$T/zombie.pid" <<'PYZ'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location('test_timing', sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+def zombie():
+    pidfile = pathlib.Path(sys.argv[2])
+    if not pidfile.exists(): return False
+    stat = pathlib.Path('/proc') / pidfile.read_text() / 'stat'
+    return stat.exists() and stat.read_text().rsplit(') ', 1)[1].startswith('Z')
+m.wait_until(zombie, 5, 'oczekiwanie na zombie')
+PYZ
+zst="$(proc_state "$(<"$T/zombie.pid")")"
 check "zombie (kill -0 nadal go widzi) to proces martwy"   '[[ "$zst" == Z ]] && kill -0 "$(<"$T/zombie.pid")" && ! alive "$T/zombie.pid"'
 check "działający proces to proces żywy"                   'alive "$T/zparent.pid"'
 kill "$zparent" 2>/dev/null; wait "$zparent" 2>/dev/null
@@ -76,6 +101,8 @@ suite() {
     local d="$1"; shift
     mkdir -p "$d"
     cp "$REPO/tests/run-all.sh" "$d/run-all.sh"
+    mkdir -p "$d/lib"
+    cp "$REPO/tests/lib/"{timing.sh,test_timing.py} "$d/lib/"
     local p
     for p in "$@"; do cp "$T/stubs/$p" "$d/$p"; done
 }
@@ -138,44 +165,112 @@ echo "  ✗ własny timeout w pakiecie"
 exit 124
 EOF
 
+echo "== skala zabezpieczeń (kontrakt harnessu)"
+for scale in 0 -1 nan inf abc 11; do
+    ARCHENEMY_TEST_TIME_SCALE="$scale" python3 "$TEST_TIMING_LIB" scale > "$T/scale.out" 2>&1; scale_rc=$?
+    check "odrzucona błędna skala $scale" '[[ $scale_rc == 1 ]] && grep -q ARCHENEMY_TEST_TIME_SCALE "$T/scale.out"'
+done
+scaled="$(ARCHENEMY_TEST_TIME_SCALE=2 bash -c 'source "$1"; test_seconds 5' _ "$REPO/tests/lib/timing.sh")"
+check "jawna skala 2: zabezpieczenie 5 s daje 10 s" '[[ "$scaled" == 10 ]]'
+
+python3 - "$REPO/tests/lib" <<'PYLINES'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+from test_timing import Lines
+r, w = os.pipe()
+with os.fdopen(r, 'rb', buffering=0) as stream:
+    reader = Lines(stream)
+    try:
+        os.write(w, b'partial')
+        try:
+            reader.receive(0.02)
+        except AssertionError as error:
+            assert 'ZABEZPIECZENIE' in str(error)
+        else:
+            raise AssertionError('partial line blocked or accepted')
+        os.write(w, b'-line\nsecond\n')
+        assert reader.receive() == 'partial-line'
+        assert reader.ready(0) and reader.receive() == 'second'
+    finally:
+        os.close(w)
+print('  ✓ pełna linia z deadline, także linie już zbuforowane')
+PYLINES
+lines_rc=$?
+check "czytnik strumienia: partial-line i bufor" '[[ $lines_rc == 0 ]]'
+suite "$T/default-scale" a-green.sh
+out="$(unset RUN_ALL_TIMEOUT; ARCHENEMY_TEST_TIME_SCALE=2 test_timeout 10 bash "$T/default-scale/run-all.sh" 2>&1)"; rc=$?
+check "domyślny watchdog 600 × 2 = 1200 s" '[[ $rc == 0 && "$out" == *"RUN_ALL_TIMEOUT=1200 s"* ]]'
+
 echo "== A: wiszący pakiet przy RUN_ALL_TIMEOUT=2"
 suite "$T/a" a-green.sh b-hang.sh c-skip.sh d-red.sh e-stubborn.sh
 : > "$RAN"
 t0=$SECONDS
-out="$(RUN_ALL_TIMEOUT=2 timeout -k 5 45 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=2 test_timeout 45 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
 took=$((SECONDS - t0))
-check "bieg kończy się sam (bez zewnętrznego limitu 45 s)" '[[ $rc -ne 124 && $took -lt 40 ]]'
+check "bieg kończy się sam (bez zewnętrznego limitu 45 s)" '[[ $rc -ne 124 && $took -lt $(python3 "$TEST_TIMING_LIB" seconds-ceil 40) ]]'
 check "kod 1 (są pakiety niezielone)"                     '[[ $rc -eq 1 ]]'
 check "zielony pakiet: ✓ z ostatnim wierszem"              '[[ "$out" == *"✓ a-green.sh — Wynik: 1 ✓ / 0 ✗"* ]]'
-check "wiszący: ✗ „zawieszony” z limitem w sekundach"      '[[ "$out" == *"✗ b-hang.sh — zawieszony: brak wyniku po 2 s"* ]]'
+check "wiszący: ✗ timeout pakietu z limitem w sekundach"      '[[ "$out" == *"✗ b-hang.sh — timeout pakietu: przekroczono 2 s"* ]]'
 check "wiszący: widać ostatnie wiersze wyjścia"            '[[ "$out" == *"ZAWIESZONY-TUTAJ"* ]]'
 check "wiszący pakiet i jego wnuk zabici"                  '! alive "$PIDS/b-hang.pid" && ! alive "$PIDS/b-grandchild.pid"'
 check "pominięcie z kodem 0 nadal ✓ (semantyka T2 bez zmian)" '[[ "$out" == *"✓ c-skip.sh — Result: skipped"* ]]'
-check "czerwony pakiet: ✗ bez „zawieszony”, z jego ✗"      'grep -qx "✗ d-red.sh" <<< "$out" && [[ "$out" == *"    ✗ coś nie tak"* ]]'
-check "ignorujący SIGTERM: zawieszony i dobity SIGKILL"    '[[ "$out" == *"✗ e-stubborn.sh — zawieszony"* ]] && ! alive "$PIDS/e-stubborn.pid" && ! alive "$PIDS/e-grandchild.pid"'
+check "czerwony pakiet: ✗ bez „zawieszony”, z jego ✗"      'grep -q "✗ d-red.sh — kod 1" <<< "$out" && [[ "$out" == *"✗ coś nie tak"* ]]'
+check "ignorujący SIGTERM: timeout pakietu i SIGKILL"    '[[ "$out" == *"✗ e-stubborn.sh — timeout pakietu"* ]] && ! alive "$PIDS/e-stubborn.pid" && ! alive "$PIDS/e-grandchild.pid"'
 check "podsumowanie wymienia trzy niezielone"              '[[ "$out" == *"NIEZIELONE: b-hang.sh d-red.sh e-stubborn.sh"* ]]'
 check "każdy pakiet uruchomiony raz, po kolei"             '[[ "$(tr "\n" " " < "$RAN")" == "a-green b-hang c-skip d-red e-stubborn " ]]'
 
 echo "== B: wartość RUN_ALL_TIMEOUT, kod 124 i SIGINT w pakiecie"
 : > "$RAN"
-out="$(RUN_ALL_TIMEOUT=abc timeout -k 5 10 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=abc test_timeout 10 bash "$T/a/run-all.sh" 2>&1)"; rc=$?
 check "zła wartość: kod 2, komunikat, żaden pakiet nie ruszył" '[[ $rc -eq 2 && "$out" == *RUN_ALL_TIMEOUT* && ! -s "$RAN" ]]'
 suite "$T/b" f-slow.sh
-out="$(RUN_ALL_TIMEOUT=1 timeout -k 5 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
-check "limit 1 s: pakiet 2-sekundowy zawieszony"           '[[ $rc -eq 1 && "$out" == *"✗ f-slow.sh — zawieszony"* ]]'
-out="$(RUN_ALL_TIMEOUT=0 timeout -k 5 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=1 test_timeout 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
+check "limit 1 s: pakiet 2-sekundowy przekracza timeout"           '[[ $rc -eq 1 && "$out" == *"✗ f-slow.sh — timeout pakietu"* ]]'
+out="$(RUN_ALL_TIMEOUT=0 test_timeout 20 bash "$T/b/run-all.sh" 2>&1)"; rc=$?
 check "0 = bez limitu: ten sam pakiet ✓"                   '[[ $rc -eq 0 && "$out" == *"✓ f-slow.sh — Wynik: wolny, ale skończony"* ]]'
 suite "$T/e" h-124.sh
-out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash "$T/e/run-all.sh" 2>&1)"; rc=$?
-check "kod 124 przed limitem: zwykłe ✗, bez „zawieszony”"  '[[ $rc -eq 1 && "$out" != *zawieszony* ]] && grep -qx "✗ h-124.sh" <<< "$out" && [[ "$out" == *"    ✗ własny timeout w pakiecie"* ]]'
+out="$(RUN_ALL_TIMEOUT=10 test_timeout 20 bash "$T/e/run-all.sh" 2>&1)"; rc=$?
+check "kod 124 przed limitem: zwykłe ✗, bez „zawieszony”"  '[[ $rc -eq 1 && "$out" != *"— timeout pakietu:"* ]] && grep -q "✗ h-124.sh — kod 124" <<< "$out" && [[ "$out" == *"✗ własny timeout w pakiecie"* ]]'
 suite "$T/d" g-int.sh
-out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash "$T/d/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=10 test_timeout 20 bash "$T/d/run-all.sh" 2>&1)"; rc=$?
 check "pakiet dostaje SIGINT jak z terminala, nie ignorowany" '[[ $rc -eq 0 && "$out" == *"✓ g-int.sh — Wynik: pułapka INT działa"* ]]'
 suite "$T/g" g-hup.sh
 # run-all puszczony z SIGHUP ignorowanym (jak spod nohup): pakiet i tak ma
 # dostać domyślną obsługę, inaczej jego test SIGHUP zależy od tego, kto puścił bieg.
-out="$(RUN_ALL_TIMEOUT=10 timeout -k 5 20 bash -c 'trap "" HUP; exec bash "$1"' _ "$T/g/run-all.sh" 2>&1)"; rc=$?
+out="$(RUN_ALL_TIMEOUT=10 test_timeout 20 bash -c 'trap "" HUP; exec bash "$1"' _ "$T/g/run-all.sh" 2>&1)"; rc=$?
 check "pakiet dostaje SIGHUP z domyślną obsługą, także spod nohup" '[[ $rc -eq 0 && "$out" == *"✓ g-hup.sh — Wynik: pułapka HUP działa"* ]]'
+
+echo "== diagnostyka nieoznaczonych porażek"
+cat > "$T/stubs/i-python.sh" <<'EOF'
+python3 - <<'INNER'
+for n in range(250):
+    print(f'pełny-log-{n}', flush=True)
+raise AssertionError('assertion-without-cross')
+INNER
+EOF
+cat > "$T/stubs/j-timeout.sh" <<'EOF'
+python3 - <<'INNER'
+import subprocess
+raise subprocess.TimeoutExpired('fixture', 3)
+INNER
+EOF
+# rc124 po faktycznym przekroczeniu 1 s własnego zegara nie jest timeoutem
+# nadrzędnego runnera (w tym scenariuszu RUN_ALL_TIMEOUT=0).
+cat > "$T/stubs/k-124.sh" <<'EOF'
+sleep 1
+echo internal-timeout
+exit 124
+EOF
+cat > "$T/stubs/l-137.sh" <<'EOF'
+echo internal-kill
+exit 137
+EOF
+suite "$T/diagnostics" i-python.sh j-timeout.sh k-124.sh l-137.sh
+out="$(RUN_ALL_TIMEOUT=0 test_timeout 20 bash "$T/diagnostics/run-all.sh" 2>&1)"; rc=$?
+check "AssertionError i TimeoutExpired widoczne, kody zachowane" '[[ $rc == 1 && "$out" == *assertion-without-cross* && "$out" == *TimeoutExpired* && "$out" == *"k-124.sh — kod 124"* && "$out" == *"l-137.sh — kod 137"* && "$out" != *"— timeout pakietu:"* ]]'
+log_path="$(sed -n 's/^    pełne wyjście: \(.*i-python.sh.log\); kod wyjścia:.*/\1/p' <<< "$out")"
+check "pełny log zachowany poza ogonem 200 linii" '[[ -f "$log_path" ]] && grep -qx pełny-log-0 "$log_path" && grep -q assertion-without-cross "$log_path" && [[ "$(cat "${log_path%.log}.rc")" == 1 ]]'
+# Runner zostawia logi użytkownikowi; autotest zbiera je po weryfikacji.
 
 echo "== C: przerwanie biegu w trakcie wiszącego pakietu"
 suite "$T/c" b-hang.sh
@@ -191,17 +286,17 @@ suite "$T/c" b-hang.sh
 interrupt() {
     local sig="$1" label="$2" guard runall_pid t0
     PIDS="$T/pids-c-$sig"; mkdir -p "$PIDS"
-    RUN_ALL_TIMEOUT=60 env --default-signal=INT,HUP timeout -k 5 30 bash "$T/c/run-all.sh" > "$T/c-$sig.out" 2>&1 &
+    RUN_ALL_TIMEOUT=0 env --default-signal=INT,HUP timeout -k "$(test_seconds 5)" "$(test_seconds 30)" bash "$T/c/run-all.sh" > "$T/c-$sig.out" 2>&1 &
     guard=$!
-    for _ in $(seq 100); do [[ -s "$PIDS/b-hang.pid" ]] && break; sleep 0.1; done
+    test_wait_file 10 "$PIDS/b-hang.pid" || fail "$label: brak PID pakietu"
     runall_pid="$(pgrep -P "$guard" -f 'c/run-all.sh' | head -1)"
     [[ -n "$runall_pid" ]] && kill -"$sig" "$runall_pid"
     t0=$SECONDS
-    for _ in $(seq 100); do kill -0 "$guard" 2>/dev/null || break; sleep 0.1; done
+    python3 "$TEST_TIMING_LIB" wait-pid 10 "$guard" || fail "$label: nadzorca nadal działa"
     took=$((SECONDS - t0))
     wait "$guard"; rc=$?
     out="$(<"$T/c-$sig.out")"
-    check "$label: bieg przerwany od razu, kod 130"        '[[ -n "$runall_pid" && $rc -eq 130 && $took -lt 10 ]]'
+    check "$label: bieg przerwany od razu, kod 130"        '[[ -n "$runall_pid" && $rc -eq 130 && $took -lt $(python3 "$TEST_TIMING_LIB" seconds-ceil 10) ]]'
     check "$label: komunikat wskazuje przerwany pakiet"    '[[ "$out" == *"PRZERWANO na b-hang.sh."* ]]'
     check "$label: przerwany pakiet i jego wnuk zabici"    '! alive "$PIDS/b-hang.pid" && ! alive "$PIDS/b-grandchild.pid"'
 }
