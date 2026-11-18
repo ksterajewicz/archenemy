@@ -112,7 +112,7 @@ NONARCH=("$P_FED" "$P_FSKIP" "$P_NIX")
 step() {
     local plat os skip
     IFS='|' read -r plat os skip <<< "$1"
-    : > "$CALLS"; rm -f "$A/data/hardware.dat"
+    : > "$CALLS"; rm -f "$A/data/hardware.dat" "$A/data/bluetooth-enabled.dat"
     printf '%b' "$3" > "$T/stdin"
     local all
     all="$( { ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$OS/$os" ARCHENEMY_OSTREE_MARKER="$T/no-ostree" \
@@ -223,6 +223,8 @@ for p in "${NONARCH[@]}"; do
         MOCK_UFW_ACTIVE=$ufw step "$p" step10 'y\ny\ny\ny\n'
         check "[10] $name${ufw:+, aktywna UFW}: Bluetooth i VirtualBox niewywołane, zero ufw/sudo/enable" \
             'no_helpers && no_mutation && sudo_k_only "$p" && ! grep -q "^ufw" "$CALLS"'
+        # D6F L3 (przegląd Codexa): pominięty Bluetooth nie zostawia flagi ikony.
+        check "[10] $name${ufw:+, aktywna UFW}: brak data/bluetooth-enabled.dat po pominięciu Bluetooth" '[[ ! -e "$A/data/bluetooth-enabled.dat" ]]'
         check "[10] $name${ufw:+, aktywna UFW}: bez pytań, bez DONE; sieć i audio jako kroki ręczne w podsumowaniu" \
             '[[ "$rest" == "$(<"$T/stdin")" && -z "$done_" ]] && grep -q "^SKIPPED=NetworkManager — not done on" <<< "$skipped" && grep -q "^SKIPPED=Audio (pipewire-pulse) — not done on" <<< "$skipped"'
     done
@@ -237,8 +239,8 @@ step "$P_NIX" step10 ''
 check "[10] NixOS: networking.firewall, networkmanager, pipewire, bluetooth, virtualbox jako opcje" \
     '[[ "$out" == *"networking.firewall"* && "$out" == *"networking.networkmanager.enable = true;"* && "$out" == *"services.pipewire.pulse.enable = true;"* && "$out" == *"hardware.bluetooth.enable = true;"* && "$out" == *"virtualisation.virtualbox.host.enable = true;"* ]]'
 MOCK_ENABLED="NetworkManager pipewire-pulse.socket" MOCK_ACTIVE="NetworkManager pipewire-pulse.socket" step "$P_ASKIP" step10 'n\n'
-check "[10] Arch+skip: Bluetooth i VirtualBox niewywołane, polecenia pomocników jako instrukcja" \
-    'no_helpers && [[ "$out" == *"bash ~/archenemy/install/bluetooth-installation.sh"* && "$out" == *"bash ~/archenemy/install/virtualbox-installation.sh"* ]]'
+check "[10] Arch+skip: Bluetooth i VirtualBox niewywołane, polecenia pomocników jako instrukcja, bez flagi ikony" \
+    'no_helpers && [[ ! -e "$A/data/bluetooth-enabled.dat" ]] && [[ "$out" == *"bash ~/archenemy/install/bluetooth-installation.sh"* && "$out" == *"bash ~/archenemy/install/virtualbox-installation.sh"* ]]'
 # Arch: UFW n, NetworkManager włączony, Bluetooth y, VirtualBox y.
 for rc in 0 1 2; do
     MOCK_ENABLED="NetworkManager pipewire-pulse.socket" MOCK_ACTIVE="NetworkManager pipewire-pulse.socket" MOCK_VIRTUALBOX_RC=$rc MOCK_BLUETOOTH_RC=$rc \

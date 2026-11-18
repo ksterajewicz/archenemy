@@ -153,6 +153,11 @@ boot grub
 out="$(run_ki '2\ny\n')"; rc=$?
 check "linux-zen: jądro i nagłówki jedną transakcją"    'installed linux-zen linux-zen-headers'
 check "linux-zen: ✓ i GRUB zregenerowany, kod 0"        '[[ $rc -eq 0 && "$out" == *"✓ linux-zen + linux-zen-headers installed."* && "$out" == *"✓ GRUB updated (kernel linux-zen)."* ]] && regenerated'
+# D6F L3 (przegląd Codexa): kod 1 z grub-mkconfig po udanej instalacji
+# przechodzi przez WYWOŁUJĄCY kernel-install.sh (kontrakt z install.sh [6.5]).
+boot grub
+out="$(MOCK_GRUB_RC=1 run_ki '2\ny\n')"; rc=$?
+check "linux-zen, grub-mkconfig pada: kernel-install kończy się kodem 1, bez ✓ GRUB" '[[ $rc -eq 1 && "$out" == *"✓ linux-zen + linux-zen-headers installed."* && "$out" == *"✗ grub-mkconfig failed"* && "$out" != *"✓ GRUB"* ]]'
 boot grub
 out="$(MOCK_PACMAN_DROP=linux-lts-headers run_ki '3\ny\n')"; rc=$?
 check "brak nagłówków mimo kodu 0: ✗, kod 1"            '[[ $rc -eq 1 && "$out" == *"✗ Not installed: linux-lts-headers"* && "$out" != *"✓ linux-lts"* ]]'
@@ -172,6 +177,9 @@ check "Intel: intel-ucode, ✓ i GRUB, kod 0"             'installed intel-ucode
 boot grub; cpuinfo AuthenticAMD
 out="$(run_cpu 'y\n')"; rc=$?
 check "AMD: amd-ucode, ✓ i GRUB, kod 0"                 'installed amd-ucode && [[ $rc -eq 0 && "$out" == *"✓ amd-ucode installed."* ]] && regenerated'
+boot grub; cpuinfo GenuineIntel
+out="$(MOCK_GRUB_RC=1 run_cpu 'y\n')"; rc=$?
+check "Intel, grub-mkconfig pada: cpudrivers kończy się kodem 1, bez ✓ GRUB (D6F L3)" '[[ $rc -eq 1 && "$out" == *"✓ intel-ucode installed."* && "$out" == *"✗ grub-mkconfig failed"* && "$out" != *"✓ GRUB"* ]]'
 boot grub; cpuinfo TESTVENDOR
 out="$(run_cpu 'y\n')"; rc=$?
 check "nieznany producent: pominięte, kod 0, bez pacmana" '[[ $rc -eq 0 && "$out" == *"Unknown CPU vendor"* ]] && no_install && ! regenerated'
