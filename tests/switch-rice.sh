@@ -34,7 +34,8 @@ check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 # ─── atrapy ──────────────────────────────────────────────────────────────────
 mkdir -p "$T/bin"
-for c in makoctl pkill; do printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/$c"; done
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/bin/makoctl"
+printf '#!/usr/bin/env bash\necho "pkill $*" >> "$MOCK_LOG"\nexit 0\n' > "$T/bin/pkill"
 # hyprctl: log wywołań; plik $MOCK_BROKEN = config rice'a beta ma błąd, widoczny
 # w configerrors od chwili podlinkowania (Hyprland z autoreloadem czyta zmiany
 # przez inotify jeszcze przed `hyprctl reload`).
@@ -140,6 +141,16 @@ sw alfa; : > "$MOCK_LOG"; sw beta
 check "autostart flux-walla widzi .current_rice = beta"  'grep -qx "FLUXWALL autostart rice=beta" "$MOCK_LOG"'
 check "autostart przed powiadomieniem o wyniku"          '[[ "$(grep -n "^FLUXWALL" "$MOCK_LOG" | cut -d: -f1)" -lt "$(grep -n "^NOTIFY" "$MOCK_LOG" | tail -1 | cut -d: -f1)" ]]'
 check "bez sesji Hyprlanda: bez reloadu, Rice applied"   '! grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Rice .beta. applied" "$MOCK_LOG"'
+
+echo "== Super+T: waybar uruchomiony od nowa (config i skrypty modułów, np. tryb launchera)"
+# Waybar czyta config tylko na starcie (scripts/waybar/lib/waybar-reload.sh),
+# więc zmiana rice'a musi zatrzymać stary proces i wystartować nowy — wtedy
+# custom/launcher uruchamia launcher-logo.sh i czyta data/launcher-logo.dat.
+n0=$(wc -l < "$T/waybar.pids" 2>/dev/null || echo 0); : > "$MOCK_LOG"
+sw alfa
+n1=$n0; for _ in $(seq 1 40); do n1=$(wc -l < "$T/waybar.pids" 2>/dev/null || echo 0); (( n1 > n0 )) && break; sleep 0.05; done
+check "stary waybar zatrzymany (pkill -x waybar)"        'grep -qx "pkill -x waybar" "$MOCK_LOG"'
+check "nowy waybar wystartował"                           '(( n1 == n0 + 1 ))'
 
 echo "== Super+T: 'applied' tylko po reloadzie bez nowych błędów configu (A15)"
 HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw alfa; : > "$MOCK_LOG"; touch "$MOCK_BROKEN"
