@@ -303,8 +303,13 @@ confirm() {
 # nieudane mv to porażka z komunikatem, a stary plik zostaje).
 write_dat() {
     local file="$1" value="$2" tmp
-    mkdir -p "$(dirname "$file")"
-    tmp="$(mktemp "${file}.XXXXXX")" || { echo -e "  ${RED}✗ mktemp failed.${NC}"; return 1; }
+    # Niezapisywalny katalog: przyczynę podaje mktemp na stderr, a menu mówi
+    # wprost, którego pliku nie zapisano (dawne „mktemp failed” nic nie mówiło).
+    mkdir -p "$(dirname "$file")" 2>/dev/null
+    tmp="$(mktemp "${file}.XXXXXX")" || {
+        echo -e "  ${RED}✗ Could not write ${file} — cannot create a file in $(dirname "$file"); nothing was changed.${NC}"
+        return 1
+    }
     printf '%s\n' "$value" > "$tmp"
     chmod 644 "$tmp"   # mktemp daje 600 — zachowaj zwykłe prawa (jak inne data/*.dat)
     if [[ "$(<"$tmp")" == "$value" ]] && mv "$tmp" "$file" && [[ "$(<"$file")" == "$value" ]]; then

@@ -187,6 +187,64 @@ reset; printf 'hl.bind("SUPER + x", hl.dsp.exec("xterm"))\n' >> "$BINDS"
 out="$(tui 'q')"
 check "menu mówi o bindzie spoza listy"   '[[ "$out" == *"1 written by hand"* ]]'
 
+echo "== [l] logo w lewym boxie paska"
+# Prawdziwy scripts/waybar/launcher-logo.sh (tryb i nazwa dystrybucji) na
+# atrapie os-release; skutek = data/launcher-logo.dat ORAZ to, co skrypt
+# modułu waybara wypisuje po zmianie. Rice'y: tron ma launcher, white-blue nie.
+mkdir -p "$A/install/lib" "$A/rices/tron/waybar" "$A/rices/white-blue/waybar"
+cp "$REPO/scripts/waybar/launcher-logo.sh" "$A/scripts/waybar/"
+cp "$REPO/install/lib/pkg.sh" "$A/install/lib/"
+printf '"modules-left": ["custom/launcher", "hyprland/workspaces"],\n' > "$A/rices/tron/waybar/config.jsonc"
+printf '"modules-left": ["hyprland/workspaces"],\n' > "$A/rices/white-blue/waybar/config.jsonc"
+printf 'NAME="Arch Linux"\nPRETTY_NAME="Arch Linux"\nID=arch\n' > "$T/os-release"
+LL="$A/data/launcher-logo.dat"
+ltui() { ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release" tui "$1"; }
+bar_json() { ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release" bash "$A/scripts/waybar/launcher-logo.sh"; }
+rm -f "$LL"; : > "$T/log"
+out="$(ltui 'q')"
+check "[l] stan bez pliku: distro"             '[[ "$out" =~ l\ +bar\ logo\ +distro ]]'
+check "[l] w grupie Bar zaraz po [v]"          '[[ "$out" == *"Bar"*"v  volume bar"*"l  bar logo"*"t  timer"* ]]'
+out="$(ltui '\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[Bq')"
+check "[l] podgląd: obie opcje i dystrybucja"  '[[ "$out" == *"1  distro logo"*"Arch/Fedora/NixOS glyph"*"detected: Arch Linux"*"2  archenemy logo (Æ)"* ]]'
+out="$(ltui 'l2\n\nq')"
+check "[l] archenemy: plik i JSON paska"       '[[ "$(<"$LL")" == archenemy && "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
+check "[l] waybar działa: ✓ po sygnale 12"     '[[ "$out" == *"detected distro: Arch Linux"*"✓ Bar logo: archenemy logo (Æ)"* ]] && grep -q "^pkill -RTMIN+12 waybar" "$T/log"'
+out="$(ltui 'q')"
+check "[l] stan po zmianie: archenemy"         '[[ "$out" =~ l\ +bar\ logo\ +archenemy ]]'
+: > "$T/log"; out="$(ltui 'l1\n\nq')"
+check "[l] distro: plik i glif w JSON paska"   '[[ "$(<"$LL")" == distro && "$(bar_json)" == "{\"text\":\"$(printf "\xf3\xb0\xa3\x87")\",\"class\":\"distro\"}" ]]'
+check "[l] distro: ✓ z nazwą dystrybucji"      '[[ "$out" == *"✓ Bar logo: distro logo (Arch Linux)"* ]] && grep -q "^pkill -RTMIN+12 waybar" "$T/log"'
+out="$(ltui 'lx\n\nq')"
+check "[l] zły klawisz bez zmiany"             '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* && "$out" != *"✓ Bar logo"* ]]'
+out="$(ltui 'l\n\nq')"
+check "[l] Enter anuluje"                      '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* ]]'
+rm "$T/waybar-alive"; : > "$T/log"
+out="$(ltui 'l2\n\nq')"
+check "[l] bez waybara: zapisane, bez ✓"       '[[ "$(<"$LL")" == archenemy && "$out" != *"✓ Bar logo"* && "$out" == *"Saved: bar logo archenemy"*"Waybar is not running"* ]] && ! grep -q "^pkill" "$T/log"'
+touch "$T/waybar-alive" "$T/pkill-fails"
+out="$(ltui 'l1\n\nq')"; rm "$T/pkill-fails"
+check "[l] sygnał nie doszedł: bez ✓"          '[[ "$(<"$LL")" == distro && "$out" != *"✓ Bar logo"* && "$out" == *"did not take the refresh signal"* ]]'
+echo launcher-logo.dat > "$T/mv-fails"; out="$(ltui 'l2\n\nq')"; rm "$T/mv-fails"
+check "[l] nieudany zapis: bez ✓, plik bez zmian" '[[ "$(<"$LL")" == distro && "$out" != *"✓"* && "$out" != *"Saved"* && "$out" == *"Could not write"* ]] && ! compgen -G "$LL.*" >/dev/null'
+# Niezapisywalny katalog bez sztuczek z rootem: data/ to zwykły plik.
+mv "$A/data" "$T/data.bak"; printf 'not a directory\n' > "$A/data"; : > "$T/log"
+out="$(ltui 'l2\n\nq')"
+rm "$A/data"; mv "$T/data.bak" "$A/data"
+check "[l] niezapisywalny katalog: czytelny błąd" '[[ "$out" == *"✗ Could not write $LL — cannot create a file in $A/data; nothing was changed."* && "$out" != *"✓"* && "$out" != *"Saved"* ]] && ! grep -q "^pkill" "$T/log"'
+check "[l] niezapisywalny katalog: stary stan"    '[[ "$(<"$LL")" == distro ]]'
+echo white-blue > "$A/.current_rice"; : > "$T/log"
+out="$(ltui 'l2\n\nq')"
+check "[l] rice bez launchera: zapisane, bez ✓" '[[ "$(<"$LL")" == archenemy && "$out" == *"white-blue has no launcher module — the logo shows in tron"* && "$out" == *"Saved: bar logo archenemy. white-blue has no launcher module"* && "$out" != *"✓ Bar logo"* ]] && ! grep -q "^pkill" "$T/log"'
+echo white-blue_beta > "$A/.current_rice"
+out="$(ltui 'l1\n\nq')"
+check "[l] beta: ostrzeżenie i bez ✓"           '[[ "$(<"$LL")" == distro && "$out" == *"white-blue_beta has no launcher module"* && "$out" == *"Saved: bar logo distro"* && "$out" != *"✓ Bar logo"* ]]'
+echo tron > "$A/.current_rice"; : > "$T/log"
+out="$(ltui 'l2\n\nq')"
+check "[l] rice z launcherem: ✓ po sygnale 12"  '[[ "$(<"$LL")" == archenemy && "$out" == *"✓ Bar logo: archenemy logo (Æ)"* && "$out" != *"has no launcher"* ]] && grep -q "^pkill -RTMIN+12 waybar" "$T/log"'
+echo white-blue > "$A/.current_rice"
+check "[l] zmiana rice'a nie zmienia trybu"     '[[ "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
+rm -f "$A/.current_rice" "$LL"
+
 echo "== [v] pasek głośności"
 reset; out="$(tui 'v2\n\nq')"
 check "wybór zapisany"                         '[[ "$(<"$A/data/volume-bar-style.dat")" == ticks && "$out" == *"Volume bar style: ticks"* ]]'

@@ -494,6 +494,76 @@ volume_style_menu() {
     bar_change_report 10 "Volume bar style: ${target}" "volume bar style ${target}" "volume bar module"
 }
 
+# ─── LOGO W LEWYM BOXIE PASKA (waybar custom/launcher) ───────────────────────
+
+# Aktywny rice bez modułu custom/launcher w configu waybara (dziś white-blue,
+# asia-n-rice, white-blue_beta) — wypisuje jego nazwę. 1 = moduł jest albo nie
+# da się tego ustalić (brak .current_rice albo configu): wtedy nie zgadujemy.
+launcher_missing_rice() {
+    local rice="" cfg
+    [[ -f "$ARCHENEMY_DIR/.current_rice" ]] && rice="$(<"$ARCHENEMY_DIR/.current_rice")"
+    cfg="$ARCHENEMY_DIR/rices/$rice/waybar/config.jsonc"
+    [[ -n "$rice" && "$rice" != */* && -f "$cfg" ]] || return 1
+    grep -q '"custom/launcher"' "$cfg" && return 1
+    printf '%s' "$rice"
+}
+
+# Rice'y z launcherem, z ich configów (nie z ręcznej listy): "crt, tron or yin".
+launcher_rices() {
+    local f list=()
+    for f in "$ARCHENEMY_DIR"/rices/*/waybar/config.jsonc; do
+        grep -q '"custom/launcher"' "$f" 2>/dev/null || continue
+        f="${f%/waybar/config.jsonc}"; list+=("${f##*/}")
+    done
+    (( ${#list[@]} )) || { printf 'a rice with a launcher'; return; }
+    local IFS=,; f="${list[*]}"; f="${f//,/, }"
+    [[ "$f" == *", "* ]] && f="${f%, *} or ${f##*, }"
+    printf '%s' "$f"
+}
+
+# Wybór logo w lewym boxie paska: glif dystrybucji (domyślnie) albo Æ. Tryb
+# czyta scripts/waybar/launcher-logo.sh mode — ta sama reguła co w pasku
+# (brak pliku albo śmieci = distro). Zapis do data/launcher-logo.dat (warstwa
+# maszynowa, poza rice'em, więc przeżywa Super+T), potem sygnał 12 = launcher
+# przerysowuje się od razu (bar_change_report). Rice bez launchera: zapis
+# zostaje, ale bez zielonego ✓, bo pasek tego rice'a niczego nie pokaże.
+launcher_logo_menu() {
+    local dat="$ARCHENEMY_DIR/data/launcher-logo.dat"
+    local cur name sel=0 target label missing=""
+
+    if [[ ! -f "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" ]]; then
+        echo -e "  ${RED}✗ Missing scripts/waybar/launcher-logo.sh — update archenemy ([u]) first.${NC}"
+        return
+    fi
+    cur="$(state_from waybar/launcher-logo.sh mode)"
+    name="$(state_from waybar/launcher-logo.sh distro)"
+    [[ "$cur" == archenemy ]] && sel=1
+
+    echo ""
+    echo -e "  Bar logo (left box of waybar): ${CYAN}${cur:-distro}${NC} · detected distro: ${CYAN}${name:-unknown}${NC}"
+    warn_if_beta "launcher module"
+    if missing="$(launcher_missing_rice)" && [[ "$missing" != white-blue_beta ]]; then
+        echo -e "  ${YELLOW}⚠ ${missing} has no launcher module — the logo shows in $(launcher_rices) (Super+T).${NC}"
+    fi
+    echo -e "    ${BLUE}1${NC}) distro logo     — your distribution's glyph (Arch/Fedora/NixOS, Linux otherwise)"
+    echo -e "    ${BLUE}2${NC}) archenemy logo  — the Æ mark in the rice's colour"
+    echo ""
+    tui_menu_lines "$sel" "distro logo (Arch/Fedora/NixOS glyph)" "archenemy logo (Æ)" \
+        || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    case "$((TUI_MENU_INDEX+1))" in
+        1) target="distro";    label="distro logo (${name:-unknown})" ;;
+        2) target="archenemy"; label="archenemy logo (Æ)" ;;
+        *) echo -e "  ${RED}✗ Pick 1 or 2.${NC}"; return ;;
+    esac
+
+    write_dat "$dat" "$target" || return 1
+    if missing="$(launcher_missing_rice)" && [[ "$missing" != white-blue_beta ]]; then
+        echo -e "  ${YELLOW}Saved: bar logo ${target}. ${missing} has no launcher module — it shows after you switch to $(launcher_rices) (Super+T).${NC}"
+        return 0
+    fi
+    bar_change_report 12 "Bar logo: ${label}" "bar logo ${target}" "launcher module"
+}
+
 # ─── WYJŚCIE AUDIO mpd (pipewire / alsa) ─────────────────────────────────────
 
 # Menu tylko pyta; zapis, restart i test żyją w lib/mpd-output.sh.
@@ -948,11 +1018,11 @@ diagnostics_menu() {
 # zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
 # i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
 
-MENU_KEYS=(a e d s w n k m v t c f p o h i u)
+MENU_KEYS=(a e d s w n k m v l t c f p o h i u)
 declare -A MENU_LABEL=(
     [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
     [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
-    [v]="volume bar" [t]="timer" [c]="terminal" [f]="fonts" [p]="autostart" [o]="audio"
+    [v]="volume bar" [l]="bar logo" [t]="timer" [c]="terminal" [f]="fonts" [p]="autostart" [o]="audio"
     [h]="shell" [i]="diagnostics" [u]="update archenemy"
 )
 declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [p]="Apps" [h]="System")
@@ -1000,6 +1070,7 @@ item_state() {
         k) state_from hypr/keyboard-layouts.sh show ;;
         m) state_from hypr/mouse-settings.sh summary ;;
         v) volume_style_current ;;
+        l) state_from waybar/launcher-logo.sh mode ;;
         t) state_timer ;;
         c) state_from appbinds/terminal-settings.sh summary ;;
         f) state_from appbinds/font-settings.sh summary ;;
@@ -1065,6 +1136,12 @@ build_preview() {
            pvw "Speed, DPI, polling rate, acceleration, scrolling, left-handed." ;;
         v) cur="$(volume_style_current)"; pvw "Now: $cur."; pv ""
            pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
+        l) cur="$(state_from waybar/launcher-logo.sh mode)"
+           pvw "The left box of the bar. Now: ${cur:-unknown}."; pv ""
+           pv "1  distro logo"; pvd "   Arch/Fedora/NixOS glyph"
+           pvd "   detected: $(state_from waybar/launcher-logo.sh distro)"
+           pv "2  archenemy logo (Æ)"; pv ""
+           pvw "Stays the same when you switch rice." ;;
         t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
            pvw "Turn it on or off, set the default minutes and the text colour." ;;
         c) pvw "Copy selected text to the clipboard. Now: ${MENU_STATE[c]:-unknown}."; pv ""
@@ -1210,6 +1287,7 @@ run_item() {
         w) workspace_mode_menu ;;
         k) keyboard_layouts_menu ;;
         v) volume_style_menu ;;
+        l) launcher_logo_menu ;;
         t) timer_menu ;;
         o) audio_menu ;;
         i) diagnostics_menu ;;
@@ -1248,7 +1326,7 @@ while :; do
     esac
     choice="${choice,,}"
     case "$choice" in
-        a|e|d|s|w|n|k|m|v|t|c|f|p|o|h|i|u) ;;
+        a|e|d|s|w|n|k|m|v|l|t|c|f|p|o|h|i|u) ;;
         *) continue ;;
     esac
     for i in "${!MENU_KEYS[@]}"; do
