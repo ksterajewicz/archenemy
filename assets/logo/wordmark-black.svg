@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-labelledby="tytul opis">
   <title id="tytul">archenemy — Æ</title>
-  <desc id="opis">Zatwierdzony znak Æ koncept A i autorski geometryczny napis archenemy.</desc>
+  <desc id="opis">The archenemy Æ mark and the archenemy wordmark, both drawn as plain path geometry for this project.</desc>
   <g fill="#0C0C0E" fill-rule="evenodd">
     <path id="znak-a" transform="translate(169.5 69) scale(0.625)" d="M16 232 L112 24 H240 V60 H152 V112 H224 V148 H152 V196 H240 V232 H112 V184 H70 L48 232 Z M80 148 H112 V76 Z"/>
     <g id="napis" transform="translate(367.5 136)">
