@@ -419,6 +419,12 @@ _pkg_check_probe() {
     esac
 }
 
+# Architektury RPM, których nazwę wolno pokazać w raporcie (pkg_check_ids:
+# „RPM only for another architecture: <nazwa> (<arch>)”). Lista zamknięta —
+# kanoniczne nazwy z rpmrc i Fedory; inne pole ARCH = „other architecture”
+# (przegląd D8–D10 L2: allowlista wartości, nie tylko znaków).
+_PKG_RPM_ARCHES="noarch x86_64 i386 i486 i586 i686 athlon aarch64 armv7hl armv7hnl armv7l armv6hl ppc ppc64 ppc64le s390 s390x riscv64 loongarch64"
+
 # pkg_check_ids <id…> — tylko odczyt; jedna linia „id<TAB>stan<TAB>szczegół”
 # na każdy id w kolejności (bez powtórzeń), stan: checked | missing |
 # unavailable | skipped. Fedora: JEDNO `rpm -q --qf '%{NAME} %{ARCH}\n'` dla
@@ -486,8 +492,12 @@ pkg_check_ids() {
                 elif [[ "$line" =~ ^([^\ ]+)\ ([^\ ]+)$ && -n "${want[${BASH_REMATCH[1]}]:-}" ]]; then
                     if [[ -n "$native" && ( "${BASH_REMATCH[2]}" == "$native" || "${BASH_REMATCH[2]}" == noarch ) ]]; then
                         ok[${BASH_REMATCH[1]}]=1
-                    else
+                    elif [[ " $_PKG_RPM_ARCHES " == *" ${BASH_REMATCH[2]} "* ]]; then
                         other[${BASH_REMATCH[1]}]+="${other[${BASH_REMATCH[1]}]:+,}${BASH_REMATCH[2]}"
+                    else
+                        # Spoza listy znanych architektur: stała etykieta, nigdy
+                        # surowe pole rpm (trafia do publicznego raportu doctora).
+                        other[${BASH_REMATCH[1]}]+="${other[${BASH_REMATCH[1]}]:+,}other architecture"
                     fi
                 else
                     bad="rpm query failed"

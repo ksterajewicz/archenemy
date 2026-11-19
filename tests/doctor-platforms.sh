@@ -12,6 +12,7 @@
 #       os-release × poprawne zero, braki, błąd, pusto, zawieszenie, brak
 #       backendu; obcy pacman na Fedorze/NixOS/nieznanej ani razu nie pytany;
 #     - wymagane AUR na Archu, wiele RPM na wiersz, RPM tylko w i686 = brak,
+#       nieznana architektura RPM = stała etykieta bez surowej wartości (L2),
 #       sondy NixOS bez nix CLI, system-managed jako porada (skipped), nie brak;
 #     - zła/brak mapy, brak pkg.sh, pusta lista wymagań, fc-list bez zapisu cache;
 #     - stan „complete/partial/unavailable” i kod wyjścia; „Missing: 0” tylko
@@ -180,6 +181,7 @@ case "$1" in
   for n in "$@"; do
    if [[ " ${DP_RPM_MISSING:-} " == *" $n "* ]]; then echo "package $n is not installed"; rc=$((rc + 1))
    elif [[ " ${DP_RPM_I686:-} " == *" $n "* ]]; then echo "$n i686"
+   elif [[ " ${DP_RPM_ODD:-} " == *" $n "* ]]; then echo "$n ${DP_RPM_ODD_ARCH:?}"
    else echo "$n x86_64"; fi
   done
   exit "$rc" ;;
@@ -331,6 +333,13 @@ doctor('Fedora braki: RPM, część wiersza wielu RPM, tylko i686', expected=1,
        contains=['Missing: 3', 'Problem: required package: waybar (RPM not installed: waybar)',
                  'Problem: required package: libpulse (RPM not installed: pulseaudio-utils)',
                  'Problem: required package: mesa (RPM only for another architecture: mesa-dri-drivers (i686))'])
+# L2 (przegląd D8–D10): pole ARCH spoza znanych architektur RPM nie trafia do
+# raportu — stała etykieta zamiast surowej wartości (krótki kanarek bez
+# prefiksów, których szuka safe()).
+doctor('Fedora RPM z nieznaną architekturą: stała etykieta, bez surowej wartości', expected=1,
+       env={'DP_RPM_ODD': 'mesa-dri-drivers', 'DP_RPM_ODD_ARCH': 'MAPLEBIRD-729'},
+       contains=['Missing: 1', 'Problem: required package: mesa (RPM only for another architecture: mesa-dri-drivers (other architecture))'],
+       absent=['MAPLEBIRD', '729'])
 rpm_rows = sum(1 for p in REQUIRED if MAP[p]['fedora'] != '-' and not MAP[p]['status'].startswith('fedora=system-managed'))
 for case, label in [('fail', 'błąd'), ('garbage', 'obce linie z sekretami'), ('empty', 'pusto')]:
     doctor(f'Fedora rpm {label}: unavailable, problem, bez przecieku', expected=1, env={'DP_RPM': case},

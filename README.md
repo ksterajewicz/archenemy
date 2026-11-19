@@ -981,7 +981,8 @@ list is a problem. Every required package gets one state — `checked`, `missing
 them up. On Arch and its derivatives the check is `pacman -Qq` as before, now
 including the AUR list. On Fedora one `rpm -q` covers every RPM name from
 `packages/platform-map.tsv` (several RPMs per entry; an RPM installed only for
-another architecture, e.g. i686, counts as missing); entries without an RPM use
+another architecture, e.g. i686, counts as missing; an architecture name outside
+the known RPM list is shown only as `other architecture`); entries without an RPM use
 the map's command or font probe, and system-managed entries (`ufw` → firewalld)
 are `skipped`, not missing. On NixOS the command and font probes of the map are
 used without the `nix` CLI; system-managed entries are shown as advice (the
