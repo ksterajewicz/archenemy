@@ -15,7 +15,9 @@
 #
 #   Odświeżanie: config ma "signal": 12 i nie ma "interval" — Waybar (0.15.0,
 #   custom.cpp, konstruktor) uruchamia wtedy skrypt raz na starcie i ponownie
-#   dopiero po pkill -RTMIN+12 waybar (TUI po zapisie wyboru).
+#   dopiero po pkill -RTMIN+12 waybar (TUI po zapisie wyboru). Config waybar
+#   czyta tylko na starcie: pasek sprzed git pull nie zna "signal": 12, więc
+#   TUI i [u] przeładowują go wtedy SIGUSR2 (lib/waybar-reload.sh).
 #
 #   Dystrybucja z os-release przez install/lib/pkg.sh (_pkg_os_file,
 #   _pkg_os_value): plik czytany jako dane, nigdy eval/source; hak testowy
