@@ -54,6 +54,18 @@ reconnect test retains its existing 4.5-second lower tolerance, and the burst
 test retains its existing render-count and observation bounds; these checks do
 not prove exact scheduling at 0.3 or 5 seconds.
 
+The doctor's own supervisor (`scripts/archenemy-doctor.sh`) counts its 4.5 s
+from the moment after the Python interpreter has started and imported its
+modules; the suites' **<5 s** clock also covers `bash` and interpreter start.
+A run of 6.4 s with `--full` and a hung `rpm` (D8–D10 review, under
+`nice -n 19` with load 1.4–4) still ended with the complete report and no
+`collection deadline exceeded`, so the collector stayed within budget and the
+extra time was CPU starvation before the supervisor started (a calm start
+takes about 0.05 s). Such a contract failure stays a failure; its message
+shows the children's CPU time and whether the supervisor fired, which tells
+starvation (little CPU, supervisor not fired) from a slow collector.
+`doctor-platforms.sh` runs that exact case (`--full`, hung `rpm`).
+
 Monitor HUP tests keep stdin open until the confirmation prompt, send HUP and
 require code 129 plus rollback. EOF cannot satisfy that scenario. The delayed
 shell-key fixture waits for its input prompt before sending Ctrl+X, keeps its

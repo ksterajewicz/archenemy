@@ -262,16 +262,24 @@ def doctor(label, *, full=False, expected=None, env=None, path=None, contains=()
     before = snapshot()
     cmd = ['bash', str(script or repo / 'scripts/archenemy-doctor.sh')] + (['--full'] if full else [])
     start = time.monotonic()
+    cpu_before = os.times()
     try:
         result = subprocess.run(cmd, env=current, capture_output=True, text=True, timeout=RUN_LIMIT)
     except subprocess.TimeoutExpired:
         bad(label, f'ZABEZPIECZENIE: hung past test limit {RUN_LIMIT:g} s')
         return '', None, ''
     elapsed = time.monotonic() - start
+    cpu_after = os.times()
     out = result.stdout
     errors = []
     if elapsed >= DEADLINE:
-        errors.append(f'KONTRAKT: doctor < {DEADLINE:g} s, took {elapsed:.2f} s')
+        # L7 (przegląd D8–D10): nadzorca doctora liczy 4,5 s od chwili PO
+        # starcie interpretera i importach; zegar testu obejmuje też start
+        # bash/Pythona. CPU potomków ≪ czasu ściennego i brak komunikatu
+        # nadzorcy = głód CPU (np. nice 19 przy obciążeniu), nie zbieranie.
+        cpu = (cpu_after.children_user + cpu_after.children_system) - (cpu_before.children_user + cpu_before.children_system)
+        fired = 'fired' if 'collection deadline exceeded' in result.stdout else 'not fired'
+        errors.append(f'KONTRAKT: doctor < {DEADLINE:g} s, took {elapsed:.2f} s (CPU {cpu:.2f} s; supervisor 4.5 s {fired})')
     if expected is not None and result.returncode != expected:
         errors.append(f'rc {result.returncode} != {expected}')
     if result.stderr:
@@ -346,6 +354,12 @@ for case, label in [('fail', 'błąd'), ('garbage', 'obce linie z sekretami'), (
            contains=[f'Problem: package check incomplete: {rpm_rows} required packages not checked (rpm query failed)', 'Unavailable: waybar (rpm query failed)'])
 doctor('Fedora zawieszony rpm: limit backendu, wszystko unavailable', expected=1, env={'DP_RPM': 'hang'},
        contains=['Package check: unavailable', 'Problem: package query timed out or unavailable'])
+# L7 (przegląd D8–D10): dokładnie scenariusz z 6,4 s — --full (także
+# gaming-diag --doctor z rpm -qa) przy zawieszonym rpm; w spokojnych warunkach
+# kompletny raport w KONTRAKCIE, bez odcięcia przez nadzorcę.
+doctor('Fedora --full z zawieszonym rpm: w budżecie, nadzorca nie odcina', full=True, expected=1, env={'DP_RPM': 'hang'},
+       contains=['Package check: unavailable', 'Problem: package query timed out or unavailable'],
+       absent=['collection deadline exceeded'])
 doctor('Fedora bez rpm: unavailable dla wierszy RPM', expected=1, path=path_without('rpm'),
        contains=['Problem: package check incomplete', '(rpm not available)'])
 doctor('Fedora fc-list błąd: fonty unavailable, nie brak', expected=1, env={'DP_FC': 'fail'},
