@@ -300,7 +300,7 @@ Rules that follow directly from the table:
   `ws-scroll.sh` and waybar read the mode from that file), prints the mode line
   after the reload result and `✓ Orphan guard started` only when `pgrep` sees
   the process after the start (`ARCHENEMY_GUARD_SETTLE`, default 1 s); exit 2 =
-  saved but not confirmed. `[v]`/`[t]` end in `bar_change_report`: `✓` only when
+  saved but not confirmed. `[v]`/`[l]`/`[t]` end in `bar_change_report`: `✓` only when
   the rice has the module, waybar runs and `pkill` delivered the signal,
   otherwise `Saved: …` with when the bar will show it. `write_dat`
   (`lib/tui.sh`) returns 0 only after reading the value back. The tests force
@@ -319,9 +319,24 @@ Rules that follow directly from the table:
   command and has no option to disable that in drun mode, so the script sets
   `-run-command` to a gate that only runs commands found in a `.desktop` `Exec=`.
   `tests/rofi-drun.sh`.
-- **The waybar launcher is the Æ logo as a CSS image.** `custom/launcher` has
-  `"format": " "` (a custom module without `exec` and with empty text is hidden —
-  Waybar `custom.cpp`), and `style.css` sets `background-image: url("launcher.svg")`,
+- **The waybar launcher has two modes: the distro glyph (default) and the Æ logo.**
+  `custom/launcher` runs `scripts/waybar/launcher-logo.sh` (`"exec"`,
+  `"return-type": "json"`, `"format": "{}"` — a fixed format would drop the
+  script's text —, `"signal": 12`, no `interval`: with `signal` alone Waybar
+  0.15.0 `custom.cpp` runs the script once and again only on
+  `pkill -RTMIN+12 waybar`). The script reads `data/launcher-logo.dat`
+  (`archenemy`; anything else, a missing file or garbage = `distro`) and prints
+  `{"text":"<glyph>","class":"distro"}` or `{"text":" ","class":"archenemy"}`
+  (one space: a custom module with empty text is hidden) and always exits 0.
+  The glyph comes from os-release through `_pkg_os_file`/`_pkg_os_value` in
+  `install/lib/pkg.sh` (never `eval`/`source`; `ARCHENEMY_OS_RELEASE` only with
+  `ARCHENEMY_TEST=1`): first match in `ID`, then `ID_LIKE` — `arch` U+F08C7,
+  `fedora` U+F08DB, `nixos` U+F1105, else U+F033D. These four glyphs live only
+  in that script. `Super+A → [l]` writes the file (`write_dat`) and ends in
+  `bar_change_report 12` (a rice without the module gets `Saved: …`, no `✓`).
+  In `style.css` the common `#custom-launcher` rule holds only margin and
+  hairline, `.distro` the pre-2026-11-19 glyph rules (colour, size, padding,
+  glow), and `.archenemy` sets `background-image: url("launcher.svg")`,
   where `rices/<rice>/waybar/launcher.svg` is a tracked symlink to
   `assets/logo/rices/<rice>.svg`. GTK resolves a relative `url()` against the
   directory of the CSS file as opened (`~/.config/waybar/`, no realpath), so never
@@ -329,7 +344,8 @@ Rules that follow directly from the table:
   opens the file by path only while it has no 8-digit `#RRGGBBAA` colour — with one
   it loads the rewritten CSS from a string and every relative `url()` silently
   disappears; use `rgba()`. In `:hover` use `background-color`, the `background`
-  shorthand resets the image. `bash tests/waybar-launcher.sh`.
+  shorthand resets the image. `bash tests/waybar-launcher.sh`,
+  `bash tests/launcher-logo.sh`.
 - **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
   the parity rices, not by `white-blue_beta`) swaps the active colours for the
   inactive ones while the cursor is on another monitor. It changes the look

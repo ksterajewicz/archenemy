@@ -39,26 +39,31 @@ upload the new file.
 
 ## Colours per rice
 
-Each colour is taken from that rice's `waybar/style.css` (the colour its
-launcher or accent already used).
+Each colour is taken from that rice's `waybar/style.css` (the colour of its
+launcher glyph, `#custom-launcher.distro`, or its accent).
 
 | Variant | Fill | Source | Rice has a bar launcher |
 |---|---|---|---|
 | `asia-n-rice` | `#B47687` | left-island accent | no — the rice has no launcher |
-| `crt` | `#74DCE2` | `#custom-launcher` colour | yes |
-| `dither-flux` | `#D8E6EE` | `#custom-launcher` colour | yes |
-| `tron` | `#00E5FF` | `#custom-launcher` colour | yes |
+| `crt` | `#74DCE2` | `#custom-launcher.distro` colour | yes |
+| `dither-flux` | `#D8E6EE` | `#custom-launcher.distro` colour | yes |
+| `tron` | `#00E5FF` | `#custom-launcher.distro` colour | yes |
 | `white-blue` | `#0148ED` | active workspace | no — the rice has no launcher |
 | `white-blue_beta` | `#0148ED` | active workspace | no — the rice has no launcher |
-| `yin` | `#FFFFFF` | `#custom-launcher` colour | yes |
+| `yin` | `#FFFFFF` | `#custom-launcher.distro` colour | yes |
 | `yang` | `#0C0C0E` | yin's dark text colour | no — there is no `yang` rice yet |
 
 ## How the bar uses it
 
 In `crt`, `dither-flux`, `tron` and `yin` the waybar module `custom/launcher`
-shows the mark instead of text: `rices/<rice>/waybar/launcher.svg` is a tracked
-symlink to `assets/logo/rices/<rice>.svg`, and `style.css` sets it as the
-module's `background-image: url("launcher.svg")`. GTK resolves a relative
+shows the mark only in the **archenemy** mode, picked in `Super+A` → `[l] bar
+logo`; the default mode shows the user's distribution glyph (a Nerd Font
+character chosen from `/etc/os-release`, not part of this mark). The module's
+text and class come from `scripts/waybar/launcher-logo.sh`: in the archenemy
+mode the text is one space (an empty text hides the module) and the class is
+`archenemy`. `rices/<rice>/waybar/launcher.svg` is a tracked symlink to
+`assets/logo/rices/<rice>.svg`, and `style.css` sets it only under that class:
+`#custom-launcher.archenemy { background-image: url("launcher.svg") }`. GTK resolves a relative
 `url()` against the directory of the CSS file as it was opened
 (`~/.config/waybar/`, itself a link into the active rice), so the picture
 follows a rice switch without an absolute path. Waybar opens `style.css` by
