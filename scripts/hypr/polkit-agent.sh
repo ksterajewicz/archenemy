@@ -11,6 +11,10 @@
 #   enable i bez tworzenia jednostek; porażka = jedna cicha linia w logu
 #   prywatnego katalogu sesji (scripts/lib/runtime-dir.sh), zawsze kod 0.
 #   Bez prywatnego katalogu sesji log jest pomijany (nigdy wspólny /tmp).
+#   Granica (przegląd D8–D10 L6): to jedyny `systemctl start` także na
+#   NixOS — start jednostki użytkownika w bieżącej sesji, bez enable, bez
+#   sudo, nic nie trafia do konfiguracji systemu. Na NixOS jednostka istnieje
+#   dopiero z systemd.packages = [ pkgs.hyprpolkitagent ]; (README).
 #   Log: <katalog sesji>/archenemy-polkit-agent.log
 #   Testy: bash tests/rice-autostart.sh
 # =============================================

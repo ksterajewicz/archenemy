@@ -681,7 +681,7 @@ nix_shell_advice() {
     echo -e "  ${CYAN}NixOS sets the login shell declaratively; archenemy does not change passwd. In configuration.nix:${NC}"
     [[ "$target" == zsh ]] && echo "      programs.zsh.enable = true;"
     echo "      users.users.${user}.shell = ${pkg};"
-    echo -e "  ${CYAN}Then rebuild (sudo nixos-rebuild switch), log out and back in.${NC}"
+    echo -e "  ${CYAN}Then rebuild (nixos-rebuild switch), log out and back in.${NC}"
 }
 
 # Zmiana powłoki logowania: pakiet (zsh), pliki rc z blokiem, migracja za

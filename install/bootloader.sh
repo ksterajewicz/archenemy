@@ -68,7 +68,7 @@ regenerate_bootloader() {
                 echo "    Fedora's kernel and microcode packages update the boot entries themselves"
                 echo "    (kernel-install, BLS). If they look wrong: sudo grub2-mkconfig -o /boot/grub2/grub.cfg" ;;
             nixos)
-                echo "    NixOS writes the boot entries itself: sudo nixos-rebuild boot (or switch)."
+                echo "    NixOS writes the boot entries itself: nixos-rebuild boot (or switch)."
                 echo "    Do not edit /boot by hand." ;;
         esac
         return 2

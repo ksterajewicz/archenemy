@@ -356,7 +356,15 @@ Rules that follow directly from the table:
   stays silent too — the write sits in a `{ …; } 2>/dev/null` block, because
   `>> log 2>/dev/null` reports the open error before stderr is redirected). Don't put a bare
   `systemctl` in a rice's autostart; `bash tests/rice-autostart.sh` checks it,
-  and that no new entry appears in `/` after the run.
+  and that no new entry appears in `/` after the run. It is also the bound of
+  "NixOS never runs `systemctl enable|start`" (D8–D10 review L6): the only
+  `start` on NixOS is this user-session start of an installed unit (the unit
+  exists there with `systemd.packages = [ pkgs.hyprpolkitagent ];`). The other
+  known exceptions are `Super+A → [o] → 3` (`systemctl --user restart
+  mpd.service` after you pick an output) and the frozen `white-blue_beta`
+  bare line; everything else on NixOS — installer, helpers, runtime menus,
+  advice texts (`profile-switch.sh`, `nix_shell_advice`, `bootloader.sh`) —
+  has no `systemctl` mutation and no `sudo`, not even in advice.
 - **`window-history.sh` must capture a window's command while it is open.**
   After `closewindow` the window is gone from `hyprctl clients` and the
   process is often dead, so the daemon snapshots argv/cwd from `/proc` on

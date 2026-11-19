@@ -44,6 +44,15 @@ source "$SCRIPTS_DIR/../lib/runtime-dir.sh"
 ERR_FILE="$(archenemy_runtime_dir)/archenemy-profile-err" || ERR_FILE=""
 DIAG=""
 [[ -n "$ERR_FILE" && -f "$ERR_FILE" ]] && DIAG="$(head -1 "$ERR_FILE")"
+# Porada per platforma (przegląd D8–D10 L6): ta sama pkg_route co instalator.
+# Arch, pochodne i brak biblioteki = dawna treść; NixOS = opcje
+# configuration.nix, bez systemctl i sudo (system zmienia tylko konfiguracja).
+HINT="ASUS: uruchom demona (sudo systemctl restart asusd), a przy braku asusctl: bash ~/archenemy/install/asus-installation.sh. Inne: power-profiles-daemon (systemctl enable --now power-profiles-daemon)."
+PKG_LIB="$SCRIPTS_DIR/../../install/lib/pkg.sh"
+# shellcheck source=install/lib/pkg.sh
+if [[ -r "$PKG_LIB" ]] && source "$PKG_LIB" 2>/dev/null && pkg_route 2>/dev/null && [[ "$PKG_ROUTE" == nixos ]]; then
+    HINT="NixOS: w configuration.nix services.asusd.enable = true; (ASUS) i services.power-profiles-daemon.enable = true;, potem nixos-rebuild switch."
+fi
 command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" \
-    "Przełączenie profilu nie zadziałało.${DIAG:+ Błąd: $DIAG.} ASUS: uruchom demona (sudo systemctl restart asusd), a przy braku asusctl: bash ~/archenemy/install/asus-installation.sh. Inne: power-profiles-daemon (systemctl enable --now power-profiles-daemon)."
+    "Przełączenie profilu nie zadziałało.${DIAG:+ Błąd: $DIAG.} $HINT"
 exit 1

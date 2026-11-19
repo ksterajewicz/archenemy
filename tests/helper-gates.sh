@@ -366,7 +366,7 @@ done
 run "$T/bl-regen.sh" fedora ''
 check "regenerate_bootloader Fedora: kernel-install/BLS i grub2-mkconfig jako porada" '[[ "$out" == *"kernel-install, BLS"* && "$out" == *"sudo grub2-mkconfig -o /boot/grub2/grub.cfg"* ]]'
 run "$T/bl-regen.sh" nixos ''
-check "regenerate_bootloader NixOS: nixos-rebuild boot, /boot nie ręcznie" '[[ "$out" == *"nixos-rebuild boot"* && "$out" == *"Do not edit /boot by hand."* ]]'
+check "regenerate_bootloader NixOS: nixos-rebuild boot, /boot nie ręcznie, bez sudo w tekście (L6)" '[[ "$out" == *"nixos-rebuild boot"* && "$out" == *"Do not edit /boot by hand."* && "$out" != *sudo* ]]'
 mkdir -p "$T/bl-nolib"; cp "$BL" "$T/bl-nolib/"
 printf 'source "%s"; echo "after-source rc=$?"; regenerate_bootloader "TEST ctx"; echo "regen rc=$?"\n' "$T/bl-nolib/bootloader.sh" > "$T/bl-nolib-call.sh"
 run "$T/bl-nolib-call.sh" arch ''

@@ -133,6 +133,20 @@ check "nie melduje sukcesu"                        '! switch && [[ "$(cat "$T/pp
 check "krytyczne powiadomienie z przyczyną"        '[[ "$(tail -1 "$T/notified")" == *"nie zadziałało"* ]]'
 rm -f "$T/ppd-profiles" "$T/ppd" "$T/asusd-dead"; echo asus > "$A/data/hardware.dat"
 
+echo "== porada po nieudanym kliku per platforma (L6, przegląd D8–D10)"
+# Arch (i brak biblioteki platformy) = dawna treść bajt w bajt; NixOS: opcje
+# configuration.nix, bez systemctl i sudo — nawet w poradzie.
+OLD_HINT="Przełączenie profilu nie zadziałało. Błąd: asusctl profile next: kod 0, profil w sysfs bez zmian. ASUS: uruchom demona (sudo systemctl restart asusd), a przy braku asusctl: bash ~/archenemy/install/asus-installation.sh. Inne: power-profiles-daemon (systemctl enable --now power-profiles-daemon)."
+fail_click() { : > "$T/noop"; : > "$T/notified"; switch; rm -f "$T/noop"; tail -1 "$T/notified"; }
+check "bez install/lib/pkg.sh: dawna porada bez zmian" '[[ "$(fail_click)" == "-u critical archenemy $OLD_HINT" ]]'
+mkdir -p "$A/install/lib" "$A/packages"; cp "$REPO/install/lib/pkg.sh" "$A/install/lib/"; cp "$REPO/packages/platform-map.tsv" "$A/packages/"
+printf 'ID=arch\n' > "$T/os-arch"; printf 'ID=nixos\n' > "$T/os-nixos"
+check "Arch: dawna porada bajt w bajt" '[[ "$(ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-arch" fail_click)" == "-u critical archenemy $OLD_HINT" ]]'
+nix_hint="$(ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-nixos" fail_click)"
+check "NixOS: opcje services.asusd / services.power-profiles-daemon" '[[ "$nix_hint" == *"nie zadziałało"* && "$nix_hint" == *"services.asusd.enable = true;"* && "$nix_hint" == *"services.power-profiles-daemon.enable = true;"* ]]'
+check "NixOS: bez systemctl i sudo w poradzie" '[[ "$nix_hint" != *systemctl* && "$nix_hint" != *sudo* && "$nix_hint" != *asus-installation.sh* ]]'
+rm -rf "$A/install" "$A/packages"
+
 echo "== stara składnia nie wraca"
 check "żadnego asusctl profile -n/-p w kodzie"     '! grep -rnE "asusctl profile -[np]\b" "$REPO/scripts" "$REPO/install" "$REPO/config" --include=*.sh --include=*.lua | grep -v "^[^:]*:[0-9]*:[[:space:]]*#"'
 

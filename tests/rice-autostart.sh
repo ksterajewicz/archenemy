@@ -165,6 +165,14 @@ polkit_run ok "${T:?}/pbin" "${T:?}/run"
 if [[ $p_rc -eq 0 && -z "$p_out" && -z "$p_log" && "$(<"$POLKIT_CALLS")" == "systemctl --user start hyprpolkitagent" ]]; then
     ok "polkit-agent.sh: jednostka jest — start użytkownika, bez enable, cisza, bez logu"
 else fail "polkit-agent.sh ok: rc=$p_rc out=$p_out log=$p_log calls=$(<"$POLKIT_CALLS")"; fi
+# L6 (przegląd D8–D10): udokumentowana granica „NixOS nie woła systemctl
+# start” — agent polkit sesji to jedyny start: jednostka użytkownika, bez
+# enable, bez sudo, nic nie zapisane w systemie (README „Other distributions”).
+printf 'ID=nixos\n' > "${T:?}/os-nixos"
+ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="${T:?}/os-nixos" polkit_run ok "${T:?}/pbin" "${T:?}/run"
+if [[ $p_rc -eq 0 && -z "$p_out" && "$(<"$POLKIT_CALLS")" == "systemctl --user start hyprpolkitagent" ]]; then
+    ok "polkit-agent.sh na NixOS: tylko --user start agenta sesji (granica L6), bez enable i sudo"
+else fail "polkit-agent.sh NixOS: rc=$p_rc out=$p_out calls=$(<"$POLKIT_CALLS")"; fi
 for st in nounit nobus; do
     polkit_run "$st" "${T:?}/pbin" "${T:?}/run"
     if [[ $p_rc -eq 0 && -z "$p_out" && "$(grep -c . <<< "$p_log")" -eq 1 && "$p_log" == *"start hyprpolkitagent failed"* ]] \

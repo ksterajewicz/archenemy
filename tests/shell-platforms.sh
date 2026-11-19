@@ -312,6 +312,8 @@ fresh nixos
 cp "$H/.bashrc" "$T/bashrc0"
 run 'y\ny\ny' switch zsh
 check "zsh brak: deklaracja programs.zsh.enable + users.users.$U.shell = pkgs.zsh, kod 0" '[[ $RC == 0 && "$OUT" == *"programs.zsh.enable = true;"* && "$OUT" == *"users.users.$U.shell = pkgs.zsh;"* ]]'
+# L6 (przegląd D8–D10): NixOS bez sudo także w tekście porady (AGENTS.md).
+check "porada powłoki NixOS: nixos-rebuild switch bez sudo w tekście" '[[ "$OUT" == *"nixos-rebuild switch"* && "$OUT" != *sudo* ]]'
 check "zsh brak: żadnych plików, zero wywołań, bez chsh i /bin/ w tekście" '[[ ! -e "$H/.zshrc" ]] && cmp -s "$H/.bashrc" "$T/bashrc0" && no_call "$NIXBAD" && [[ "$OUT" != *chsh* && "$OUT" != */bin/* ]]'
 fresh nixos; artifact zsh
 run 'n\ny\ny' switch zsh
