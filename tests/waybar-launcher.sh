@@ -15,7 +15,8 @@
 #     - moduł custom bez exec z pustym tekstem jest ukryty (custom.cpp,
 #       update), stąd format = jedna spacja;
 #     - skrót `background:` w :hover zeruje background-image;
-#     - glif Archa (U+F08C7) nie wraca nigdzie w repo.
+#     - glify dystrybucji (U+F08C7 Arch, U+F08DB Fedora, U+F1105 NixOS,
+#       U+F033D pingwin) żyją tylko w scripts/waybar/launcher-logo.sh.
 #   Bez roota, zapis tylko w mktemp (atrapa ~/.config z linkiem do rice'a).
 #   Uruchom: bash tests/waybar-launcher.sh   (kod 0 = wszystko przeszło)
 # =============================================
@@ -143,12 +144,18 @@ EOF
 if [[ "$out" == "pliki=9 geometrie=1" ]]; then ok "9 plików SVG (baza + 8 wariantów), jedna geometria, tylko svg/title/path"
 else fail "assets/logo: $out"; fi
 
-echo "== glif Archa (U+F08C7) nigdzie w repo"
-# Wzorzec z bajtów UTF-8, żeby ten plik sam siebie nie łapał.
-GLYPH=$(printf '\xf3\xb0\xa3\x87')
-hits=$(git -C "$REPO" grep -nF "$GLYPH" -- . || true)
-if [[ -z "$hits" ]]; then ok "brak U+F08C7 w plikach śledzonych"
-else fail "U+F08C7 w: $hits"; fi
+echo "== glify dystrybucji tylko w scripts/waybar/launcher-logo.sh"
+# Wzorce z bajtów UTF-8, żeby ten plik sam siebie nie łapał. Glif w configu
+# albo w CSS obszedłby wybór z TUI (Super+A → [l]) i jedno miejsce podmiany.
+ONLY="scripts/waybar/launcher-logo.sh"
+for g in 'F08C7 \xf3\xb0\xa3\x87' 'F08DB \xf3\xb0\xa3\x9b' 'F1105 \xf3\xb1\x84\x85' 'F033D \xf3\xb0\x8c\xbd'; do
+    cp="U+${g%% *}"
+    # shellcheck disable=SC2059  # wzorzec bajtów to celowo format printf
+    GLYPH=$(printf "${g#* }")
+    files=$(git -C "$REPO" grep -lF "$GLYPH" -- . || true)
+    if [[ "$files" == "$ONLY" ]]; then ok "$cp tylko w $ONLY"
+    else fail "$cp w: ${files:-(nigdzie — skrypt go zgubił)}"; fi
+done
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

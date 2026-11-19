@@ -322,6 +322,8 @@ archenemy/
 │                                     #   timer.sh + timer-ctl.sh — countdown timer next to the clock,
 │                                     #   optional, enabled in Super+A → [t];
 │                                     #   lib/timer-state.sh — shared read/write of timer state.
+│                                     #   launcher-logo.sh — custom/launcher text and class: the distro
+│                                     #   glyph from os-release (default) or the Æ logo, Super+A → [l].
 ├── src/
 │   └── flux-wall/                    # GPU shader-driven wallpaper (C, wlr-layer-shell + EGL/GLES 3):
 │       ├── main.c                    #   Wayland/EGL: one surface per monitor, main loop, battery;
@@ -462,7 +464,10 @@ archenemy/
 │                                     #   rofi-drun.sh — launcher command gate.
 │                                     #   waybar-launcher.sh — the Æ logo in custom/launcher: format " ", url("launcher.svg")
 │                                     #   symlinked to assets/logo per rice (also through a fake ~/.config/waybar link),
-│                                     #   no #RRGGBBAA in those style files, no Arch glyph anywhere in the repo.
+│                                     #   no #RRGGBBAA in those style files, distro glyphs only in launcher-logo.sh.
+│                                     #   launcher-logo.sh — the launcher script on a fake HOME and os-release: mode
+│                                     #   from data/launcher-logo.dat (missing/garbage = distro), Arch/derivative/
+│                                     #   Fedora/NixOS/unknown glyph, os-release read as data, always exit 0.
 │                                     #   rofi-clipboard.sh — clipboard selection, deletion, clearing, previews and dependency errors on mocks.
 │                                     #   keyboard-layouts.sh — [k] on a fake HOME/hyprctl/evdev.lst: 1–4 known
 │                                     #   codes, reload + read-back, switch N, the TUI menu driven via stdin.
