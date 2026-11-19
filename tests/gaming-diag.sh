@@ -19,12 +19,14 @@
 #       brak FHS (/usr) to nie awaria, historia/initramfs nie dotyczą;
 #     - nieznana platforma i brak install/lib/pkg.sh: bez zgadywania, pacman
 #       ani rpm nie wołane, znacznik partial z „platform”;
+#     - nieudane sondy runtime (nvidia-smi, vulkaninfo, eglinfo: kod ≠ 0 albo
+#       limit czasu) = partial z kluczem nvidia-smi/vulkan/egl, kod 2 (L4);
 #     - kod 0/2 i znacznik „diagnosis: …” w ostatniej linii; --doctor wypisuje
 #       wyłącznie znacznik, bez nvidia-smi i danych prywatnych; zły argument = 64;
 #     - Super+A → [i] → 3 (run_diag_dump z appbinds.sh): ✓ Saved tylko przy
 #       complete, ⚠ przy jawnym partial, ✗ przy innym kodzie/bez znacznika;
 #       workspace-diag jak dotąd.
-#   Opcja: GAMING_DIAG_REV=<rewizja> — scenariusze Archa także na skrypcie
+#   Opcja: GAMING_DIAG_REV=<rewizja sprzed D9, np. 0a3ca91> — scenariusze Archa także na skrypcie
 #   z rewizji (ścieżki /sys /proc /etc /usr /var mechanicznie poprzedzone
 #   korzeniem atrapy, prefiks usuwany z obu wyjść); dozwolone różnice to
 #   wyłącznie wymienione poprawki fałszywych komunikatów i sekcja kompletności.
@@ -176,7 +178,31 @@ printf '#!/usr/bin/env bash\necho "  PID %%CPU %%MEM COMMAND"\necho " 4242 99.0 
 printf '#!/usr/bin/env bash\ncase "$*" in "-x Hyprland") [[ -n "${GD_SESSION:-}" ]] && echo 4243 ;; "-cx waybar") echo 1 ;; *) exit 1 ;; esac\n' > "$BIN/pgrep"
 printf '#!/usr/bin/env bash\necho "fixture wheel"\n' > "$BIN/id"
 printf '#!/usr/bin/env bash\necho "asusctl $*" >> "$GD_LOG"\necho "asusctl 6.3.8"\n' > "$BIN/asusctl"
-printf '#!/usr/bin/env bash\necho "nvidia-smi $*" >> "$GD_LOG"\necho "NVIDIA GeForce RTX, 580.95, P8"\n' > "$BIN/nvidia-smi"
+# Sondy runtime (L4): GD_NVSMI / GD_VK / GD_EGL = fail → kod 1 (sonda dostępna,
+# ale zawodzi), timeout → kod 124 (jak `timeout`), inaczej kod 0.
+cat > "$BIN/nvidia-smi" <<'MOCK'
+#!/usr/bin/env bash
+echo "nvidia-smi $*" >> "$GD_LOG"
+case "${GD_NVSMI:-ok}" in
+    fail) echo "GPU-PROBE-FAILED: NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver."; exit 1 ;;
+    timeout) exit 124 ;;
+esac
+echo "NVIDIA GeForce RTX, 580.95, P8"
+MOCK
+mkdir -p "$T/vkbin"
+cat > "$T/vkbin/vulkaninfo" <<'MOCK'
+#!/usr/bin/env bash
+echo "vulkaninfo $*" >> "$GD_LOG"
+case "${GD_VK:-ok}" in fail) echo "ERROR: [Loader Message] vkCreateInstance failed" >&2; exit 1 ;; timeout) exit 124 ;; esac
+echo "GPU0:"; echo "	deviceName = Intel(R) Graphics"; echo "	driverName = Intel open-source Mesa driver"
+MOCK
+cat > "$T/vkbin/eglinfo" <<'MOCK'
+#!/usr/bin/env bash
+echo "eglinfo $*" >> "$GD_LOG"
+case "${GD_EGL:-ok}" in fail) exit 1 ;; timeout) exit 124 ;; esac
+echo "Wayland platform:"; echo "OpenGL core profile renderer: Mesa Intel(R) Graphics"
+MOCK
+find "$T/vkbin" -type f -exec chmod +x {} +
 find "$BIN" -type f -exec chmod +x {} +   # nie przez dowiązania (D8: chmod podąża za linkami)
 
 # path_without <cmd…> — katalog atrap bez wymienionych poleceń (scenariusz „brak polecenia”).
@@ -277,6 +303,21 @@ gd "${SESSION[@]}" GD_PACMAN=empty
 check "Arch pacman -Q pusto = błąd sondy, nie zero" '[[ $RC == 2 && "$LAST" == *"packages"* ]]'
 gd "${SESSION[@]}" GD_QM=fail GD_NV64=1 GD_NV32=1
 check "Arch -Qm błąd ≠ „(brak)”: partial foreign" 'has "!! pacman -Qm nie powiódł się" && ! has "(brak)" && [[ $RC == 2 && "$LAST" == "diagnosis: partial; not checked: foreign" ]]'
+# L4 (przegląd D8–D10): dostępna, ale nieudana sonda runtime to nie „sprawdzone”.
+gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1 GD_NVSMI=fail
+check "nvidia-smi kod 1: partial nvidia-smi, kod 2, nie „wszystkie sekcje sprawdzone”" '[[ $RC == 2 && "$LAST" == "diagnosis: partial; not checked: nvidia-smi" ]] && has "GPU-PROBE-FAILED" && ! has "wszystkie sekcje sprawdzone" && has "nvidia-smi — nvidia-smi zakończył się kodem 1"'
+gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1 GD_NVSMI=timeout
+check "nvidia-smi limit czasu: partial nvidia-smi z powodem" '[[ $RC == 2 && "$LAST" == "diagnosis: partial; not checked: nvidia-smi" ]] && has "nvidia-smi — nvidia-smi przekroczył limit 15 s"'
+GD_PATH="$T/vkbin:$BIN" gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1
+check "vulkaninfo i eglinfo działają: complete, kod 0, wyniki w zrzucie" '[[ $RC == 0 && "$LAST" == "diagnosis: complete" ]] && has "deviceName = Intel(R) Graphics" && has "OpenGL core profile renderer: Mesa"'
+GD_PATH="$T/vkbin:$BIN" gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1 GD_VK=fail
+check "vulkaninfo kod 1: partial vulkan, kod 2" '[[ $RC == 2 && "$LAST" == "diagnosis: partial; not checked: vulkan" ]] && has "vulkan — vulkaninfo --summary zakończył się kodem 1"'
+GD_PATH="$T/vkbin:$BIN" gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1 GD_EGL=timeout
+check "eglinfo limit czasu: partial egl, kod 2" '[[ $RC == 2 && "$LAST" == "diagnosis: partial; not checked: egl" ]] && has "egl — eglinfo -B przekroczył limit 10 s"'
+GD_PATH="$T/vkbin:$BIN" gd "${SESSION[@]}" GD_NV64=1 GD_NV32=1 GD_NVSMI=fail GD_VK=fail GD_EGL=fail
+check "trzy nieudane sondy: wszystkie klucze w znaczniku" '[[ $RC == 2 && "$LAST" == "diagnosis: partial; not checked: nvidia-smi, vulkan, egl" ]]'
+gd GD_NV64=1 GD_NV32=1 GD_NVSMI=fail -- --doctor
+check "--doctor nadal bez nvidia-smi (awaria sondy go nie dotyczy)" '[[ $RC == 0 && "$OUT" == "diagnosis: complete" && $(calls nvidia-smi) == 0 ]]'
 gd "${SESSION[@]}" GD_QO=unowned GD_NV64=1 GD_NV32=1
 check "Arch binarka spoza pakietów: „żaden”, kompletne" 'has "asusctl → pakiet: żaden" && [[ $RC == 0 ]]'
 gd "${SESSION[@]}" GD_QO=fail GD_NV64=1 GD_NV32=1
@@ -466,6 +507,8 @@ if [[ -n "${GAMING_DIAG_REV:-}" ]]; then
     parity "binarka spoza pakietów" '^[-+]asusctl → pakiet: ?(żaden \(plik spoza pakietów — instalacja ręczna\?\))?$' "${SESSION[@]}" GD_QO=unowned GD_NV64=1 GD_NV32=1
     parity "brak jednostek" '^-(asusd|power-profiles-daemon|supergfxd): active=inactive enabled=$|^-nvidia-(suspend|hibernate|resume|powerd): enabled= active=inactive$|^\+[a-z-]+: brak jednostki \(nie zainstalowana — to nie awaria\)$' "${SESSION[@]}" GD_UNITS=missing GD_NV64=1 GD_NV32=1
     parity "błąd pacman -Q" '^\+!! pacman -Q nie powiódł się|^\+nvidia-utils vs lib32-nvidia-utils: nie sprawdzono' "${SESSION[@]}" GD_PACMAN=fail
+    # L4/L5: nieudane nvidia-smi — to samo wyjście sondy, dochodzi tylko linia „!!”.
+    parity "nieudane nvidia-smi (kod 1)" '^\+!! nvidia-smi — kod 1$' "${SESSION[@]}" GD_NVSMI=fail GD_NV64=1 GD_NV32=1
     parity "błąd pacman -Qm" '^-\(brak\)$|^\+!! pacman -Qm nie powiódł się' "${SESSION[@]}" GD_QM=fail GD_NV64=1 GD_NV32=1
     rm -rf "$FSR/usr/share/vulkan"
     parity "brak katalogu ICD" '^-$|^\+\(brak /usr/share/vulkan/icd\.d' "${SESSION[@]}" GD_NV64=1 GD_NV32=1

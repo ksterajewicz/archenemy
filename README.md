@@ -1019,7 +1019,8 @@ compared on every platform (Fedora: the real RPM names — RPM Fusion
 `-470xx-libs`, negativo17 `nvidia-driver-libs`); when neither is installed the dump says whether an
 NVIDIA GPU is on the bus. A missing unit or path is not reported as a failure.
 Whatever could not be checked (query error or timeout, no log, an owner the
-dump cannot recognize, unreadable kernel log, outside Hyprland) is listed under
+dump cannot recognize, unreadable kernel log, outside Hyprland, an `nvidia-smi`,
+`vulkaninfo` or `eglinfo` that is installed but fails or times out) is listed under
 "kompletność", and the last line is `diagnosis: complete` (exit 0) or
 `diagnosis: partial; not checked: …` (exit 2). The menu says `✓ Saved` only for
 a complete diagnosis, `⚠ Saved … partial` for an explicitly partial one, and
@@ -1028,7 +1029,8 @@ a complete diagnosis, `⚠ Saved … partial` for an explicitly partial one, and
 Tests: `bash tests/archenemy-doctor.sh` uses isolated homes and mock commands;
 `bash tests/doctor-platforms.sh` and `bash tests/gaming-diag.sh` cover every
 platform (with `DOCTOR_PLATFORMS_REV=<rev>` / `GAMING_DIAG_REV=<rev>` the Arch
-scenarios are also compared with that revision);
+scenarios are also compared with that revision — for gaming-diag a revision
+from before D9, e.g. `0a3ca91`: the harness copies only the script);
 `bash tests/run-all.sh` includes it automatically. The required `procps-ng`
 package supplies `pgrep` for daemon status; no daemon arguments are published. **Live-only:** on Arch with
 Hyprland running, run both report modes, check the Super+A status against the

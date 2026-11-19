@@ -76,6 +76,18 @@ mark() {
     NOT_CHECKED+=("$1"); NOTES+=("$1 — $2")
 }
 
+# probe_failed <klucz> <limit s> <kod> <polecenie…> — dostępna sonda runtime,
+# która zawiodła (kod ≠ 0 albo limit `timeout`), to „nie sprawdzono”, nie
+# „sprawdzone” (przegląd D8–D10 L4). 0 = sonda się udała.
+probe_failed() {
+    local key="$1" limit="$2" rc="$3"; shift 3
+    ((rc == 0)) && return 1
+    if ((rc == 124 || rc == 137)); then mark "$key" "$* przekroczył limit $limit s"
+    else mark "$key" "$* zakończył się kodem $rc"; fi
+    echo "!! $* — kod $rc"
+    return 0
+}
+
 # [.] zamiast \. — awk -v przetwarza sekwencje ucieczki i gubiłby backslash.
 GAME_RE='^(steam_app_[0-9]+|gamescope|.*[.]exe)$'
 
@@ -430,7 +442,7 @@ nvidia_config() {
 }
 
 sec_nvidia() {
-    local u
+    local u out rc
     section "sterownik NVIDIA"
     echo "moduł dla $(uname -r): $(modinfo -F version nvidia 2>/dev/null || echo 'BRAK (modinfo nvidia)')"
     echo "załadowany: $(sysval "$R"/sys/module/nvidia/version)"
@@ -442,8 +454,12 @@ sec_nvidia() {
     for u in nvidia-suspend nvidia-hibernate nvidia-resume nvidia-powerd; do unit_state "$u" ea; done
     if have nvidia-smi; then
         echo "--- nvidia-smi"
-        timeout 15 nvidia-smi --query-gpu=name,driver_version,pstate,power.draw,clocks.gr,utilization.gpu,temperature.gpu --format=csv 2>&1
-        timeout 15 nvidia-smi 2>&1 | sed -n '/Processes:/,$p'
+        out="$(timeout 15 nvidia-smi --query-gpu=name,driver_version,pstate,power.draw,clocks.gr,utilization.gpu,temperature.gpu --format=csv 2>&1)"; rc=$?
+        [[ -n "$out" ]] && printf '%s\n' "$out"
+        probe_failed nvidia-smi 15 "$rc" nvidia-smi
+        out="$(timeout 15 nvidia-smi 2>&1)"; rc=$?
+        [[ -n "$out" ]] && sed -n '/Processes:/,$p' <<<"$out"
+        probe_failed nvidia-smi 15 "$rc" nvidia-smi
     else
         echo "BRAK nvidia-smi"
     fi
@@ -518,14 +534,19 @@ vulkan_icd() {
 }
 
 sec_vulkan() {
+    local out rc
     section "Vulkan / GL"
     vulkan_icd
     if have vulkaninfo; then
         echo "--- vulkaninfo --summary (domyślnie)"
-        timeout 15 vulkaninfo --summary 2>/dev/null | grep -E '^GPU[0-9]|deviceName|deviceType|driverName|driverInfo'
+        out="$(timeout 15 vulkaninfo --summary 2>/dev/null)"; rc=$?
+        grep -E '^GPU[0-9]|deviceName|deviceType|driverName|driverInfo' <<<"$out"
+        probe_failed vulkan 15 "$rc" vulkaninfo --summary
         if have prime-run; then
             echo "--- prime-run vulkaninfo --summary"
-            timeout 15 prime-run vulkaninfo --summary 2>/dev/null | grep -E '^GPU[0-9]|deviceName|deviceType|driverName'
+            out="$(timeout 15 prime-run vulkaninfo --summary 2>/dev/null)"; rc=$?
+            grep -E '^GPU[0-9]|deviceName|deviceType|driverName' <<<"$out"
+            probe_failed vulkan 15 "$rc" prime-run vulkaninfo --summary
         fi
     else
         case "$PLATFORM" in
@@ -538,7 +559,12 @@ sec_vulkan() {
     else
         echo "prime-run: BRAK (archowe nvidia-prime; tu offload przez __NV_PRIME_RENDER_OFFLOAD=1 albo nvidia-offload na NixOS — to nie awaria)"
     fi
-    have eglinfo && timeout 10 eglinfo -B 2>/dev/null | grep -E 'Wayland platform|OpenGL core profile renderer|OpenGL renderer' | head -n 4
+    if have eglinfo; then
+        out="$(timeout 10 eglinfo -B 2>/dev/null)"; rc=$?
+        grep -E 'Wayland platform|OpenGL core profile renderer|OpenGL renderer' <<<"$out" | head -n 4
+        probe_failed egl 10 "$rc" eglinfo -B
+    fi
+    return 0
 }
 
 sec_load() {

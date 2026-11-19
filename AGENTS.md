@@ -466,7 +466,8 @@ Rules that follow directly from the table:
   `fc-list` without cache writes), inside the doctor's probe budget; publish
   only ids, fixed states and map-derived details, never raw rpm/fc-list/Nix
   output. `scripts/hypr/gaming-diag.sh` marks anything it could not check
-  with `mark <key> <reason>` and ends with `diagnosis: complete` (exit 0) or
+  with `mark <key> <reason>` — also an installed runtime probe that fails or
+  times out (`probe_failed`: `nvidia-smi`, `vulkan`, `egl`) — and ends with `diagnosis: complete` (exit 0) or
   `diagnosis: partial; not checked: …` (exit 2); a missing unit or path is
   not a failure. Its `--doctor` mode prints only that line, never runs
   `nvidia-smi`, and the doctor accepts only the keys in `gaming_keys` — a new
