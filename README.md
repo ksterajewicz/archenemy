@@ -319,7 +319,8 @@ archenemy/
 │                                     #   universalprofile.sh) +
 │                                     #   volume-bar.sh — volume bar in place of the pulseaudio module;
 │                                     #   line/ticks/solid style switchable in Super+A → [v].
-│                                     #   bluetooth.sh — optional D-Bus event stream, power toggle and bluetui launcher.
+│                                     #   bluetooth.sh — optional D-Bus event stream, power toggle and bluetui launcher;
+│                                     #   right-click choice in data/bluetooth-power.dat, "off" restored once per login.
 │                                     #   timer.sh + timer-ctl.sh — countdown timer next to the clock,
 │                                     #   optional, enabled in Super+A → [t];
 │                                     #   lib/timer-state.sh — shared read/write of timer state.
@@ -501,7 +502,8 @@ archenemy/
 │                                     #   window-history.sh — Super+Tab on a fake `hyprctl clients` with
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
-│                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services.
+│                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services,
+│                                     #   remembered right-click power choice across a mock reboot (boot id).
 │                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
 │                                     #   sudo and on every exit (Ctrl+C, step [2]; none on NixOS), GPU and VirtualBox installer
 │                                     #   test hooks only with ARCHENEMY_TEST=1.
@@ -826,9 +828,31 @@ removing the controller hides it. Beta remains frozen. There is no Bluetooth
 entry in `Super+A` yet. Removing the flag and reloading waybar hides the icon
 without disabling the service; stream processes also accept SIGUSR1 to reread it.
 
+**Right-click toggles controller power and the choice survives a reboot.**
+BlueZ does not remember it on its own: since BlueZ 5.65 `AutoEnable`
+(`[Policy]` in `/etc/bluetooth/main.conf`, default `true`) powers on every
+controller it finds, and the adapter settings under `/var/lib/bluetooth` have
+no power key. So every right-click also writes `on` or `off` to
+`data/bluetooth-power.dat` (machine state, ignored by git, written atomically).
+When it says `off`, the bar stream switches the controller off once per login
+session: it waits up to 120 seconds for the controller (BlueZ may come up after
+waybar; it listens for the D-Bus event instead of polling) and, if the
+controller appears powered off, 10 more seconds for a late AutoEnable. After
+that, turning Bluetooth on from bluetui, blueman or a phone is left alone —
+also when waybar restarts (`Super+T`, a second bar), because a marker with the
+boot id in the private session directory says it is done. `on`, no file, or
+anything other than exactly `on`/`off` changes nothing — the system decides,
+as before; so does a missing icon flag. Nothing in `/etc` is changed. If
+`data/` cannot be written, right-click changes nothing and shows a
+notification. Controllers plugged in later or a `bluetooth.service` restart
+are powered on again by AutoEnable and left that way until the next login. To
+forget the choice: `rm ~/archenemy/data/bluetooth-power.dat`.
+
 Live-only: in each of the six rices (beta excluded) inspect the icon, connect headphones,
 check the tooltip and both clicks, remove/replug the controller and verify
 `systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
+Right-click off, reboot: the off icon stays and `bluetoothctl show | grep Powered`
+says `no`; right-click on, reboot: `Powered: yes`.
 
 ## Timer
 

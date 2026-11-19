@@ -606,6 +606,27 @@ Rules that follow directly from the table:
 - **`install/bluetooth-installation.sh` gates itself like the D6 helpers**
   (`pkg_gate "Bluetooth"`, exit 2 outside Arch, flag untouched); on Arch every
   failure removes `data/bluetooth-enabled.dat` (`bash tests/bluetooth.sh`).
+- **`bluetoothctl power off` does not survive a reboot.** BlueZ ≥ 5.65 defaults
+  to `[Policy] AutoEnable=true` (`plugins/policy.c`): every controller it finds
+  — at boot, on hotplug, after a `bluetooth.service` restart — is powered on,
+  and `/var/lib/bluetooth/<adapter>/settings` stores no power state. Do not
+  "fix" this in `/etc/bluetooth/main.conf` (system file, and it would also
+  break the `on` choice) or with `rfkill block` (BlueZ then refuses
+  `Powered=true` with `org.bluez.Error.Blocked`, so right-click and bluetui
+  stop working). `scripts/waybar/bluetooth.sh toggle` writes
+  `data/bluetooth-power.dat` (`on`/`off`, exact bytes, else no decision) and
+  the stream powers off ONCE per login session, guarded by a boot-id marker in
+  `archenemy_runtime_dir` that every attempt re-reads: waybar restarts
+  (`Super+T`) and several bars (one stream each) must not undo a manual power
+  on. Restore only happens inside `restore_try` before a render, woken by the
+  same D-Bus events (no extra polling); keep hotplug and daemon-restart updates
+  intact. Toggle creates the temporary file BEFORE changing power, so an
+  unwritable `data/` fails with nothing changed (stderr + `notify-send`).
+  Tests: `bash tests/bluetooth.sh` (boot id via `ARCHENEMY_BOOT_ID_FILE`,
+  windows via `ARCHENEMY_BT_RESTORE_WAIT`/`_SETTLE`, all only with
+  `ARCHENEMY_TEST=1`). In stream tests wait until the stream's only child is
+  the listener before `killpg` — a render's `python` still exiting prints
+  "Terminated" on stderr.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing
