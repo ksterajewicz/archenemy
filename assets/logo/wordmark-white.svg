@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-labelledby="tytul opis">
+  <title id="tytul">archenemy — Æ</title>
+  <desc id="opis">Zatwierdzony znak Æ koncept A i autorski geometryczny napis archenemy.</desc>
+  <g fill="#FFFFFF" fill-rule="evenodd">
+    <path id="znak-a" transform="translate(169.5 69) scale(0.625)" d="M16 232 L112 24 H240 V60 H152 V112 H224 V148 H152 V196 H240 V232 H112 V184 H70 L48 232 Z M80 148 H112 V76 Z"/>
+    <g id="napis" transform="translate(367.5 136)">
+      <path id="litera-1-a" transform="translate(0 0)" d="M31 -1 C40 -1 47 2 51 8 V0 H68 V78 H51 V70 C46 76 39 79 30 79 C11 79 0 64 0 39 C0 14 12 -1 31 -1 Z M34 15 C23 15 17 23 17 39 C17 55 23 63 34 63 C45 63 51 55 51 39 C51 23 45 15 34 15 Z"/>
+      <path id="litera-2-r" transform="translate(80 0)" d="M0 0 H17 V10 C24 2 31 -1 42 -1 H49 V16 H40 C25 16 17 25 17 41 V78 H0 Z"/>
+      <path id="litera-3-c" transform="translate(139 0)" d="M66 6 V24 C58 18 51 15 41 15 H33 C23 15 17 23 17 39 C17 55 23 63 33 63 H41 C51 63 58 60 66 54 V72 C58 77 50 79 39 79 H32 C11 79 0 65 0 39 C0 13 11 -1 32 -1 H39 C50 -1 58 1 66 6 Z"/>
+      <path id="litera-4-h" transform="translate(217 0)" d="M0 -34 H17 V8 C23 2 30 -1 40 -1 C58 -1 68 10 68 31 V78 H51 V33 C51 20 46 15 36 15 C24 15 17 23 17 36 V78 H0 Z"/>
+      <path id="litera-5-e" transform="translate(297 0)" d="M68 44 H17 C18 57 24 63 37 63 C49 63 57 59 65 54 V71 C58 76 48 79 36 79 C12 79 0 64 0 39 C0 14 12 -1 35 -1 C57 -1 68 14 68 38 Z M17 30 H51 C49 19 44 14 35 14 C26 14 20 19 17 30 Z"/>
+      <path id="litera-6-n" transform="translate(377 0)" d="M0 0 H17 V8 C23 2 30 -1 40 -1 C58 -1 68 10 68 31 V78 H51 V33 C51 20 46 15 36 15 C24 15 17 23 17 36 V78 H0 Z"/>
+      <path id="litera-7-e" transform="translate(457 0)" d="M68 44 H17 C18 57 24 63 37 63 C49 63 57 59 65 54 V71 C58 76 48 79 36 79 C12 79 0 64 0 39 C0 14 12 -1 35 -1 C57 -1 68 14 68 38 Z M17 30 H51 C49 19 44 14 35 14 C26 14 20 19 17 30 Z"/>
+      <path id="litera-8-m" transform="translate(537 0)" d="M0 0 H17 V7 C22 2 28 -1 36 -1 C47 -1 55 3 60 11 C66 3 73 -1 84 -1 C100 -1 110 10 110 30 V78 H93 V32 C93 20 89 15 81 15 C72 15 66 22 66 34 V78 H49 V32 C49 20 45 15 37 15 C25 15 17 23 17 36 V78 H0 Z"/>
+      <path id="litera-9-y" transform="translate(657 0)" d="M0 0 H18 L38 54 L58 0 H76 L44 84 C39 99 30 106 16 106 H7 V90 H15 C22 90 26 87 29 80 L30 77 Z"/>
+    </g>
+  </g>
+</svg>

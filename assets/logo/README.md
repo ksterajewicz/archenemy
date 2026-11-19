@@ -5,12 +5,37 @@ of the A and the stem of the E are one shared vertical stroke, the crossbars are
 offset, and the counter of the A is a triangle. It is the project's own mark,
 drawn as its own geometry (one `<path fill-rule="evenodd">` in a
 `viewBox="0 0 256 256"`): no fonts, no outlined glyphs, no raster images and no
-external resources, and no logo of Arch Linux or any other distribution.
+external resources, and no logo of Arch Linux or any other distribution. The
+PNG files below are only renders of the SVG sources.
 
 | File | What it is |
 |---|---|
 | `archenemy-ae.svg` | base mark, white (`#FFFFFF`) on transparency |
 | `rices/<rice>.svg` | the same geometry in one rice's colour — only `<title>` and `fill` differ |
+| `banner-dark.svg` | 1280×320 banner: the mark and the `archenemy` wordmark, white `#FFFFFF` on `#0C0C0E` — the top of the repository README on a dark theme |
+| `banner-light.svg` | the same banner, blue `#0148ED` on white `#FFFFFF` — the top of the README on a light theme |
+| `wordmark-white.svg` | the banner's mark and wordmark in white, no background (for dark surfaces) |
+| `wordmark-black.svg` | the same in `#0C0C0E`, no background (for light surfaces) |
+| `banner-dark.png`, `banner-light.png` | 2560×640 renders of the two banners, a fallback where SVG is not accepted |
+| `social-preview.svg` | 1280×640 source of the repository's social preview (dark background, mark and wordmark centred) |
+| `social-preview.png` | its render — the image GitHub shows when a link to the repository is shared |
+
+## Banner and wordmark
+
+The wordmark `archenemy` is drawn for this project as its own path geometry
+(eight letter shapes, the two `e` identical), not outlined from a font. In the
+banners the mark keeps the base path unchanged and is only moved and scaled
+uniformly (0.625). The banner SVGs contain only `svg`, `title`, `desc`, `g`,
+`rect` and `path` — no `<text>`, fonts, images or external resources. The
+repository README picks the banner by the reader's GitHub theme with
+`<picture>` and `prefers-color-scheme`.
+
+**The social preview is uploaded by hand.** GitHub does not read it from the
+repository: as the repository owner open **Settings → General → Social
+preview → Edit → Upload an image…** and choose `social-preview.png`. After
+changing `social-preview.svg`, render it again
+(`rsvg-convert -w 1280 -h 640 -o social-preview.png social-preview.svg`) and
+upload the new file.
 
 ## Colours per rice
 
