@@ -389,11 +389,13 @@ move_legacy_alias() {
     refresh_alias_mark
     st="$(archenemy_alias_state "$BASHRC" "$ZSHRC")"
     [[ "$st" == legacy* ]] || return 0
-    if bak="$(archenemy_alias_move "${st#legacy }")"; then
-        echo -e "  ${GREEN}✓ The 'archenemy' command moved to your shared file (backup: $(tilde "$bak")).${NC}"
-    else
-        echo -e "  ${YELLOW}⚠ Could not move the 'archenemy' command from $(tilde "${st#legacy }").${NC}"
-    fi
+    bak="$(archenemy_alias_move "${st#legacy }")"
+    case $? in
+        0) echo -e "  ${GREEN}✓ The 'archenemy' command moved to your shared file (backup: $(tilde "$bak")).${NC}" ;;
+        2) echo -e "  ${YELLOW}⚠ $(tilde "${st#legacy }") is managed by home-manager: the old 'archenemy' alias stays there.${NC}"
+           echo -e "    Remove it from your home-manager configuration and re-run install.sh to add it to the shared file." ;;
+        *) echo -e "  ${YELLOW}⚠ Could not move the 'archenemy' command from $(tilde "${st#legacy }").${NC}" ;;
+    esac
 }
 
 # Linie z ~/.bashrc do pliku wspólnego, po pokazaniu ich i za zgodą.

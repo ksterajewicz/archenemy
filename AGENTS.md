@@ -201,7 +201,9 @@ Rules that follow directly from the table:
   `.bak`, no `ln`, no `.current_rice`. `install.sh` [9] checks first and
   does not call the library; [8l] does not offer to replace an HM mpd
   config; `rc_block_ensure` returns `managed` (no backup, no write through
-  the link) and `rc_migrate_apply` refuses. Never advise HM `force`. Test
+  the link), `rc_migrate_apply` refuses and `archenemy_alias_move` returns 2
+  before any write (no alias in `shellrc`, no backup; [8m] and `[h]` say the
+  old alias stays in HM). Never advise HM `force`. Test
   hook `ARCHENEMY_NIX_STORE` only with `ARCHENEMY_TEST=1`
   (`bash tests/hm-conflict.sh`).
 - **Session files (locks, Super+Tab state, logs) live only in

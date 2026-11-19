@@ -1721,12 +1721,17 @@ case "$ALIAS_STATE" in
         fi ;;
     own)  echo -e "  ${YELLOW}⚠ you already have your own 'archenemy' alias, left as it is.${NC}" ;;
     legacy*)
-        if SHELL_BAK="$(archenemy_alias_move "${ALIAS_STATE#legacy }")"; then
-            echo -e "  ${GREEN}✓ the 'archenemy' command moved to the shared file (works in zsh too; backup: ${SHELL_BAK/#$HOME/\~})${NC}"
-            SUMMARY_DONE+=("'archenemy' command moved to the shared shell file")
-        else
-            echo -e "  ${YELLOW}⚠ Could not move the 'archenemy' command, it stays where it was.${NC}"
-        fi ;;
+        SHELL_BAK="$(archenemy_alias_move "${ALIAS_STATE#legacy }")"
+        case $? in
+            0)  echo -e "  ${GREEN}✓ the 'archenemy' command moved to the shared file (works in zsh too; backup: ${SHELL_BAK/#$HOME/\~})${NC}"
+                SUMMARY_DONE+=("'archenemy' command moved to the shared shell file") ;;
+            2)  # Plik z home-managera: bez kopii, bez zapisu, alias zostaje (L1).
+                ALIAS_RC="${ALIAS_STATE#legacy }"
+                echo -e "  ${YELLOW}⚠ ${ALIAS_RC/#$HOME/\~} is managed by home-manager: the old 'archenemy' alias stays there.${NC}"
+                echo -e "    Remove it from your home-manager configuration and re-run install.sh to add it to the shared file."
+                SUMMARY_SKIPPED+=("'archenemy' command stays in your home-manager ${ALIAS_RC/#$HOME/\~} — remove the old alias there, then re-run install.sh") ;;
+            *)  echo -e "  ${YELLOW}⚠ Could not move the 'archenemy' command, it stays where it was.${NC}" ;;
+        esac ;;
     *)
         read -rp "  Add the 'archenemy' command (opens the Super+A menu in the terminal, bash and zsh)? [Y/n]: " ans_alias
         if [[ "$ans_alias" =~ ^[Nn]$ ]]; then
@@ -1740,7 +1745,8 @@ case "$ALIAS_STATE" in
         fi ;;
 esac
 SHELL_MOVABLE="$(rc_migrate_preview "$BASHRC" | grep -cv '^[[:space:]]*#')"
-if (( SHELL_MOVABLE > 0 )); then
+# ~/.bashrc z home-managera: [h] → 3 i tak niczego z niego nie przenosi.
+if (( SHELL_MOVABLE > 0 )) && ! rc_store_managed "$BASHRC"; then
     SUMMARY_SKIPPED+=("$SHELL_MOVABLE line(s) of your ~/.bashrc (aliases, exports) stay bash-only until you move them: Super+A → [h] → 3")
 fi
 

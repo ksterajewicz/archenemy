@@ -21,7 +21,9 @@
 #     - ~/.bashrc z HM: rc_block_ensure = managed bez kopii i zapisu (także
 #       łańcuch), aktualny blok w pliku HM = ok, zwykły symlink (stow) jak
 #       dotąd; rc_migrate_apply odmawia bez dopisania do shellrc; wycinek
-#       instalatora [8m] wypisuje blok do programs.bash.initExtra;
+#       instalatora [8m] wypisuje blok do programs.bash.initExtra; cały [8m]
+#       (aż do ALIAS_STATE i SHELL_MOVABLE) oraz [h] migrate ze starym aliasem
+#       w pliku HM: bez kopii, bez aliasu w shellrc, plik HM bez zmian (L1);
 #     - ~/.config/mpd z plikiem HM: bez pytania o podmianę, wpis w podsumowaniu;
 #     - ~/archenemy w sklepie: install.sh odmawia (kod 1) przed zapisem.
 #   Zapisy tylko w $T (test_isolate, D7F R3).
@@ -186,6 +188,50 @@ out="$(ARCHENEMY_DIR="$A" BASHRC="$HOME/.bashrc" GREEN='' NC='' YELLOW='' RED=''
 check "⚠ i blok do programs.bash.initExtra"       '[[ "$out" == *"~/.bashrc is managed by home-manager"* && "$out" == *"programs.bash.initExtra"* && "$out" == *"# >>> archenemy shell >>>"* ]]'
 check "podsumowanie bez fałszywego broken block" '[[ "$out" == *"SKIPPED=Your ~/.bashrc comes from home-manager"* && "$out" != *"without its end"* ]]'
 check "bez nowej kopii w HOME"                    '[[ $(find "$HOME" -maxdepth 1 -name ".bashrc.bak-*" | wc -l) -eq $n_rcbak ]]'
+
+# L1 (przegląd D8–D10): dawny wycinek kończył się na pierwszym `esac`, a cały
+# [8m] idzie dalej do ALIAS_STATE i migracji starego aliasu. Plik HM z dawnym
+# znacznikiem aliasu nie może dostać kopii ani zmiany, a shellrc — aliasu.
+echo "== install.sh cały [8m] i Super+A → [h]: stary alias w ~/.bashrc z home-managera"
+ARCHENEMY_DIR="$A"   # archenemy_alias_line w atrapie i przy przeniesieniu
+S8A=$(grep -n '^APPBINDS_SH="$ARCHENEMY_DIR/scripts/appbinds/appbinds.sh"' "$REPO/install/install.sh" | cut -d: -f1)
+E8A=$(grep -n '^SUMMARY_DONE+=("Machine-local configs generated' "$REPO/install/install.sh" | cut -d: -f1)
+[[ -n "$S8A" && -n "$E8A" ]] && sed -n "${S8A},$((E8A-1))p" "$REPO/install/install.sh" > "$T/step8m-all.sh"
+check "cały [8m] znaleziony (blok rc, ALIAS_STATE, migracja aliasu)" '[[ -n "$S8A" && -n "$E8A" ]] && grep -q "^ALIAS_STATE=" "$T/step8m-all.sh" && grep -q "archenemy_alias_move" "$T/step8m-all.sh" && grep -q "^SHELL_MOVABLE=" "$T/step8m-all.sh"'
+hm_alias_fixture() {   # $1 = znacznik; plik HM: aktualny blok + alias dawnego [8m]
+    mkdir -p "$ST/mmmm-hm-files"
+    { echo "# from home-manager"; rc_block_text bash; echo ""; echo "$1"; archenemy_alias_line; } > "$ST/mmmm-hm-files/bashrc"
+    cp "$ST/mmmm-hm-files/bashrc" "$T/hm-alias.before"
+    rm -f "$HOME/.bashrc" "$HOME"/.bashrc.bak-*; ln -s "$ST/mmmm-hm-files/bashrc" "$HOME/.bashrc"
+    rm -f "$SHELLRC" "$SHELLRC".bak-*; shellrc_ensure >/dev/null; cp "$SHELLRC" "$T/shellrc-alias.before"
+}
+hm_alias_untouched() {
+    cmp -s "$ST/mmmm-hm-files/bashrc" "$T/hm-alias.before" && cmp -s "$SHELLRC" "$T/shellrc-alias.before" \
+        && ! ls "$HOME"/.bashrc.bak-* "$SHELLRC".bak-* >/dev/null 2>&1 && [[ "$(readlink "$HOME/.bashrc")" == "$ST/mmmm-hm-files/bashrc" ]]
+}
+HM_STAYS="managed by home-manager: the old 'archenemy' alias stays there"
+HM_SKIP="SKIPPED='archenemy' command stays in your home-manager ~/.bashrc"
+hm_alias_fixture "$ARCHENEMY_ALIAS_MARK_OLD"
+res="$(ARCHENEMY_TEST=1 ARCHENEMY_NIX_STORE="$ST" archenemy_alias_move "$HOME/.bashrc" 2>&1)"; rc=$?
+check "archenemy_alias_move na pliku HM: kod 2, bez kopii, rc i shellrc bez zmian" '[[ $rc -eq 2 && -z "$res" ]] && hm_alias_untouched'
+for mark in "$ARCHENEMY_ALIAS_MARK_OLD" "$ARCHENEMY_ALIAS_MARK"; do
+    hm_alias_fixture "$mark"
+    out="$(ARCHENEMY_DIR="$A" BASHRC="$HOME/.bashrc" ZSHRC="$HOME/.zshrc" ARCHENEMY_TEST=1 ARCHENEMY_NIX_STORE="$ST" \
+        GREEN='' NC='' YELLOW='' RED='' bash -c '
+        declare -a SUMMARY_DONE=() SUMMARY_SKIPPED=(); source "$1"; source "$2"
+        printf "DONE=%s\n" "${SUMMARY_DONE[@]}"; printf "SKIPPED=%s\n" "${SUMMARY_SKIPPED[@]}"' _ "$REPO/scripts/shell/lib/shell-rc.sh" "$T/step8m-all.sh" </dev/null 2>&1)"
+    check "[8m] (${mark##*) }): plik HM, shellrc i HOME bez kopii i zmian" 'hm_alias_untouched'
+    check "[8m] (${mark##*) }): ⚠ zamiast ✓ przeniesienia, wpis w podsumowaniu" '[[ "$out" == *"$HM_STAYS"* && "$out" != *"moved to the shared file"* && "$out" == *"$HM_SKIP"* && "$out" != *"DONE='"'"'archenemy'"'"' command moved"* && "$out" != *"stay bash-only until you move them"* ]]'
+done
+hm_alias_fixture "$ARCHENEMY_ALIAS_MARK_OLD"
+printf 'ID=arch\n' > "$T/os-arch"
+out="$(ARCHENEMY_DIR="$A" ARCHENEMY_TEST=1 ARCHENEMY_NIX_STORE="$ST" ARCHENEMY_OS_RELEASE="$T/os-arch" \
+    bash "$REPO/scripts/shell/shell-settings.sh" migrate </dev/null 2>&1)"
+check "Super+A → [h] migrate: blok w HM aktualny, alias zostaje, bez kopii i zmian" 'hm_alias_untouched && [[ "$out" == *"$HM_STAYS"* && "$out" != *"moved to your shared file"* ]]'
+rm -f "$HOME/.bashrc"; { echo "# stow"; echo ""; echo "$ARCHENEMY_ALIAS_MARK_OLD"; archenemy_alias_line; } > "$T/dot/bashrc-legacy"
+ln -s "$T/dot/bashrc-legacy" "$HOME/.bashrc"
+check "zwykły symlink ze starym aliasem: przeniesienie jak dotąd" 'bak="$(archenemy_alias_move "$HOME/.bashrc")" && [[ -f "$bak" ]] && ! grep -q "^alias archenemy=" "$T/dot/bashrc-legacy" && grep -qxF "$ARCHENEMY_ALIAS_MARK" "$SHELLRC"'
+rm -f "$HOME/.bashrc" "$HOME"/.bashrc.bak-*
 
 echo "== install.sh [8l]: ~/.config/mpd z home-managera"
 SM=$(grep -n '^    MPD_USER_DIR="$CONFIG_DIR/mpd"' "$REPO/install/install.sh" | cut -d: -f1)

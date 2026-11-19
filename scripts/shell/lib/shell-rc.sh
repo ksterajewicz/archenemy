@@ -755,9 +755,12 @@ archenemy_alias_mark_refresh() {
 
 # Alias dopisany do ~/.bashrc przez dawny krok [8m] (pusta linia, znacznik,
 # alias) → do pliku wspólnego; z rc znika dokładnie to, co dopisał tamten krok.
-# stdout: ścieżka kopii rc.
+# stdout: ścieżka kopii rc. Kod 2: rc z home-managera — kontrola PRZED
+# jakimkolwiek zapisem (bez aliasu w shellrc, bez kopii, bez zapisu przez
+# link; przegląd D8–D10 L1), alias zostaje tam, gdzie go trzyma HM.
 archenemy_alias_move() {
     local rc="$1" tmp bak
+    rc_store_managed "$rc" && return 2
     archenemy_alias_add || return 1
     bak="$(rc_backup "$rc")" || return 1
     tmp="$(mktemp)" || return 1
