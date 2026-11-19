@@ -23,6 +23,8 @@ ARCHENEMY_DIR="$HOME/archenemy"
 
 # shellcheck source=lib/tui.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/tui.sh"
+# shellcheck source=../waybar/lib/waybar-reload.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../waybar/lib/waybar-reload.sh"
 
 pause() { read -rp "  Press Enter to go back..." _; }
 
@@ -200,6 +202,22 @@ else
 fi
 if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/dev/null)" != "$old_head" ]]; then
     echo -e "  To go back: git switch --detach ${old_head}   (run in ~/archenemy)"
+fi
+# Pasek: działający waybar nie czyta configu ponownie (lib/waybar-reload.sh),
+# więc po pullu, który zmienił config rice'a albo skrypty modułów
+# (scripts/waybar — moduły z samym "signal" uruchamiają je raz), przeładuj go
+# od razu (SIGUSR2). Bez tego nowy moduł albo sygnał nie istnieje aż do
+# restartu waybara — u właściciela: do restartu sprzętu (2026-11-19).
+if pgrep -x waybar >/dev/null 2>&1; then
+    bar_scripts=""
+    [[ -n "$old_head" ]] && bar_scripts="$(git -C "$ARCHENEMY_DIR" diff --name-only "$old_head" HEAD -- scripts/waybar 2>/dev/null)"
+    if waybar_config_stale || [[ -n "$bar_scripts" ]]; then
+        if waybar_reload; then
+            echo -e "  ${GREEN}✓ Waybar reloaded — the bar uses the updated config.${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ Waybar did not take the reload signal — the bar keeps the old config until waybar restarts (Super+T or log in again).${NC}"
+        fi
+    fi
 fi
 echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"

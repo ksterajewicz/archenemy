@@ -83,7 +83,8 @@ Rules that follow directly from the table:
   `waybar_config_stale` (config mtime through the rice symlink not older than
   the start of a `waybar` process, `ps -o etimes=`) and `waybar_reload`
   (`pkill -USR2 -x waybar` = the default `on-sigusr2: reload`, config + CSS +
-  module scripts). `bar_change_report` uses them;
+  module scripts). `bar_change_report` uses them, and `update-archenemy.sh`
+  reloads after a pull that changed the config or `scripts/waybar/`;
   Super+T restarts waybar anyway.
 - **Rice switching is 2-line stubs** in
   `scripts/changing-theme-scripts/*.sh` (the file name = the rofi menu

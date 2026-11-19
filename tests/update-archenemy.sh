@@ -40,6 +40,28 @@ printf 'ID=arch\n' > "$T/os/arch"; printf 'ID=endeavouros\nID_LIKE=arch\n' > "$T
 printf 'ID=fedora\nVERSION_ID=44\n' > "$T/os/fedora"; printf 'ID=nixos\n' > "$T/os/nixos"; printf 'ID=ubuntu\n' > "$T/os/ubuntu"
 export ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os/arch"
 g() { git -C "$1" "${@:2}" >/dev/null 2>&1; }
+# Atrapy procesów dla WSZYSTKICH scenariuszy: aktualizator przeładowuje
+# waybara (pkill -USR2), więc test nie może trafić w prawdziwy pasek. Waybar
+# „żyje” (pid 4242) tylko z plikiem $T/waybar-alive; czas jego życia daje
+# $T/waybar-etimes (domyślnie doba); $T/pkill-fails = sygnał nie dochodzi.
+mkdir -p "$T/bin"
+cat > "$T/bin/pgrep" <<EOS
+#!/usr/bin/env bash
+[[ "\$*" == *waybar* && -f "$T/waybar-alive" ]] && echo 4242
+EOS
+cat > "$T/bin/pkill" <<EOS
+#!/usr/bin/env bash
+echo "pkill \$*" >> "$T/proc.log"
+[[ -f "$T/waybar-alive" && ! -f "$T/pkill-fails" ]]
+EOS
+cat > "$T/bin/ps" <<EOS
+#!/usr/bin/env bash
+if [[ "\$*" == "-o etimes= -p 4242" ]]; then cat "$T/waybar-etimes" 2>/dev/null || echo 86400; exit 0; fi
+exec "$(command -v ps)" "\$@"
+EOS
+chmod +x "$T/bin/"*
+export PATH="$T/bin:$PATH"
+unset XDG_CONFIG_HOME
 
 # ─── origin: main (stary) ← dev (nowszy o 2 commity) ─────────────────────────
 S="$T/seed"
@@ -307,6 +329,40 @@ rm -rf "$A"; cp -a "$snapA" "$A"
 out=$(upd_os ubuntu '1y\n')
 check "Ubuntu: instalator nie oferowany, „y” go nie uruchamia" '[[ "$out" == *"install.sh supports Arch Linux, Fedora and NixOS only"* && "$out" != *"Run install.sh now"* && "$out" != *INSTALL-RAN* ]]'
 check "Ubuntu: aktualizacja i tak udana" '[[ "$out" == *"✓ Updated"* ]]'
+
+echo "== pasek po aktualizacji: waybar na starym configu dostaje SIGUSR2"
+# ~/.config/waybar jak po lib/switch-rice.sh: link do rice'a w klonie. Pull
+# zmienia config.jsonc → mtime nowszy niż start waybara → reload.
+# Config paska śledzony w origin (jak w repo), inaczej pull odmówi nadpisania.
+upstream_commit dev rices/crt/waybar/config.jsonc wb-base
+wb_setup() {   # wb_setup — świeży klon, link paska, żywy waybar od godziny
+    fresh_clone dev
+    mkdir -p "$HOME/.config"
+    ln -sfn "$A/rices/crt/waybar" "$HOME/.config/waybar"
+    touch -d '-2 hours' "$A/rices/crt/waybar/config.jsonc"
+    touch "$T/waybar-alive"; echo 3600 > "$T/waybar-etimes"; : > "$T/proc.log"
+}
+wb_setup
+upstream_commit dev rices/crt/waybar/config.jsonc wb-config
+out=$(run_upd '1n\n')
+check "config paska zmieniony: SIGUSR2 i ✓ reload" '[[ "$out" == *"✓ Updated"* && "$out" == *"✓ Waybar reloaded — the bar uses the updated config."* ]] && grep -q "^pkill -USR2 -x waybar" "$T/proc.log"'
+wb_setup
+upstream_commit dev scripts/waybar/x.sh wb-script
+out=$(run_upd '1n\n')
+check "skrypt modułu zmieniony (config nie): też reload" '[[ "$out" == *"✓ Waybar reloaded"* ]] && grep -q "^pkill -USR2 -x waybar" "$T/proc.log"'
+wb_setup
+upstream_commit dev f.txt wb-inne
+out=$(run_upd '1n\n')
+check "pasek bez zmian: bez sygnału i bez komunikatu" '[[ "$out" == *"✓ Updated"* && "$out" != *"Waybar"* ]] && ! grep -q "pkill" "$T/proc.log"'
+wb_setup; touch "$T/pkill-fails"
+upstream_commit dev rices/crt/waybar/config.jsonc wb-fail
+out=$(run_upd '1n\n'); rm -f "$T/pkill-fails"
+check "reload nie doszedł: ⚠ zamiast ✓" '[[ "$out" == *"⚠ Waybar did not take the reload signal"* && "$out" != *"✓ Waybar reloaded"* ]]'
+wb_setup; rm -f "$T/waybar-alive"
+upstream_commit dev rices/crt/waybar/config.jsonc wb-dead
+out=$(run_upd '1n\n')
+check "waybar nie działa: bez sygnału i bez komunikatu" '[[ "$out" == *"✓ Updated"* && "$out" != *"Waybar"* ]] && ! grep -q "pkill" "$T/proc.log"'
+rm -rf "$HOME/.config/waybar" "$T/waybar-etimes"
 
 # Parytet z bazą (UPDATE_ARCHENEMY_REV=<rewizja>): te same scenariusze Archa na
 # aktualizatorze z rewizji, na identycznej kopii klonu — całe wyjście równe.
