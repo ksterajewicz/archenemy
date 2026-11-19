@@ -192,6 +192,7 @@ pkgs_arch() {
 
 pkgs_fedora() {
     local rc b path out native v64 v32 name
+    local -a nvlibs=()
     if ! have rpm; then
         echo "!! brak polecenia rpm — pakiety nie sprawdzone"
         for b in packages foreign nvidia-32bit history; do mark "$b" "brak polecenia rpm"; done
@@ -205,9 +206,16 @@ pkgs_fedora() {
             awk -F'\t' '$1 ~ /^(kernel(-core|-devel|-modules)?|akmods|akmod-nvidia.*|kmod-nvidia.*|xorg-x11-drv-nvidia.*|nvidia-.*|mesa-.*|vulkan-.*|intel-media-driver|libva.*|asusctl.*|rog-control-center|supergfxctl.*|switcheroo-control|power-profiles-daemon|tuned(-ppd)?|gamemode|gamescope|mangohud|steam|hyprland.*|aquamarine|dkms)$/ {print $1, $2, $3}' <<<"$RPMS" | sort
             echo "--- spoza repozytoriów Fedory (Vendor RPM inny niż Fedora Project: COPR, RPM Fusion, producent; filtr GPU/ASUS):"
             awk -F'\t' '$5 != "Fedora Project" && tolower($1) ~ /nvidia|asus|rog-|supergfx|cardwire|kernel|mesa|vulkan|hypr/ {print $1, $2, $3, "[" $5 "]"}' <<<"$RPMS" | sort | grep . || echo "(brak)"
-            # RPM Fusion: xorg-x11-drv-nvidia-libs, negativo17: nvidia-driver-libs.
+            # Rzeczywiste NAME z rpm -qa (przegląd D8–D10 L3): RPM Fusion
+            # xorg-x11-drv-nvidia-libs oraz gałęzie legacy
+            # xorg-x11-drv-nvidia-<NNN>xx-libs (580xx: Maxwell/Pascal/Volta,
+            # 470xx: Kepler; nazwa ze specu xorg-x11-drv-nvidia-580xx, subpakiet
+            # „libs”), negativo17: nvidia-driver-libs. -cuda-libs to CUDA, nie GL.
             native="$(uname -m)"; v64=""; v32=""; name=xorg-x11-drv-nvidia-libs
-            for b in xorg-x11-drv-nvidia-libs nvidia-driver-libs; do
+            nvlibs=(xorg-x11-drv-nvidia-libs)
+            mapfile -t -O 1 nvlibs < <(awk -F'\t' '$1 ~ /^xorg-x11-drv-nvidia-[0-9]+xx-libs$/ {print $1}' <<<"$RPMS" | sort -u)
+            nvlibs+=(nvidia-driver-libs)
+            for b in "${nvlibs[@]}"; do
                 v64="$(awk -F'\t' -v n="$b" -v a="$native" '$1 == n && $3 == a {print $2; exit}' <<<"$RPMS")"
                 v32="$(awk -F'\t' -v n="$b" '$1 == n && $3 == "i686" {print $2; exit}' <<<"$RPMS")"
                 [[ -n "$v64$v32" ]] && { name="$b"; break; }

@@ -11,7 +11,8 @@
 #       brak jednostki ≠ awaria, brak systemctl, pusty journal, poza sesją,
 #       brak ICD, zawieszony pacman (limit zapytań);
 #     - Fedora: jedno rpm -qa (wiele RPM i architektur, Vendor spoza Fedory),
-#       rozjazd i686, rpm -qf (pakiet, żaden, błąd), dracut zamiast
+#       rozjazd i686, biblioteki NVIDII pod rzeczywistą nazwą RPM (bieżące,
+#       580xx, 470xx, negativo17; -cuda-libs nie), rpm -qf (pakiet, żaden, błąd), dracut zamiast
 #       mkinitcpio, błąd/pusto rpm; obcy pacman ani razu nie wołany;
 #     - NixOS: wersje ze ścieżek sklepu, /run/opengl-driver(-32) (zgodne,
 #       rozjazd, brak), wrapper /run/wrappers i plik poza sklepem = nierozpoznany,
@@ -118,8 +119,9 @@ case "$1" in
         row mesa-dri-drivers 25.2.0-1.fc44 i686 1762000100 "Fedora Project"
         row hyprland 0.57.2-1.fc44 x86_64 1762000200 "Fedora Copr - user nett00n"
         row zlib 1.3.1-2.fc44 x86_64 1762000050 "Fedora Project"
-        [[ -n "${GD_NV64:-}" ]] && row xorg-x11-drv-nvidia-libs "$GD_NV64" x86_64 1762000300 "RPM Fusion"
-        [[ -n "${GD_NV32:-}" ]] && row xorg-x11-drv-nvidia-libs "$GD_NV32" i686 1762000301 "RPM Fusion"
+        # GD_NV_NAME: rzeczywista NAZWA RPM bibliotek (RPM Fusion 580xx/470xx, negativo17).
+        [[ -n "${GD_NV64:-}" ]] && row "${GD_NV_NAME:-xorg-x11-drv-nvidia-libs}" "$GD_NV64" x86_64 1762000300 "RPM Fusion"
+        [[ -n "${GD_NV32:-}" ]] && row "${GD_NV_NAME:-xorg-x11-drv-nvidia-libs}" "$GD_NV32" i686 1762000301 "RPM Fusion"
         exit 0 ;;
     -qf)
         case "${GD_RPMQF:-owned}" in
@@ -326,6 +328,17 @@ check "Fedora: NVIDIA x86_64 = i686" 'has "xorg-x11-drv-nvidia-libs.x86_64 = xor
 check "Fedora: rpm -qf, historia z czasu instalacji, dracut zamiast mkinitcpio" 'has "asusctl → pakiet: asusctl" && has "historia RPM" && has "2025-11-01 12:31:40 xorg-x11-drv-nvidia-libs-3:580.95-1.fc44.x86_64" && has "dracut:" && ! has "mkinitcpio" && has "platforma: fedora"'
 gd "${SESSION[@]}" GD_NV64=3:580.95-1.fc44 GD_NV32=3:580.82-1.fc44
 check "Fedora rozjazd i686" 'has "!! ROZJAZD xorg-x11-drv-nvidia-libs.x86_64 (3:580.95-1.fc44) vs xorg-x11-drv-nvidia-libs.i686 (3:580.82-1.fc44)"'
+# L3 (przegląd D8–D10): `rpm -qa` zwraca rzeczywiste NAME — gałęzie legacy
+# RPM Fusion (xorg-x11-drv-nvidia-580xx-libs, -470xx-libs) i negativo17
+# (nvidia-driver-libs) też są bibliotekami NVIDII; -cuda-libs nie jest.
+gd "${SESSION[@]}" GD_NV_NAME=xorg-x11-drv-nvidia-580xx-libs GD_NV64=3:580.95-1.fc44 GD_NV32=3:580.82-1.fc44
+check "Fedora 580xx (Maxwell/Pascal): rozjazd 64/32 rozpoznany" 'has "!! ROZJAZD xorg-x11-drv-nvidia-580xx-libs.x86_64 (3:580.95-1.fc44) vs xorg-x11-drv-nvidia-580xx-libs.i686 (3:580.82-1.fc44)" && ! has "brak obu"'
+gd "${SESSION[@]}" GD_NV_NAME=xorg-x11-drv-nvidia-470xx-libs GD_NV64=3:470.256.02-1.fc44 GD_NV32=3:470.256.02-1.fc44
+check "Fedora 470xx (Kepler): zgodne 64/32" 'has "xorg-x11-drv-nvidia-470xx-libs.x86_64 = xorg-x11-drv-nvidia-470xx-libs.i686: OK (3:470.256.02-1.fc44)" && [[ $RC == 0 ]]'
+gd "${SESSION[@]}" GD_NV_NAME=nvidia-driver-libs GD_NV32=3:580.95-1.fc44
+check "Fedora negativo17: tylko 32-bit = ROZJAZD z BRAK" 'has "!! ROZJAZD nvidia-driver-libs.x86_64 (BRAK) vs nvidia-driver-libs.i686 (3:580.95-1.fc44)"'
+gd "${SESSION[@]}" GD_NV_NAME=xorg-x11-drv-nvidia-580xx-cuda-libs GD_NV64=3:580.95-1.fc44 GD_NV32=3:580.95-1.fc44
+check "Fedora: -cuda-libs to nie biblioteki GL/Vulkan — brak obu przy GPU" 'has "brak obu, choć NVIDIA jest na szynie PCI"'
 gd "${SESSION[@]}"
 check "Fedora bez sterownika NVIDIA przy GPU: jawnie, wskazuje RPM Fusion" 'has "brak obu, choć NVIDIA jest na szynie PCI — nouveau albo sterownik spoza RPM Fusion"'
 gd "${SESSION[@]}" GD_RPM=fail

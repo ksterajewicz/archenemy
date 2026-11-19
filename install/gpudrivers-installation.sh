@@ -25,7 +25,19 @@ if ! pkg_gate "GPU drivers"; then
         fedora)
             echo "    AMD/Intel: Mesa is part of Fedora; 32-bit for Steam/Proton:"
             echo "      sudo dnf install mesa-dri-drivers.i686 mesa-vulkan-drivers.i686"
-            echo "    NVIDIA: enable RPM Fusion, then install akmod-nvidia: https://rpmfusion.org/Howto/NVIDIA" ;;
+            # L3 (przegląd D8–D10): bieżąca gałąź RPM Fusion (akmod-nvidia, 590+)
+            # nie obsługuje Maxwell/Pascal/Volta — spec xorg-x11-drv-nvidia-580xx
+            # (rpmfusion/xorg-x11-drv-nvidia-580xx 03fad2c, %description: „not
+            # supported by NVIDIA drivers version 590 or newer”); Kepler = 470xx.
+            # akmod-<kmod> to konwencja kmodtool (nvidia-580xx-kmod → akmod-nvidia-580xx).
+            echo "    NVIDIA: enable RPM Fusion (https://rpmfusion.org/Configuration), then choose the driver by your card's generation:"
+            echo "      - Turing and newer (GTX 16xx, RTX 20xx and later):"
+            echo "          sudo dnf install akmod-nvidia xorg-x11-drv-nvidia-libs.i686"
+            echo "      - Pascal, Maxwell and Volta (GTX 10xx, GTX 9xx, GTX 750):"
+            echo "          sudo dnf install akmod-nvidia-580xx xorg-x11-drv-nvidia-580xx-libs.i686"
+            echo "      - Kepler (most GTX 600/700 cards):"
+            echo "          sudo dnf install akmod-nvidia-470xx xorg-x11-drv-nvidia-470xx-libs.i686"
+            echo "      Which branch supports your card, and the current package names: https://rpmfusion.org/Howto/NVIDIA" ;;
         nixos)
             echo "    In configuration.nix, then nixos-rebuild switch:"
             echo "      hardware.graphics.enable = true; hardware.graphics.enable32Bit = true;"

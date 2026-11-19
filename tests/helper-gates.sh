@@ -241,6 +241,19 @@ done
 run "$GPU" fedora 'y\n'
 gated "GPU Fedora: Mesa, lib32 (i686) i NVIDIA z RPM Fusion" "mesa-vulkan-drivers.i686" "akmod-nvidia" "https://rpmfusion.org/Howto/NVIDIA"
 check "GPU Fedora: bez archowych porad (pacman, mkinitcpio, multilib)" '[[ "$out" != *pacman* && "$out" != *mkinitcpio* && "$out" != *multilib* ]]'
+# L3 (przegląd D8–D10): akmod-nvidia (bieżąca gałąź, 590+) nie obsługuje
+# Maxwell/Pascal/Volta — porada według generacji jak w NixOS (R2); nazwy RPM
+# Fusion: xorg-x11-drv-nvidia-580xx(-libs) ze specu pakietu, akmod-<kmod>.
+# fed_branch <generacja> → „<akmod> <libs.i686>” z bloku tej generacji.
+fed_branch() {
+    awk -v g="$1" '
+        index($0, g) && /:$/ { on = 1; next }
+        on && /sudo dnf install akmod-nvidia/ { sub(/.*sudo dnf install /, ""); print; exit }' <<< "$out"
+}
+check "GPU Fedora: Turing+ → akmod-nvidia + xorg-x11-drv-nvidia-libs.i686" '[[ "$(fed_branch Turing)" == "akmod-nvidia xorg-x11-drv-nvidia-libs.i686" ]]'
+check "GPU Fedora: Pascal/Maxwell/Volta → akmod-nvidia-580xx + -580xx-libs.i686" '[[ "$(fed_branch Pascal)" == "akmod-nvidia-580xx xorg-x11-drv-nvidia-580xx-libs.i686" ]]'
+check "GPU Fedora: Kepler → akmod-nvidia-470xx + -470xx-libs.i686" '[[ "$(fed_branch Kepler)" == "akmod-nvidia-470xx xorg-x11-drv-nvidia-470xx-libs.i686" ]]'
+check "GPU Fedora: bez bezwarunkowego „install akmod-nvidia”" '[[ "$out" != *"then install akmod-nvidia"* ]]'
 run "$GPU" nixos 'y\n'
 gated "GPU NixOS: opcje hardware.graphics i hardware.nvidia" "hardware.graphics.enable = true;" "hardware.graphics.enable32Bit = true;" \
     'services.xserver.videoDrivers = [ "nvidia" ];' "hardware.nvidia.modesetting.enable = true;"
