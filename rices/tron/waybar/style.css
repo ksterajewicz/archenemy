@@ -78,18 +78,39 @@ window#waybar {
     border:     none;
     box-shadow: none;
 }
-/* „Portal do Gridu" — neonowe logo projektu (Æ) jako launcher na początku
-   lewej wyspy, oddzielone cyjanową hairline od workspace'ów. Neonowa
-   poświata (text-shadow glifu) nie działa na obrazie — zostaje cyjan znaku.
-   Obraz: launcher.svg obok tego pliku (śledzony symlink do
+/* „Portal do Gridu" — neonowy launcher na początku lewej wyspy, oddzielony
+   cyjanową hairline od workspace'ów. Dwa tryby ze scripts/waybar/launcher-logo.sh
+   (klasa w JSON-ie, wybór Super+A → [l]): .distro — neonowy glif Nerd Font
+   dystrybucji z poświatą, reguły sprzed 2026-11-19; .archenemy — logo projektu
+   (Æ) jako obraz. Wspólne: margines i hairline (oprawa wyspy w obu trybach).
+   Obraz trybu archenemy: launcher.svg obok tego pliku (śledzony symlink do
    assets/logo/rices/tron.svg). GTK liczy względny url() od katalogu, z którego
    Waybar wczytał style.css (~/.config/waybar = link do aktywnego rice'a), więc
    obraz idzie za zmianą rice'a bez ścieżki bezwzględnej. Waybar podaje plik
    ścieżką tylko bez kolorów #RRGGBBAA — z nimi wczytuje przepisany CSS jako
    tekst i względny url() przestaje działać: alfę zapisuj jako rgba()
-   (tests/waybar-launcher.sh). Format w configu to jedna spacja: pusty tekst
-   ukrywa moduł custom bez exec. */
+   (tests/waybar-launcher.sh). Tekst trybu archenemy to jedna spacja: pusty
+   tekst ukrywa moduł custom. */
 #custom-launcher {
+    margin:       2px 2px 2px 0;
+    border-right: 1px solid rgba(0, 229, 255, 0.20);
+}
+/* background-color, nie skrót background: skrót zeruje background-image. */
+#custom-launcher:hover {
+    background-color: rgba(0, 229, 255, 0.10);
+}
+#custom-launcher.distro {
+    color:        #00e5ff;
+    font-size:    15px;
+    padding:      0 12px 0 10px;
+    text-shadow:  0 0 6px rgba(0, 229, 255, 0.55);
+}
+#custom-launcher.distro:hover {
+    color:        #7df9ff;
+    text-shadow:  0 0 10px rgba(0, 229, 255, 0.80);
+}
+/* Neonowa poświata (text-shadow) nie działa na obrazie — zostaje cyjan znaku. */
+#custom-launcher.archenemy {
     background-image:    url("launcher.svg");
     background-repeat:   no-repeat;
     background-position: center;
@@ -97,12 +118,6 @@ window#waybar {
     min-width:           20px;
     min-height:          20px;
     padding:             0 11px;
-    margin:              2px 2px 2px 0;
-    border-right:        1px solid rgba(0, 229, 255, 0.20);
-}
-/* background-color, nie skrót background: skrót zeruje background-image. */
-#custom-launcher:hover {
-    background-color: rgba(0, 229, 255, 0.10);
 }
 #workspaces {
     padding: 0 4px;

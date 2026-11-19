@@ -68,17 +68,36 @@ window#waybar {
     background: transparent;
     border:     none;
 }
-/* Logo projektu (Æ) jako launcher na początku lewej wyspy, oddzielone linią
-   1 px w kolorze wody od workspace'ów.
-   Obraz: launcher.svg obok tego pliku (śledzony symlink do
+/* Launcher na początku lewej wyspy, oddzielony linią 1 px w kolorze wody od
+   workspace'ów. Dwa tryby ze scripts/waybar/launcher-logo.sh (klasa w JSON-ie,
+   wybór Super+A → [l]): .distro — glif Nerd Font dystrybucji, reguły sprzed
+   2026-11-19; .archenemy — logo projektu (Æ) jako obraz. Wspólne: margines
+   i linia (oprawa wyspy w obu trybach).
+   Obraz trybu archenemy: launcher.svg obok tego pliku (śledzony symlink do
    assets/logo/rices/dither-flux.svg). GTK liczy względny url() od katalogu, z którego
    Waybar wczytał style.css (~/.config/waybar = link do aktywnego rice'a), więc
    obraz idzie za zmianą rice'a bez ścieżki bezwzględnej. Waybar podaje plik
    ścieżką tylko bez kolorów #RRGGBBAA — z nimi wczytuje przepisany CSS jako
    tekst i względny url() przestaje działać: alfę zapisuj jako rgba()
-   (tests/waybar-launcher.sh). Format w configu to jedna spacja: pusty tekst
-   ukrywa moduł custom bez exec. */
+   (tests/waybar-launcher.sh). Tekst trybu archenemy to jedna spacja: pusty
+   tekst ukrywa moduł custom. */
 #custom-launcher {
+    margin:       2px 2px 2px 0;
+    border-right: 1px solid rgba(92, 135, 163, 0.20);
+}
+/* background-color, nie skrót background: skrót zeruje background-image. */
+#custom-launcher:hover {
+    background-color: rgba(92, 135, 163, 0.10);
+}
+#custom-launcher.distro {
+    color:        #d8e6ee;
+    font-size:    15px;
+    padding:      0 12px 0 10px;
+}
+#custom-launcher.distro:hover {
+    color:        #a8c4d4;
+}
+#custom-launcher.archenemy {
     background-image:    url("launcher.svg");
     background-repeat:   no-repeat;
     background-position: center;
@@ -86,12 +105,6 @@ window#waybar {
     min-width:           20px;
     min-height:          20px;
     padding:             0 11px;
-    margin:              2px 2px 2px 0;
-    border-right:        1px solid rgba(92, 135, 163, 0.20);
-}
-/* background-color, nie skrót background: skrót zeruje background-image. */
-#custom-launcher:hover {
-    background-color: rgba(92, 135, 163, 0.10);
 }
 #workspaces {
     padding: 0 4px;

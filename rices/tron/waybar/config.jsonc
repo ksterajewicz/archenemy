@@ -10,11 +10,19 @@
     "modules-left":   ["custom/launcher", "hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock", "custom/timer"],
     "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "tray"],
-    // Sygnatura rice'a: neonowy „portal do Gridu" — logo projektu (Æ) otwiera rofi.
-    // Obraz daje style.css (#custom-launcher → launcher.svg); format to jedna
-    // spacja, bo moduł custom bez exec z pustym tekstem jest ukryty.
+    // Sygnatura rice'a: neonowy „portal do Gridu" — logo otwiera rofi (PPM: menu zasilania).
+    // Tekst i klasę daje scripts/waybar/launcher-logo.sh: domyślnie glif
+    // dystrybucji z os-release (klasa distro), opcjonalnie logo projektu Æ
+    // (klasa archenemy, obraz z style.css) — wybór w Super+A → [l], stan
+    // w data/launcher-logo.dat (poza rice'em, więc przeżywa zmianę rice'a).
+    // Bez "interval": z samym "signal" Waybar (custom.cpp) woła skrypt raz na
+    // starcie i ponownie dopiero po pkill -RTMIN+12 waybar (TUI po zapisie);
+    // interval forkowałby skrypt co N sekund bez potrzeby.
     "custom/launcher": {
-        "format": " ",
+        "exec": "~/archenemy/scripts/waybar/launcher-logo.sh",
+        "return-type": "json",
+        "format": "{}",
+        "signal": 12,
         "on-click": "~/archenemy/scripts/rofi/rofi_drun.sh",
         "on-click-right": "~/archenemy/scripts/rofi/rofi_power_menu.sh",
         "tooltip": false

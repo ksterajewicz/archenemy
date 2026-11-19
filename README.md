@@ -462,9 +462,11 @@ archenemy/
 │                                     #   monitor-settings.sh — monitor trials and rollback, every position form read back from the mock; audio-devices.sh /
 │                                     #   mpd-output.sh — system and mpd outputs; focus-highlight.sh — cursor-aware borders.
 │                                     #   rofi-drun.sh — launcher command gate.
-│                                     #   waybar-launcher.sh — the Æ logo in custom/launcher: format " ", url("launcher.svg")
-│                                     #   symlinked to assets/logo per rice (also through a fake ~/.config/waybar link),
-│                                     #   no #RRGGBBAA in those style files, distro glyphs only in launcher-logo.sh.
+│                                     #   waybar-launcher.sh — custom/launcher: exec launcher-logo.sh, json, format {}, signal 12
+│                                     #   (no other module on 12), no interval; the image only under .archenemy
+│                                     #   (url("launcher.svg") symlinked to assets/logo per rice, also through a fake
+│                                     #   ~/.config/waybar link), the glyph under .distro, no #RRGGBBAA in those style
+│                                     #   files, distro glyphs only in launcher-logo.sh.
 │                                     #   launcher-logo.sh — the launcher script on a fake HOME and os-release: mode
 │                                     #   from data/launcher-logo.dat (missing/garbage = distro), Arch/derivative/
 │                                     #   Fedora/NixOS/unknown glyph, os-release read as data, always exit 0.

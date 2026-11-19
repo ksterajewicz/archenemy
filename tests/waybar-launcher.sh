@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 # =============================================
 #   archenemy - tests/waybar-launcher.sh
-#   Logo projektu (Æ) w module custom/launcher waybara (2026-11-19).
-#   Znak wstawia CSS GTK: background-image: url("launcher.svg"), gdzie
-#   rices/<rice>/waybar/launcher.svg to śledzony symlink do
-#   assets/logo/rices/<rice>.svg. Pakiet pilnuje warunków, bez których obraz
-#   po cichu znika (GTK nie zgłasza brakującego pliku w pasku):
+#   Lewy box waybara: moduł custom/launcher (2026-11-19). Tekst i klasę daje
+#   scripts/waybar/launcher-logo.sh (exec, return-type json, signal 12):
+#   domyślnie glif dystrybucji (klasa distro), opcjonalnie logo projektu Æ
+#   (klasa archenemy) — wybór w Super+A → [l]. Znak Æ wstawia CSS GTK:
+#   #custom-launcher.archenemy { background-image: url("launcher.svg") },
+#   gdzie rices/<rice>/waybar/launcher.svg to śledzony symlink do
+#   assets/logo/rices/<rice>.svg. Pakiet pilnuje warunków, bez których
+#   launcher po cichu znika albo wygląda inaczej (GTK nie zgłasza błędów w pasku):
 #     - względny url() GTK liczy od katalogu style.css (GFile, bez realpath),
 #       więc launcher.svg musi leżeć obok style.css i wskazywać plik w repo
 #       także przez link ~/.config/waybar → rices/<rice>/waybar;
 #     - Waybar (src/client.cpp, setupCss) wczytuje plik ścieżką tylko wtedy,
 #       gdy transform_8bit_to_hex nic nie przepisał; kolor #RRGGBBAA = CSS
 #       z danych (load_from_data) i względny url() przestaje działać;
-#     - moduł custom bez exec z pustym tekstem jest ukryty (custom.cpp,
-#       update), stąd format = jedna spacja;
-#     - skrót `background:` w :hover zeruje background-image;
-#     - glify dystrybucji (U+F08C7 Arch, U+F08DB Fedora, U+F1105 NixOS,
-#       U+F033D pingwin) żyją tylko w scripts/waybar/launcher-logo.sh.
+#     - "format" musi przepuścić tekst skryptu ({}): stała spacja z czasów
+#       samego Æ zgubiłaby glif; bez "interval" (Waybar custom.cpp: sam
+#       "signal" = waitingWorker, skrypt raz + po sygnale), sygnał 12 wolny;
+#     - obraz tylko pod klasą .archenemy, glif (kolor, rozmiar) pod .distro;
+#     - skrót `background:` w regułach launchera zeruje background-image;
+#     - glify dystrybucji żyją tylko w scripts/waybar/launcher-logo.sh.
+#   Sam skrypt (tryby, os-release) testuje tests/launcher-logo.sh.
 #   Bez roota, zapis tylko w mktemp (atrapa ~/.config z linkiem do rice'a).
 #   Uruchom: bash tests/waybar-launcher.sh   (kod 0 = wszystko przeszło)
 # =============================================
@@ -45,7 +50,7 @@ else
     fail "launcher mają: ${WITH[*]:-(żaden)} (oczekiwano crt dither-flux tron yin — nowy rice z launcherem: dopisz go tu i daj mu launcher.svg)"
 fi
 
-echo "== config.jsonc: format jedna spacja, obie akcje myszy"
+echo "== config.jsonc: exec launcher-logo.sh, json, format {}, signal 12, bez interval, obie akcje"
 for r in "${WITH[@]}"; do
     out=$(python3 - "$REPO/rices/$r/waybar/config.jsonc" <<'EOF'
 import re, sys
@@ -54,27 +59,55 @@ m = re.search(r'"custom/launcher":\s*\{(.*?)\n\s*\}', s, re.S)
 if not m:
     print('brak bloku'); sys.exit()
 b = m.group(1)
-f = re.search(r'"format":\s*"((?:[^"\\]|\\.)*)"', b)
-print('format=' + repr(f.group(1) if f else None),
+def val(k):
+    f = re.search(r'"' + k + r'":\s*("(?:[^"\\]|\\.)*"|[0-9.]+)', b)
+    return f.group(1) if f else None
+print('exec=' + str(val('exec')), 'json=' + str(val('return-type')), 'format=' + str(val('format')),
+      'signal=' + str(val('signal')), 'interval=' + str(val('interval')),
       'lpm=' + str('"on-click": "~/archenemy/scripts/rofi/rofi_drun.sh"' in b),
       'ppm=' + str('"on-click-right": "~/archenemy/scripts/rofi/rofi_power_menu.sh"' in b))
 EOF
 )
-    if [[ "$out" == "format=' ' lpm=True ppm=True" ]]; then ok "$r: format \" \", LPM rofi_drun, PPM power menu"
+    if [[ "$out" == 'exec="~/archenemy/scripts/waybar/launcher-logo.sh" json="json" format="{}" signal=12 interval=None lpm=True ppm=True' ]]; then
+        ok "$r: exec launcher-logo.sh, json, format {}, signal 12, bez interval, LPM rofi_drun, PPM power menu"
     else fail "$r: $out"; fi
 done
+# Sygnał 12 należy tylko do launchera: inny moduł z 12 odświeżałby się razem
+# z nim, a pkill -RTMIN+12 z TUI trafiałby w cudzy moduł.
+others=$(cd "$REPO" && python3 - rices/*/waybar/config.jsonc <<'EOF'
+import re, sys
+for f in sys.argv[1:]:
+    s = open(f, encoding='utf-8').read()
+    for m in re.finditer(r'"([a-z/_-]+)":\s*\{([^{}]*)\}', s, re.S):
+        if re.search(r'"signal":\s*12\b', m.group(2)) and m.group(1) != 'custom/launcher':
+            print(f + ':' + m.group(1))
+EOF
+)
+rtmin=$(git -C "$REPO" grep -nE '^[^#]*RTMIN\+12([^0-9]|$)' -- scripts/ | grep -v '^scripts/appbinds/appbinds.sh:' || true)
+if [[ -z "$others" && -z "$rtmin" ]]; then ok "sygnał 12 tylko dla custom/launcher (pkill -RTMIN+12 tylko w appbinds.sh)"
+else fail "sygnał 12 zajęty także przez: ${others}${rtmin}"; fi
 
-echo "== style.css: obraz z launcher.svg, bez #RRGGBBAA, :hover bez skrótu background"
+echo "== style.css: obraz tylko w .archenemy, glif w .distro, bez #RRGGBBAA, bez skrótu background"
 HEX8_RE='#[0-9A-Fa-f]{8}([^0-9A-Fa-f]|$)'
 for r in "${WITH[@]}"; do
     css="$REPO/rices/$r/waybar/style.css"
-    rule=$(awk '/^#custom-launcher \{/{f=1} f{print} f&&/^\}/{exit}' "$css")
-    hover=$(awk '/^#custom-launcher:hover \{/{f=1} f{print} f&&/^\}/{exit}' "$css")
-    if [[ "$rule" == *'background-image:    url("launcher.svg");'* && "$rule" == *'background-size:'* ]]; then ok "$r: #custom-launcher → url(\"launcher.svg\")"
-    else fail "$r: brak background-image url(\"launcher.svg\") w #custom-launcher"; fi
-    if grep -qE '^[[:space:]]*background:' <<< "$hover"; then
-        fail "$r: :hover ma skrót background: — zeruje obraz (użyj background-color)"
-    else ok "$r: :hover bez skrótu background"; fi
+    rule_of() { awk -v sel="$1 {" '$0 == sel {f=1} f{print} f&&/^\}/{exit}' "$css"; }
+    base=$(rule_of '#custom-launcher')
+    ae=$(rule_of '#custom-launcher.archenemy')
+    distro=$(rule_of '#custom-launcher.distro')
+    all=$(awk '/^#custom-launcher[^ ]* \{/{f=1} f{print} f&&/^\}/{f=0}' "$css")
+    if [[ "$ae" == *'background-image:    url("launcher.svg");'* && "$ae" == *'background-size:'* ]]; then ok "$r: #custom-launcher.archenemy → url(\"launcher.svg\")"
+    else fail "$r: brak background-image url(\"launcher.svg\") w #custom-launcher.archenemy"; fi
+    n_img=$(grep -c 'background-image' <<< "$all")
+    if [[ "$n_img" == 1 && "$base" != *background-image* && "$distro" != *background-image* ]]; then ok "$r: obraz tylko w trybie archenemy"
+    else fail "$r: background-image poza .archenemy (deklaracji z obrazem: $n_img)"; fi
+    if [[ "$distro" == *'font-size:'* && "$distro" == *'color:'* && "$base" != *'font-size'* && "$base" != *'color:'* ]]; then ok "$r: glif (kolor, rozmiar) tylko w .distro"
+    else fail "$r: .distro bez koloru/rozmiaru glifu albo glif w regule wspólnej"; fi
+    if [[ "$base" == *'margin:'* && "$base" == *'border-right:'* ]]; then ok "$r: margines i hairline wspólne dla obu trybów"
+    else fail "$r: #custom-launcher bez wspólnego marginesu/hairline"; fi
+    if grep -qE '^[[:space:]]*background:' <<< "$all"; then
+        fail "$r: reguła launchera ma skrót background: — zeruje obraz (użyj background-color)"
+    else ok "$r: reguły launchera bez skrótu background"; fi
     hits=$(grep -nE "$HEX8_RE" "$css" || true)
     if [[ -z "$hits" ]]; then ok "$r: brak kolorów #RRGGBBAA (Waybar wczyta plik ścieżką)"
     else fail "$r: #RRGGBBAA → Waybar wczyta CSS jako tekst i url() nie zadziała: $hits"; fi
