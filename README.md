@@ -1,4 +1,10 @@
-<!-- banner: assets/logo/banner-*.svg (Codex L2) -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo/banner-light.svg">
+    <img alt="archenemy" src="assets/logo/banner-dark.svg" width="640">
+  </picture>
+</p>
 
 # archenemy
 
@@ -94,7 +100,10 @@ archenemy/
 ├── assets/
 │   └── logo/                         # The project mark Æ (own SVG geometry, no fonts): archenemy-ae.svg (white base),
 │                                     #   rices/<rice>.svg (same shape in each rice's colour, yang included);
-│                                     #   README.md — colours and where each one comes from.
+│                                     #   banner-dark.svg / banner-light.svg (mark + wordmark, top of this README),
+│                                     #   wordmark-white.svg / wordmark-black.svg (no background), PNG renders,
+│                                     #   social-preview.svg/.png (uploaded by hand in the repo settings);
+│                                     #   README.md — what each file is, colours and where each one comes from.
 ├── install/
 │   ├── install.sh                    # Main installer. Walks you through the whole setup.
 │   ├── bootloader.sh                 # Library: detects the bootloader and regenerates its config (GRUB
@@ -648,6 +657,7 @@ The archenemy mark is the ligature **Æ** — **A**rch**E**nemy: the right leg o
 
 - `assets/logo/archenemy-ae.svg` — the base mark, white on transparency.
 - `assets/logo/rices/<rice>.svg` — the same shape in each rice's colour (`yang` is ready for the planned yin/yang pair's second rice); `assets/logo/README.md` lists the colours and where each one comes from.
+- `assets/logo/banner-dark.svg`, `banner-light.svg` — the mark with the `archenemy` wordmark (also drawn as paths), shown at the top of this file by GitHub theme; `wordmark-white.svg` / `wordmark-black.svg` are the same without a background, and `social-preview.png` is the repository's link preview (uploaded by hand, see `assets/logo/README.md`).
 - In the bar, `crt`, `dither-flux`, `tron` and `yin` show it as the app launcher (see "App launcher").
 
 ## Fonts
