@@ -66,9 +66,16 @@ cat > "$T/bin/pgrep" <<EOS
 #!/usr/bin/env bash
 case "\$*" in
   *workspace-orphan-guard*) [[ -f "$T/guard-alive" ]] ;;
-  *waybar*) [[ -f "$T/waybar-alive" ]] ;;
+  *waybar*) [[ -f "$T/waybar-alive" ]] && echo 4242 ;;
   *) exit 1 ;;
 esac
+EOS
+# Atrapa ps: czas życia waybara (pid 4242) z pliku waybar-etimes (domyślnie
+# doba). Stary config = plik w ~/.config/waybar zmieniony po starcie paska.
+cat > "$T/bin/ps" <<EOS
+#!/usr/bin/env bash
+if [[ "\$*" == "-o etimes= -p 4242" ]]; then cat "$T/waybar-etimes" 2>/dev/null || echo 86400; exit 0; fi
+exec "$(command -v ps)" "\$@"
 EOS
 cat > "$T/bin/setsid" <<EOS
 #!/usr/bin/env bash
@@ -208,12 +215,12 @@ out="$(ltui '\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[Bq')"
 check "[l] podgląd: obie opcje i dystrybucja"  '[[ "$out" == *"1  distro logo"*"Arch/Fedora/NixOS glyph"*"detected: Arch Linux"*"2  archenemy logo (Æ)"* ]]'
 out="$(ltui 'l2\n\nq')"
 check "[l] archenemy: plik i JSON paska"       '[[ "$(<"$LL")" == archenemy && "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
-check "[l] waybar działa: ✓ po sygnale 12"     '[[ "$out" == *"detected distro: Arch Linux"*"✓ Bar logo: archenemy logo (Æ)"* ]] && grep -q "^pkill -RTMIN+12 waybar" "$T/log"'
+check "[l] waybar działa: ✓ po sygnale 12"     '[[ "$out" == *"detected distro: Arch Linux"*"✓ Bar logo: archenemy logo (Æ)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
 out="$(ltui 'q')"
 check "[l] stan po zmianie: archenemy"         '[[ "$out" =~ l\ +bar\ logo\ +archenemy ]]'
 : > "$T/log"; out="$(ltui 'l1\n\nq')"
 check "[l] distro: plik i glif w JSON paska"   '[[ "$(<"$LL")" == distro && "$(bar_json)" == "{\"text\":\"$(printf "\xf3\xb0\xa3\x87")\",\"class\":\"distro\"}" ]]'
-check "[l] distro: ✓ z nazwą dystrybucji"      '[[ "$out" == *"✓ Bar logo: distro logo (Arch Linux)"* ]] && grep -q "^pkill -RTMIN+12 waybar" "$T/log"'
+check "[l] distro: ✓ z nazwą dystrybucji"      '[[ "$out" == *"✓ Bar logo: distro logo (Arch Linux)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
 out="$(ltui 'lx\n\nq')"
 check "[l] zły klawisz bez zmiany"             '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* && "$out" != *"✓ Bar logo"* ]]'
 out="$(ltui 'l\n\nq')"
@@ -240,7 +247,25 @@ out="$(ltui 'l1\n\nq')"
 check "[l] beta: ostrzeżenie i bez ✓"           '[[ "$(<"$LL")" == distro && "$out" == *"white-blue_beta has no launcher module"* && "$out" == *"Saved: bar logo distro"* && "$out" != *"✓ Bar logo"* ]]'
 echo tron > "$A/.current_rice"; : > "$T/log"
 out="$(ltui 'l2\n\nq')"
-check "[l] rice z launcherem: ✓ po sygnale 12"  '[[ "$(<"$LL")" == archenemy && "$out" == *"✓ Bar logo: archenemy logo (Æ)"* && "$out" != *"has no launcher"* ]] && grep -q "^pkill -RTMIN+12 waybar" "$T/log"'
+check "[l] rice z launcherem: ✓ po sygnale 12"  '[[ "$(<"$LL")" == archenemy && "$out" == *"✓ Bar logo: archenemy logo (Æ)"* && "$out" != *"has no launcher"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+# Waybar starszy niż config (git pull / [u] pod działającym paskiem): moduł
+# nie zna "signal": 12, więc zamiast RTMIN+12 idzie SIGUSR2 (reload configu).
+mkdir -p "$H/.config/waybar"; WCFG="$H/.config/waybar/config.jsonc"; touch "$WCFG"
+echo 3600 > "$T/waybar-etimes"; : > "$T/log"
+out="$(ltui 'l1\n\nq')"
+check "[l] stary config paska: ✓ po SIGUSR2"    '[[ "$(<"$LL")" == distro && "$out" == *"✓ Bar logo: distro logo (Arch Linux) (waybar reloaded: its config changed since it started)"* ]] && grep -q "^pkill -USR2 -x waybar" "$T/log" && ! grep -q "RTMIN" "$T/log"'
+touch "$T/pkill-fails"; : > "$T/log"
+out="$(ltui 'l2\n\nq')"; rm "$T/pkill-fails"
+check "[l] stary config, reload nie doszedł: bez ✓" '[[ "$(<"$LL")" == archenemy && "$out" != *"✓ Bar logo"* && "$out" == *"Saved: bar logo archenemy. Waybar still runs an older bar config"* ]]'
+: > "$T/log"; out="$(tui 'v1\n\nq')"
+check "[v] stary config paska: też SIGUSR2"     '[[ "$out" == *"✓ Volume bar style: line (waybar reloaded"* ]] && grep -q "^pkill -USR2 -x waybar" "$T/log" && ! grep -q "RTMIN" "$T/log"'
+touch -d '-2 hours' "$WCFG"; echo 60 > "$T/waybar-etimes"; : > "$T/log"
+out="$(ltui 'l1\n\nq')"
+check "[l] config starszy niż waybar: RTMIN+12"  '[[ "$out" == *"✓ Bar logo: distro logo (Arch Linux)"* && "$out" != *"reloaded"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log" && ! grep -q "USR2" "$T/log"'
+touch "$WCFG"; echo bzdura > "$T/waybar-etimes"; : > "$T/log"
+out="$(ltui 'l2\n\nq')"
+check "[l] nieczytelny czas waybara: RTMIN+12"   '[[ "$out" == *"✓ Bar logo: archenemy logo"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log" && ! grep -q "USR2" "$T/log"'
+rm -rf "$H/.config/waybar" "$T/waybar-etimes"
 echo white-blue > "$A/.current_rice"
 check "[l] zmiana rice'a nie zmienia trybu"     '[[ "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
 rm -f "$A/.current_rice" "$LL"
@@ -285,9 +310,9 @@ out="$(tui 't1\n\nq')"
 check "[t] sygnał nie doszedł: bez ✓ shown"    '[[ "$(<"$TE")" == 1 && "$out" != *"✓ Timer shown"* && "$out" == *"did not take the refresh signal"* ]]'
 rm "$T/pkill-fails"; : > "$T/log"
 out="$(tui 'v2\n\nq')"
-check "[v] waybar działa: ✓ po sygnale 10"     '[[ "$(<"$VB")" == ticks && "$out" == *"✓ Volume bar style: ticks"* ]] && grep -q "^pkill -RTMIN+10 waybar" "$T/log"'
+check "[v] waybar działa: ✓ po sygnale 10"     '[[ "$(<"$VB")" == ticks && "$out" == *"✓ Volume bar style: ticks"* ]] && grep -q "^pkill -RTMIN+10 -x waybar" "$T/log"'
 echo 0 > "$TE"; out="$(tui 't1\n\nq')"
-check "[t] waybar działa: ✓ po sygnale 11"     '[[ "$(<"$TE")" == 1 && "$out" == *"✓ Timer shown on the bar"* ]] && grep -q "^pkill -RTMIN+11 waybar" "$T/log"'
+check "[t] waybar działa: ✓ po sygnale 11"     '[[ "$(<"$TE")" == 1 && "$out" == *"✓ Timer shown on the bar"* ]] && grep -q "^pkill -RTMIN+11 -x waybar" "$T/log"'
 echo volume-bar-style.dat > "$T/mv-fails"; out="$(tui 'v3\n\nq')"; rm "$T/mv-fails"
 check "[v] nieudany zapis: bez ✓, plik bez zmian" '[[ "$(<"$VB")" == ticks && "$out" != *"✓"* && "$out" != *"Saved"* && "$out" == *"Could not write"* ]] && ! compgen -G "$VB.*" >/dev/null'
 echo white-blue_beta > "$A/.current_rice"

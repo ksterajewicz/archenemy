@@ -35,6 +35,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../hypr/lib/hypr-apply.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
 # shellcheck source=lib/mpd-output.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mpd-output.sh"
+# shellcheck source=../waybar/lib/waybar-reload.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../waybar/lib/waybar-reload.sh"
 
 # Pliki, w których klawisz może już być zajęty (bindy Super+klawisz archenemy).
 # workspaces-monitors.lua: od 2026-07-17 bindy Super+1..0 są GENEROWANE tam
@@ -436,6 +438,10 @@ warn_if_beta() {
 # ale zielony komunikat pada tylko wtedy, gdy pasek może pokazać zmianę: rice ma
 # moduł, waybar działa i przyjął sygnał (pkill oddaje 1, gdy nie trafił w żaden
 # proces). Inaczej mówimy, co jest zapisane i kiedy będzie to widać.
+# Waybar starszy niż jego config (git pull / [u] pod działającym paskiem) nie
+# zna nowego modułu ani "signal" — RTMIN+N doszedłby do procesu, a pasek by
+# stał (diagnoza 2026-11-19, lib/waybar-reload.sh). Wtedy zamiast sygnału
+# modułu idzie SIGUSR2: waybar wczytuje config od nowa i uruchamia skrypty.
 #   $1 numer sygnału, $2 tekst sukcesu, $3 co zapisano, $4 nazwa modułu
 bar_change_report() {
     local signal="$1" shown_msg="$2" saved_msg="$3" module="$4" rice=""
@@ -444,7 +450,13 @@ bar_change_report() {
         echo -e "  ${YELLOW}Saved: ${saved_msg}. white-blue_beta has no ${module} — it shows after you switch rice (Super+T).${NC}"
     elif ! pgrep -x waybar >/dev/null 2>&1; then
         echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar is not running — the bar shows it once waybar starts.${NC}"
-    elif ! pkill -RTMIN+"$signal" waybar 2>/dev/null; then
+    elif waybar_config_stale; then
+        if waybar_reload; then
+            echo -e "  ${GREEN}✓ ${shown_msg} (waybar reloaded: its config changed since it started)${NC}"
+        else
+            echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar still runs an older bar config and did not take the reload signal — it shows after waybar restarts (Super+T or log in again).${NC}"
+        fi
+    elif ! pkill -RTMIN+"$signal" -x waybar 2>/dev/null; then
         echo -e "  ${YELLOW}Saved: ${saved_msg}. Waybar did not take the refresh signal — the bar shows it on its next refresh or after waybar restarts.${NC}"
     else
         echo -e "  ${GREEN}✓ ${shown_msg}${NC}"

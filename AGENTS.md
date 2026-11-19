@@ -72,6 +72,19 @@ Rules that follow directly from the table:
   non-stop, separately on each monitor. Always force an immediate module
   refresh via a signal (`pkill -RTMIN+N waybar`) from the state-changing
   action, never by shortening the interval.
+- **A running waybar never re-reads `config.jsonc`.** Waybar 0.15.0 loads
+  the config only at start (`src/client.cpp`, `Client::main`); inotify
+  (`"reload_style_on_change"`) watches `style.css` only. A `git pull` or
+  `[u]` under a running bar applies the new CSS at once but keeps the old
+  modules: a new module or `"signal"` does not exist yet, `pkill -RTMIN+N`
+  still exits 0 (the process got it) and nothing changes until waybar
+  restarts — on the owner's laptop that looked like "the bar logo needs a
+  reboot" (2026-11-19). `scripts/waybar/lib/waybar-reload.sh`:
+  `waybar_config_stale` (config mtime through the rice symlink not older than
+  the start of a `waybar` process, `ps -o etimes=`) and `waybar_reload`
+  (`pkill -USR2 -x waybar` = the default `on-sigusr2: reload`, config + CSS +
+  module scripts). `bar_change_report` uses them;
+  Super+T restarts waybar anyway.
 - **Rice switching is 2-line stubs** in
   `scripts/changing-theme-scripts/*.sh` (the file name = the rofi menu
   label; the `RICE_NAME` inside must match the `rices/<folder>` folder
@@ -301,8 +314,9 @@ Rules that follow directly from the table:
   after the reload result and `✓ Orphan guard started` only when `pgrep` sees
   the process after the start (`ARCHENEMY_GUARD_SETTLE`, default 1 s); exit 2 =
   saved but not confirmed. `[v]`/`[l]`/`[t]` end in `bar_change_report`: `✓` only when
-  the rice has the module, waybar runs and `pkill` delivered the signal,
-  otherwise `Saved: …` with when the bar will show it. `write_dat`
+  the rice has the module, waybar runs and `pkill -x` delivered the signal,
+  otherwise `Saved: …` with when the bar will show it; a waybar older than its
+  config gets `pkill -USR2 -x waybar` (reload) instead of the module signal. `write_dat`
   (`lib/tui.sh`) returns 0 only after reading the value back. The tests force
   failures without root tricks: `ulimit -f` with `SIGXFSZ` ignored, and `mv`,
   `pgrep`, `pkill`, `setsid` mocks in `tests/appbinds-menu.sh`.
