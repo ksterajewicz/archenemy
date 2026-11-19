@@ -334,9 +334,14 @@ Rules that follow directly from the table:
   `fedora` U+F08DB, `nixos` U+F1105, else U+F033D. These four glyphs live only
   in that script. `Super+A → [l]` writes the file (`write_dat`) and ends in
   `bar_change_report 12` (a rice without the module gets `Saved: …`, no `✓`).
-  In `style.css` the common `#custom-launcher` rule holds only margin and
-  hairline, `.distro` the pre-2026-11-19 glyph rules (colour, size, padding,
-  glow), and `.archenemy` sets `background-image: url("launcher.svg")`,
+  In `style.css` the common `#custom-launcher` rule holds margin, hairline and
+  the tile geometry (`font-size: 15px` and padding) — no class overrides it or
+  adds `min-width`/`min-height`: Iosevka Nerd Font gives the glyph and the
+  space of the archenemy mode the same 0.5 em advance, so switching `[l]` keeps
+  the island width. `.distro` holds the glyph colour and glow, and `.archenemy`
+  sets `background-image: url("launcher.svg")` with `background-size` equal to
+  the font size (15 px: the Æ ink is 208/256 of the box, 12.2 px, the Arch
+  glyph's ink 12.5 px),
   where `rices/<rice>/waybar/launcher.svg` is a tracked symlink to
   `assets/logo/rices/<rice>.svg`. GTK resolves a relative `url()` against the
   directory of the CSS file as opened (`~/.config/waybar/`, no realpath), so never

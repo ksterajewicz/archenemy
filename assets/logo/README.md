@@ -63,7 +63,10 @@ text and class come from `scripts/waybar/launcher-logo.sh`: in the archenemy
 mode the text is one space (an empty text hides the module) and the class is
 `archenemy`. `rices/<rice>/waybar/launcher.svg` is a tracked symlink to
 `assets/logo/rices/<rice>.svg`, and `style.css` sets it only under that class:
-`#custom-launcher.archenemy { background-image: url("launcher.svg") }`. GTK resolves a relative
+`#custom-launcher.archenemy { background-image: url("launcher.svg") }`, drawn at
+`background-size: 15px 15px` — the bar's font size, so the mark's ink (208/256
+of the box, about 12 px) matches the distribution glyph next to it, and the
+tile keeps the glyph's width and padding in both modes. GTK resolves a relative
 `url()` against the directory of the CSS file as it was opened
 (`~/.config/waybar/`, itself a link into the active rice), so the picture
 follows a rice switch without an absolute path. Waybar opens `style.css` by

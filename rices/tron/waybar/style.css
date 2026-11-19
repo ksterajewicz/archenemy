@@ -94,6 +94,11 @@ window#waybar {
 #custom-launcher {
     margin:       2px 2px 2px 0;
     border-right: 1px solid rgba(0, 229, 255, 0.20);
+    /* Rozmiar i padding wspólne dla obu trybów: glif dystrybucji i spacja
+       trybu archenemy mają w Iosevka Nerd Font tę samą szerokość (7,5 px przy
+       15 px), więc przełączenie w Super+A → [l] nie zmienia szerokości wyspy. */
+    font-size:    15px;
+    padding:      0 12px 0 10px;
 }
 /* background-color, nie skrót background: skrót zeruje background-image. */
 #custom-launcher:hover {
@@ -101,8 +106,6 @@ window#waybar {
 }
 #custom-launcher.distro {
     color:        #00e5ff;
-    font-size:    15px;
-    padding:      0 12px 0 10px;
     text-shadow:  0 0 6px rgba(0, 229, 255, 0.55);
 }
 #custom-launcher.distro:hover {
@@ -110,14 +113,15 @@ window#waybar {
     text-shadow:  0 0 10px rgba(0, 229, 255, 0.80);
 }
 /* Neonowa poświata (text-shadow) nie działa na obrazie — zostaje cyjan znaku. */
+/* Æ w rozmiarze glifu: pole obrazu = font-size (15 px). Tusz Æ zajmuje
+   208/256 pola (12,2 px wysokości), glif Archa przy 15 px ma 12,5 px
+   (Iosevka Nerd Font, bbox nf-md-arch). Pole mieści się w paddingu kafelka,
+   więc bez min-width/min-height. */
 #custom-launcher.archenemy {
     background-image:    url("launcher.svg");
     background-repeat:   no-repeat;
     background-position: center;
-    background-size:     20px 20px;
-    min-width:           20px;
-    min-height:          20px;
-    padding:             0 11px;
+    background-size:     15px 15px;
 }
 #workspaces {
     padding: 0 4px;

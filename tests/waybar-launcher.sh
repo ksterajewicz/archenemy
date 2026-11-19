@@ -18,7 +18,9 @@
 #     - "format" musi przepuścić tekst skryptu ({}): stała spacja z czasów
 #       samego Æ zgubiłaby glif; bez "interval" (Waybar custom.cpp: sam
 #       "signal" = waitingWorker, skrypt raz + po sygnale), sygnał 12 wolny;
-#     - obraz tylko pod klasą .archenemy, glif (kolor, rozmiar) pod .distro;
+#     - obraz tylko pod klasą .archenemy, kolor glifu pod .distro; rozmiar
+#       i padding wspólne (ta sama szerokość wyspy w obu trybach), pole Æ
+#       = font-size glifu (15 px, decyzja właściciela 2026-11-19);
 #     - skrót `background:` w regułach launchera zeruje background-image;
 #     - glify dystrybucji żyją tylko w scripts/waybar/launcher-logo.sh.
 #   Sam skrypt (tryby, os-release) testuje tests/launcher-logo.sh.
@@ -87,7 +89,7 @@ rtmin=$(git -C "$REPO" grep -nE '^[^#]*RTMIN\+12([^0-9]|$)' -- scripts/ | grep -
 if [[ -z "$others" && -z "$rtmin" ]]; then ok "sygnał 12 tylko dla custom/launcher (pkill -RTMIN+12 tylko w appbinds.sh)"
 else fail "sygnał 12 zajęty także przez: ${others}${rtmin}"; fi
 
-echo "== style.css: obraz tylko w .archenemy, glif w .distro, bez #RRGGBBAA, bez skrótu background"
+echo "== style.css: obraz tylko w .archenemy, kolor glifu w .distro, wspólna geometria, bez #RRGGBBAA, bez skrótu background"
 HEX8_RE='#[0-9A-Fa-f]{8}([^0-9A-Fa-f]|$)'
 for r in "${WITH[@]}"; do
     css="$REPO/rices/$r/waybar/style.css"
@@ -101,8 +103,20 @@ for r in "${WITH[@]}"; do
     n_img=$(grep -c 'background-image' <<< "$all")
     if [[ "$n_img" == 1 && "$base" != *background-image* && "$distro" != *background-image* ]]; then ok "$r: obraz tylko w trybie archenemy"
     else fail "$r: background-image poza .archenemy (deklaracji z obrazem: $n_img)"; fi
-    if [[ "$distro" == *'font-size:'* && "$distro" == *'color:'* && "$base" != *'font-size'* && "$base" != *'color:'* ]]; then ok "$r: glif (kolor, rozmiar) tylko w .distro"
-    else fail "$r: .distro bez koloru/rozmiaru glifu albo glif w regule wspólnej"; fi
+    if [[ "$distro" == *'color:'* && "$base" != *'color:'* ]]; then ok "$r: kolor glifu tylko w .distro"
+    else fail "$r: .distro bez koloru glifu albo kolor w regule wspólnej"; fi
+    # Geometria wyspy: font-size i padding tylko we wspólnej regule, żadna
+    # klasa ich nie nadpisuje ani nie dokłada min-width/min-height — wtedy
+    # spacja trybu archenemy ma szerokość glifu (Iosevka: każdy znak 0,5 em)
+    # i przełączenie [l] nie przesuwa reszty paska. Pole Æ = font-size.
+    fs=$(sed -nE 's/^[[:space:]]*font-size:[[:space:]]*([0-9.]+px);.*/\1/p' <<< "$base")
+    bgs=$(sed -nE 's/^[[:space:]]*background-size:[[:space:]]*([0-9.]+px) ([0-9.]+px);.*/\1 \2/p' <<< "$ae")
+    if [[ -n "$fs" && "$base" == *'padding:'* ]] \
+        && ! grep -qE '^[[:space:]]*(font-size|padding|min-width|min-height):' <<< "$distro$ae"; then
+        ok "$r: font-size $fs i padding wspólne, klasy ich nie zmieniają (ta sama szerokość wyspy)"
+    else fail "$r: geometria launchera zależy od trybu (font-size/padding/min-* w .distro albo .archenemy)"; fi
+    if [[ -n "$fs" && "$bgs" == "$fs $fs" ]]; then ok "$r: Æ w polu $bgs = font-size glifu"
+    else fail "$r: background-size Æ '${bgs:-brak}' ≠ font-size glifu '${fs:-brak}'"; fi
     if [[ "$base" == *'margin:'* && "$base" == *'border-right:'* ]]; then ok "$r: margines i hairline wspólne dla obu trybów"
     else fail "$r: #custom-launcher bez wspólnego marginesu/hairline"; fi
     if grep -qE '^[[:space:]]*background:' <<< "$all"; then
