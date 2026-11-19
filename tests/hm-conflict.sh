@@ -26,6 +26,8 @@
 #       w pliku HM: bez kopii, bez aliasu w shellrc, plik HM bez zmian (L1);
 #     - ~/.config/mpd z plikiem HM: bez pytania o podmianę, wpis w podsumowaniu;
 #     - ~/archenemy w sklepie: install.sh odmawia (kod 1) przed zapisem.
+#   Opcja: HM_CONFLICT_REV=<rewizja> — cały [8m] z dawnym aliasem w zwykłym
+#   ~/.bashrc (Arch, bez HM) porównany z rewizją bajt w bajt.
 #   Zapisy tylko w $T (test_isolate, D7F R3).
 #   Uruchom: bash tests/hm-conflict.sh   (kod 0 = wszystko przeszło)
 # =============================================
@@ -232,6 +234,40 @@ rm -f "$HOME/.bashrc"; { echo "# stow"; echo ""; echo "$ARCHENEMY_ALIAS_MARK_OLD
 ln -s "$T/dot/bashrc-legacy" "$HOME/.bashrc"
 check "zwykły symlink ze starym aliasem: przeniesienie jak dotąd" 'bak="$(archenemy_alias_move "$HOME/.bashrc")" && [[ -f "$bak" ]] && ! grep -q "^alias archenemy=" "$T/dot/bashrc-legacy" && grep -qxF "$ARCHENEMY_ALIAS_MARK" "$SHELLRC"'
 rm -f "$HOME/.bashrc" "$HOME"/.bashrc.bak-*
+
+# L5 (przegląd D8–D10): parytet Archa dla całego [8m] z dawnym aliasem
+# w zwykłym ~/.bashrc — wyjście, DONE/SKIPPED, ~/.bashrc, shellrc i liczba
+# kopii jak w rewizji (HM_CONFLICT_REV=<rewizja>, np. baza gałęzi).
+if [[ -n "${HM_CONFLICT_REV:-}" ]]; then
+    echo "== parytet Archa: cały [8m], dawny alias w zwykłym ~/.bashrc = $HM_CONFLICT_REV"
+    PB="$T/parity-base"; mkdir -p "$PB"
+    git -C "$REPO" show "$HM_CONFLICT_REV:install/install.sh" > "$PB/install.sh" \
+        && git -C "$REPO" show "$HM_CONFLICT_REV:scripts/shell/lib/shell-rc.sh" > "$PB/shell-rc.sh" || exit 1
+    slice8m() {
+        local s e
+        s=$(grep -n '^APPBINDS_SH="$ARCHENEMY_DIR/scripts/appbinds/appbinds.sh"' "$1" | cut -d: -f1)
+        e=$(grep -n '^SUMMARY_DONE+=("Machine-local configs generated' "$1" | cut -d: -f1)
+        # Biblioteka danej rewizji wczytana wcześniej (p8m); `source` z wycinka
+        # wskazywałby na nieistniejące $A/scripts — usuwamy go po obu stronach.
+        [[ -n "$s" && -n "$e" ]] && sed -n "${s},$((e-1))p" "$1" | grep -vxF 'source "$ARCHENEMY_DIR/scripts/shell/lib/shell-rc.sh"'
+    }
+    slice8m "$PB/install.sh" > "$T/p8m-base.sh"; slice8m "$REPO/install/install.sh" > "$T/p8m-cur.sh"
+    p8m() {   # p8m <shell-rc.sh> <wycinek> → wyjście i stan po biegu (znaczniki czasu kopii znormalizowane)
+        rm -rf "$HOME/.bashrc" "$HOME"/.bashrc.bak-* "$SHELLRC" "$SHELLRC".bak-* "$HOME/.local/share/applications/archenemy.desktop"
+        { echo "# my bashrc"; echo "alias ll='ls -l'"; echo ""; echo "$ARCHENEMY_ALIAS_MARK_OLD"; archenemy_alias_line; } > "$HOME/.bashrc"
+        ARCHENEMY_DIR="$A" BASHRC="$HOME/.bashrc" ZSHRC="$HOME/.zshrc" GREEN='' NC='' YELLOW='' RED='' bash -c '
+            declare -a SUMMARY_DONE=() SUMMARY_SKIPPED=(); source "$1"; source "$2"
+            printf "DONE=%s\n" "${SUMMARY_DONE[@]}"; printf "SKIPPED=%s\n" "${SUMMARY_SKIPPED[@]}"' _ "$1" "$2" </dev/null 2>&1
+        echo "--- ~/.bashrc"; cat "$HOME/.bashrc"; echo "--- shellrc"; cat "$SHELLRC"
+        echo "--- kopie: $(find "$HOME" "$(dirname "$SHELLRC")" -maxdepth 1 -name '*.bak-*' | wc -l)"
+    }
+    norm8m() { sed -E 's/\.bak-[0-9]{8}_[0-9]{6}(-[0-9]+)?/.bak-<ts>/g'; }
+    p_base="$(p8m "$PB/shell-rc.sh" "$T/p8m-base.sh" | norm8m)"
+    p_cur="$(p8m "$REPO/scripts/shell/lib/shell-rc.sh" "$T/p8m-cur.sh" | norm8m)"
+    check "Arch [8m] z dawnym aliasem = $HM_CONFLICT_REV (wyjście, podsumowanie, rc, shellrc, kopie)" '[[ -s "$T/p8m-base.sh" && "$p_base" == "$p_cur" && "$p_cur" == *"moved to the shared file"* ]]'
+    [[ "$p_base" == "$p_cur" ]] || diff <(printf '%s\n' "$p_base") <(printf '%s\n' "$p_cur") | head -20
+    rm -rf "$HOME/.bashrc" "$HOME"/.bashrc.bak-* "$SHELLRC".bak-* "$HOME/.local/share/applications/archenemy.desktop"
+fi
 
 echo "== install.sh [8l]: ~/.config/mpd z home-managera"
 SM=$(grep -n '^    MPD_USER_DIR="$CONFIG_DIR/mpd"' "$REPO/install/install.sh" | cut -d: -f1)

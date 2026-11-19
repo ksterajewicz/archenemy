@@ -716,6 +716,9 @@ on a real machine. Verification has three levels:
    so, never ✓). Write mocks with the Write tool, never nested heredocs in a
    shell command; `chmod` only regular files in a mock `bin` that also holds
    symlinks to real tools (`chmod` follows them into `/usr/bin`).
+   The `*_REV` parity runs prove only what README "Verification" → "Known
+   limits of the automated proof" lists; extend that list (or the parity) when
+   a change touches a path no parity covers, never claim more.
 3. **The real test** — `install.sh` and rice switching (`Super+T`) need a
    live Arch + Hyprland machine. If you don't have one, **say so
    explicitly** and write out exact "live-only" steps for a human to check

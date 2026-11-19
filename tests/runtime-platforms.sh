@@ -159,6 +159,14 @@ check "socat i gniazdo są: tryb zdarzeń, bez powiadomienia" '[[ -z "$N" && $RC
 if [[ -n "$BASE" ]]; then
     guard arch no no base
     check "Arch bez socat = $RUNTIME_PLATFORMS_REV (powiadomienie, kod, odczyty)" '[[ "$N" == "$a_n" && $RC == 0 && "$MON" == 8 && -z "$C" ]]'
+    # L5 (przegląd D8–D10): ścieżka socat dotąd bez parytetu.
+    guard arch yes yes; c_n="$N"; c_rc="$RC"; c_c="$C"; c_mon="$MON"
+    guard arch yes yes base
+    check "Arch socat i gniazdo = $RUNTIME_PLATFORMS_REV (tryb zdarzeń: wywołania, kod, cisza)" '[[ "$N" == "$c_n" && "$RC" == "$c_rc" && "$C" == "$c_c" && "$MON" == "$c_mon" && -z "$N" ]]'
+    guard arch yes no; c_n="$N"; c_rc="$RC"; c_c="$C"; c_mon="$MON"
+    guard arch yes no base
+    # Jedyna zamierzona różnica: baza mówiła „brak socat” mimo socat w PATH.
+    check "Arch socat bez gniazda = $RUNTIME_PLATFORMS_REV poza tekstem powiadomienia (kod, odczyty, wywołania)" '[[ "$RC" == "$c_rc" && "$C" == "$c_c" && "$MON" == "$c_mon" && "$N" != *"$nl"* && "$c_n" != *"$nl"* && ( "$N" == "$c_n" || ( "$N" == *"brak socat"* && "$c_n" == *"brak gniazda zdarzeń Hyprlanda"* ) ) ]]'
 fi
 
 echo "== odbiorcy runtime: rice'y (także yin) → wspólne TUI i guard"
