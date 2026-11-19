@@ -606,24 +606,36 @@ Rules that follow directly from the table:
 - **`install/bluetooth-installation.sh` gates itself like the D6 helpers**
   (`pkg_gate "Bluetooth"`, exit 2 outside Arch, flag untouched); on Arch every
   failure removes `data/bluetooth-enabled.dat` (`bash tests/bluetooth.sh`).
-- **`bluetoothctl power off` does not survive a reboot.** BlueZ ≥ 5.65 defaults
-  to `[Policy] AutoEnable=true` (`plugins/policy.c`): every controller it finds
-  — at boot, on hotplug, after a `bluetooth.service` restart — is powered on,
-  and `/var/lib/bluetooth/<adapter>/settings` stores no power state. Do not
-  "fix" this in `/etc/bluetooth/main.conf` (system file, and it would also
-  break the `on` choice) or with `rfkill block` (BlueZ then refuses
-  `Powered=true` with `org.bluez.Error.Blocked`, so right-click and bluetui
-  stop working). `scripts/waybar/bluetooth.sh toggle` writes
-  `data/bluetooth-power.dat` (`on`/`off`, exact bytes, else no decision) and
-  the stream powers off ONCE per login session, guarded by a boot-id marker in
-  `archenemy_runtime_dir` that every attempt re-reads: waybar restarts
-  (`Super+T`) and several bars (one stream each) must not undo a manual power
-  on. Restore only happens inside `restore_try` before a render, woken by the
-  same D-Bus events (no extra polling); keep hotplug and daemon-restart updates
-  intact. Toggle creates the temporary file BEFORE changing power, so an
-  unwritable `data/` fails with nothing changed (stderr + `notify-send`).
-  Tests: `bash tests/bluetooth.sh` (boot id via `ARCHENEMY_BOOT_ID_FILE`,
-  windows via `ARCHENEMY_BT_RESTORE_WAIT`/`_SETTLE`, all only with
+- **`bluetoothctl power off` does not survive a reboot — the bar stream keeps
+  the choice.** BlueZ ≥ 5.65 defaults to `[Policy] AutoEnable=true`
+  (`plugins/policy.c`, `policy_adapter_probe`): every controller it finds — at
+  boot, on hotplug or re-registration after resume, after a `bluetoothd`
+  restart — is powered on; rfkill unblock powers on unconditionally
+  (`src/rfkill.c` → `btd_adapter_restore_powered`); on SIGTERM `bluetoothd`
+  powers adapters OFF itself (`adapter_shutdown`, emits `Powered` false before
+  the name is lost); `/var/lib/bluetooth/<adapter>/settings` stores no power.
+  Do not "fix" this in `/etc/bluetooth/main.conf` automatically (system file;
+  README documents `AutoEnable=false` only as an explicit, reversible step) or
+  with `rfkill block` (BlueZ then refuses `Powered=true`). Design in
+  `scripts/waybar/bluetooth.sh`: `data/bluetooth-power.dat` (`on`/`off`, exact
+  bytes via `od` — bash `read` drops NUL) is the source of truth. System
+  events open a WINDOW (15 s): stream start (from `bluetoothd` start, `ps -o
+  etimes=`; unknown age = from now), `InterfacesAdded`/`Removed` of
+  `/org/bluez/hciN` (not `dev_*`), `NameOwnerChanged org.bluez`, logind
+  `PrepareForSleep(false)`, a controller appearing or leaving `off-blocked` in
+  the snapshot. In it the state is aligned to the file once and no→yes with
+  `off` is undone (≤ `ENFORCE_MAX`=3 power calls per window, retry 1 s, never
+  saved). Outside it every `Powered` change is saved after `CONFIRM` (2 s) if
+  it held and no system event came in between; `PrepareForSleep(true)` and
+  `PrepareForShutdown(true)` freeze saving. Windows hang on events every bar
+  sees, so several streams decide alike — do not add per-stream windows (a new
+  bar would undo what another bar saves). Right-click writes the file BEFORE
+  `bluetoothctl power` (and restores the old file on failure), so the stream
+  never undoes it; unwritable `data/` = exit 1, nothing changed. One `show`
+  per batch (`tick` → `render "$snap"`); timers via `read -t` from
+  `/proc/uptime` (monotonic, counts suspend). Tests: `bash tests/bluetooth.sh`
+  (one FIFO per stream via `MOCK_EVENTS`, `ps` mock with
+  `$MOCK_ROOT/bluetoothd_age`, `ARCHENEMY_BT_WINDOW`/`_CONFIRM` only with
   `ARCHENEMY_TEST=1`). In stream tests wait until the stream's only child is
   the listener before `killpg` — a render's `python` still exiting prints
   "Terminated" on stderr.

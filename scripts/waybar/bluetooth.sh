@@ -4,35 +4,43 @@
 #   Opcjonalny moduł strumieniowy waybara; SIGUSR1 odświeża flagę.
 #   Źródła: man waybar-custom(5), bluetoothctl(1), dbus-monitor(1).
 #
-#   Pamięć wyboru PPM (2026-11-19): toggle zapisuje on|off do
-#   data/bluetooth-power.dat (warstwa maszynowa poza gitem, atomowo: mktemp
-#   + mv). BlueZ sam zasilania nie pamięta: /var/lib/bluetooth/<adapter>/settings
-#   nie ma klucza Powered (src/adapter.c, store_adapter_info), a AutoEnable
-#   (domyślnie true od BlueZ 5.65, plugins/policy.c) włącza każdy znaleziony
-#   kontroler. Dlatego strumień, gdy plik mówi "off", wyłącza kontroler RAZ na
-#   start sesji: znacznik z boot_id w prywatnym katalogu sesji
-#   (scripts/lib/runtime-dir.sh), więc restart waybara (Super+T, drugi pasek)
-#   nie cofa ręcznego włączenia z bluetui/bluemana/telefonu. Na kontroler
-#   czekamy najwyżej RESTORE_WAIT s od startu strumienia (BlueZ i kontroler
-#   mogą wstać po waybarze — budzi nas zdarzenie D-Bus, bez odpytywania);
-#   kontroler obecny, ale wyłączony = jeszcze RESTORE_SETTLE s na spóźnione
-#   AutoEnable, potem koniec: późniejsze włączenie to decyzja użytkownika.
-#   "on", brak pliku, śmieci, brak flagi ikony, boot_id albo katalogu sesji =
-#   nie ingerujemy (zachowanie sprzed tej funkcji). Reset: rm data/bluetooth-power.dat.
+#   Trwały wybór zasilania (2026-11-19, B2): data/bluetooth-power.dat
+#   (on|off, warstwa maszynowa poza gitem, zapis atomowy mktemp + mv) to
+#   ŹRÓDŁO PRAWDY o woli użytkownika. BlueZ zasilania nie pamięta (brak klucza
+#   Powered w /var/lib/bluetooth), a AutoEnable (domyślnie true od 5.65)
+#   włącza kontroler przy każdym jego pojawieniu się: start bluetoothd,
+#   hotplug, ponowna rejestracja po wybudzeniu; rfkill unblock też włącza.
+#   Dlatego strumień:
+#   - po zdarzeniach systemowych (start strumienia = logowanie/restart paska,
+#     kontroler się pojawia, bluetoothd wstaje, PrepareForSleep(false) logind,
+#     koniec blokady rfkill) otwiera OKNO o długości WINDOW s: wyrównuje stan
+#     do pliku, a włączenie no→yes przy "off" cofa (power off, najwyżej
+#     ENFORCE_MAX prób na okno — bez pętli) i NIE zapisuje go jako woli;
+#   - poza oknem każdą zmianę Powered (bluetui, blueman, telefon) zapisuje do
+#     pliku po CONFIRM s, jeśli stan się utrzymał i w międzyczasie nie było
+#     zdarzenia systemowego — bluetoothd przy SIGTERM sam wyłącza kontroler
+#     (adapter_shutdown), a PrepareForSleep/Shutdown(true) zamrażają zapis.
+#   Okna są zakotwiczone w zdarzeniach, które widzą wszystkie strumienie
+#   (każdy pasek = osobny proces), więc dwa paski decydują tak samo. Okno
+#   startu strumienia liczy się od startu bluetoothd (ps etimes): nowy pasek
+#   przy starym bluetoothd nie cofa włączenia, które drugi pasek zapisuje.
+#   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
+#   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
+#   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
+#   ikony = nic. Reset: rm data/bluetooth-power.dat.
 # =============================================
 set -uo pipefail
 export LC_ALL=C
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLAG="$ROOT/data/bluetooth-enabled.dat"
 POWER_FILE="$ROOT/data/bluetooth-power.dat"
-BOOT_ID_FILE=/proc/sys/kernel/random/boot_id
-RESTORE_WAIT=120
-RESTORE_SETTLE=10
+WINDOW=15
+CONFIRM=2
+ENFORCE_MAX=3
 # Haki testowe tylko z ARCHENEMY_TEST=1 (tests/bluetooth.sh).
 if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
-    BOOT_ID_FILE="${ARCHENEMY_BOOT_ID_FILE:-$BOOT_ID_FILE}"
-    [[ "${ARCHENEMY_BT_RESTORE_WAIT:-}" =~ ^[0-9]+$ ]] && RESTORE_WAIT=$ARCHENEMY_BT_RESTORE_WAIT
-    [[ "${ARCHENEMY_BT_RESTORE_SETTLE:-}" =~ ^[0-9]+$ ]] && RESTORE_SETTLE=$ARCHENEMY_BT_RESTORE_SETTLE
+    [[ "${ARCHENEMY_BT_WINDOW:-}" =~ ^[0-9]+$ ]] && WINDOW=$ARCHENEMY_BT_WINDOW
+    [[ "${ARCHENEMY_BT_CONFIRM:-}" =~ ^[0-9]+$ ]] && CONFIRM=$ARCHENEMY_BT_CONFIRM
 fi
 monitor_pid=''
 sleeper=''
@@ -45,6 +53,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' TERM INT HUP
 
+# $1 (opcjonalny) = migawka "bluetoothctl show" z tick — jedno show na serię.
 render() {
     local info devices state=disabled icon='󰂲' tooltip='Bluetooth: off'
     if [[ ! -f "$FLAG" ]] || ! command -v bluetoothctl >/dev/null \
@@ -52,7 +61,7 @@ render() {
         printf '{"text":"","class":"off"}\n'
         return
     fi
-    info=$(timeout 3 bluetoothctl show 2>/dev/null) || info=''
+    if (( $# )); then info=$1; else info=$(timeout 3 bluetoothctl show 2>/dev/null) || info=''; fi
     if [[ "$info" != *'Controller '* ]]; then
         printf '{"text":"","class":"off"}\n'
         return
@@ -98,55 +107,169 @@ save_error() {
     command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" "$1"
 }
 
-# ─── Przywrócenie "off" raz na start sesji (opis w nagłówku) ─────────────────
-restore_pending=0
-restore_settled=0
-restore_until=0
-restore_mark=''
-boot_id=''
-restore_init() {
-    local rdir
-    { IFS= read -r boot_id < "$BOOT_ID_FILE"; } 2>/dev/null
-    [[ "$boot_id" =~ ^[A-Za-z0-9-]+$ ]] || return 0
-    # shellcheck source=scripts/lib/runtime-dir.sh
-    source "$ROOT/scripts/lib/runtime-dir.sh" 2>/dev/null || return 0
-    rdir=$(archenemy_runtime_dir) || return 0
-    restore_mark="$rdir/archenemy-bluetooth-restore"
-    restore_pending=1
-    restore_until=$(( SECONDS + RESTORE_WAIT ))
+# ─── Egzekwowanie i synchronizacja wyboru (opis w nagłówku) ─────────────────
+# Czas w setnych sekundy z /proc/uptime (CLOCK_BOOTTIME: monotoniczny, liczy
+# też uśpienie — okno sprzed uśpienia wygasa po wybudzeniu); bez /proc: SECONDS.
+now=0
+clock() {
+    local up=''
+    { read -r up _ < /proc/uptime; } 2>/dev/null
+    if [[ "$up" =~ ^([0-9]+)\.([0-9]{2}) ]]; then
+        now=$(( 10#${BASH_REMATCH[1]} * 100 + 10#${BASH_REMATCH[2]} ))
+    else
+        now=$(( SECONDS * 100 ))
+    fi
 }
-# Znacznik czytany przy każdej próbie: inny pasek (drugi monitor) mógł już
-# przywrócić stan, a użytkownik — potem włączyć kontroler.
-restore_done() {
-    local v=''
-    { IFS= read -r v < "$restore_mark"; } 2>/dev/null
-    [[ "$v" == "$boot_id" ]]
+known=''          # ostatnio widziany stan: on|off|blocked|none ('' = jeszcze nic)
+window_until=0    # koniec okna egzekwowania
+enforce=0         # 1 = wyrównaj stan do pliku przy najbliższej migawce
+enforce_count=0   # polecenia power w bieżącym oknie (limit ENFORCE_MAX)
+retry_at=0        # ponowienie nieudanego power
+save_value=''     # zmiana czekająca na potwierdzenie
+save_at=0
+sleeping=0        # PrepareForSleep(true) … (false)
+shutting=0        # PrepareForShutdown(true)
+snap=''           # migawka z ostatniego tick (dla render)
+save_notified=0
+open_window() {
+    clock
+    (( now + WINDOW * 100 > window_until )) && window_until=$(( now + WINDOW * 100 ))
+    enforce=1; enforce_count=0; retry_at=0
+    save_value=''; save_at=0
 }
-restore_finish() {
+# Okno startu strumienia od startu bluetoothd: AutoEnable działa tuż po nim.
+# Wiek nieznany (brak ps albo procesu) = okno od teraz, bo "off" ma wygrać.
+start_window() {
+    local age=''
+    command -v ps >/dev/null 2>&1 && age=$(ps -o etimes= -C bluetoothd 2>/dev/null | head -n 1)
+    age=${age//[[:space:]]/}
+    clock
+    enforce=1; enforce_count=0; retry_at=0
+    if [[ "$age" =~ ^[0-9]+$ ]]; then
+        (( age < WINDOW )) && window_until=$(( now + (WINDOW - age) * 100 ))
+    else
+        window_until=$(( now + WINDOW * 100 ))
+    fi
+}
+# Klasyfikacja linii dbus-monitor; sygnał = nagłówek "signal … member=X",
+# argumenty w kolejnych liniach. Ścieżka adaptera, nie urządzenia (dev_*).
+ev_arg=''
+classify() {
+    local line=$1
+    case "$line" in
+        signal*member=PrepareForSleep*)    ev_arg='sleep'; return ;;
+        signal*member=PrepareForShutdown*) ev_arg=shutdown; return ;;
+        signal*member=InterfacesAdded*|signal*member=InterfacesRemoved*) ev_arg=object; return ;;
+        signal*member=NameOwnerChanged*)   ev_arg=''; open_window; return ;;
+        signal*) ev_arg=''; return ;;
+    esac
+    case "$ev_arg" in
+        sleep)
+            if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then sleeping=1; save_value=''; save_at=0
+            elif [[ "$line" =~ ^[[:space:]]*boolean\ false$ ]]; then sleeping=0; open_window; fi ;;
+        shutdown)
+            if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then shutting=1; save_value=''; save_at=0
+            elif [[ "$line" =~ ^[[:space:]]*boolean\ false$ ]]; then shutting=0; fi ;;
+        object)
+            [[ "$line" =~ ^[[:space:]]*object\ path\ \"/org/bluez/hci[0-9]+\"$ ]] && open_window ;;
+    esac
+    ev_arg=''
+}
+save_choice() {
     local tmp
-    restore_pending=0
-    tmp=$(mktemp "$restore_mark.XXXXXX" 2>/dev/null) || return 0
-    { printf '%s\n' "$boot_id" > "$tmp" && mv -f "$tmp" "$restore_mark"; } 2>/dev/null || rm -f "$tmp"
+    [[ "$(power_choice)" == "$1" ]] && return 0
+    mkdir -p "${POWER_FILE%/*}" 2>/dev/null
+    if tmp=$(mktemp "$POWER_FILE.XXXXXX" 2>/dev/null); then
+        chmod 644 "$tmp" 2>/dev/null
+        if printf '%s\n' "$1" > "$tmp" 2>/dev/null && mv -f "$tmp" "$POWER_FILE" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "$tmp"
+    fi
+    # Zasilania nie ruszamy; powiadomienie raz na strumień, stderr zawsze.
+    if (( save_notified )); then
+        printf '%s\n' "Bluetooth was turned $1 outside the bar, but the choice was not saved (cannot write $POWER_FILE)." >&2
+    else
+        save_notified=1
+        save_error "Bluetooth was turned $1 outside the bar, but the choice was not saved (cannot write $POWER_FILE)."
+    fi
+    return 1
 }
-restore_try() {
-    local info
-    (( restore_pending )) || return 0
-    if restore_done; then restore_pending=0; return 0; fi
-    if [[ ! -f "$FLAG" || "$(power_choice)" != off ]] || (( SECONDS >= restore_until )) \
-        || ! command -v bluetoothctl >/dev/null || ! command -v timeout >/dev/null; then
-        restore_finish
-        return 0
+# Jedna migawka na serię zdarzeń albo termin timera. Zwraca 0, gdy zmieniła
+# zasilanie (trzeba nowej migawki do render).
+tick() {
+    local cur choice want in_window=0
+    snap=''
+    if [[ ! -f "$FLAG" ]] || ! command -v bluetoothctl >/dev/null || ! command -v timeout >/dev/null; then
+        known=''; save_value=''; save_at=0
+        return 1
     fi
-    info=$(timeout 3 bluetoothctl show 2>/dev/null) || return 0
-    [[ "$info" == *'Controller '* ]] || return 0
-    if [[ "$info" == *'Powered: yes'* ]]; then
-        # Porażka = kolejna próba przy następnym zdarzeniu, do limitu czasu.
-        timeout 3 bluetoothctl power off >/dev/null 2>&1 && restore_finish
-    elif (( ! restore_settled )); then
-        restore_settled=1
-        (( SECONDS + RESTORE_SETTLE < restore_until )) && restore_until=$(( SECONDS + RESTORE_SETTLE ))
+    snap=$(timeout 3 bluetoothctl show 2>/dev/null) || snap=''
+    if [[ "$snap" != *'Controller '* ]]; then cur=none
+    elif [[ "$snap" == *'PowerState: off-blocked'* ]]; then cur=blocked
+    elif [[ "$snap" == *'Powered: yes'* ]]; then cur=on
+    else cur=off; fi
+    clock
+    # Pojawienie się kontrolera i koniec blokady rfkill to zdarzenia systemowe
+    # nawet bez sygnału (np. szybki replug zlany w jedną serię).
+    if [[ "$known" == none && "$cur" != none ]] || [[ "$known" == blocked && "$cur" != blocked ]]; then
+        open_window
     fi
-    return 0
+    (( now < window_until )) && in_window=1
+    if [[ "$cur" == none || "$cur" == blocked ]]; then
+        [[ "$known" == "$cur" ]] || { save_value=''; save_at=0; }
+        known=$cur
+        return 1
+    fi
+    choice=$(power_choice) || choice=''
+    if (( shutting )); then known=$cur; return 1; fi
+    if (( in_window )) && [[ "$known" == off && "$cur" == on && "$choice" == off ]]; then
+        enforce=1    # AutoEnable po zdarzeniu systemowym
+    elif (( ! sleeping )) && [[ ( "$known" == on || "$known" == off ) && "$cur" != "$known" ]]; then
+        # Poza oknem każda zmiana; w oknie tylko yes→no (system sam nie wyłącza,
+        # a no→yes w oknie przy "on"/braku decyzji to AutoEnable).
+        if (( ! in_window )) || [[ "$cur" == off ]]; then
+            save_value=$cur; save_at=$(( now + CONFIRM * 100 ))
+        fi
+    fi
+    known=$cur
+    if (( enforce )); then
+        want=$choice
+        if [[ -z "$want" || "$want" == "$cur" ]]; then
+            enforce=0
+        elif (( retry_at <= now )); then
+            if (( enforce_count >= ENFORCE_MAX )); then
+                enforce=0
+                printf '%s\n' "Bluetooth: gave up turning the controller $want after $ENFORCE_MAX attempts." >&2
+            else
+                enforce_count=$(( enforce_count + 1 ))
+                if timeout 3 bluetoothctl power "$want" >/dev/null 2>&1; then
+                    enforce=0; retry_at=0; known=$want
+                    save_value=''; save_at=0
+                    return 0
+                fi
+                retry_at=$(( now + 100 ))
+            fi
+        fi
+    fi
+    if [[ -n "$save_value" ]] && (( save_at <= now )); then
+        [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && save_choice "$save_value"
+        save_value=''; save_at=0
+    fi
+    return 1
+}
+# Najbliższy termin timera jako argument read -t ('' = brak).
+next_timeout() {
+    local at=0 d
+    clock
+    [[ -n "$save_value" ]] && at=$save_at
+    (( enforce && retry_at > now )) && { (( at == 0 || retry_at < at )) && at=$retry_at; }
+    (( at )) || { printf ''; return; }
+    d=$(( at - now )); (( d < 1 )) && d=1
+    printf '%d.%02d' $(( d / 100 )) $(( d % 100 ))
+}
+step() {
+    if tick; then render; else render "$snap"; fi
 }
 
 case "${1:-stream}" in
@@ -156,64 +279,89 @@ case "${1:-stream}" in
         info=$(timeout 3 bluetoothctl show 2>/dev/null) || exit 1
         [[ "$info" == *'Controller '* ]] || exit 0
         if [[ "$info" == *'Powered: yes'* ]]; then power=off; else power=on; fi
-        # Plik tymczasowy PRZED zmianą zasilania: niezapisywalny data/ to błąd
-        # bez żadnej zmiany, a nie wybór, który po restarcie by przepadł.
+        # Wybór zapisany PRZED zmianą zasilania: strumień widzi już nową wolę
+        # (nie cofa włączenia w oknie), a niezapisywalny data/ to błąd bez
+        # żadnej zmiany. Nieudane power = przywrócenie poprzedniego pliku.
         mkdir -p "${POWER_FILE%/*}" 2>/dev/null
         if ! tmp=$(mktemp "$POWER_FILE.XXXXXX"); then
+            save_error "Bluetooth power not changed: the choice could not be saved (cannot write $POWER_FILE)."
+            exit 1
+        fi
+        prev=''
+        if [[ -e "$POWER_FILE" ]]; then
+            if ! { prev=$(mktemp "$POWER_FILE.XXXXXX") && cp -p -- "$POWER_FILE" "$prev" 2>/dev/null; }; then
+                rm -f "$tmp" "$prev"
+                save_error "Bluetooth power not changed: the choice could not be saved (cannot write $POWER_FILE)."
+                exit 1
+            fi
+        fi
+        chmod 644 "$tmp" 2>/dev/null   # mktemp daje 600; jak inne data/*.dat
+        if ! { printf '%s\n' "$power" > "$tmp" && mv -f "$tmp" "$POWER_FILE" \
+            && [[ "$(power_choice)" == "$power" ]]; }; then
+            rm -f "$tmp"
+            if [[ -n "$prev" ]]; then mv -f "$prev" "$POWER_FILE"; fi
             save_error "Bluetooth power not changed: the choice could not be saved (cannot write $POWER_FILE)."
             exit 1
         fi
         timeout 3 bluetoothctl power "$power" >/dev/null 2>&1
         rc=$?
         if (( rc != 0 )); then
-            rm -f "$tmp"
+            if [[ -n "$prev" ]]; then mv -f "$prev" "$POWER_FILE"; else rm -f "$POWER_FILE"; fi
             exit "$rc"
         fi
-        chmod 644 "$tmp" 2>/dev/null   # mktemp daje 600; jak inne data/*.dat
-        if printf '%s\n' "$power" > "$tmp" && mv -f "$tmp" "$POWER_FILE" \
-            && [[ "$(power_choice)" == "$power" ]]; then
-            exit 0
-        fi
-        rm -f "$tmp"
-        save_error "Bluetooth is now $power, but the choice was not saved (cannot write $POWER_FILE); it will not survive a reboot."
-        exit 1 ;;
+        [[ -z "$prev" ]] || rm -f "$prev"
+        exit 0 ;;
     open)
         [[ -f "$FLAG" ]] && command -v bluetui >/dev/null && command -v alacritty >/dev/null || exit 0
         exec alacritty --class bluetui -e bluetui ;;
 esac
 
-restore_init
+start_window
 while :; do
     if ! command -v dbus-monitor >/dev/null; then
-        restore_try
-        render
-        # Bez zdarzeń D-Bus czekanie na kontroler to rzadkie odpytywanie.
-        sleep "$(( restore_pending ? 5 : 60 ))" & sleeper=$!
+        step
+        # Bez zdarzeń D-Bus: rzadkie odpytywanie, częstsze w oknie i przy timerach.
+        clock
+        if (( enforce || save_at || now < window_until )); then wait_s=1; else wait_s=60; fi
+        sleep "$wait_s" & sleeper=$!
         wait "$sleeper" || :
         sleeper=''
         continue
     fi
     # Subskrypcja przed migawką. ObjectManager obejmuje hotplug kontrolera,
-    # NameOwnerChanged ponowny start BlueZ; EOF magistrali uruchamia reconnect.
+    # NameOwnerChanged ponowny start BlueZ, logind uśpienie i zamknięcie
+    # systemu (sygnały rozgłoszeniowe — zwykły AddMatch, bez uprawnień);
+    # EOF magistrali uruchamia reconnect.
     exec {events}< <(exec dbus-monitor --system \
         "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'" \
         "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.ObjectManager'" \
-        "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.bluez'" 2>/dev/null)
+        "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.bluez'" \
+        "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" \
+        "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',member='PrepareForShutdown'" 2>/dev/null)
     monitor_pid=$!
-    restore_try
-    render
+    step
+    partial=''
     while :; do
-        if IFS= read -r -u "$events" line; then
+        timeout_s=$(next_timeout)
+        if IFS= read -r ${timeout_s:+-t "$timeout_s"} -u "$events" line; then
+            line=$partial$line; partial=''
+            classify "$line"
             if [[ "$line" == signal* ]]; then
-                # Jedna migawka po serii; nie odtwarzamy zaległych zmian RSSI.
-                while IFS= read -r -t 0.3 -u "$events" line; do :; done
-                restore_try
-                render
+                # Jedna migawka po serii; argumenty sygnałów klasyfikujemy, zaległych
+                # zmian RSSI nie odtwarzamy.
+                while IFS= read -r -t 0.3 -u "$events" line; do classify "$partial$line"; partial=''; done
+                partial=$line
+                step
             fi
         else
-            # read przerwany przez SIGUSR1 nie oznacza końca strumienia.
             rc=$?
-            (( rc > 128 )) && continue
+            # >128: timeout timera albo read przerwany przez SIGUSR1 — nie koniec
+            # strumienia. Niepełna linia zostaje na następny odczyt.
+            if (( rc > 128 )); then
+                partial+=$line
+                tick && render
+                continue
+            fi
             break
         fi
     done

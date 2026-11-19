@@ -320,7 +320,7 @@ archenemy/
 │                                     #   volume-bar.sh — volume bar in place of the pulseaudio module;
 │                                     #   line/ticks/solid style switchable in Super+A → [v].
 │                                     #   bluetooth.sh — optional D-Bus event stream, power toggle and bluetui launcher;
-│                                     #   right-click choice in data/bluetooth-power.dat, "off" restored once per login.
+│                                     #   power choice in data/bluetooth-power.dat, "off" kept until you turn it on.
 │                                     #   timer.sh + timer-ctl.sh — countdown timer next to the clock,
 │                                     #   optional, enabled in Super+A → [t];
 │                                     #   lib/timer-state.sh — shared read/write of timer state.
@@ -503,7 +503,7 @@ archenemy/
 │                                     #   real processes: same argv and directory, apps still running
 │                                     #   (tray, dialogs) skipped, the state lock is not inherited.
 │                                     #   bluetooth.sh — optional Bluetooth bar and installer on mock BlueZ/D-Bus/services,
-│                                     #   remembered right-click power choice across a mock reboot (boot id).
+│                                     #   power choice kept across mock login, resume, replug and bluetoothd restart.
 │                                     #   install-guards.sh — install.sh refuses root, `sudo -k` after the last
 │                                     #   sudo and on every exit (Ctrl+C, step [2]; none on NixOS), GPU and VirtualBox installer
 │                                     #   test hooks only with ARCHENEMY_TEST=1.
@@ -828,31 +828,63 @@ removing the controller hides it. Beta remains frozen. There is no Bluetooth
 entry in `Super+A` yet. Removing the flag and reloading waybar hides the icon
 without disabling the service; stream processes also accept SIGUSR1 to reread it.
 
-**Right-click toggles controller power and the choice survives a reboot.**
-BlueZ does not remember it on its own: since BlueZ 5.65 `AutoEnable`
-(`[Policy]` in `/etc/bluetooth/main.conf`, default `true`) powers on every
-controller it finds, and the adapter settings under `/var/lib/bluetooth` have
-no power key. So every right-click also writes `on` or `off` to
-`data/bluetooth-power.dat` (machine state, ignored by git, written atomically).
-When it says `off`, the bar stream switches the controller off once per login
-session: it waits up to 120 seconds for the controller (BlueZ may come up after
-waybar; it listens for the D-Bus event instead of polling) and, if the
-controller appears powered off, 10 more seconds for a late AutoEnable. After
-that, turning Bluetooth on from bluetui, blueman or a phone is left alone —
-also when waybar restarts (`Super+T`, a second bar), because a marker with the
-boot id in the private session directory says it is done. `on`, no file, or
-anything other than exactly `on`/`off` changes nothing — the system decides,
-as before; so does a missing icon flag. Nothing in `/etc` is changed. If
-`data/` cannot be written, right-click changes nothing and shows a
-notification. Controllers plugged in later or a `bluetooth.service` restart
-are powered on again by AutoEnable and left that way until the next login. To
-forget the choice: `rm ~/archenemy/data/bluetooth-power.dat`.
+**Once turned off, Bluetooth stays off across reboots, logins, suspend/resume
+and controller replug until you turn it on again.** Right-click toggles
+controller power. BlueZ does not remember power on its own: since BlueZ 5.65
+`AutoEnable` (`[Policy]` in `/etc/bluetooth/main.conf`, default `true`) powers
+on every controller it finds — at boot, when a controller is plugged in or
+re-registers after resume, after a `bluetooth.service` restart — unblocking
+rfkill powers it on too, and the adapter settings under `/var/lib/bluetooth`
+have no power key. So the choice lives in `data/bluetooth-power.dat` (`on` or
+`off`; machine state, ignored by git, written atomically) and the bar stream
+keeps it:
+
+- **Every deliberate change is saved.** Right-click writes the file before it
+  changes power. Turning Bluetooth on or off anywhere else — bluetui,
+  blueman, a phone, `bluetoothctl` — is saved by the stream once the new
+  state has held for 2 seconds.
+- **The system's own power-on is undone.** For 15 seconds after the events
+  where BlueZ powers on by itself — the bar starting (login, waybar restart;
+  counted from when `bluetoothd` started), a controller appearing,
+  `bluetoothd` starting, waking from sleep (logind `PrepareForSleep`),
+  rfkill being unblocked — a power-on while the file says `off` is switched
+  off again (at most 3 times per event, so there is no on/off loop) and is
+  not saved. Power-off by `bluetoothd` itself when it stops, and changes while
+  the system is going to sleep or shutting down, are not saved either.
+- With `on`, a controller left off after such an event is switched on.
+  No file, or anything other than exactly `on`/`off`, enforces nothing — the
+  system decides; so does a missing icon flag.
+
+Every bar (one per monitor) runs its own stream; they react to the same
+system events the same way, so one bar never undoes what another just saved.
+Turning Bluetooth on in bluetui within those 15 seconds is treated as the
+system and undone — use right-click, or wait a moment. Changes made while no
+bar is running (for example from a TTY) are not seen; at the next login the
+file wins. If `data/` cannot be written, right-click changes nothing and shows
+a notification; a change from elsewhere stays, with a notification that it
+was not saved. Nothing in `/etc` is changed. To forget the choice:
+`rm ~/archenemy/data/bluetooth-power.dat`.
+
+**Optional, for full certainty (system file, not done by archenemy):** with
+`AutoEnable=false` BlueZ never powers a controller on by itself, so Bluetooth
+also stays off between boot and login and no power-on depends on timing; with
+`on`, the bar stream switches the controller on at login and after the events
+above. This edits a system file and affects every user and the login screen:
+
+```bash
+sudo cp /etc/bluetooth/main.conf /etc/bluetooth/main.conf.archenemy-backup
+sudoedit /etc/bluetooth/main.conf      # under [Policy]: AutoEnable=false
+sudo systemctl restart bluetooth
+```
+
+To undo: `sudo mv /etc/bluetooth/main.conf.archenemy-backup /etc/bluetooth/main.conf && sudo systemctl restart bluetooth`.
 
 Live-only: in each of the six rices (beta excluded) inspect the icon, connect headphones,
 check the tooltip and both clicks, remove/replug the controller and verify
 `systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
-Right-click off, reboot: the off icon stays and `bluetoothctl show | grep Powered`
-says `no`; right-click on, reboot: `Powered: yes`.
+Right-click off, then log out and in, `systemctl suspend` and wake, reboot and
+replug the controller: after each `bluetoothctl show | grep Powered` says `no`.
+Turn it on in bluetui, suspend and wake: `Powered: yes`.
 
 ## Timer
 

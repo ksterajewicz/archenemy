@@ -9,12 +9,15 @@
 #   hardware.bluetooth.enable, pkgs.bluetui; flaga ikony ręcznie); Arch i
 #   pochodna = dawna ścieżka, a porażka (także zapis flagi, brak binarki)
 #   usuwa starą flagę.
-#   Pamięć wyboru PPM (data/bluetooth-power.dat): zapis atomowy przy toggle,
-#   niezapisywalny data/ = kod 1 bez zmiany zasilania; „restart laptopa” =
-#   nowy boot_id (ARCHENEMY_BOOT_ID_FILE) i pusty katalog sesji — z "off"
-#   strumień wyłącza kontroler raz, "on"/brak/śmieci nic; ręczne włączenie
-#   i restart waybara nie są cofane; późny kontroler, spóźnione AutoEnable,
-#   limity okien (ARCHENEMY_BT_RESTORE_WAIT/_SETTLE), brak bluetoothctl.
+#   Trwały wybór zasilania (data/bluetooth-power.dat, B2): toggle zapisuje
+#   PRZED zmianą zasilania, niezapisywalny data/ = kod 1 bez zmiany. Strumień
+#   egzekwuje "off" po KAŻDYM zdarzeniu systemowym — start paska (logowanie),
+#   PrepareForSleep(false), InterfacesAdded hciN / pojawienie się w migawce,
+#   NameOwnerChanged org.bluez, koniec rfkill — w oknie (ARCHENEMY_BT_WINDOW),
+#   a poza oknem zapisuje zmiany z bluetui/telefonu po ARCHENEMY_BT_CONFIRM s.
+#   Osobne FIFO na pasek (MOCK_EVENTS), wiek bluetoothd z atrapy ps; dwa i
+#   trzy paski, zamrożenie przy uśpieniu/zamykaniu i zatrzymaniu bluetoothd,
+#   limit prób (bez pętli), "on"/brak/śmieci, brak flagi i bluetoothctl.
 # =============================================
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -43,7 +46,7 @@ with tempfile.TemporaryDirectory() as tmp:
     (root / 'install/lib').mkdir()
     (root / 'packages').mkdir()
     (root / 'scripts/lib').mkdir()
-    for name in ['scripts/waybar/bluetooth.sh', 'scripts/lib/runtime-dir.sh', 'install/bluetooth-installation.sh', 'install/lib/pkg.sh', 'packages/platform-map.tsv']:
+    for name in ['scripts/waybar/bluetooth.sh', 'install/bluetooth-installation.sh', 'install/lib/pkg.sh', 'packages/platform-map.tsv']:
         shutil.copy2(repo / name, root / name)
     osr = root / 'os'
     osr.mkdir()
@@ -53,12 +56,9 @@ with tempfile.TemporaryDirectory() as tmp:
         (osr / key).write_text(text)
     real_touch = shutil.which('touch')
     real_mktemp = shutil.which('mktemp')
-    # Prywatny katalog sesji w drzewie testu (rwx------), nigdy /run/user hosta;
-    # boot_id z pliku testowego — „restart laptopa” = nowa treść tego pliku.
     (root / 'runtime').chmod(0o700)
     env = dict(os.environ, PATH=str(root / 'bin') + ':' + os.environ['PATH'], MOCK_ROOT=tmp, ARCHENEMY_TEST='1',
-               ARCHENEMY_OS_RELEASE=str(osr / 'arch'), ARCHENEMY_OSTREE_MARKER=str(osr / 'none'),
-               ARCHENEMY_RUNTIME_SYSTEM=str(root / 'no-run-user'), ARCHENEMY_BOOT_ID_FILE=str(root / 'boot_id'))
+               ARCHENEMY_OS_RELEASE=str(osr / 'arch'), ARCHENEMY_OSTREE_MARKER=str(osr / 'none'))
     for key in ['DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']:
         env.pop(key, None)
     env.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
@@ -78,7 +78,9 @@ case "$1" in
  show)
   [[ "$state" == missing ]] && exit 0
   echo 'Controller 00:11:22:33:44:55 (public)'
-  if [[ "$state" == disabled ]]; then echo 'Powered: no'; else echo 'Powered: yes'; fi ;;
+  # blocked = rfkill: BlueZ pokazuje PowerState off-blocked.
+  if [[ "$state" == disabled || "$state" == blocked ]]; then echo 'Powered: no'; else echo 'Powered: yes'; fi
+  [[ "$state" != blocked ]] || echo 'PowerState: off-blocked' ;;
  devices)
   printf '\\033[0;33m[CHG] Device AA:BB:CC:DD:EE:FF RSSI: -65\\033[0m\\r\\n'
   if [[ "$state" != chg-only ]]; then
@@ -96,7 +98,7 @@ exit 0
         'dbus-monitor': '''#!/usr/bin/env bash
 printf 'dbus-monitor %s\\n' "$*" >> "$MOCK_ROOT/log"
 [[ "${MOCK_EOF:-0}" == 0 ]] || exit 0
-exec cat "$MOCK_ROOT/events"
+exec cat "${MOCK_EVENTS:-$MOCK_ROOT/events}"
 ''',
         'sudo': '#!/usr/bin/env bash\nprintf "sudo %s\\n" "$*" >> "$MOCK_ROOT/log"\nexec "$@"\n',
         'dnf': '#!/usr/bin/env bash\nprintf "dnf %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
@@ -114,6 +116,8 @@ case "$1" in
 esac
 ''',
         'bluetui': '#!/usr/bin/env bash\nexit 0\n',
+        # Wiek bluetoothd (ps -o etimes= -C bluetoothd); brak pliku = brak procesu.
+        'ps': '#!/usr/bin/env bash\n[[ -f "$MOCK_ROOT/bluetoothd_age" ]] || exit 1\ncat "$MOCK_ROOT/bluetoothd_age"\n',
         'alacritty': '#!/usr/bin/env bash\nprintf "alacritty %s\\n" "$*" >> "$MOCK_ROOT/log"\n',
     }
     # touch z FAIL_TOUCH=1 = błąd zapisu flagi (root omija prawa pliku, więc atrapa).
@@ -228,6 +232,8 @@ esac
             check(not reader.ready(0.2), 'strumień bez okresowego odpytywania')
             matches = log.read_text()
             check('org.bluez' in matches and 'PropertiesChanged' in matches and 'ObjectManager' in matches and 'NameOwnerChanged' in matches, 'subskrypcje właściwości, hotplug i restartu BlueZ')
+            check("sender='org.freedesktop.login1'" in matches and "member='PrepareForSleep'" in matches
+                  and "member='PrepareForShutdown'" in matches, 'subskrypcje logind: uśpienie/wybudzenie i zamykanie systemu')
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
         _, errors = proc.communicate(timeout=seconds(5))
@@ -291,41 +297,96 @@ esac
                     if alive(pid):
                         os.kill(pid, signal.SIGKILL)
 
-    # ─── Pamięć wyboru PPM: data/bluetooth-power.dat, przywrócenie raz na start ───
+    # ─── Trwały wybór zasilania (B2): egzekwowanie po zdarzeniach, zapis zmian ───
     power = root / 'data/bluetooth-power.dat'
-    marker = root / 'runtime/archenemy-bluetooth-restore'
-    boot = root / 'boot_id'
-    changed = 'signal sender=:1.2 -> destination=(null destination) interface=org.freedesktop.DBus.Properties; member=PropertiesChanged\n'
+    bt_age = root / 'bluetoothd_age'
+    HDR = 'signal time=1.0 sender=:1.2 -> destination=(null destination) serial=1 path={}; interface={}; member={}\n'
+    PROPS = 'org.freedesktop.DBus.Properties'
+    OM = 'org.freedesktop.DBus.ObjectManager'
+    LOGIN = 'org.freedesktop.login1.Manager'
+    SIGNALS = {
+        'changed': HDR.format('/org/bluez/hci0', PROPS, 'PropertiesChanged') + '   string "org.bluez.Adapter1"\n',
+        'added': HDR.format('/', OM, 'InterfacesAdded') + '   object path "/org/bluez/hci0"\n   array [\n   ]\n',
+        'removed': HDR.format('/', OM, 'InterfacesRemoved') + '   object path "/org/bluez/hci0"\n   array [\n   ]\n',
+        'device': HDR.format('/', OM, 'InterfacesAdded') + '   object path "/org/bluez/hci0/dev_TEST"\n   array [\n   ]\n',
+        'bluez-up': HDR.format('/org/freedesktop/DBus', 'org.freedesktop.DBus', 'NameOwnerChanged')
+                    + '   string "org.bluez"\n   string ""\n   string ":1.9"\n',
+        'bluez-down': HDR.format('/org/freedesktop/DBus', 'org.freedesktop.DBus', 'NameOwnerChanged')
+                      + '   string "org.bluez"\n   string ":1.9"\n   string ""\n',
+        'sleep': HDR.format('/org/freedesktop/login1', LOGIN, 'PrepareForSleep') + '   boolean true\n',
+        'resume': HDR.format('/org/freedesktop/login1', LOGIN, 'PrepareForSleep') + '   boolean false\n',
+        'shutdown': HDR.format('/org/freedesktop/login1', LOGIN, 'PrepareForShutdown') + '   boolean true\n',
+    }
+    FAST = {'ARCHENEMY_BT_CONFIRM': '1'}
     def power_calls():
         return [line for line in log.read_text().splitlines() if line.startswith('power ')]
-    def fresh_boot(n):
-        # Restart laptopa: nowy boot_id i pusty katalog sesji (tmpfs /run/user).
-        boot.write_text(f'TEST-boot-{n}\n')
-        marker.unlink(missing_ok=True)
-        log.write_text('')
-    def start(extra=None):
-        global proc
-        proc = subprocess.Popen([str(bar)], env=env | (extra or {}), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, start_new_session=True)
-        return receive()
-    def stop():
-        # Linia JSON bywa odebrana, zanim python renderu wyjdzie; TERM w tej
-        # chwili daje „Terminated” na stderr. Czekamy na sam nasłuch (cat).
-        def idle():
-            pids = children(proc.pid)
-            return bool(pids) and all(Path(f'/proc/{pid}/comm').exists()
-                                      and Path(f'/proc/{pid}/comm').read_text().strip() == 'cat' for pid in pids)
-        wait_until(idle, 3, 'strumień bezczynny przed TERM')
-        os.killpg(proc.pid, signal.SIGTERM)
-        _, errors = proc.communicate(timeout=seconds(5))
-        return proc.returncode == 0 and not errors
-    def event(value):
+    def setup(choice, value, age='3600'):
+        # age = sekundy od startu bluetoothd (3600: dawno, brak okna startu paska).
+        power.unlink(missing_ok=True)
+        if choice is not None:
+            power.write_bytes(choice.encode() if isinstance(choice, str) else choice)
         state.write_text(value)
-        with (root / 'events').open('w', buffering=1) as events:
-            events.write(changed)
-        return receive()
+        if age is None:
+            bt_age.unlink(missing_ok=True)
+        else:
+            bt_age.write_text(age + '\n')
+        log.write_text('')
+    def choice_now():
+        return power.read_bytes() if power.exists() else None
+    def saved(expected, base=4):
+        try:
+            wait_until(lambda: choice_now() == expected.encode(), base, 'zapis ' + expected.strip())
+            return True
+        except AssertionError:
+            return False
+    def stays(expected, pause=1.8):
+        # Dłużej niż ARCHENEMY_BT_CONFIRM=1 z zapasem.
+        time.sleep(pause)
+        return choice_now() == (None if expected is None else expected.encode())
+    streams = []
+    class Stream:
+        # Osobne FIFO na pasek: jeden cat na FIFO, inaczej zdarzenie trafia do jednego.
+        def __init__(self, name, extra=None):
+            self.fifo = root / f'events-{name}'
+            if not self.fifo.exists():
+                os.mkfifo(self.fifo)
+            self.holder = os.open(self.fifo, os.O_RDWR | os.O_NONBLOCK)
+            self.proc = subprocess.Popen([str(bar)], env=env | {'MOCK_EVENTS': str(self.fifo)} | (extra or {}),
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                         start_new_session=True)
+            streams.append(self)
+            self.lines = Lines(self.proc.stdout)
+            self.first = self.receive()
+        def receive(self, base=5):
+            return json.loads(self.lines.receive(base))
+        def send(self, *names, value=None):
+            if value is not None:
+                state.write_text(value)
+            with self.fifo.open('w') as fifo:
+                fifo.write(''.join(SIGNALS[n] for n in names))
+        def event(self, *names, value=None):
+            self.send(*names, value=value)
+            return self.receive()
+        def quiet(self, pause):
+            return not self.lines.ready(pause)
+        def stop(self):
+            # Linia JSON bywa odebrana, zanim python renderu wyjdzie; TERM w tej
+            # chwili daje „Terminated” na stderr. Czekamy na sam nasłuch (cat).
+            def idle():
+                pids = children(self.proc.pid)
+                return bool(pids) and all(Path(f'/proc/{pid}/comm').exists()
+                                          and Path(f'/proc/{pid}/comm').read_text().strip() == 'cat' for pid in pids)
+            wait_until(idle, 3, 'strumień bezczynny przed TERM')
+            os.killpg(self.proc.pid, signal.SIGTERM)
+            _, self.errors = self.proc.communicate(timeout=seconds(5))
+            os.close(self.holder)
+            streams.remove(self)
+            return self.proc.returncode == 0
+        def clean(self):
+            return self.stop() and not self.errors
     flag.touch()
-    fresh_boot(1)
+    fresh = log.write_text
+    # PPM: zapis wyboru (3 stany), atomowo, przed zmianą zasilania.
     for value, target, after in [('enabled', 'off', 'disabled'), ('disabled', 'on', 'enabled'), ('connected', 'off', 'disabled')]:
         state.write_text(value)
         result = run(str(bar), 'toggle')
@@ -335,7 +396,7 @@ esac
           'zapis atomowy: w data/ bez plików tymczasowych')
     power.write_text('on\n')
     state.write_text('enabled')
-    log.write_text('')
+    fresh('')
     result = run(str(bar), 'toggle', extra={'FAIL_MKTEMP': '1'})
     check(result.returncode == 1 and 'cannot write' in result.stderr and 'bluetooth-power.dat' in result.stderr
           and 'not changed' in result.stderr,
@@ -344,108 +405,263 @@ esac
           'niezapisywalny data/: zasilanie i stary wybór nietknięte')
     check('notify-send' in log.read_text() and 'bluetooth-power.dat' in log.read_text(),
           'niezapisywalny data/: powiadomienie z nazwą pliku')
-    log.write_text('')
-    result = run(str(bar), 'toggle', extra={'FAIL_POWER': '1'})
-    check(result.returncode != 0 and power.read_text() == 'on\n', 'nieudane power off: wybór niezapisany')
-    check(sorted(p.name for p in (root / 'data').iterdir()) == ['bluetooth-enabled.dat', 'bluetooth-power.dat'],
-          'nieudane power off: bez pliku tymczasowego')
+    for previous in [b'on\n', None]:
+        power.unlink(missing_ok=True)
+        if previous is not None:
+            power.write_bytes(previous)
+        state.write_text('enabled')
+        fresh('')
+        result = run(str(bar), 'toggle', extra={'FAIL_POWER': '1'})
+        check(result.returncode != 0 and choice_now() == previous, f'nieudane power off: poprzedni wybór przywrócony ({previous!r})')
+        check(sorted(p.name for p in (root / 'data').iterdir()) == ['bluetooth-enabled.dat'] + (['bluetooth-power.dat'] if previous else []),
+              'nieudane power off: bez pliku tymczasowego')
 
-    holder = os.open(root / 'events', os.O_RDWR | os.O_NONBLOCK)
     try:
-        # Restart z „off”: AutoEnable włączył kontroler, strumień wyłącza go raz.
-        power.write_text('off\n')
-        fresh_boot(2)
-        state.write_text('enabled')
-        check(start()['class'] == 'disabled' and power_calls() == ['power off'], 'restart z off: kontroler wyłączony raz')
-        check(marker.read_text().strip() == 'TEST-boot-2', 'znacznik przywrócenia = boot_id')
-        check(event('enabled')['class'] == 'enabled' and power_calls() == ['power off'],
-              'ręczne włączenie (bluetui) po starcie nie jest cofane')
-        check(stop(), 'restart z off: strumień bez błędów')
-        check(start()['class'] == 'enabled' and power_calls() == ['power off'],
-              'restart waybara (Super+T) w tej samej sesji nie cofa ręcznego włączenia')
-        check(stop(), 'restart waybara: strumień bez błędów')
-        # Drugi restart laptopa: znów raz.
-        fresh_boot(3)
-        state.write_text('enabled')
-        check(start()['class'] == 'disabled' and power_calls() == ['power off'], 'kolejny restart z off: znów raz')
-        check(stop(), 'kolejny restart: strumień bez błędów')
-        # „on”, brak pliku i śmieci = brak decyzji: zero power.
-        for content in ['on\n', None, '', 'OFF\n', 'of\n', 'off off\n', 'offline\n', '\x00off\n', 'off\x1b[0m\n']:
-            fresh_boot(4)
-            power.unlink(missing_ok=True)
-            if content is not None:
-                power.write_bytes(content.encode())
-            state.write_text('enabled')
-            check(start()['class'] == 'enabled' and not power_calls(), f'start z {content!r}: kontroler nieruszany')
-            check(stop(), f'start z {content!r}: strumień bez błędów')
-        # Bez flagi ikony nie ingerujemy (moduł wyłączony).
-        power.write_text('off\n')
-        fresh_boot(5)
+        # ── Logowanie / start paska ──
+        setup('off\n', 'enabled')
+        s = Stream('a', FAST)
+        check(s.first['class'] == 'disabled' and power_calls() == ['power off'] and choice_now() == b'off\n',
+              'off + logowanie (start paska po AutoEnable z bootu): kontroler wyłączony, plik nietknięty')
+        check(s.clean(), 'logowanie: strumień bez błędów')
+        setup('off\n', 'enabled')
+        s = Stream('a', FAST)
+        check(s.first['class'] == 'disabled' and power_calls() == ['power off'],
+              'wylogowanie i ponowne logowanie bez restartu: znów wyłączony (bez znacznika „raz na sesję”)')
+        check(s.clean(), 'ponowne logowanie: strumień bez błędów')
+        setup('on\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.first['class'] == 'enabled' and power_calls() == ['power on'],
+              'on + logowanie przy wyłączonym kontrolerze (AutoEnable=false): włączony')
+        check(s.clean(), 'on + logowanie: strumień bez błędów')
+        # „on”-zgodny stan, brak pliku i śmieci = brak egzekwowania, także po wybudzeniu.
+        for content in [b'on\n', None, b'', b'OFF\n', b'of\n', b'off off\n', b'offline\n', b'\x00off\n', b'off\x1b[0m\n']:
+            setup(content, 'enabled')
+            s = Stream('a', FAST)
+            first = s.first
+            again = s.event('sleep')
+            again = s.event('resume', 'added', 'changed')
+            check(first['class'] == 'enabled' and again['class'] == 'enabled' and not power_calls() and choice_now() == content,
+                  f'{content!r} + logowanie i wybudzenie: kontroler i plik nieruszane')
+            check(s.clean(), f'{content!r}: strumień bez błędów')
         flag.unlink()
-        state.write_text('enabled')
-        check(start()['text'] == '' and not power_calls(), 'bez flagi ikony: brak przywracania')
-        check(stop(), 'bez flagi: strumień bez błędów')
+        setup('off\n', 'enabled')
+        s = Stream('a', FAST)
+        check(s.first['text'] == '' and s.event('resume', 'changed')['text'] == '' and not power_calls(),
+              'bez flagi ikony: brak egzekwowania')
+        check(s.clean(), 'bez flagi: strumień bez błędów')
         flag.touch()
-        # Bez boot_id (niedostępny plik) = zachowanie jak dziś.
-        fresh_boot(6)
-        boot.unlink()
-        state.write_text('enabled')
-        check(start()['class'] == 'enabled' and not power_calls(), 'bez boot_id: brak przywracania')
-        check(stop(), 'bez boot_id: strumień bez błędów')
-        # Kontroler (albo BlueZ) wstaje po waybarze: zdarzenie D-Bus, potem off.
-        fresh_boot(7)
-        state.write_text('missing')
-        check(start()['class'] == 'off' and not power_calls(), 'brak kontrolera na starcie: bez błędu, bez power')
-        check(not reader.ready(0.5), 'brak kontrolera: bez pętli odpytywania')
-        check(event('enabled')['class'] == 'disabled' and power_calls() == ['power off'],
-              'kontroler pojawia się później: wyłączony raz')
-        check(stop(), 'późny kontroler: strumień bez błędów')
-        # AutoEnable po pojawieniu się kontrolera: najpierw Powered: no, potem yes.
-        fresh_boot(8)
-        state.write_text('disabled')
-        check(start()['class'] == 'disabled' and not power_calls(), 'kontroler wyłączony na starcie: bez power')
-        check(event('enabled')['class'] == 'disabled' and power_calls() == ['power off'],
-              'AutoEnable chwilę po starcie: wyłączony raz')
-        check(stop(), 'AutoEnable z opóźnieniem: strumień bez błędów')
-        # Po oknie oczekiwania włączenie to decyzja użytkownika, nie AutoEnable.
-        fresh_boot(9)
-        state.write_text('disabled')
-        check(start({'ARCHENEMY_BT_RESTORE_SETTLE': '1'})['class'] == 'disabled', 'okno AutoEnable 1 s: start')
-        time.sleep(2.2)
-        check(event('enabled')['class'] == 'enabled' and not power_calls(), 'włączenie po oknie AutoEnable nie jest cofane')
-        check(marker.read_text().strip() == 'TEST-boot-9', 'po oknie: znacznik zapisany')
-        check(stop(), 'okno AutoEnable: strumień bez błędów')
-        fresh_boot(10)
-        state.write_text('missing')
-        check(start({'ARCHENEMY_BT_RESTORE_WAIT': '1'})['class'] == 'off', 'limit czekania na kontroler 1 s: start')
-        time.sleep(2.2)
-        check(event('enabled')['class'] == 'enabled' and not power_calls(), 'kontroler po limicie czekania: nieruszany')
-        check(stop(), 'limit czekania: strumień bez błędów')
-        # Wybór „on” z PPM w trakcie oczekiwania kończy przywracanie.
-        power.write_text('off\n')
-        fresh_boot(11)
-        state.write_text('missing')
-        start()
-        power.write_text('on\n')
-        check(event('enabled')['class'] == 'enabled' and not power_calls(), 'zmiana wyboru na on w trakcie oczekiwania')
-        check(stop(), 'zmiana wyboru: strumień bez błędów')
-        # Brak bluetoothctl: bez błędu i bez pętli.
+
+        # ── Wybudzenie z uśpienia ──
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.first['class'] == 'disabled' and not power_calls(), 'off zgodny ze stanem: bez power')
+        s.event('sleep')
+        check(s.event('resume', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'off + wybudzenie (PrepareForSleep false) i AutoEnable: cofnięte')
+        check(stays('off\n'), 'wybudzenie: AutoEnable nie zapisany jako wola użytkownika')
+        s.event('resume', value='disabled')
+        check(s.event('changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'] * 2,
+              'AutoEnable chwilę po wybudzeniu (osobna seria w oknie): cofnięte')
+        check(s.clean(), 'wybudzenie: strumień bez błędów')
+
+        # ── Hotplug kontrolera ──
+        setup('off\n', 'missing')
+        s = Stream('a', FAST)
+        check(s.first['class'] == 'off' and not power_calls(), 'brak kontrolera na starcie: bez błędu, bez power')
+        check(s.quiet(0.5), 'brak kontrolera: bez pętli odpytywania')
+        check(s.event('added', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'off + hotplug (InterfacesAdded /org/bluez/hci0): wyłączony')
+        check(s.clean(), 'hotplug: strumień bez błędów')
+        # Każdy wariant w świeżym strumieniu: bez okna startu (dawny bluetoothd).
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.event('removed', 'added', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'szybki replug w jednej serii (migawka bez braku kontrolera): wyłączony')
+        check(s.clean(), 'szybki replug: strumień bez błędów')
+        setup('off\n', 'missing')
+        s = Stream('a', FAST)
+        check(s.event('changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'pojawienie się kontrolera widoczne tylko w migawce (bez InterfacesAdded): wyłączony')
+        check(s.clean(), 'pojawienie w migawce: strumień bez błędów')
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.event('device', 'changed', value='enabled')['class'] == 'enabled' and not power_calls() and saved('on\n'),
+              'InterfacesAdded urządzenia (dev_*) nie otwiera okna: włączenie zapisane jako wola')
+        check(s.clean(), 'urządzenie: strumień bez błędów')
+
+        # ── Restart bluetoothd ──
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.event('bluez-down', value='missing')['class'] == 'off' and not power_calls(), 'bluetoothd zatrzymany: bez power')
+        check(s.event('bluez-up', 'added', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'off + restart bluetoothd (NameOwnerChanged) i AutoEnable: wyłączony')
+        check(s.clean(), 'restart bluetoothd: strumień bez błędów')
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.event('bluez-up', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'szybki restart bluetoothd (tylko NameOwnerChanged, kontroler bez przerwy): wyłączony')
+        check(s.clean(), 'szybki restart: strumień bez błędów')
+        # SIGTERM bluetoothd sam wyłącza kontroler (adapter_shutdown) — nie wola użytkownika.
+        setup('on\n', 'enabled')
+        s = Stream('a', {'ARCHENEMY_BT_CONFIRM': '2'})
+        s.event('changed', value='disabled')
+        s.event('bluez-down', value='missing')
+        check(stays('on\n', 2.6), 'zatrzymanie bluetoothd (Powered false, potem utrata nazwy): wybór on nienadpisany')
+        check(s.event('bluez-up', 'added', 'changed', value='enabled')['class'] == 'enabled' and not power_calls(),
+              'on + start bluetoothd: AutoEnable zostaje, bez power')
+        check(s.clean(), 'zatrzymanie bluetoothd: strumień bez błędów')
+
+        # ── Użytkownik poza paskiem (bluetui, blueman, telefon) ──
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        check(s.event('changed', value='enabled')['class'] == 'enabled' and not power_calls() and saved('on\n'),
+              'off + włączenie z bluetui poza oknem: zapis on, bez cofania')
+        s.event('sleep')
+        check(s.event('resume', 'changed', value='enabled')['class'] == 'enabled' and not power_calls(),
+              'po włączeniu z bluetui: kolejne wybudzenie zostawia on')
+        check(s.clean(), 'włączenie poza paskiem: strumień bez błędów')
+        s = Stream('a', FAST)
+        check(s.first['class'] == 'enabled' and not power_calls() and choice_now() == b'on\n',
+              'po włączeniu z bluetui: restart paska / logowanie zostawia on')
+        check(s.event('changed', value='disabled')['class'] == 'disabled' and not power_calls() and saved('off\n'),
+              'wyłączenie z bluetui/telefonu poza paskiem: zapis off')
+        check(s.event('resume', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'po wyłączeniu z bluetui: wybudzenie i AutoEnable cofnięte')
+        check(s.clean(), 'wyłączenie poza paskiem: strumień bez błędów')
+        setup(None, 'enabled')
+        s = Stream('a', FAST)
+        check(s.event('changed', value='disabled')['class'] == 'disabled' and saved('off\n') and not power_calls(),
+              'brak pliku + wyłączenie poza paskiem: plik off utworzony')
+        check(power.stat().st_mode & 0o777 == 0o644
+              and sorted(p.name for p in (root / 'data').iterdir()) == ['bluetooth-enabled.dat', 'bluetooth-power.dat'],
+              'zapis ze strumienia: 644, atomowo, bez plików tymczasowych')
+        check(s.clean(), 'brak pliku: strumień bez błędów')
+        # Okno startu paska liczy się od startu bluetoothd (ps etimes).
+        setup('off\n', 'disabled', age='0')
+        s = Stream('a', FAST | {'ARCHENEMY_BT_WINDOW': '2'})
+        check(s.event('changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'świeży bluetoothd: spóźnione AutoEnable w oknie startu cofnięte')
+        time.sleep(2.3)
+        check(s.event('changed', value='enabled')['class'] == 'enabled' and power_calls() == ['power off'] and saved('on\n'),
+              'po oknie (2 s) włączenie to wola użytkownika: zapis on, bez cofania')
+        check(s.clean(), 'okno startu: strumień bez błędów')
+        setup('off\n', 'disabled', age=None)
+        s = Stream('a', FAST)
+        check(s.event('changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+              'nieznany wiek bluetoothd: okno od startu paska ("off" wygrywa)')
+        check(s.clean(), 'nieznany wiek: strumień bez błędów')
+
+        # ── Kilka pasków (każdy = osobny strumień) ──
+        setup('off\n', 'disabled')
+        SHORT = FAST | {'ARCHENEMY_BT_WINDOW': '2'}
+        a, b = Stream('a', SHORT), Stream('b', SHORT)
+        a.send('changed', value='enabled')
+        b.send('changed')
+        check(a.receive()['class'] == 'enabled' and b.receive()['class'] == 'enabled' and not power_calls() and saved('on\n'),
+              'dwa paski: włączenie z bluetui zapisane, żaden strumień go nie cofa')
+        check(stays('on\n') and not power_calls(), 'dwa paski: włączenie trwa po potwierdzeniu')
+        a.send('changed', value='disabled')
+        b.send('changed')
+        a.receive(), b.receive()
+        check(saved('off\n') and not power_calls(), 'dwa paski: wyłączenie poza paskiem zapisane')
+        a.send('resume', 'changed', value='enabled')
+        b.send('resume', 'changed')
+        a.receive(), b.receive()
+        calls = power_calls()
+        check(1 <= len(calls) <= 2 and set(calls) == {'power off'} and state.read_text().strip() == 'disabled' and choice_now() == b'off\n',
+              f'dwa paski + wybudzenie: wyłączony, {len(calls)} polecenie(a) power (≤ 2)')
+        check(a.quiet(1.5) and b.quiet(0) and power_calls() == calls, 'dwa paski: bez pętli włącz/wyłącz')
+        time.sleep(2.2)   # okno wybudzenia (2 s) w a i b minęło
+        c = Stream('c', SHORT)
+        for stream in (a, b, c):
+            stream.send('changed', value='enabled')
+        check(all(stream.receive()['class'] == 'enabled' for stream in (a, b, c)) and power_calls() == calls and saved('on\n'),
+              'nowy pasek (monitor) przy dawnym bluetoothd: włączenie z bluetui chwilę po jego starcie nie jest cofane')
+        check(all(stream.clean() for stream in (c, b, a)), 'kilka pasków: strumienie bez błędów')
+
+        # ── Zmiana w trakcie okna ──
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        s.event('resume')
+        result = run(str(bar), 'toggle')
+        check(result.returncode == 0 and choice_now() == b'on\n' and power_calls() == ['power on'], 'PPM on w oknie: zapis i power on')
+        check(s.event('changed')['class'] == 'enabled' and power_calls() == ['power on'] and stays('on\n'),
+              'PPM on w oknie: plik zapisany przed zasilaniem, strumień nie cofa')
+        check(s.event('changed', value='disabled')['class'] == 'disabled' and saved('off\n') and power_calls() == ['power on'],
+              'wyłączenie z bluetui w oknie przy on: zapis off')
+        renders = [s.event('changed', value='enabled')['class'] for _ in range(5)]
+        check(power_calls().count('power off') == 3 and renders[:3] == ['disabled'] * 3 and renders[3:] == ['enabled'] * 2
+              and choice_now() == b'off\n',
+              'ciągłe włączanie w oknie: najwyżej 3 cofnięcia, potem bez pętli')
+        check(s.stop() and 'gave up' in s.errors, 'limit prób: komunikat na stderr')
+
+        # ── Niezapisywalny data/ w strumieniu ──
+        setup('on\n', 'enabled')
+        s = Stream('a', FAST | {'FAIL_MKTEMP': '1'})
+        check(s.event('changed', value='disabled')['class'] == 'disabled' and stays('on\n')
+              and not power_calls() and state.read_text().strip() == 'disabled',
+              'niezapisywalny data/ (strumień): zasilanie nietknięte, stary wybór zostaje')
+        check(s.stop() and 'cannot write' in s.errors and 'bluetooth-power.dat' in s.errors
+              and log.read_text().count('notify-send') == 1,
+              'niezapisywalny data/ (strumień): stderr i jedno powiadomienie z nazwą pliku')
+
+        # ── Uśpienie, zamykanie systemu, rfkill: nie są wolą użytkownika ──
+        setup('on\n', 'enabled')
+        s = Stream('a', FAST)
+        s.event('shutdown')
+        s.event('changed', value='disabled')
+        check(stays('on\n') and not power_calls(), 'PrepareForShutdown(true): wyłączenie przy zamykaniu systemu niezapisane')
+        check(s.clean(), 'zamykanie: strumień bez błędów')
+        setup('on\n', 'enabled')
+        s = Stream('a', FAST)
+        s.event('sleep')
+        s.event('changed', value='disabled')
+        check(stays('on\n') and not power_calls(), 'PrepareForSleep(true): zmiana w trakcie usypiania niezapisana')
+        check(s.event('resume')['class'] == 'enabled' and power_calls() == ['power on'],
+              'wybudzenie z on, kontroler wyłączony: włączony')
+        check(s.clean(), 'uśpienie: strumień bez błędów')
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        s.event('changed', value='blocked')
+        check(s.event('changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'] and stays('off\n'),
+              'off + rfkill block/unblock (BlueZ włącza po odblokowaniu): cofnięte')
+        check(s.clean(), 'rfkill off: strumień bez błędów')
+        setup('on\n', 'enabled')
+        s = Stream('a', FAST)
+        s.event('changed', value='blocked')
+        check(stays('on\n') and not power_calls(), 'on + rfkill block: wybór on nienadpisany')
+        check(s.clean(), 'rfkill on: strumień bez błędów')
+
+        # ── Nieudane power: ponowienie z timerem, limit, bez pętli ──
+        setup('off\n', 'enabled')
+        s = Stream('a', FAST | {'FAIL_POWER': '1'})
+        try:
+            wait_until(lambda: len(power_calls()) == 3, 5, 'trzy próby power off')
+            retried = True
+        except AssertionError:
+            retried = False
+        check(retried and s.quiet(1.5) and len(power_calls()) == 3 and choice_now() == b'off\n',
+              'nieudane power off: 3 próby co 1 s, potem koniec, wybór nietknięty')
+        check(s.stop() and 'gave up' in s.errors, 'nieudane power off: komunikat na stderr')
+
+        # ── Brak bluetoothctl: bez błędu i bez pętli ──
         (root / 'bin/bluetoothctl').rename(root / 'bluetoothctl.off')
         if shutil.which('bluetoothctl', path=os.environ['PATH']) is None:
-            power.write_text('off\n')
-            fresh_boot(12)
-            before = log.read_text().count('dbus-monitor ')
-            check(start()['text'] == '' and not reader.ready(0.5), 'brak bluetoothctl: pusty moduł, bez pętli')
-            check(log.read_text().count('dbus-monitor ') == before + 1 and not power_calls(), 'brak bluetoothctl: jedna subskrypcja, zero power')
-            check(stop(), 'brak bluetoothctl: strumień bez błędów')
+            setup('off\n', 'enabled')
+            s = Stream('a', FAST)
+            check(s.first['text'] == '' and s.quiet(0.5), 'brak bluetoothctl: pusty moduł, bez pętli')
+            check(log.read_text().count('dbus-monitor ') == 1 and not power_calls(), 'brak bluetoothctl: jedna subskrypcja, zero power')
+            check(s.clean(), 'brak bluetoothctl: strumień bez błędów')
         else:
             print('  - pominięte: bluetoothctl jest w PATH hosta (brak binarki)')
         (root / 'bluetoothctl.off').rename(root / 'bin/bluetoothctl')
     finally:
-        if proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate(timeout=seconds(5))
-        os.close(holder)
+        for stream in list(streams):
+            if stream.proc.poll() is None:
+                os.killpg(stream.proc.pid, signal.SIGKILL)
+                stream.proc.communicate(timeout=seconds(5))
+            os.close(stream.holder)
+        streams.clear()
     power.unlink(missing_ok=True)
     check(run('git', '-C', str(repo), 'check-ignore', 'data/bluetooth-power.dat').returncode == 0, 'wybór zasilania ignorowany przez git')
 
