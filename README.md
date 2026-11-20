@@ -872,14 +872,27 @@ confirmed (`$XDG_RUNTIME_DIR/archenemy-bluetooth.pending`, session tmpfs;
 `data/` without it): a bar that starts in those 2 seconds — another monitor,
 a waybar restart right after turning Bluetooth off in bluetui — takes the
 pending change over instead of undoing it.
-Turning Bluetooth on in bluetui within those 15 seconds is treated as the
-system and undone — use right-click, or wait a moment. Changes made while no
-bar is running (for example from a TTY) are not seen; at the next login the
+
+**Known limit — turning on from bluetui, blueman or `bluetoothctl` right
+after such an event.** The power signal does not say who switched the
+controller on, and a bar running as your user cannot see which program asked
+`bluetoothd` to do it. So while the file says `off`, a power-on from
+anywhere but the bar within the 15-second window after one of the events above
+(after the bar starts: 15 seconds minus how long `bluetoothd` has been running)
+is treated as the system and switched off again — up to 3 times; a fourth
+power-on stays on for now but is not saved, and the next event switches it
+off. Outside the window it is saved as usual. To turn Bluetooth on inside the
+window, right-click the icon (the choice is saved before power changes and is
+never undone) or wait 15 seconds and turn it on again. `AutoEnable=false`
+(below) stops BlueZ from powering on by itself, but the bar still treats a
+power-on in the window as the system's.
+
+Changes made while no bar is running (for example from a TTY) are not seen; at the next login the
 file wins. If `data/` cannot be written, right-click changes nothing and shows
 a notification; a change from elsewhere stays, with a notification that it
 was not saved, and the bar keeps retrying the save every 5 seconds (10
-attempts) and keeps that choice itself until it exits. Nothing in `/etc` is changed. To forget the choice:
-`rm ~/archenemy/data/bluetooth-power.dat`.
+attempts) and keeps that choice itself until it exits. Nothing in `/etc` is
+changed. To forget the choice: `rm ~/archenemy/data/bluetooth-power.dat`.
 
 **Optional, for full certainty (system file, not done by archenemy):** with
 `AutoEnable=false` BlueZ never powers a controller on by itself, so Bluetooth
@@ -900,7 +913,13 @@ check the tooltip and both clicks, remove/replug the controller and verify
 `systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
 Right-click off, then log out and in, `systemctl suspend` and wake, reboot and
 replug the controller: after each `bluetoothctl show | grep Powered` says `no`.
-Turn it on in bluetui, suspend and wake: `Powered: yes`.
+Turn it on in bluetui, suspend and wake: `Powered: yes`. Edge cases (off in
+the file each time, `Powered: no` after): with two monitors turn it off in
+bluetui and restart waybar within 2 seconds; wake while scanning (busy bus);
+quick `rfkill block bluetooth; rfkill unblock bluetooth`; `systemctl restart
+bluetooth` with one and with several controllers; two quick right-clicks.
+Turn it on in bluetui 1 and 5 seconds after waking (undone, the known limit)
+and after 15 seconds (stays on, saved).
 
 ## Timer
 

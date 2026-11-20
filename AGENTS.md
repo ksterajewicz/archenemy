@@ -671,6 +671,12 @@ Rules that follow directly from the table:
   while the file still holds `unsaved_base` (a newer choice cancels it); no
   retry timer while sleeping — `read -t` would spin. Tests:
   `$MOCK_ROOT/deny-save` (reversible), `ARCHENEMY_BT_SAVE_RETRY`/`_TRIES`.
+  Known limit (B3 F7, documented in README, not guessed): a power-on from
+  bluetui/blueman inside a window is undone — `PropertiesChanged` carries no
+  sender intent and the method call to `org.bluez` is invisible to an
+  unprivileged monitor (system bus policy denies eavesdropping; BecomeMonitor
+  needs root). Do not "detect" intent from a running bluetui/blueman process:
+  open bluetui across suspend would turn AutoEnable into "user on".
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing
