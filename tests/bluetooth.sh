@@ -18,6 +18,11 @@
 #   Osobne FIFO na pasek (MOCK_EVENTS), wiek bluetoothd z atrapy ps; dwa i
 #   trzy paski, zamrożenie przy uśpieniu/zamykaniu i zatrzymaniu bluetoothd,
 #   limit prób (bez pętli), "on"/brak/śmieci, brak flagi i bluetoothctl.
+#   Przypadki graniczne z przeglądu B3 (B4; expect = bez przerywania pakietu):
+#   F1 nowy pasek a cudza oczekująca decyzja, F2 blokada PPM/strumień, F3
+#   ciągły ruch D-Bus, F4 rfkill w jednej serii, F5 przerwa reconnectu, F6
+#   zatrzymywanie bluetooth.service (atrapa systemctl is-active), F8 ponowienie
+#   nieudanego zapisu (deny-save), F9 znikający /proc/<pid>/comm.
 # =============================================
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -73,6 +78,13 @@ if [[ "$1" == --timeout ]]; then
  trap 'sleep "$lifetime"' EXIT
  shift 2
 fi
+# MOCK_POWER_GATE=1: power czeka na gate-open i kończy się błędem (wyścig PPM, F2).
+if [[ "${MOCK_POWER_GATE:-0}" == 1 && "$1" == power ]]; then
+ echo "power $2" >> "$MOCK_ROOT/log"
+ touch "$MOCK_ROOT/gate-ready"
+ while [[ ! -e "$MOCK_ROOT/gate-open" ]]; do sleep 0.02; done
+ exit 1
+fi
 state=$(cat "$MOCK_ROOT/state")
 case "$1" in
  show)
@@ -112,7 +124,13 @@ printf 'systemctl %s\\n' "$*" >> "$MOCK_ROOT/log"
 case "$1" in
  enable) [[ "${FAIL_ENABLE:-0}" == 0 ]] ;;
  is-enabled) [[ "${FAIL_ENABLED:-0}" == 0 ]] ;;
- is-active) [[ "${FAIL_ACTIVE:-0}" == 0 ]] ;;
+ is-active)
+  # Stan jednostki jak systemctl: unit_state (np. deactivating, F6), domyślnie active.
+  unit=active
+  [[ ! -f "$MOCK_ROOT/unit_state" ]] || unit=$(cat "$MOCK_ROOT/unit_state")
+  [[ "${FAIL_ACTIVE:-0}" == 0 ]] || unit=inactive
+  [[ "$2" == --quiet ]] || echo "$unit"
+  [[ "$unit" == active ]] ;;
 esac
 ''',
         'bluetui': '#!/usr/bin/env bash\nexit 0\n',
@@ -122,9 +140,15 @@ esac
     }
     # touch z FAIL_TOUCH=1 = błąd zapisu flagi (root omija prawa pliku, więc atrapa).
     mocks['touch'] = '#!/usr/bin/env bash\n[[ "${FAIL_TOUCH:-0}" == 0 ]] || exit 1\nexec ' + real_touch + ' "$@"\n'
-    # mktemp z FAIL_MKTEMP=1 = niezapisywalny katalog data/ (z tego samego powodu).
-    mocks['mktemp'] = ('#!/usr/bin/env bash\nif [[ "${FAIL_MKTEMP:-0}" != 0 ]]; then\n'
+    # mktemp z FAIL_MKTEMP=1 = niezapisywalny katalog data/ (z tego samego powodu);
+    # plik deny-save = odmowa w trakcie działania strumienia, odwracalna (F8);
+    # MOCK_MKTEMP_GATE=1 = zapis wyboru czeka na gate-open (wyścig z PPM, F2).
+    mocks['mktemp'] = ('#!/usr/bin/env bash\nif [[ "${FAIL_MKTEMP:-0}" != 0 || -e "$MOCK_ROOT/deny-save" ]]; then\n'
+                       ' [[ ! -e "$MOCK_ROOT/deny-save" ]] || printf "mktemp-denied %s\\n" "$1" >> "$MOCK_ROOT/log"\n'
                        ' echo "mktemp: failed to create file via template \'$1\': Permission denied" >&2; exit 1\nfi\n'
+                       'if [[ "${MOCK_MKTEMP_GATE:-0}" == 1 && "$1" == *bluetooth-power.dat.* ]]; then\n'
+                       ' touch "$MOCK_ROOT/gate-ready"\n'
+                       ' while [[ ! -e "$MOCK_ROOT/gate-open" ]]; do sleep 0.02; done\nfi\n'
                        'exec ' + real_mktemp + ' "$@"\n')
     mocks['notify-send'] = '#!/usr/bin/env bash\nprintf "notify-send %s\\n" "$*" >> "$MOCK_ROOT/log"\n'
     for name, code in mocks.items():
@@ -144,6 +168,17 @@ esac
         assert value, label
         checks += 1
         print('  ✓ ' + label)
+    # Przypadki graniczne B3 (F1–F9): expect nie przerywa pakietu, więc na
+    # starym kodzie każdy z nich jest osobno czerwony; wynik zbiorczo na końcu.
+    failures = []
+    def expect(value, label):
+        global checks
+        if value:
+            checks += 1
+            print('  ✓ ' + label)
+        else:
+            failures.append(label)
+            print('  ✗ ' + label, flush=True)
     def run(*args, extra=None):
         return subprocess.run(args, env=env | (extra or {}), text=True, capture_output=True, timeout=seconds(10))
     def status():
@@ -261,11 +296,25 @@ esac
 
     # Osobno TERM tylko do rodzica i killpg, zarówno przy nasłuchu, jak i reconnect.
     def children(pid):
-        path = Path(f'/proc/{pid}/task/{pid}/children')
-        return [int(x) for x in path.read_text().split()] if path.exists() else []
+        try:
+            return [int(x) for x in Path(f'/proc/{pid}/task/{pid}/children').read_text().split()]
+        except (FileNotFoundError, ProcessLookupError):
+            return []
+    def comm(pid):
+        # F9: proces znika między exists() a read_text() — brak = brak gotowości.
+        try:
+            return Path(f'/proc/{pid}/comm').read_text().strip()
+        except (FileNotFoundError, ProcessLookupError):
+            return None
+    def listening(pid):
+        # Strumień czeka na zdarzenia: jedynym potomkiem jest nasłuch (cat).
+        pids = children(pid)
+        return bool(pids) and all(comm(child) == 'cat' for child in pids)
     def alive(pid):
-        path = Path(f'/proc/{pid}/stat')
-        return path.exists() and path.read_text().split(') ', 1)[1][0] != 'Z'
+        try:
+            return Path(f'/proc/{pid}/stat').read_text().split(') ', 1)[1][0] != 'Z'
+        except (FileNotFoundError, ProcessLookupError):
+            return False
     for eof in [False, True]:
         for group in [False, True]:
             holder = os.open(root / 'events', os.O_RDWR | os.O_NONBLOCK)
@@ -277,9 +326,8 @@ esac
                 receive()
                 def expected_child():
                     descendants[:] = children(proc.pid)
-                    return len(descendants) == 1 and any(('sleep' if eof else 'cat') in
-                           Path(f'/proc/{pid}/comm').read_text()
-                           for pid in descendants if Path(f'/proc/{pid}/comm').exists())
+                    return len(descendants) == 1 and any(('sleep' if eof else 'cat') == comm(pid)
+                                                         for pid in descendants)
                 wait_until(expected_child, 3, 'oczekiwany potomek strumienia')
                 if group:
                     os.killpg(proc.pid, signal.SIGTERM)
@@ -317,6 +365,14 @@ esac
         'resume': HDR.format('/org/freedesktop/login1', LOGIN, 'PrepareForSleep') + '   boolean false\n',
         'shutdown': HDR.format('/org/freedesktop/login1', LOGIN, 'PrepareForShutdown') + '   boolean true\n',
     }
+    # PropertiesChanged z argumentami jak w dbus-monitor (rfkill: PowerState off-blocked).
+    def props(powered, power_state):
+        return (HDR.format('/org/bluez/hci0', PROPS, 'PropertiesChanged') + '   string "org.bluez.Adapter1"\n   array [\n'
+                f'      dict entry(\n         string "Powered"\n         variant             boolean {powered}\n      )\n'
+                f'      dict entry(\n         string "PowerState"\n         variant             string "{power_state}"\n      )\n'
+                '   ]\n   array [\n   ]\n')
+    SIGNALS['blocked'] = props('false', 'off-blocked')
+    SIGNALS['unblocked'] = props('true', 'on')
     FAST = {'ARCHENEMY_BT_CONFIRM': '1'}
     def power_calls():
         return [line for line in log.read_text().splitlines() if line.startswith('power ')]
@@ -372,11 +428,7 @@ esac
         def stop(self):
             # Linia JSON bywa odebrana, zanim python renderu wyjdzie; TERM w tej
             # chwili daje „Terminated” na stderr. Czekamy na sam nasłuch (cat).
-            def idle():
-                pids = children(self.proc.pid)
-                return bool(pids) and all(Path(f'/proc/{pid}/comm').exists()
-                                          and Path(f'/proc/{pid}/comm').read_text().strip() == 'cat' for pid in pids)
-            wait_until(idle, 3, 'strumień bezczynny przed TERM')
+            wait_until(lambda: listening(self.proc.pid), 3, 'strumień bezczynny przed TERM')
             os.killpg(self.proc.pid, signal.SIGTERM)
             _, self.errors = self.proc.communicate(timeout=seconds(5))
             os.close(self.holder)
@@ -622,10 +674,18 @@ esac
         check(s.clean(), 'uśpienie: strumień bez błędów')
         setup('off\n', 'disabled')
         s = Stream('a', FAST)
-        s.event('changed', value='blocked')
-        check(s.event('changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'] and stays('off\n'),
-              'off + rfkill block/unblock (BlueZ włącza po odblokowaniu): cofnięte')
+        s.event('blocked', value='blocked')
+        check(s.event('unblocked', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'] and stays('off\n'),
+              'off + rfkill block/unblock w osobnych seriach (BlueZ włącza po odblokowaniu): cofnięte')
         check(s.clean(), 'rfkill off: strumień bez błędów')
+        # F4: szybki block/unblock w jednej serii — migawka widzi już on, przejście
+        # rfkill jest tylko w argumentach wiadomości.
+        setup('off\n', 'disabled')
+        s = Stream('a', FAST)
+        s.send('blocked', 'unblocked', value='enabled')
+        expect(s.receive()['class'] == 'disabled' and power_calls() == ['power off'] and stays('off\n'),
+               'F4: off + rfkill block/unblock w jednej serii (migawka bez off-blocked): cofnięte')
+        expect(s.clean(), 'F4: strumień bez błędów')
         setup('on\n', 'enabled')
         s = Stream('a', FAST)
         s.event('changed', value='blocked')
@@ -643,6 +703,180 @@ esac
         check(retried and s.quiet(1.5) and len(power_calls()) == 3 and choice_now() == b'off\n',
               'nieudane power off: 3 próby co 1 s, potem koniec, wybór nietknięty')
         check(s.stop() and 'gave up' in s.errors, 'nieudane power off: komunikat na stderr')
+
+        # ── Przypadki graniczne z przeglądu B3 (F1–F9); każdy po swojemu sprząta ──
+        def kill_streams():
+            for stream in list(streams):
+                if stream.proc.poll() is None:
+                    os.killpg(stream.proc.pid, signal.SIGKILL)
+                stream.proc.communicate(timeout=seconds(5))
+                os.close(stream.holder)
+            streams.clear()
+        def gate_reset():
+            for name in ['gate-ready', 'gate-open']:
+                (root / name).unlink(missing_ok=True)
+        def finished_or(proc, base):
+            # Czeka na koniec procesu najwyżej base s (bez skali: limit atrapy to timeout 3 s).
+            try:
+                proc.wait(timeout=base)
+            except subprocess.TimeoutExpired:
+                pass
+        # F1: drugi pasek startuje, gdy pierwszy potwierdza wyłączenie z bluetui.
+        try:
+            setup('on\n', 'enabled')
+            CONF2 = {'ARCHENEMY_BT_CONFIRM': '2'}
+            a = Stream('f1a', CONF2)
+            a.event('changed', value='disabled')
+            b = Stream('f1b', CONF2)
+            expect(b.first['class'] == 'disabled' and 'power on' not in power_calls() and saved('off\n', 5)
+                   and state.read_text().strip() == 'disabled' and stays('off\n'),
+                   'F1: nowy pasek w trakcie potwierdzania wyłączenia z bluetui: off zapisane, bez power on')
+            expect(b.clean() and a.clean(), 'F1: strumienie bez błędów')
+        finally:
+            kill_streams()
+        # F2a: pierwszy PPM czeka na nieudane power, drugi PPM w tym czasie; wycofanie
+        # pierwszego nie może nadpisać wyboru drugiego.
+        try:
+            gate_reset()
+            setup('on\n', 'enabled')
+            first = subprocess.Popen([str(bar), 'toggle'], env=env | {'MOCK_POWER_GATE': '1'},
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            wait_until(lambda: (root / 'gate-ready').exists(), 3, 'pierwszy PPM czeka na power')
+            second = subprocess.Popen([str(bar), 'toggle'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            finished_or(second, 1.5)
+            (root / 'gate-open').touch()
+            first.communicate(timeout=seconds(10))
+            second.communicate(timeout=seconds(15))
+            expect(first.returncode != 0 and second.returncode == 0 and choice_now() == b'off\n'
+                   and state.read_text().strip() == 'disabled',
+                   'F2: dwa nakładające się PPM, pierwszy power nieudany: plik = ostatni udany wybór (off, wyłączony)')
+        finally:
+            gate_reset()
+        # F2b: zapis ze strumienia (bluetui off) w toku, w tym czasie PPM on.
+        try:
+            setup('on\n', 'enabled')
+            a = Stream('f2', FAST | {'MOCK_MKTEMP_GATE': '1'})
+            a.event('changed', value='disabled')
+            wait_until(lambda: (root / 'gate-ready').exists(), 4, 'zapis strumienia czeka')
+            click = subprocess.Popen([str(bar), 'toggle'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            finished_or(click, 1.5)
+            (root / 'gate-open').touch()
+            click.communicate(timeout=seconds(15))
+            time.sleep(0.5)
+            expect(click.returncode == 0 and choice_now() == b'on\n' and state.read_text().strip() == 'enabled'
+                   and stays('on\n'),
+                   'F2: PPM on w trakcie zapisu off ze strumienia: wygrywa PPM (plik on, włączony)')
+            expect(a.clean(), 'F2: strumień bez błędów')
+        finally:
+            kill_streams()
+            gate_reset()
+        # F3: ciągły ruch D-Bus (co 0,1 s) dłuższy niż okno po wybudzeniu.
+        try:
+            setup('off\n', 'disabled')
+            a = Stream('f3', FAST | {'ARCHENEMY_BT_WINDOW': '3'})
+            a.event('resume')
+            state.write_text('enabled')
+            started = time.monotonic()
+            while time.monotonic() - started < 4.5:
+                a.send('changed')
+                time.sleep(0.1)
+            during = power_calls(), state.read_text().strip()
+            expect(during[0] == ['power off'] and during[1] == 'disabled' and stays('off\n'),
+                   'F3: AutoEnable po wybudzeniu przy ciągłym ruchu D-Bus: cofnięte w oknie, nie zapisane')
+            expect(a.clean(), 'F3: strumień bez błędów')
+        finally:
+            kill_streams()
+        # F5: monitor D-Bus kończy się; w 5-sekundowej przerwie system włącza kontroler.
+        try:
+            setup('off\n', 'disabled')
+            a = Stream('f5', FAST | {'MOCK_EOF': '1'})
+            state.write_text('enabled')
+            a.receive(10)
+            try:
+                wait_until(lambda: 'power off' in power_calls() or choice_now() == b'on\n', 12, 'F5: rozstrzygnięcie po reconnect')
+            except AssertionError:
+                pass
+            expect(power_calls() == ['power off'] and state.read_text().strip() == 'disabled' and stays('off\n'),
+                   'F5: włączenie w przerwie reconnectu: po ponownej subskrypcji cofnięte, nie zapisane')
+            os.killpg(a.proc.pid, signal.SIGTERM)
+            a.proc.communicate(timeout=seconds(5))
+            expect(a.proc.returncode == 0, 'F5: strumień zakończony bez błędów')
+            os.close(a.holder)
+            streams.remove(a)
+        finally:
+            kill_streams()
+        # F6: zatrzymywanie bluetooth.service trwa dłużej niż CONFIRM (kilka adapterów).
+        unit = root / 'unit_state'
+        try:
+            setup('on\n', 'enabled')
+            unit.write_text('deactivating\n')
+            a = Stream('f6', FAST)
+            a.event('changed', value='disabled')
+            expect(stays('on\n') and not power_calls(),
+                   'F6: Powered false w trakcie zatrzymywania bluetooth.service (> CONFIRM): wybór on nienadpisany')
+            a.event('bluez-down', value='missing')
+            unit.unlink()
+            expect(a.event('bluez-up', 'added', 'changed', value='enabled')['class'] == 'enabled' and not power_calls()
+                   and choice_now() == b'on\n',
+                   'F6: po starcie bluetoothd: on zostaje, bez power')
+            expect(a.clean(), 'F6: strumień bez błędów')
+        finally:
+            unit.unlink(missing_ok=True)
+            kill_streams()
+        # F8: wyłączenie z bluetui przy odmowie zapisu; zapis wraca bez kolejnego zdarzenia.
+        deny = root / 'deny-save'
+        try:
+            setup('on\n', 'enabled')
+            deny.touch()
+            a = Stream('f8', FAST | {'ARCHENEMY_BT_SAVE_RETRY': '1'})
+            a.event('changed', value='disabled')
+            try:
+                wait_until(lambda: 'notify-send' in log.read_text(), 5, 'F8: odmowa zapisu zgłoszona')
+            except AssertionError:
+                pass
+            denied = choice_now()
+            deny.unlink()
+            expect(denied == b'on\n' and saved('off\n', 5) and log.read_text().count('notify-send') == 1 and not power_calls(),
+                   'F8: nieudany zapis off ponowiony po odzyskaniu zapisu (bez kolejnego zdarzenia), jedno powiadomienie')
+            expect(a.stop(), 'F8: strumień zakończony bez błędów')
+            # Stała odmowa: ograniczona liczba prób, a wola zostaje w pamięci strumienia.
+            setup('on\n', 'enabled')
+            deny.touch()
+            a = Stream('f8b', FAST | {'ARCHENEMY_BT_SAVE_RETRY': '1', 'ARCHENEMY_BT_SAVE_TRIES': '3'})
+            a.event('changed', value='disabled')
+            def denied_saves():
+                return [line for line in log.read_text().splitlines()
+                        if line.startswith('mktemp-denied') and 'bluetooth-power.dat.' in line]
+            try:
+                wait_until(lambda: len(denied_saves()) >= 3, 6, 'F8: trzy próby zapisu')
+            except AssertionError:
+                pass
+            time.sleep(1.5)
+            expect(len(denied_saves()) == 3 and choice_now() == b'on\n',
+                   'F8: stała odmowa zapisu: dokładnie 3 próby (ARCHENEMY_BT_SAVE_TRIES), potem koniec')
+            expect(a.event('resume', 'changed', value='enabled')['class'] == 'disabled' and power_calls() == ['power off'],
+                   'F8: niezapisane off nadal chronione w strumieniu: wybudzenie i AutoEnable cofnięte')
+            expect(a.stop() and 'gave up saving' in a.errors, 'F8: koniec prób zapisu zgłoszony na stderr')
+        finally:
+            deny.unlink(missing_ok=True)
+            kill_streams()
+        # F9: /proc/<pid>/comm znika między sprawdzeniem a odczytem — brak gotowości, nie wyjątek.
+        sleeper_proc = subprocess.Popen(['sleep', '5'])
+        real_read_text = Path.read_text
+        def vanished(self, *args, **kwargs):
+            if self.name == 'comm':
+                raise FileNotFoundError(str(self))
+            return real_read_text(self, *args, **kwargs)
+        Path.read_text = vanished
+        try:
+            vanish_ok = listening(os.getpid()) is False
+        except FileNotFoundError:
+            vanish_ok = False
+        finally:
+            Path.read_text = real_read_text
+            sleeper_proc.kill()
+            sleeper_proc.wait()
+        expect(vanish_ok, 'F9: znikający /proc/<pid>/comm w oczekiwaniu na nasłuch = brak gotowości, bez FileNotFoundError')
 
         # ── Brak bluetoothctl: bez błędu i bez pętli ──
         (root / 'bin/bluetoothctl').rename(root / 'bluetoothctl.off')
@@ -743,5 +977,9 @@ esac
         check('#custom-bluetooth.off' in (repo / 'rices' / rice / 'waybar/style.css').read_text(), 'styl pustego modułu: ' + rice)
     check('custom/bluetooth' not in (repo / 'rices/white-blue_beta/waybar/config.jsonc').read_text(), 'beta bez zmian')
     check(run('git', '-C', str(repo), 'check-ignore', 'data/bluetooth-enabled.dat').returncode == 0, 'flaga ignorowana przez git')
-    print(f'Wynik: {checks} ✓ / 0 ✗')
+    print(f'Wynik: {checks} ✓ / {len(failures)} ✗')
+    for label in failures:
+        print('  ✗ ' + label)
+    if failures:
+        sys.exit(1)
 PY
