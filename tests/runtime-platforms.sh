@@ -11,7 +11,7 @@
 #     - workspace-orphan-guard: JEDNO powiadomienie mówiące, czego brak —
 #       socat (porada per platforma) albo gniazda zdarzeń Hyprlanda (socat
 #       jest) — sonda co 2 s i wyjście po 5 nieudanych odczytach Hyprlanda;
-#     - odbiorcy runtime: każdy aktywny rice (także yin) woła wspólne TUI
+#     - odbiorcy runtime: każdy aktywny rice (także yin i yang) woła wspólne TUI
 #       Super+A (→ [h]/[m]/[u]) i wspólne workspaces.lua (guard).
 #   Opcje: RUNTIME_PLATFORMS_REV=<rewizja> — scenariusze Archa także na
 #   kodzie z rewizji, porównanie wyjścia/powiadomień i wywołań;
@@ -169,8 +169,8 @@ if [[ -n "$BASE" ]]; then
     check "Arch socat bez gniazda = $RUNTIME_PLATFORMS_REV poza tekstem powiadomienia (kod, odczyty, wywołania)" '[[ "$RC" == "$c_rc" && "$C" == "$c_c" && "$MON" == "$c_mon" && "$N" != *"$nl"* && "$c_n" != *"$nl"* && ( "$N" == "$c_n" || ( "$N" == *"brak socat"* && "$c_n" == *"brak gniazda zdarzeń Hyprlanda"* ) ) ]]'
 fi
 
-echo "== odbiorcy runtime: rice'y (także yin) → wspólne TUI i guard"
-for r in white-blue tron asia-n-rice dither-flux crt yin; do
+echo "== odbiorcy runtime: rice'y (także yin i yang) → wspólne TUI i guard"
+for r in white-blue tron asia-n-rice dither-flux crt yin yang; do
     f="$REPO/rices/$r/hypr/hyprland.lua"
     check "$r: Super+A = wspólne appbinds.sh" 'grep -qE "^local appbinds += \".*~/archenemy/scripts/appbinds/appbinds\.sh\"" "$f" && grep -qF "hl.bind(mainMod .. \" + A\", hl.dsp.exec_cmd(appbinds))" "$f"'
     check "$r: wspólne workspaces.lua (start guarda)" 'grep -qF "require(HOME .. \"/archenemy/config/hypr/workspaces.lua\")" "$f"'

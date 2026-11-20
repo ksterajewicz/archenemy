@@ -13,7 +13,9 @@
 #     - cudzy symlink i prawdziwy katalog trafiają do .bak-<ts>, nie giną,
 #     - link do INNEGO rice'a jest sprzątany (inwariant: brak wycieku),
 #     - w trybie link-only nic nie restartuje waybara/hyprctl,
-#     - instalator ogłasza ✓ dopiero po zaobserwowanym linku.
+#     - instalator ogłasza ✓ dopiero po zaobserwowanym linku,
+#     - prawdziwy rice yang po yin (TARGET_RICE=yang): każdy folder z ✓,
+#       nic z yin, cudzy katalog w .bak.
 #   Uruchom: bash tests/install-link.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -98,6 +100,25 @@ out="$(run_step9 nie-ma-takiego)"
 check "brak ✓ przy nieistniejącym ricie"         '[[ "$out" != *"✓ ~/.config"* && "$out" == *"✗"* ]]'
 check "SUMMARY_SKIPPED zamiast DONE"             'grep -q "^SKIPPED=Rice .nie-ma-takiego. NOT fully linked" "$T/summary" && ! grep -q "^DONE=Rice" "$T/summary"'
 check "poprzednie linki (alfa) nietknięte"       '[[ "$(link_of hypr)" == "$A/rices/alfa/hypr" && "$(<"$A/.current_rice")" == alfa ]]'
+
+echo "== [9] z TARGET_RICE=yang (prawdziwe rices/yang po yin, cudzy katalog → .bak)"
+# Kopie prawdziwych rice'ów do atrapy (white-blue = cel względnych linków
+# networkmanager-dmenu i ncmpcpp/bindings w yin i yang); repo nietknięte.
+for r in white-blue yin yang; do cp -a "$REPO/rices/$r" "$A/rices/$r"; done
+run_step9 yin >/dev/null
+rm -f "$C/fastfetch"; mkdir -p "$C/fastfetch"; echo moj > "$C/fastfetch/config.jsonc"   # cudzy fastfetch
+: > "$MOCK_LOG"
+out="$(run_step9 yang)"
+mapfile -t yang_dirs < <(cd "$A/rices/yang" && for d in */; do echo "${d%/}"; done)
+yang_bad=""
+for d in "${yang_dirs[@]}"; do
+    [[ "$(link_of "$d")" == "$A/rices/yang/$d" && "$out" == *"✓ ~/.config/$d → $A/rices/yang/$d"* ]] || yang_bad+=" $d"
+done
+check "każdy z ${#yang_dirs[@]} katalogów yang podlinkowany z ✓${yang_bad:+ (źle:$yang_bad)}" '[[ ${#yang_dirs[@]} -ge 12 && -z "$yang_bad" ]]'
+check "żaden link do rices/yin nie został"       '! find "$C" -maxdepth 1 -type l -lname "*/rices/yin/*" | grep -q .'
+check "cudzy fastfetch w fastfetch.bak-*"        '[[ "$(cat "$C"/fastfetch.bak-*/config.jsonc)" == moj && "$out" == *"~/.config/fastfetch was kept as fastfetch.bak-"* ]]'
+check ".current_rice = yang, SUMMARY_DONE"       '[[ "$(<"$A/.current_rice")" == yang ]] && grep -q "^DONE=Rice .yang. symlinked" "$T/summary"'
+check "link-only: bez hyprctl/waybar/notify"     '[[ ! -s "$MOCK_LOG" ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

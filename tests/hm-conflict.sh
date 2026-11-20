@@ -18,6 +18,8 @@
 #       wpis w podsumowaniu, bez ✓ i bez „Rice linked”; powtórny bieg
 #       identyczny (idempotencja odmowy); po usunięciu deklaracji HM
 #       linkowanie, a trzeci bieg bez nowych .bak;
+#     - prawdziwy rice yang z folderem HM (fastfetch, alacritty, nvim): Super+T
+#       i [9] odmawiają bez zmian; bez HM yang linkuje się normalnie;
 #     - ~/.bashrc z HM: rc_block_ensure = managed bez kopii i zapisu (także
 #       łańcuch), aktualny blok w pliku HM = ok, zwykły symlink (stow) jak
 #       dotąd; rc_migrate_apply odmawia bez dopisania do shellrc; wycinek
@@ -154,6 +156,23 @@ check "po usunięciu deklaracji: linki i DONE"     '[[ "$(readlink "$C/waybar")"
 n_bak=$(find "$C" -maxdepth 1 -name '*.bak-*' | wc -l)
 out4="$(run_step9 alfa)"
 check "trzeci bieg: bez nowych .bak, linki te same" '[[ $(find "$C" -maxdepth 1 -name "*.bak-*" | wc -l) -eq $n_bak && "$(readlink "$C/hypr")" == "$A/rices/alfa/hypr" && "$out4" != *"was kept as"* ]]'
+
+echo "== yang: foldery prawdziwego rice'a jako linki home-managera (Super+T i [9])"
+# Kopie prawdziwych rices/yang i white-blue (cel względnych linków yang) —
+# HM deklaruje foldery, które jasny rice podmienia: fastfetch, alacritty, nvim.
+for r in white-blue yang; do cp -a "$REPO/rices/$r" "$A/rices/$r"; done
+for d in fastfetch alacritty nvim; do
+    reset_home
+    ln -s "/nix/store/yyyy-home-manager-files/.config/$d" "$C/$d"
+    snap "$T/s0"; : > "$MOCK_LOG"
+    switch yang; rc=$?; snap "$T/s1"
+    check "Super+T yang, HM ma ~/.config/$d: kod 3, bez zmian i .bak" '[[ $rc -eq 3 ]] && cmp -s "$T/s0" "$T/s1" && ! ls -d "$C"/*.bak-* >/dev/null 2>&1'
+    check "  powiadomienie z $d, bez reloadu i waybara" 'grep -q "Rice .yang. not applied: home-manager manages ~/.config/$d (nothing changed)" "$MOCK_LOG" && ! grep -qE "^(hyprctl: reload|waybar|pkill)" "$MOCK_LOG"'
+    out="$(run_step9 yang)"; snap "$T/s2"
+    check "  [9] TARGET_RICE=yang: ⚠ $d, SKIPPED, bez zmian" '[[ "$out" == *"⚠ ~/.config/$d is managed by home-manager"* && "$out" != *"✓"* ]] && grep -q "^SKIPPED=Rice .yang. NOT linked: home-manager manages ~/.config/$d" "$T/summary" && cmp -s "$T/s0" "$T/s2"'
+done
+reset_home; switch yang; rc=$?
+check "yang bez HM: kod 0, linki do rices/yang"   '[[ $rc -eq 0 && "$(readlink "$C/fastfetch")" == "$A/rices/yang/fastfetch" && "$(<"$A/.current_rice")" == yang ]]'
 
 echo "== ~/.bashrc z home-managera"
 # shellcheck source=scripts/shell/lib/shell-rc.sh

@@ -243,7 +243,7 @@ check "inny terminal nie dostaje fontu Alacritty jako faktu" '[[ "$out" == *"unv
 rm "$XDG_CONFIG_HOME/alacritty/alacritty.toml"
 
 echo "== konfiguracja rice'ów"
-for rice in asia-n-rice crt dither-flux tron white-blue yin; do
+for rice in asia-n-rice crt dither-flux tron white-blue yin yang; do
     f="$REPO/rices/$rice/alacritty"
     check "$rice: import font.toml, potem wybór, bez family w alacritty.toml" \
         'python3 -c "import tomllib,sys; d=tomllib.load(open(sys.argv[1],\"rb\")); f=tomllib.load(open(sys.argv[2],\"rb\")); imp=d[\"general\"][\"import\"]; sys.exit(not (imp==[\"~/.config/alacritty/font.toml\",\"~/.config/archenemy/fonts/alacritty.toml\"] and all(\"family\" not in d[\"font\"][k] for k in (\"normal\",\"bold\",\"italic\")) and f[\"font\"][\"normal\"][\"family\"]))" "$f/alacritty.toml" "$f/font.toml"'
@@ -327,8 +327,8 @@ if sys.argv[2] == "panel":
 print(cmds[0]["text"] if cmds else "")
 sys.exit(0 if ok else 1)
 PY
-for rice in asia-n-rice white-blue tron crt dither-flux yin; do
-    kind=list; [[ "$rice" == tron || "$rice" == crt || "$rice" == dither-flux || "$rice" == yin ]] && kind=panel
+for rice in asia-n-rice white-blue tron crt dither-flux yin yang; do
+    kind=list; [[ "$rice" == tron || "$rice" == crt || "$rice" == dither-flux || "$rice" == yin || "$rice" == yang ]] && kind=panel
     text="$(python3 "$T/jsonc.py" "$REPO/rices/$rice/fastfetch/config.jsonc" "$kind")"; rc=$?
     check "$rice: jsonc się parsuje, jeden wiersz fontu ($kind)" '(( rc == 0 ))'
     check "$rice: polecenie wiersza oznacza niezweryfikowany wybór" '[[ "$(sh -c "$text")" == "Iosevka Term (archenemy choice; unverified: "* ]]'
@@ -340,7 +340,7 @@ check "white-blue_beta: zostaje terminalfont (rice zamrożony)" '(( $? == 0 ))'
 # gdy polecenie nic nie wypisze albo skończy się kodem 127 (np. brak pliku).
 # Wiersz fontu nie może wtedy zniknąć: font bierze z plików, które czyta alacritty.
 echo "== fastfetch: wiersz fontu bez skryptu archenemy"
-for rice in asia-n-rice white-blue tron crt dither-flux yin; do
+for rice in asia-n-rice white-blue tron crt dither-flux yin yang; do
     NH="$T/home-bez-repo-$rice"
     mkdir -p "$NH/.config"
     ln -s "$REPO/rices/$rice/alacritty" "$NH/.config/alacritty"
@@ -365,7 +365,7 @@ check "bez skryptu i plików fontu: wiersz nadal widoczny" '[[ "$out" == "unknow
 echo '== fastfetch: wiersz fontu, gdy skrypt wypisze „unknown…”'
 # „…” w pojedynczym cudzysłowie: to celowy literał w nazwie sprawdzenia (SC1111).
 unknown_quoted='„unknown…”'
-for rice in asia-n-rice white-blue tron crt dither-flux yin; do
+for rice in asia-n-rice white-blue tron crt dither-flux yin yang; do
     NH="$T/home-unknown-$rice"
     mkdir -p "$NH/archenemy" "$NH/.config"
     ln -s "$REPO/scripts" "$NH/archenemy/scripts"

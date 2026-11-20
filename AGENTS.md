@@ -101,9 +101,12 @@ Rules that follow directly from the table:
   `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), and the
   hard-coded rice lists in `tests/` (`install-main`, `bluetooth`,
   `keyboard-layouts`, `mouse-settings`, `rofi-clipboard`, `font-settings`,
-  `flux-wall-dither`, `waybar-launcher` for a rice with a launcher). Suites
-  that glob `rices/*/` (`rice-autostart`, `tui-contrast`, `rofi-inputbar`,
-  `rofi-theme-switcher`, `fastfetch-logo`) pick it up alone.
+  `flux-wall-dither`, `runtime-platforms`, `waybar-launcher` for a rice with
+  a launcher), plus named scenarios in `doctor-platforms`, `switch-rice`,
+  `install-link` and `hm-conflict` (`yin` and `yang` have them). Suites that
+  glob `rices/*/` (`rice-autostart`, `tui-contrast`, `rofi-inputbar`,
+  `rofi-theme-switcher`, `fastfetch-logo`) pick it up alone;
+  `rice-autostart` also checks that `yang` runs exactly what `yin` runs.
 - **fastfetch shows the detected distribution's logo on every rice** (owner,
   2026-11-18): `"logo": { "type": "builtin", "color": { "1"…"6" } }` with no
   `"source"` (a fixed `"arch"` showed Arch on Fedora and NixOS) and no logo

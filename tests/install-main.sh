@@ -308,7 +308,7 @@ check "[8a] monitorshyprl.lua: oba monitory po desc:" '[[ "$(grep -c "^hl.monito
 check "[8] gpu-env.lua z lspci (amd), hardware-keys.lua" 'grep -q "GPU: amd" "$H/gpu-env.lua" && grep -q "universal" "$H/hardware-keys.lua"'
 missing=""
 for f in monitorshyprl.lua workspaces-monitors.lua hardware-keys.lua gpu-env.lua autostartpersonalisation.lua \
-         appbinds.lua autostart-apps.lua hyprpaper.conf hyprlock-background-{white-blue,tron,asia-n-rice,dither-flux,crt,yin}.conf; do
+         appbinds.lua autostart-apps.lua hyprpaper.conf hyprlock-background-{white-blue,tron,asia-n-rice,dither-flux,crt,yin,yang}.conf; do
     [[ -s "$H/$f" ]] || missing+=" $f"
 done
 check "[8] każdy plik warstwy maszynowej istnieje${missing:+ (brak:$missing)}" '[[ -z "$missing" ]]'

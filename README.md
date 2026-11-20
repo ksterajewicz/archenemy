@@ -416,15 +416,18 @@ archenemy/
 │                                     #   plus every active rice (yin and yang too) using the shared TUI and guard.
 │                                     #   switch-rice.sh — rice switching on a fake ~/.config: foreign
 │                                     #   symlinks backed up, two quick Super+T don't race, a lock held
-│                                     #   past the wait ends with code 1 and the old rice intact.
+│                                     #   past the wait ends with code 1 and the old rice intact; the real
+│                                     #   yin.sh → yang.sh stubs link every rices/yang folder, nothing of yin.
 │                                     #   hm-conflict.sh — home-manager links into /nix/store: Super+T, link-only
 │                                     #   and installer [9] refuse before any change (code 3, ~/.config and
 │                                     #   .current_rice unchanged), a second installer run is identical, after
 │                                     #   removing the declaration it links once; HM ~/.bashrc → no write/backup,
 │                                     #   block shown for programs.bash.initExtra; HM mpd config not offered for
-│                                     #   replacement; ~/archenemy in the store → installer refuses.
+│                                     #   replacement; ~/archenemy in the store → installer refuses; the real
+│                                     #   yang with an HM fastfetch/alacritty/nvim folder is refused the same way.
 │                                     #   install-link.sh — installer step [9] (link-only mode of the same
-│                                     #   lib): stow symlinks and real dirs go to .bak, never rm.
+│                                     #   lib): stow symlinks and real dirs go to .bak, never rm; the real
+│                                     #   yang after yin: every folder linked with ✓.
 │                                     #   install-tui-entry.sh — installer step [8m]: rofi entry with an
 │                                     #   absolute path, ~/.bashrc block added silently once, `archenemy`
 │                                     #   alias in the shared shell file only once (old ~/.bashrc alias moved).
@@ -444,7 +447,8 @@ archenemy/
 │                                     #   TUI binds doesn't shift the numbering.
 │                                     #   rice-autostart.sh — runs every rice's hyprland.lua on a fake
 │                                     #   `hl` API (lua5.4) and checks what starts with the session;
-│                                     #   window `move` rules must evaluate (PiP lands in the corner).
+│                                     #   window `move` rules must evaluate (PiP lands in the corner);
+│                                     #   yang's output equals yin's (same backend, only the looks differ).
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
