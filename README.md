@@ -857,6 +857,11 @@ keeps it:
 
 Every bar (one per monitor) runs its own stream; they react to the same
 system events the same way, so one bar never undoes what another just saved.
+A change made elsewhere is announced to the other bars while it is being
+confirmed (`$XDG_RUNTIME_DIR/archenemy-bluetooth.pending`, session tmpfs;
+`data/` without it): a bar that starts in those 2 seconds — another monitor,
+a waybar restart right after turning Bluetooth off in bluetui — takes the
+pending change over instead of undoing it.
 Turning Bluetooth on in bluetui within those 15 seconds is treated as the
 system and undone — use right-click, or wait a moment. Changes made while no
 bar is running (for example from a TTY) are not seen; at the next login the

@@ -24,6 +24,9 @@
 #   (każdy pasek = osobny proces), więc dwa paski decydują tak samo. Okno
 #   startu strumienia liczy się od startu bluetoothd (ps etimes): nowy pasek
 #   przy starym bluetoothd nie cofa włączenia, które drugi pasek zapisuje.
+#   Przypadki graniczne z przeglądu B3 (B4, 2026-11-20): zmiana w trakcie
+#   potwierdzania jest ogłaszana innym paskom (PENDING_FILE) — pasek
+#   startujący w tym czasie ją przejmuje, zamiast cofać (F1).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -34,6 +37,10 @@ export LC_ALL=C
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLAG="$ROOT/data/bluetooth-enabled.dat"
 POWER_FILE="$ROOT/data/bluetooth-power.dat"
+# Wspólny stan pasków (B4): katalog sesji (tmpfs użytkownika), bez niego data/.
+STATE_DIR=${XDG_RUNTIME_DIR:-}
+[[ -n "$STATE_DIR" && -d "$STATE_DIR" && -w "$STATE_DIR" ]] || STATE_DIR=${POWER_FILE%/*}
+PENDING_FILE="$STATE_DIR/archenemy-bluetooth.pending"
 WINDOW=15
 CONFIRM=2
 ENFORCE_MAX=3
@@ -131,11 +138,43 @@ sleeping=0        # PrepareForSleep(true) … (false)
 shutting=0        # PrepareForShutdown(true)
 snap=''           # migawka z ostatniego tick (dla render)
 save_notified=0
+fresh=0           # 1 = pierwsza migawka po starcie strumienia
+pending_mine=''   # nasz wpis w PENDING_FILE
+p_value=''; p_at=0
+# Oczekująca decyzja (F1 z B3): "on|off <termin>" w PENDING_FILE. Zmiana spoza
+# paska czeka CONFIRM s; pasek startujący w tym czasie (drugi monitor, restart
+# waybara) przejmuje ją zamiast cofać do starego pliku. Wpis zostaje po wyjściu
+# strumienia — właśnie restart paska musi go zobaczyć; nieaktualny wygasa.
+pending_set() {
+    local tmp
+    pending_mine="$1 $2"
+    tmp=$(mktemp "$PENDING_FILE.XXXXXX" 2>/dev/null) || return 0
+    if ! { printf '%s\n' "$pending_mine" > "$tmp" && mv -f "$tmp" "$PENDING_FILE"; } 2>/dev/null; then
+        rm -f "$tmp"
+    fi
+}
+pending_drop() {
+    local line=''
+    save_value=''; save_at=0
+    [[ -n "$pending_mine" ]] || return 0
+    { read -r line < "$PENDING_FILE"; } 2>/dev/null
+    [[ "$line" != "$pending_mine" ]] || rm -f "$PENDING_FILE"
+    pending_mine=''
+}
+# Świeży wpis innego paska: termin w przyszłości, ale nie dalej niż CONFIRM
+# (wpis sprzed restartu systemu w data/ ma termin z innego uptime).
+pending_get() {
+    local line=''
+    { read -r line < "$PENDING_FILE"; } 2>/dev/null
+    [[ "$line" =~ ^(on|off)\ ([0-9]+)$ ]] || return 1
+    p_value=${BASH_REMATCH[1]}; p_at=$(( 10#${BASH_REMATCH[2]} ))
+    (( p_at > now && p_at <= now + CONFIRM * 100 + 100 ))
+}
 open_window() {
     clock
     (( now + WINDOW * 100 > window_until )) && window_until=$(( now + WINDOW * 100 ))
     enforce=1; enforce_count=0; retry_at=0
-    save_value=''; save_at=0
+    pending_drop
 }
 # Okno startu strumienia od startu bluetoothd: AutoEnable działa tuż po nim.
 # Wiek nieznany (brak ps albo procesu) = okno od teraz, bo "off" ma wygrać.
@@ -165,10 +204,10 @@ classify() {
     esac
     case "$ev_arg" in
         sleep)
-            if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then sleeping=1; save_value=''; save_at=0
+            if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then sleeping=1; pending_drop
             elif [[ "$line" =~ ^[[:space:]]*boolean\ false$ ]]; then sleeping=0; open_window; fi ;;
         shutdown)
-            if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then shutting=1; save_value=''; save_at=0
+            if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then shutting=1; pending_drop
             elif [[ "$line" =~ ^[[:space:]]*boolean\ false$ ]]; then shutting=0; fi ;;
         object)
             [[ "$line" =~ ^[[:space:]]*object\ path\ \"/org/bluez/hci[0-9]+\"$ ]] && open_window ;;
@@ -198,10 +237,11 @@ save_choice() {
 # Jedna migawka na serię zdarzeń albo termin timera. Zwraca 0, gdy zmieniła
 # zasilanie (trzeba nowej migawki do render).
 tick() {
-    local cur choice want in_window=0
+    local cur choice want in_window=0 adopt=$fresh
+    fresh=0
     snap=''
     if [[ ! -f "$FLAG" ]] || ! command -v bluetoothctl >/dev/null || ! command -v timeout >/dev/null; then
-        known=''; save_value=''; save_at=0
+        known=''; pending_drop
         return 1
     fi
     snap=$(timeout 3 bluetoothctl show 2>/dev/null) || snap=''
@@ -217,7 +257,7 @@ tick() {
     fi
     (( now < window_until )) && in_window=1
     if [[ "$cur" == none || "$cur" == blocked ]]; then
-        [[ "$known" == "$cur" ]] || { save_value=''; save_at=0; }
+        [[ "$known" == "$cur" ]] || pending_drop
         known=$cur
         return 1
     fi
@@ -230,6 +270,7 @@ tick() {
         # a no→yes w oknie przy "on"/braku decyzji to AutoEnable).
         if (( ! in_window )) || [[ "$cur" == off ]]; then
             save_value=$cur; save_at=$(( now + CONFIRM * 100 ))
+            pending_set "$save_value" "$save_at"
         fi
     fi
     known=$cur
@@ -237,6 +278,11 @@ tick() {
         want=$choice
         if [[ -z "$want" || "$want" == "$cur" ]]; then
             enforce=0
+        elif (( adopt )) && pending_get && [[ "$p_value" == "$cur" ]]; then
+            # Start strumienia, a inny pasek właśnie potwierdza zmianę spoza paska
+            # (F1): przejmujemy ją z jego terminem zamiast cofać do starego pliku.
+            enforce=0
+            save_value=$cur; save_at=$p_at
         elif (( retry_at <= now )); then
             if (( enforce_count >= ENFORCE_MAX )); then
                 enforce=0
@@ -245,7 +291,7 @@ tick() {
                 enforce_count=$(( enforce_count + 1 ))
                 if timeout 3 bluetoothctl power "$want" >/dev/null 2>&1; then
                     enforce=0; retry_at=0; known=$want
-                    save_value=''; save_at=0
+                    pending_drop
                     return 0
                 fi
                 retry_at=$(( now + 100 ))
@@ -254,7 +300,7 @@ tick() {
     fi
     if [[ -n "$save_value" ]] && (( save_at <= now )); then
         [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && save_choice "$save_value"
-        save_value=''; save_at=0
+        pending_drop
     fi
     return 1
 }
@@ -317,6 +363,7 @@ case "${1:-stream}" in
 esac
 
 start_window
+fresh=1
 while :; do
     if ! command -v dbus-monitor >/dev/null; then
         step

@@ -639,6 +639,15 @@ Rules that follow directly from the table:
   `ARCHENEMY_TEST=1`). In stream tests wait until the stream's only child is
   the listener before `killpg` — a render's `python` still exiting prints
   "Terminated" on stderr.
+- **Bluetooth stream edge cases (B4; `expect` cases F1–F9 in
+  `tests/bluetooth.sh` do not abort the suite).** A change seen outside a
+  window is pending for `CONFIRM` s and announced in
+  `$XDG_RUNTIME_DIR/archenemy-bluetooth.pending` (`on|off <uptime deadline>`;
+  `data/` fallback, so a deadline further than `CONFIRM` ahead is stale): a
+  stream's first snapshot adopts a fresh entry equal to the current state
+  instead of enforcing the old file (a waybar restart right after a bluetui
+  off). The entry is left behind on exit on purpose — the restarted bar must
+  see it.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing
