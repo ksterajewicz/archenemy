@@ -184,7 +184,7 @@ archenemy/
 │       # mouse.lua (mouse settings, written by Super+A → [m]; missing = rice defaults),
 │       # keyboard-layouts.lua (1–4 layouts in order, Super+A → [k]; missing = pl,us),
 │       # hyprpaper.conf (hyprpaper doesn't migrate to Lua; rices point to it
-│       # via a symlink), hyprlock-background-<rice>.conf ×6 (one per rice except beta)
+│       # via a symlink), hyprlock-background-<rice>.conf ×7 (one per rice except beta)
 │       # (hyprlock background; rices point to it via `source =`)
 ├── rices/
 │   ├── white-blue/                   # Default rice: alacritty, fastfetch, hypr(+hyprlock), mako,
@@ -198,12 +198,12 @@ archenemy/
 │   │                                 #   mpv, flux-wall.conf, timer). mako, hyprlock and swayosd inherit
 │   │                                 #   from white-blue (symlinks in the repo).
 │   ├── tron/                         # Tron: Legacy — dark neon (cyan + CLU orange), glow,
-│   │                                 #   4-6px corners. Own fastfetch (Arch logo in cyan) + launcher
+│   │                                 #   4-6px corners. Own fastfetch (distro logo in cyan) + launcher
 │   │                                 #   in the waybar and nvim theme (neon cyan); ncmpcpp + mpv colors;
 │   │                                 #   networkmanager-dmenu and ncmpcpp `bindings` from white-blue (symlinks).
 │   ├── asia-n-rice/                  # Mauve/pink on navy, flat look. Own hypr, rofi,
 │   │                                 #   mako, hyprlock, alacritty, waybar and nvim theme (mauve);
-│   │                                 #   default fastfetch; ncmpcpp + mpv colors;
+│   │                                 #   fastfetch distro logo in mauve; ncmpcpp + mpv colors;
 │   │                                 #   MangoHud/networkmanager-dmenu/ncmpcpp `bindings` from white-blue (symlinks).
 │   ├── dither-flux/                  # Dither art + algorithmic art in the rainy
 │   │                                 #   milford-water palette: zero rounding, no blur or glow,
@@ -213,12 +213,18 @@ archenemy/
 │   │                                 #   4px corners, amber #FFB000 for alarms only. Full own
 │   │                                 #   layer set (incl. ncmpcpp + mpv colors); networkmanager-dmenu
 │   │                                 #   and ncmpcpp `bindings` from white-blue (symlinks).
-│   └── yin/                          # Black with a white accent: frosted glass (translucent alacritty +
-│                                     #   strong blur), 12px corners, soft black shadows, greys with even
-│                                     #   lightness steps, ember #E0805A for alarms only. Full own layer
-│                                     #   set; fastfetch with a big character-cell taijitu logo
-│                                     #   (fastfetch/logo.txt) and palette dots; networkmanager-dmenu and
-│                                     #   ncmpcpp `bindings` from white-blue (symlinks).
+│   ├── yin/                          # Black with a white accent: frosted glass (translucent alacritty +
+│   │                                 #   strong blur), 12px corners, soft black shadows, greys with even
+│   │                                 #   lightness steps, ember #E0805A for alarms only. Full own layer
+│   │                                 #   set; fastfetch with the distro logo in white and ash, and
+│   │                                 #   palette dots; networkmanager-dmenu and
+│   │                                 #   ncmpcpp `bindings` from white-blue (symlinks).
+│   └── yang/                         # yin inverted: paper with a black accent, light frosted glass
+│                                     #   over the negative eclipse, the same backend, layout, 12px
+│                                     #   corners and 4px rhythm; greys with inverted lightness, rust
+│                                     #   #A23A10 for alarms only. Full own layer set (fastfetch: distro
+│                                     #   logo in black and ash); networkmanager-dmenu and ncmpcpp
+│                                     #   `bindings` from white-blue (symlinks).
 ├── scripts/
 │   ├── archenemy-doctor.sh           # Public, offline installation diagnostics (`archenemy doctor`).
 │   ├── lib/runtime-dir.sh            # Library: the private session directory for locks, state and logs —
@@ -309,7 +315,8 @@ archenemy/
 │   │                                 #   (gen_tron_wallpaper.py), and generative dither wallpapers
 │   │                                 #   for the dither-flux rice (gen_dither_flux_wallpaper.py),
 │   │                                 #   oscilloscope Lissajous for crt (gen_crt_wallpaper.py),
-│   │                                 #   eclipse for yin (gen_yin_wallpaper.py);
+│   │                                 #   eclipse for yin (gen_yin_wallpaper.py), its negative for
+│   │                                 #   yang (gen_yang_wallpaper.py);
 │   │                                 #   gen_rice_preview.py — the rices' preview.png mock-ups for Super+T
 │   │                                 #   (drawn from each rice's waybar/alacritty/hypr/flux-wall colors);
 │   │                                 #   flux-wall.sh — start/stop the shader-driven wallpaper.
@@ -406,18 +413,21 @@ archenemy/
 │                                     #   advice (UPDATE_ARCHENEMY_REV=<rev> compares Arch with that revision).
 │                                     #   runtime-platforms.sh — mouse DPI advice and the workspace guard's single
 │                                     #   fallback notice (missing socat vs missing Hyprland socket) per platform,
-│                                     #   plus every active rice (yin too) using the shared TUI and guard.
+│                                     #   plus every active rice (yin and yang too) using the shared TUI and guard.
 │                                     #   switch-rice.sh — rice switching on a fake ~/.config: foreign
 │                                     #   symlinks backed up, two quick Super+T don't race, a lock held
-│                                     #   past the wait ends with code 1 and the old rice intact.
+│                                     #   past the wait ends with code 1 and the old rice intact; the real
+│                                     #   yin.sh → yang.sh stubs link every rices/yang folder, nothing of yin.
 │                                     #   hm-conflict.sh — home-manager links into /nix/store: Super+T, link-only
 │                                     #   and installer [9] refuse before any change (code 3, ~/.config and
 │                                     #   .current_rice unchanged), a second installer run is identical, after
 │                                     #   removing the declaration it links once; HM ~/.bashrc → no write/backup,
 │                                     #   block shown for programs.bash.initExtra; HM mpd config not offered for
-│                                     #   replacement; ~/archenemy in the store → installer refuses.
+│                                     #   replacement; ~/archenemy in the store → installer refuses; the real
+│                                     #   yang with an HM fastfetch/alacritty/nvim folder is refused the same way.
 │                                     #   install-link.sh — installer step [9] (link-only mode of the same
-│                                     #   lib): stow symlinks and real dirs go to .bak, never rm.
+│                                     #   lib): stow symlinks and real dirs go to .bak, never rm; the real
+│                                     #   yang after yin: every folder linked with ✓.
 │                                     #   install-tui-entry.sh — installer step [8m]: rofi entry with an
 │                                     #   absolute path, ~/.bashrc block added silently once, `archenemy`
 │                                     #   alias in the shared shell file only once (old ~/.bashrc alias moved).
@@ -437,16 +447,23 @@ archenemy/
 │                                     #   TUI binds doesn't shift the numbering.
 │                                     #   rice-autostart.sh — runs every rice's hyprland.lua on a fake
 │                                     #   `hl` API (lua5.4) and checks what starts with the session;
-│                                     #   window `move` rules must evaluate (PiP lands in the corner).
+│                                     #   window `move` rules must evaluate (PiP lands in the corner);
+│                                     #   yang's output equals yin's (same backend, only the looks differ).
 │                                     #   gpudrivers.sh — GPU installer on fake sudo/pacman/modinfo and a
 │                                     #   fake /etc: no initramfs changes without a built nvidia module.
 │                                     #   archenemy-doctor.sh — public diagnostics, privacy, deadlines and read-only checks.
 │                                     #   doctor-platforms.sh — doctor per platform (Arch, derivative, Fedora, Atomic, NixOS,
 │                                     #   unknown) × zero/missing/error/empty/hang/no backend, AUR, multi-RPM, i686,
-│                                     #   --full gaming status, rice yin; DOCTOR_PLATFORMS_REV=<rev> compares Arch.
+│                                     #   --full gaming status, rices yin and yang; DOCTOR_PLATFORMS_REV=<rev> compares Arch.
 │                                     #   gaming-diag.sh — the real gaming-diag.sh on mock commands and a mock
 │                                     #   filesystem root on every platform, --doctor, Super+A "Saved";
 │                                     #   GAMING_DIAG_REV=<rev> compares Arch.
+│                                     #   fastfetch-logo.sh — every rice's fastfetch: built-in logo of the detected distro
+│                                     #   (no fixed source, no logo file), colors 1–6 set (NixOS uses 1–6,
+│                                     #   Arch/Fedora 1–2); with fastfetch installed, Arch/Fedora/NixOS render
+│                                     #   only in the rice's colors.
+│                                     #   yang-wallpaper.sh — gen_yang_wallpaper.py twice: same SHA-256, equal to
+│                                     #   wallpapers/yang/, v1/v2 sizes, darkest level ≥ #6E6E73 (README contrast).
 │                                     #   repo-hygiene.sh — executable bits, `#!/usr/bin/env bash` shebangs (also tested without /bin/bash),
 │                                     #   no /bin/bash or fixed /usr/bin/<program> inside session files (git grep),
 │                                     #   Lua dispatch syntax and installer/doctor language;
@@ -570,6 +587,8 @@ archenemy/
     │                                 #   navy glass with a faint graticule — v1/v2 as above.
     ├── yin/                          # Set: eclipse — a dark disc rimmed by a thin white light on
     │                                 #   near-black, soft corona; v1/v2 as above (gen_yin_wallpaper.py).
+    ├── yang/                         # Set: eclipse in negative — a light disc rimmed by a thin dark
+    │                                 #   shadow on paper, soft grey corona; v1/v2 (gen_yang_wallpaper.py).
     └── dither-flux/generated/        # NOT in git — created by install.sh [9.7]: 3 forms (flow field ×2,
                                       #   attractor) in a Bayer dither raster, milford-water palette, sized
                                       #   to the REAL monitors. No PNGs of this set in git (2026-09-08).
@@ -634,17 +653,24 @@ scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump
 |---|---|
 | `white-blue` | Default. White-blue glass: rounded corners, tuned blur, custom animations, consistent `#0148ED` accent, mako + hyprlock + nvim theme (hand-tuned colorscheme in the rice's palette). ncmpcpp skin (blue accent `#0148ED`, bright blue `13` for the now-playing line, terminal palette only) and mpv OSD (white on `#1A1A2E`). |
 | `white-blue_beta` | The original white-blue look, kept for reference/rollback. Functional fixes only, no visual changes. mako and hyprlock inherit from `white-blue` via symlinks in the repo. |
-| `tron` | Tron: Legacy — dark glass `#020A0F`, neon cyan `#00E5FF` with glow, CLU orange `#FF7B1C` for alarms only, near-sharp corners (4–6px). Own waybar theme (with a "portal to the Grid" launcher and glowing HUD islands), rofi (search glyph), fastfetch (Arch logo in neon cyan), alacritty/mako/hyprlock (cinematic look with neon lines)/MangoHud/nvim (hand-tuned colorscheme: neon cyan on `#020A0F`, alarms in CLU orange); networkmanager-dmenu inherits from `white-blue` via a repo symlink. Wallpaper: the `tron-grid` set (generated). ncmpcpp skin (neon cyan accent, plate `#0E2A33` as the empty part of the progress bar, no CLU orange) and mpv OSD (`#CFEEF7` on `#020A0F`). |
-| `asia-n-rice` | Muted mauve/pink (`#b47687`) on dark navy (`#2a3444`), flat look: waybar with rounded islands (14px) and italic window titles, sharp window corners, `#131a2a` border. Look carried over from the author's own earlier rice (`arch_linux_rice-beta1.2`) and rewired onto the archenemy backend: alacritty instead of kitty, rofi instead of wofi, machine layer (GPU/monitors/workspaces) via Lua `require()`, no cava. Own waybar/rofi/mako/hyprlock/alacritty theme in the mauve palette; default fastfetch (no recoloring); own nvim theme (hand-tuned colorscheme in the mauve palette, flat — no bold); MangoHud and networkmanager-dmenu inherit from `white-blue` via symlinks. No wallpaper of its own — uses whatever's current (machine layer). ncmpcpp skin (mauve accent, flat — no bold anywhere) and mpv OSD (`#e8e8e8` on `#182130`). |
+| `tron` | Tron: Legacy — dark glass `#020A0F`, neon cyan `#00E5FF` with glow, CLU orange `#FF7B1C` for alarms only, near-sharp corners (4–6px). Own waybar theme (with a "portal to the Grid" launcher and glowing HUD islands), rofi (search glyph), fastfetch (distro logo in neon cyan), alacritty/mako/hyprlock (cinematic look with neon lines)/MangoHud/nvim (hand-tuned colorscheme: neon cyan on `#020A0F`, alarms in CLU orange); networkmanager-dmenu inherits from `white-blue` via a repo symlink. Wallpaper: the `tron-grid` set (generated). ncmpcpp skin (neon cyan accent, plate `#0E2A33` as the empty part of the progress bar, no CLU orange) and mpv OSD (`#CFEEF7` on `#020A0F`). |
+| `asia-n-rice` | Muted mauve/pink (`#b47687`) on dark navy (`#2a3444`), flat look: waybar with rounded islands (14px) and italic window titles, sharp window corners, `#131a2a` border. Look carried over from the author's own earlier rice (`arch_linux_rice-beta1.2`) and rewired onto the archenemy backend: alacritty instead of kitty, rofi instead of wofi, machine layer (GPU/monitors/workspaces) via Lua `require()`, no cava. Own waybar/rofi/mako/hyprlock/alacritty theme in the mauve palette; fastfetch (distro logo in mauve, default key colors); own nvim theme (hand-tuned colorscheme in the mauve palette, flat — no bold); MangoHud and networkmanager-dmenu inherit from `white-blue` via symlinks. No wallpaper of its own — uses whatever's current (machine layer). ncmpcpp skin (mauve accent, flat — no bold anywhere) and mpv OSD (`#e8e8e8` on `#182130`). |
 | `crt` | Blue/cyan phosphor CRT — the owner's six `hyprpicker` samples: `#043D7B`/`#0B358B` (glass, plates), `#3069AD` (borders, dim text), `#5695D6` (text), `#36D2D8` (accent, active), `#74DCE2` (bright text); the dark base `#031533` is `#043D7B` darkened in the same hue (the palette has no near-black), and amber `#FFB000` — classic amber phosphor — is the only warm color, reserved for alarms. (The CRT screen shader — scanlines/aperture mask/vignette — was removed on 2026-09-17 at the owner's request: the palette is the point, the "old monitor" look was not.) Glass islands with blur (alpha 0.55) and a cyan glow, 4px corners, 1px gradient borders (`#36D2D8` → `#5695D6`), phosphor glow (`shadow`) around the active window. Full own set: waybar (the launcher shows your distribution's glyph with a phosphor glow, or the archenemy Æ logo in bright phosphor cyan — `Super+A` → `[l]`), rofi, alacritty (cool ANSI, still distinguishable), mako, swayosd, hyprlock (glowing clock via label shadow), fastfetch, MangoHud, nvim (hand-tuned colorscheme); networkmanager-dmenu from `white-blue` via symlink. Wallpaper: the `crt` oscilloscope set from `gen_crt_wallpaper.py`; flux-wall animations available in the rice's palette (off by default). ncmpcpp skin (`#5695D6` text, cyan accent, `#0B358B` as the empty part of the progress bar, `#3069AD` frames) and mpv OSD (`#74DCE2` on `#031533`). |
-| `yin` | Black with a white accent, frosted glass — the dark half of a planned yin/yang pair. Near-black `#0C0C0E`, graphite `#121215`/`#1E1E22` plates, slate `#2E2E33`, smoke `#5E5E66`, ash `#8C8C96` (secondary text), paper `#E6E6EA` (text), white `#FFFFFF` (accent: active workspace, cursor, active border, keywords); ember `#E0805A` is the only warm color and is reserved for alarms (critical battery, urgent workspace, critical notifications, errors, the ANSI "red" slot). Glass: alacritty at opacity 0.82 over a strong, grain-free blur (3 passes, brightness 0.85, no vibrancy), translucent waybar/rofi/mako/swayosd plates with a 1px white edge at low alpha, 12px corners everywhere, soft black shadows within the 4px rhythm, no glow. ANSI greys climb in even lightness steps (L\* ≈ 56 → 86, bright one step higher) so `ls`, `git` and syntax stay readable without hue. Full own set: waybar (a white launcher — your distribution's glyph, or the archenemy Æ logo via `Super+A` → `[l]` — and a white pill for the active workspace), rofi, alacritty, mako, swayosd, hyprlock (a glass panel behind the clock), fastfetch (a big taijitu drawn with half-block characters on the left, two rows of palette dots — alacritty has no image protocol, so no picture logo), MangoHud, nvim (hand-tuned monochrome colorscheme: lightness and bold/italic instead of hue); networkmanager-dmenu and ncmpcpp `bindings` from `white-blue` via symlinks. Wallpaper: the `yin` eclipse set from `gen_yin_wallpaper.py`; flux-wall animations available in the monochrome palette (off by default). ncmpcpp skin and mpv OSD (`#E6E6EA` on `#0C0C0E`) follow the same palette. |
-| `dither-flux` | Dither art + algorithmic art: wallpapers are generative fields (flow field, Clifford attractor) quantized with an 8×8 Bayer raster, in the rainy `milford-water` palette from a Milford Sound frame; the only rice with `FLUX_WALL_DITHER=1`, so shaders with dithering — music visualizations included — use the same 1px Bayer raster (other rices and the `spectrogram` shader use a smooth gradient) — wet mountains `#0F1A24`, steel water `#5C87A3`, mist `#A8C4D4`, foam `#D8E6EE` as an accent; amber `#E0A23C` is the only warm color and is reserved for alarms only. Geometry follows the raster: **zero rounding**, 1px window borders, **blur and shadow disabled** (blur and dither are contradictory materials), waybar/rofi/mako islands as flat, near-opaque panels. Full own set: waybar (with a launcher), rofi, alacritty (ANSI toned to the palette but still distinguishable), mako, swayosd, hyprlock (1px lines, no glow), fastfetch (Arch logo in foam), MangoHud, nvim (hand-tuned colorscheme); networkmanager-dmenu from `white-blue` via symlink. Wallpapers: the `dither-flux` set from `gen_dither_flux_wallpaper.py`. ncmpcpp skin (foam `#D8E6EE` as the accent, water `#5C87A3` as the elapsed bar, plate `#1B3040` as the empty part, flat — no bold) and mpv OSD (foam on `#0F1A24`). |
+| `yin` | Black with a white accent, frosted glass — the dark half of the yin/yang pair (`yang` is its light half). Near-black `#0C0C0E`, graphite `#121215`/`#1E1E22` plates, slate `#2E2E33`, smoke `#5E5E66`, ash `#8C8C96` (secondary text), paper `#E6E6EA` (text), white `#FFFFFF` (accent: active workspace, cursor, active border, keywords); ember `#E0805A` is the only warm color and is reserved for alarms (critical battery, urgent workspace, critical notifications, errors, the ANSI "red" slot). Glass: alacritty at opacity 0.82 over a strong, grain-free blur (3 passes, brightness 0.85, no vibrancy), translucent waybar/rofi/mako/swayosd plates with a 1px white edge at low alpha, 12px corners everywhere, soft black shadows within the 4px rhythm, no glow. ANSI greys climb in even lightness steps (L\* ≈ 56 → 86, bright one step higher) so `ls`, `git` and syntax stay readable without hue. Full own set: waybar (a white launcher — your distribution's glyph, or the archenemy Æ logo via `Super+A` → `[l]` — and a white pill for the active workspace), rofi, alacritty, mako, swayosd, hyprlock (a glass panel behind the clock), fastfetch (the distro logo in white and ash, two rows of palette dots), MangoHud, nvim (hand-tuned monochrome colorscheme: lightness and bold/italic instead of hue); networkmanager-dmenu and ncmpcpp `bindings` from `white-blue` via symlinks. Wallpaper: the `yin` eclipse set from `gen_yin_wallpaper.py`; flux-wall animations available in the monochrome palette (off by default). ncmpcpp skin and mpv OSD (`#E6E6EA` on `#0C0C0E`) follow the same palette. |
+| `yang` | `yin` inverted — the light half of the yin/yang pair: the same backend, layout, 12px corners, 4px rhythm, animations and frosted glass, with the lightness turned around. Paper `#F3F3F5`, milk `#EEEEF1`/`#E1E1E5` plates, slate `#CCCCD0`, ash `#5E5E66` (secondary text), ink `#1E1E22` (text), black `#0C0C0E` (accent: active workspace, cursor, active border, keywords); rust `#A23A10` is the only warm color and is reserved for alarms (critical battery, urgent workspace, critical notifications, errors, the ANSI "red" slot). Glass: alacritty at opacity 0.82 over the same 3-pass blur with brightness 1.0 (dark text must not lose contrast to a darkened background), translucent milk waybar/rofi/mako/swayosd plates with a 1px black edge at low alpha, soft light shadows within the 4px rhythm, no glow. ANSI keeps `yin`'s order of contrast (white is the darkest text grey, black the lightest plate), in even lightness steps (L\* ≈ 40 → 14, bright one step darker), so `ls`, `git` and syntax stay readable without hue. Full own set: waybar (a black launcher — your distribution's glyph, or the archenemy Æ logo via `Super+A` → `[l]` — and a black pill for the active workspace), rofi, alacritty, mako, swayosd, hyprlock (a denser light glass panel behind the clock, the screenshot not dimmed), fastfetch (the distro logo in black and ash, two rows of palette dots), MangoHud (a denser light plate), nvim (hand-tuned light monochrome colorscheme); networkmanager-dmenu and ncmpcpp `bindings` from `white-blue` via symlinks. Wallpaper: the `yang` set (the eclipse in negative) from `gen_yang_wallpaper.py`; flux-wall animations available in the light monochrome palette (off by default). ncmpcpp skin and mpv OSD (`#1E1E22` on `#F3F3F5`) follow the same palette. |
+| `dither-flux` | Dither art + algorithmic art: wallpapers are generative fields (flow field, Clifford attractor) quantized with an 8×8 Bayer raster, in the rainy `milford-water` palette from a Milford Sound frame; the only rice with `FLUX_WALL_DITHER=1`, so shaders with dithering — music visualizations included — use the same 1px Bayer raster (other rices and the `spectrogram` shader use a smooth gradient) — wet mountains `#0F1A24`, steel water `#5C87A3`, mist `#A8C4D4`, foam `#D8E6EE` as an accent; amber `#E0A23C` is the only warm color and is reserved for alarms only. Geometry follows the raster: **zero rounding**, 1px window borders, **blur and shadow disabled** (blur and dither are contradictory materials), waybar/rofi/mako islands as flat, near-opaque panels. Full own set: waybar (with a launcher), rofi, alacritty (ANSI toned to the palette but still distinguishable), mako, swayosd, hyprlock (1px lines, no glow), fastfetch (distro logo in foam), MangoHud, nvim (hand-tuned colorscheme); networkmanager-dmenu from `white-blue` via symlink. Wallpapers: the `dither-flux` set from `gen_dither_flux_wallpaper.py`. ncmpcpp skin (foam `#D8E6EE` as the accent, water `#5C87A3` as the elapsed bar, plate `#1B3040` as the empty part, flat — no bold) and mpv OSD (foam on `#0F1A24`). |
 
 **yin — contrast on glass.** Text must stay at WCAG 4.5:1 or more with the glass over the brightest part of the wallpaper. The worst case is computed from the `yin` wallpaper itself: its brightest pixel is `#D8D8DE` (the rim), and after even a light blur (Gaussian σ = 8 px, weaker than Hyprland's 3 passes) the brightest spot under the glass is `#454548`. With alacritty's 0.82 opacity that makes the effective background `#161618` (solid: `#0C0C0E`). On it: text `#E6E6EA` 14.5:1, the darkest ANSI text grey (blue `#868690`) 5.0:1, ember `#E0805A` 6.4:1, ash `#8C8C96` 5.4:1; black on ember (critical alarms) 6.9:1. Only bright black `#5E5E66` (2.8:1) stays below — it is used for dimmed hints and backgrounds, not for text you read. Even with blur off and the bare rim behind the glass (`#313133`), text keeps 10.4:1. Waybar plates (graphite at alpha 0.62 over the same worst spot, effective `#252528`): paper 12.3:1, module text `#D7D7DC` 10.7:1, ash 4.6:1, ember 5.4:1; rofi (0.72), mako (0.78) and swayosd (0.80) are denser and only higher.
 
-**yin wallpaper source and license.** `wallpapers/yin/*.png` are computed by `scripts/wallpapers/gen_yin_wallpaper.py` in this repository from formulas only (no third-party images, photos, logos or film stills), so they carry no third-party rights and are distributed on the same terms as the rest of the repository; rerun `python3 scripts/wallpapers/gen_yin_wallpaper.py` to rebuild them. The PNGs use an indexed palette (≤ 256 greys), which keeps the pair under 1 MB while the ±½-level random rounding prevents banding in the dark gradient. The fastfetch taijitu in `rices/yin/fastfetch/logo.txt` is a traditional public-domain symbol drawn for this repository.
+**yin wallpaper source and license.** `wallpapers/yin/*.png` are computed by `scripts/wallpapers/gen_yin_wallpaper.py` in this repository from formulas only (no third-party images, photos, logos or film stills), so they carry no third-party rights and are distributed on the same terms as the rest of the repository; rerun `python3 scripts/wallpapers/gen_yin_wallpaper.py` to rebuild them. The PNGs use an indexed palette (≤ 256 greys), which keeps the pair under 1 MB while the ±½-level random rounding prevents banding in the dark gradient.
 
-Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config`. Switching: `Super + T` — the menu shows scripts from `scripts/changing-theme-scripts/` (the `.sh` file name is the menu label: `white-blue`, `tron`, `asia-n-rice`, `dither-flux`, `crt`, `yin`, `white-blue_beta`). On switching, the old rice's symlinks are cleaned up, so themes don't mix.
+**yang — palette and contrast on glass.** `yang` is `yin` with the lightness inverted: the same cool neutral greys (blue a few levels above red and green), each placed at L\* ≈ 100 − its `yin` counterpart, so the steps keep their spacing and their order of contrast. Paper `#F3F3F5` (background), milk `#EEEEF1`/`#E1E1E5` (plates), slate `#CCCCD0` (frames, ANSI black — a background, not text), smoke `#8C8C96` (non-text only: edges and tracks, 3.0:1 on paper), dim `#67676E` (ANSI bright black, line numbers), ash `#5E5E66` (secondary text, empty workspaces, ANSI blue), graphite `#46464C` (workspace numbers), mist `#3B3B41` (hover), `#232327` (module text, ANSI white), ink `#1E1E22` (text), black `#0C0C0E` (accent: active workspace, cursor, active border, keywords); rust `#A23A10` is the only warm color and is reserved for alarms (critical battery, urgent workspace, critical notifications, errors, ANSI red), dark rust `#7E2E0E` is its warning step (ANSI bright red). ANSI keeps `yin`'s order of contrast rather than the names' literal lightness: white is the darkest text grey and black the lightest plate, so programs written for dark terminals stay readable. Unlike `white-blue` (white glass bar and rofi, blue accent `#0148ED`, dark terminal), `yang` has no hue at all and its terminal is light too. The worst case is computed from the `yang` wallpaper itself: its darkest pixel is `#6E6E73` (the rim), and after a light blur (Gaussian σ = 8 px, weaker than Hyprland's 3 passes) and the blur's contrast 0.95 the darkest spot under the glass is `#BEBEC2` (brightness stays 1.0 — `yang` must not darken what is under the glass). With alacritty's 0.82 opacity that makes the effective background `#E9E9EC` (solid: `#F3F3F5`). On it: ink `#1E1E22` 13.7:1, the lightest ANSI text grey (blue `#5E5E66`) 5.3:1, dim `#67676E` 4.6:1, rust `#A23A10` 5.5:1, dark rust 7.6:1; paper on rust (critical alarms) 6.0:1, paper on black (active workspace) 17.6:1. Even with blur off and the bare rim behind the glass (`#DBDBDE`), ink keeps 12.0:1 and ash 4.7:1. Waybar plates (milk at alpha 0.62 over the same worst spot, effective `#DCDCDF`): ink 12.1:1, module text `#232327` 11.4:1, workspace numbers 6.9:1, ash 4.7:1, rust 4.9:1; rofi (0.72, ash 4.9:1), mako (0.78) and swayosd (0.80) are denser and only higher. Dimmed inactive windows (`dim_inactive`) are outside the rule, as WCAG exempts inactive components.
+
+**yang wallpaper source and license.** `wallpapers/yang/*.png` are computed by `scripts/wallpapers/gen_yang_wallpaper.py` in this repository from formulas only (no third-party images, photos, logos or film stills) — the negative of the `yin` eclipse with its own constants and seed, so they carry no third-party rights and are distributed on the same terms as the rest of the repository; rerun `python3 scripts/wallpapers/gen_yang_wallpaper.py` to rebuild them. The output is deterministic (a fixed seed for the ±½-level random rounding), so two runs give byte-identical PNGs.
+
+**fastfetch logo.** Every rice (`white-blue_beta` included) shows fastfetch's built-in logo of the distribution it detects — Arch on Arch, Fedora on Fedora, NixOS on NixOS, and a derivative such as EndeavourOS gets its own — recolored with the rice's palette (`"type": "builtin"` with no fixed `"source"`). Colors 1–6 are set in every rice, because the NixOS logo uses six color slots (Arch and Fedora use two); a missing slot would leave that part in fastfetch's default color. The logo is drawn by fastfetch from its own character set; the repository ships no distribution logo file. `tests/fastfetch-logo.sh` guards this.
+
+Each rice is a folder in `rices/` whose subfolders are symlinked into `~/.config`. Switching: `Super + T` — the menu shows scripts from `scripts/changing-theme-scripts/` (the `.sh` file name is the menu label: `white-blue`, `tron`, `asia-n-rice`, `dither-flux`, `crt`, `yin`, `yang`, `white-blue_beta`). On switching, the old rice's symlinks are cleaned up, so themes don't mix.
 
 The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/preview.png` (`RICE_NAME` read from the stub, so the label doesn't have to match the folder). The committed files are **mock-ups** drawn by `scripts/wallpapers/gen_rice_preview.py` from the colors each rice actually declares — the wallpaper motif in the `flux-wall.conf` palette, waybar islands from `waybar/style.css`, a terminal with the border/rounding from `hypr/hyprland.lua` and the ANSI palette from `alacritty/alacritty.toml` (`python3 scripts/wallpapers/gen_rice_preview.py [rice…]` regenerates them). A real screenshot is better: take one with `Super + Print` (drag over the whole screen; it lands in `~/Screenshots`) and copy it over `rices/<rice>/preview.png` — any size works, the menu just scales it. A rice without the file is listed without a picture.
 
@@ -652,7 +678,7 @@ The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/
 
 ### App launcher
 
-`Super+R` and the bar's app launcher call `scripts/rofi/rofi_drun.sh`. In `crt`, `dither-flux`, `tron` and `yin` the bar's launcher (left click: apps, right click: power menu) shows your distribution's logo by default — the Nerd Font glyph of Arch (also for Arch derivatives such as EndeavourOS or Manjaro), Fedora or NixOS, and a generic Linux glyph for anything else, read from `/etc/os-release` — and optionally the archenemy Æ logo in the rice's colour. Pick it in `Super+A` → `[l] bar logo`; the choice is saved in `data/launcher-logo.dat` (outside the rice, so it survives a rice switch) and applied at once (waybar signal 12, `scripts/waybar/launcher-logo.sh`). `white-blue`, `white-blue_beta` and `asia-n-rice` have no launcher module. See "Logo". It opens rofi's desktop-entry launcher and gates manually typed commands by checking their first command token against `.desktop` `Exec=` lines. With normal desktop entries present, unmatched commands are ignored. If no `Exec=` entries can be read, the gate allows commands as a compatibility fallback. This is an application launcher, not a shell sandbox.
+`Super+R` and the bar's app launcher call `scripts/rofi/rofi_drun.sh`. In `crt`, `dither-flux`, `tron`, `yin` and `yang` the bar's launcher (left click: apps, right click: power menu) shows your distribution's logo by default — the Nerd Font glyph of Arch (also for Arch derivatives such as EndeavourOS or Manjaro), Fedora or NixOS, and a generic Linux glyph for anything else, read from `/etc/os-release` — and optionally the archenemy Æ logo in the rice's colour. Pick it in `Super+A` → `[l] bar logo`; the choice is saved in `data/launcher-logo.dat` (outside the rice, so it survives a rice switch) and applied at once (waybar signal 12, `scripts/waybar/launcher-logo.sh`). `white-blue`, `white-blue_beta` and `asia-n-rice` have no launcher module. See "Logo". It opens rofi's desktop-entry launcher and gates manually typed commands by checking their first command token against `.desktop` `Exec=` lines. With normal desktop entries present, unmatched commands are ignored. If no `Exec=` entries can be read, the gate allows commands as a compatibility fallback. This is an application launcher, not a shell sandbox.
 
 ## Logo
 
@@ -666,9 +692,9 @@ The `Super + T` menu is a grid of pictures: each entry shows `rices/<RICE_NAME>/
 The archenemy mark is the ligature **Æ** — **A**rch**E**nemy: the right leg of the A and the stem of the E are one shared vertical stroke. It is the project's own mark, drawn as plain SVG geometry (no font glyphs), and not the logo of Arch Linux or of any other distribution.
 
 - `assets/logo/archenemy-ae.svg` — the base mark, white on transparency.
-- `assets/logo/rices/<rice>.svg` — the same shape in each rice's colour (`yang` is ready for the planned yin/yang pair's second rice); `assets/logo/README.md` lists the colours and where each one comes from.
+- `assets/logo/rices/<rice>.svg` — the same shape in each rice's colour (`yin` and `yang` are the white and black halves of the yin/yang pair); `assets/logo/README.md` lists the colours and where each one comes from.
 - `assets/logo/banner-dark.svg`, `banner-light.svg` — the mark with the `archenemy` wordmark (also drawn as paths), shown at the top of this file by GitHub theme; `wordmark-white.svg` / `wordmark-black.svg` are the same without a background, and `social-preview.png` is the repository's link preview (uploaded by hand, see `assets/logo/README.md`).
-- In the bar, `crt`, `dither-flux`, `tron` and `yin` can show it as the app launcher when you pick `archenemy logo` in `Super+A` → `[l]`; the default there is your distribution's glyph (see "App launcher").
+- In the bar, `crt`, `dither-flux`, `tron`, `yin` and `yang` can show it as the app launcher when you pick `archenemy logo` in `Super+A` → `[l]`; the default there is your distribution's glyph (see "App launcher").
 
 ## Fonts
 
@@ -677,7 +703,7 @@ Each rice has a fixed default font. `Super + A` → `[f] fonts` keeps it or repl
 | Rice | Terminal (alacritty) | rofi | waybar | mako | hyprlock |
 |---|---|---|---|---|---|
 | `white-blue` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
-| `tron`, `crt`, `dither-flux`, `yin` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
+| `tron`, `crt`, `dither-flux`, `yin`, `yang` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
 | `asia-n-rice` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | IosevkaTerm Nerd Font 12px | JetBrainsMono Nerd Font 11 | JetBrainsMono Nerd Font |
 | `white-blue_beta` | JetBrainsMono Nerd Font 11.5 | JetBrainsMono Nerd Font 11 | Iosevka Nerd Font 12px | from `white-blue` | from `white-blue` |
 
@@ -779,7 +805,7 @@ Nothing here is required: `mpd`, `mpc`, `ncmpcpp` (and `mpv`) live in `packages/
 ## Clipboard history
 
 `Super+C` opens `scripts/rofi/rofi_clipboard.sh` in the current rice's rofi theme
-(all six non-beta rices). Select an entry to copy its full text or image, then
+(all seven non-beta rices). Select an entry to copy its full text or image, then
 paste with `Ctrl+V`. Esc closes the menu. Text previews occupy one line; image
 previews use the shared thumbnail library with a time budget and a private,
 temporary cache under `$XDG_CACHE_HOME` (default `~/.cache`), removed on exit.
@@ -813,7 +839,7 @@ the Fedora packages (`bluez` — bluetoothctl —, `dbus-tools` — dbus-monitor
 the icon on yourself with `touch ~/archenemy/data/bluetooth-enabled.dat` once
 `bluetoothctl show` lists your adapter.
 
-Reload waybar after installation (or switch rice with `Super+T`). The six
+Reload waybar after installation (or switch rice with `Super+T`). The seven
 non-beta rices include `custom/bluetooth`; it emits empty text without the
 flag, `bluetoothctl`, `timeout` (coreutils), Python or a controller. With a
 controller it shows off, on or connected, with connected device names in the tooltip. Updates come
@@ -848,7 +874,7 @@ notification. Controllers plugged in later or a `bluetooth.service` restart
 are powered on again by AutoEnable and left that way until the next login. To
 forget the choice: `rm ~/archenemy/data/bluetooth-power.dat`.
 
-Live-only: in each of the six rices (beta excluded) inspect the icon, connect headphones,
+Live-only: in each of the seven rices (beta excluded) inspect the icon, connect headphones,
 check the tooltip and both clicks, remove/replug the controller and verify
 `systemctl is-enabled bluetooth` and `systemctl is-active bluetooth` after reboot.
 Right-click off, reboot: the off icon stays and `bluetoothctl show | grep Powered`
@@ -882,7 +908,7 @@ frozen — bugfixes only).
 
 ## Keyboard shortcuts
 
-These tables describe the six non-beta rices. `white-blue_beta` retains its legacy binds: it has no built-in `Super+A`, `Super+C`, `Super+Tab`, `Super+Ctrl+1…4` or power-menu bind. Open settings there through rofi or the `archenemy` alias.
+These tables describe the seven non-beta rices. `white-blue_beta` retains its legacy binds: it has no built-in `Super+A`, `Super+C`, `Super+Tab`, `Super+Ctrl+1…4` or power-menu bind. Open settings there through rofi or the `archenemy` alias.
 
 ### Apps
 
@@ -1068,7 +1094,7 @@ package supplies `pgrep` for daemon status; no daemon arguments are published. *
 Hyprland running, run both report modes, check the Super+A status against the
 actual shortcut, inspect link/package results, and repeat from a TTY without
 Hyprland; on Fedora and NixOS compare both modes with the real packages and
-services, also in the yin rice, and run the private gaming dump before and
+services, also in the yin and yang rices, and run the private gaming dump before and
 during a game. No new settings-menu entry is added.
 
 ## Updating and supply chain

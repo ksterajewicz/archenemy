@@ -51,11 +51,11 @@ launcher glyph, `#custom-launcher.distro`, or its accent).
 | `white-blue` | `#0148ED` | active workspace | no — the rice has no launcher |
 | `white-blue_beta` | `#0148ED` | active workspace | no — the rice has no launcher |
 | `yin` | `#FFFFFF` | `#custom-launcher.distro` colour | yes |
-| `yang` | `#0C0C0E` | yin's dark text colour | no — there is no `yang` rice yet |
+| `yang` | `#0C0C0E` | `#custom-launcher.distro` colour | yes |
 
 ## How the bar uses it
 
-In `crt`, `dither-flux`, `tron` and `yin` the waybar module `custom/launcher`
+In `crt`, `dither-flux`, `tron`, `yin` and `yang` the waybar module `custom/launcher`
 shows the mark only in the **archenemy** mode, picked in `Super+A` → `[l] bar
 logo`; the default mode shows the user's distribution glyph (a Nerd Font
 character chosen from `/etc/os-release`, not part of this mark). The module's

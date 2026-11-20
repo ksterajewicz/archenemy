@@ -1,0 +1,41 @@
+# archenemy - mako config (yang rice)
+# made by kst - https://github.com/ksterajewicz
+
+font=JetBrainsMono Nerd Font 11
+width=360
+height=140
+margin=12
+padding=16
+anchor=top-right
+layer=overlay
+
+# Jasne matowe szkło: mleko #EEEEF1 z alfą ~0.78 (blur łapie ≥ 0.5), tekst
+# w tuszu #1E1E22, krawędź tafli = czarna linia z alfą ~0.16. Rogi 12 px jak
+# okna i waybar.
+background-color=#EEEEF1C7
+text-color=#1E1E22
+border-size=1
+border-color=#0C0C0E29
+border-radius=12
+progress-color=over #0C0C0E1F
+
+default-timeout=5000
+max-history=20
+group-by=app-name
+icons=1
+max-icon-size=40
+
+[urgency=low]
+# Popiół — tekst drugorzędny (5,0:1 na najgorszym tle szkła mako).
+text-color=#5E5E66
+default-timeout=3500
+
+[urgency=critical]
+# Rdza — jedyny ciepły kolor palety, wyłącznie alarmy (papier na rdzy 6,0:1)
+background-color=#A23A10F2
+text-color=#F3F3F5
+border-color=#A23A10
+default-timeout=0
+
+[mode=do-not-disturb]
+invisible=1

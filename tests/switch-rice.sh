@@ -15,6 +15,8 @@
 #   rices/ przed podlinkowaniem nowego (brak wycieku poprzedniego rice'a).
 #   T7 (audyt 2026-11-05): zajęta blokada musi kończyć się kodem 1 bez
 #   zmiany rice'a — mutant „kod 0” przechodził cały run-all.
+#   yang (2026-11-20): prawdziwe stuby yin.sh → yang.sh na kopii rices/:
+#   każdy folder yang podlinkowany, nic z yin, launcher/rofi/hyprlock yang.
 #   Uruchom: bash tests/switch-rice.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -160,6 +162,37 @@ check "błąd configu: bez 'applied'"                       '! grep -q "applied"
 check "błąd configu: treść błędu w powiadomieniu"         'grep -q "NOTIFY: .*config error.*bad rule in beta" "$MOCK_LOG"'
 : > "$MOCK_LOG"; HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw alfa
 check "czysty config: reload i Rice applied"              'grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Rice .alfa. applied" "$MOCK_LOG"'
+
+echo "== Super+T yin → yang: prawdziwe stuby i katalogi rices/yin, rices/yang"
+# Kopie prawdziwych rice'ów (white-blue = cel względnych linków
+# networkmanager-dmenu i ncmpcpp/bindings; assets/logo/rices = cel
+# waybar/launcher.svg) w osobnej atrapie $HOME — repo zostaje nietknięte.
+Y="$T/home-yang"; YA="$Y/archenemy"; YC="$Y/.config"
+mkdir -p "$YA/rices" "$YA/scripts/changing-theme-scripts" "$YA/scripts/wallpapers" "$YA/assets/logo" "$YC"
+for r in white-blue yin yang; do cp -a "$REPO/rices/$r" "$YA/rices/$r"; done
+cp -a "$REPO/assets/logo/rices" "$YA/assets/logo/rices"
+ln -s "$REPO/scripts/changing-theme-scripts/lib" "$YA/scripts/changing-theme-scripts/lib"
+ln -s "$REPO/scripts/hypr" "$YA/scripts/hypr"
+ln -s "$REPO/scripts/lib" "$YA/scripts/lib"
+cp "$REPO/scripts/changing-theme-scripts/yin.sh" "$REPO/scripts/changing-theme-scripts/yang.sh" "$YA/scripts/changing-theme-scripts/"
+cp "$A/scripts/wallpapers/flux-wall.sh" "$YA/scripts/wallpapers/flux-wall.sh"
+HOME="$Y" bash "$YA/scripts/changing-theme-scripts/yin.sh" >/dev/null 2>&1
+: > "$MOCK_LOG"
+HOME="$Y" bash "$YA/scripts/changing-theme-scripts/yang.sh" >/dev/null 2>&1; yang_rc=$?
+mapfile -t yang_dirs < <(cd "$YA/rices/yang" && for d in */; do echo "${d%/}"; done)
+yang_bad=""
+for d in "${yang_dirs[@]}"; do [[ "$(readlink "$YC/$d")" == "$YA/rices/yang/$d" ]] || yang_bad+=" $d"; done
+check "stub yang.sh: kod 0, .current_rice = yang"         '[[ $yang_rc -eq 0 && "$(<"$YA/.current_rice")" == yang ]]'
+check "każdy z ${#yang_dirs[@]} katalogów rices/yang podlinkowany${yang_bad:+ (brak:$yang_bad)}" '[[ ${#yang_dirs[@]} -ge 12 && -z "$yang_bad" ]]'
+check "żaden link do rices/yin nie został (sprzątanie pary)" '! find "$YC" -maxdepth 1 -type l -lname "*/rices/yin/*" | grep -q .'
+check "linki ~/.config = katalogi yang (nic ponad)"        '[[ $(find "$YC" -maxdepth 1 -type l | wc -l) -eq ${#yang_dirs[@]} ]]'
+check "networkmanager-dmenu przez link do white-blue"     '[[ -f "$YC/networkmanager-dmenu/config.ini" ]]'
+check "waybar/launcher.svg = logo yang (#0C0C0E) przez link" 'grep -q "fill=\"#0C0C0E\"" "$YC/waybar/launcher.svg"'
+check "rofi: @theme yang.rasi istnieje przez link"         'grep -qF "@theme \"~/.config/rofi/themes/yang.rasi\"" "$YC/rofi/config.rasi" && [[ -f "$YC/rofi/themes/yang.rasi" ]]'
+check "hyprlock: tło z hyprlock-background-yang.conf"      'grep -qx "source = ~/archenemy/config/hypr/hyprlock-background-yang.conf" "$YC/hypr/hyprlock.conf"'
+check "flux-wall autostart już dla yang"                   'grep -q "^FLUXWALL autostart rice=yang$" "$MOCK_LOG"'
+check "waybar wystartował od nowa"                         'grep -q "^pkill -x waybar" "$MOCK_LOG"'
+check "repo bez zmian: rices/yang bez nowych linków"       '[[ $(find "$REPO/rices/yang" -type l | wc -l) -eq 4 ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

@@ -6,6 +6,8 @@
 #   sesji (hl.on("hyprland.start")). Pliki warstwy maszynowej, których nie ma
 #   w repo (generuje je install.sh), są pomijane jak brak pliku.
 #   Bez Hyprlanda, bez roota, bez zapisu poza mktemp.
+#   yang (odwrotność yin, 2026-11-20): wynik atrapy dla yang = dla yin —
+#   ten sam backend, różni się tylko wygląd, którego atrapa nie wypisuje.
 #
 #   Powód powstania (audyt 2026-09-23): `flux-wall.sh autostart` stał tylko
 #   w crt i dither-flux, więc animacja wybrana w Super+W (wybór globalny,
@@ -103,12 +105,14 @@ for _, m in ipairs(moves) do
 end
 EOF
 
+declare -A RAN=()
 for cfg in "$REPO"/rices/*/hypr/hyprland.lua; do
     rice="$(basename "$(dirname "$(dirname "$cfg")")")"
     if ! out="$(HOME="$T/home" "$LUA" "$T/harness.lua" "$REPO" "$cfg" 2>&1)"; then
         fail "$rice: config nie wykonał się na atrapie: ${out##*$'\n'}"
         continue
     fi
+    RAN[$rice]="$out"
     n="$(grep -c 'flux-wall.sh autostart' <<< "$out")"
     if [[ "$n" -eq 1 ]]; then ok "$rice: flux-wall autostart dokładnie raz"
     else fail "$rice: flux-wall autostart $n razy (ma być 1)"; fi
@@ -137,6 +141,20 @@ for cfg in "$REPO"/rices/*/hypr/hyprland.lua; do
     if [[ "$n" -eq 1 ]]; then ok "$rice: Super+Tab → window-history.sh restore"
     else fail "$rice: bind Super+Tab $n razy (ma być 1)"; fi
 done
+
+# yang = odwrotność yin z TYM SAMYM backendem: oba configi wykonały się na
+# atrapie, a autostart, bindy i reguły okien (pozycje z `move`) są identyczne —
+# różnić się może tylko wygląd (kolory, blur, cień), którego atrapa nie wypisuje.
+if [[ -n "${RAN[yin]:-}" && -n "${RAN[yang]:-}" ]]; then
+    ok "yin i yang: hyprland.lua wykonane na atrapie hl"
+    if [[ "${RAN[yin]}" == "${RAN[yang]}" ]]; then
+        ok "yang = yin: te same procesy startowe, bindy i reguły okien ($(wc -l <<< "${RAN[yang]}") wierszy)"
+    else
+        fail "yang różni się od yin poza wyglądem: $(diff <(printf '%s\n' "${RAN[yin]}") <(printf '%s\n' "${RAN[yang]}") | head -5 | tr '\n' ' ')"
+    fi
+else
+    fail "hyprland.lua yin/yang nie wykonał się (wykonane: ${!RAN[*]})"
+fi
 
 # ─── scripts/hypr/polkit-agent.sh na atrapie systemctl ───────────────────────
 echo "== polkit-agent.sh"

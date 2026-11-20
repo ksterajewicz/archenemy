@@ -519,7 +519,7 @@ esac
             check('SKIPPED=Bluetooth' in result.stdout and 'retry: bash' in result.stdout, 'porażka [10] w podsumowaniu z poleceniem')
         else:
             check('DONE=Bluetooth enabled' in result.stdout, 'sukces [10] w podsumowaniu')
-    for rice in ['white-blue', 'tron', 'asia-n-rice', 'dither-flux', 'crt', 'yin']:
+    for rice in ['white-blue', 'tron', 'asia-n-rice', 'dither-flux', 'crt', 'yin', 'yang']:
         text = (repo / 'rices' / rice / 'waybar/config.jsonc').read_text()
         config = json.loads(re.sub(r'//[^\n]*', '', text))
         module = config['custom/bluetooth']

@@ -1,0 +1,122 @@
+/*
+ * rofi theme — yang rice (papier z czarnym akcentem, jasne matowe szkło)
+ * accent: #0C0C0E (czerń) | text: #232327 | dim: #5E5E66 | urgent: #A23A10 (rdza — wyłącznie alarmy)
+ * bg: mleko #EEEEF1 z alfą 0.72 (≥ ignore_alpha 0.5 → blur Hyprlanda = matowe szkło)
+ * layout: center | corners: 12 — jak tafle okien i wyspy waybara
+ * Kontrast na najgorszym tle (szkło nad najciemniejszym miejscem tapety,
+ * efektywnie #E1E1E4): tekst 12,0:1, popiół 4,9:1, rdza 5,1:1 (README, yang).
+ */
+
+* {
+    bg:          rgba(238, 238, 241, 0.72);
+    bg-selected: rgba(12, 12, 14, 0.08);
+    fg:          #232327;
+    fg-dim:      #5E5E66;
+    accent:      #0C0C0E;
+    bright:      #0C0C0E;
+    urgent:      #A23A10;
+    border-col:  rgba(12, 12, 14, 0.12);
+
+    background-color: transparent;
+    text-color:       @fg;
+    font:             "JetBrainsMono Nerd Font 11";
+}
+
+window {
+    background-color: @bg;
+    border:           1px solid;
+    border-color:     @border-col;
+    border-radius:    12px;
+    width:            520px;
+    padding:          0px;
+    location:         center;
+}
+
+mainbox {
+    background-color: transparent;
+    children:         [ inputbar, listview ];
+    spacing:          0px;
+    padding:          0px;
+}
+
+/* ── Input bar ──────────────────────────────────────── */
+inputbar {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          16px 20px;
+    spacing:          12px;
+    children:         [ prompt, entry ];
+    border:           0px 0px 1px 0px solid;
+    border-color:     rgba(12, 12, 14, 0.08);
+}
+
+prompt {
+    background-color: transparent;
+    text-color:       @accent;
+    font:             "JetBrainsMono Nerd Font 11";
+    vertical-align:   0.5;
+}
+
+entry {
+    font:             "JetBrainsMono Nerd Font 11";
+    vertical-align:   0.5;
+    background-color: transparent;
+    text-color:       @bright;
+    placeholder:      "Search…";
+    placeholder-color: @fg-dim;
+    cursor-color:     @accent;
+    cursor-width:     2px;
+    expand:           true;
+}
+
+/* ── List ───────────────────────────────────────────── */
+listview {
+    background-color: transparent;
+    padding:          8px;
+    spacing:          2px;
+    scrollbar:        false;
+    lines:            8;
+    fixed-height:     true;
+    cycle:            true;
+}
+
+element {
+    background-color: transparent;
+    text-color:       @fg;
+    padding:          8px 12px;
+    spacing:          12px;
+    orientation:      horizontal;
+    border-radius:    8px;
+}
+
+element normal.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal {
+    background-color: @bg-selected;
+    text-color:       @bright;
+}
+
+element normal.urgent {
+    text-color: @urgent;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color:       #F3F3F5;
+}
+
+element-icon {
+    background-color: transparent;
+    size:             20px;
+    vertical-align:   0.5;
+}
+
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    vertical-align:   0.5;
+    expand:           true;
+}

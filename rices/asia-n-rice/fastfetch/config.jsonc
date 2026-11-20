@@ -1,9 +1,18 @@
-// archenemy — fastfetch (asia-n-rice). Przeniesiony 1:1 z wcześniejszej
-// wersji tego rice'a: bez bloku logo/color (logo dystrybucji i kolory to
-// domyślne fastfetcha, nie plik z repo) — tak jak tam. Można w każdej chwili przebarwić logo/klucze na mauve (jak
-// robią white-blue/tron), jeśli właściciel zechce parytetu wizualnego.
+// archenemy — fastfetch (asia-n-rice). Moduły przeniesione 1:1 z wcześniejszej
+// wersji tego rice'a; klucze zostają w domyślnych kolorach fastfetcha.
+// Logo: wbudowane logo WYKRYTEJ dystrybucji (type builtin bez source — Arch na
+// Archu, Fedora na Fedorze, NixOS na NixOS), kolory 1–6: Arch i Fedora zużywają
+// $1–$2, NixOS $1–$6 (nieparzyste = pierwszy kolor, parzyste = drugi).
+// asia-n-rice: mauve #B47687 (akcent) i jasny tekst #E8E8E8 (z alacritty).
 {
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+  "logo": {
+    "type": "builtin",
+    "color": {
+      "1": "38;2;180;118;135", "2": "38;2;232;232;232",
+      "3": "38;2;180;118;135", "4": "38;2;232;232;232", "5": "38;2;180;118;135", "6": "38;2;232;232;232"
+    }
+  },
   "modules": [
     "title",
     "separator",

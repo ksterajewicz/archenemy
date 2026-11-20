@@ -46,10 +46,10 @@ mapfile -t WITH < <(cd "$REPO/rices" && grep -l '"custom/launcher"' -- */waybar/
 mapfile -t ALL < <(cd "$REPO/rices" && for d in */; do echo "${d%/}"; done | sort)
 
 echo "== rice'y z custom/launcher"
-if [[ "${WITH[*]}" == "crt dither-flux tron yin" ]]; then
+if [[ "${WITH[*]}" == "crt dither-flux tron yang yin" ]]; then
     ok "launcher mają: ${WITH[*]}"
 else
-    fail "launcher mają: ${WITH[*]:-(żaden)} (oczekiwano crt dither-flux tron yin — nowy rice z launcherem: dopisz go tu i daj mu launcher.svg)"
+    fail "launcher mają: ${WITH[*]:-(żaden)} (oczekiwano crt dither-flux tron yang yin — nowy rice z launcherem: dopisz go tu i daj mu launcher.svg)"
 fi
 
 echo "== config.jsonc: exec launcher-logo.sh, json, format {}, signal 12, bez interval, obie akcje"

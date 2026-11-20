@@ -18,7 +18,8 @@
 #     - stan „complete/partial/unavailable” i kod wyjścia; „Missing: 0” tylko
 #       przy rzeczywiście sprawdzonych pakietach;
 #     - --full: gaming-diag completed / partial (lista kluczy) / timed out;
-#     - rice yin: poprawny, wiszący link, zły link, brak tła hyprlock — oba tryby;
+#     - rice'y yin i yang: poprawny, wiszący link, zły link, brak tła hyprlock —
+#       oba tryby (parytet z rewizją tylko yin: starsza rewizja nie zna yang);
 #     - prywatność: sekrety z os-release, rpm, fc-list i gaming-diag nie trafiają
 #       do raportu; migawka HOME i atrapy korzenia bez zmian; budżet 4,5 s.
 #   Opcja: DOCTOR_PLATFORMS_REV=<rewizja> — scenariusze Archa także na
@@ -96,9 +97,9 @@ for line in (repo / 'packages/platform-map.tsv').read_text().splitlines():
         f = line.split('\t')
         MAP[f[0]] = {'fedora': f[3], 'check': f[6], 'status': f[8]}
 
-# Rice: white-blue i yin z prawdziwymi nazwami katalogów (yin ma też link
-# katalogu networkmanager-dmenu → ../white-blue/…, jak w repo).
-for rice in ('white-blue', 'yin'):
+# Rice: white-blue, yin i yang z prawdziwymi nazwami katalogów (yin i yang
+# mają też link katalogu networkmanager-dmenu → ../white-blue/…, jak w repo).
+for rice in ('white-blue', 'yin', 'yang'):
     for entry in sorted((source / 'rices' / rice).iterdir()):
         target = repo / 'rices' / rice / entry.name
         if entry.is_symlink():
@@ -119,7 +120,8 @@ def link_rice(rice):
 link_rice('white-blue')
 for name in ['monitorshyprl.lua', 'workspaces-monitors.lua', 'hardware-keys.lua', 'gpu-env.lua',
              'autostartpersonalisation.lua', 'appbinds.lua', 'hyprpaper.conf',
-             'hyprlock-background-white-blue.conf', 'hyprlock-background-yin.conf']:
+             'hyprlock-background-white-blue.conf', 'hyprlock-background-yin.conf',
+             'hyprlock-background-yang.conf']:
     path = repo / 'config/hypr' / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch()
@@ -426,28 +428,32 @@ real_gaming.write_text('#!/usr/bin/env bash\necho "diagnosis: partial; not check
 doctor('--full: klucz spoza trybu --doctor odrzucony', full=True, expected=0, contains=['gaming-diag: reported unavailable components'])
 real_gaming.write_text(gaming_text)
 
-# ─── rice yin, oba tryby ─────────────────────────────────────────────────────
-link_rice('yin')
-yin_dirs = sum(1 for p in (repo / 'rices/yin').iterdir() if p.is_dir())
-for full in (False, True):
-    mode = ' --full' if full else ''
-    doctor('yin poprawny' + mode, full=full, expected=0, contains=['Active: yin', f'Expected rice links checked: {yin_dirs}']
-           + (['Link OK: waybar', 'Link OK: networkmanager-dmenu'] if full else []), absent=['stale rice link'])
-    (config / 'mako').unlink()
-    (config / 'mako').symlink_to(repo / 'rices/yin/missing-mako')
-    doctor('yin wiszący link' + mode, full=full, expected=1, contains=['Problem: missing, broken or wrong rice link: mako'])
-    (config / 'mako').unlink()
-    (config / 'mako').symlink_to(repo / 'rices/yin/mako')
-    (config / 'rofi').unlink()
-    (config / 'rofi').symlink_to(repo / 'rices/white-blue/rofi')
-    doctor('yin zły link (do white-blue)' + mode, full=full, expected=1,
-           contains=['Problem: missing, broken or wrong rice link: rofi', 'Problem: stale rice link (name withheld)'])
-    (config / 'rofi').unlink()
-    (config / 'rofi').symlink_to(repo / 'rices/yin/rofi')
-    background = repo / 'config/hypr/hyprlock-background-yin.conf'
-    background.unlink()
-    doctor('yin bez tła hyprlock' + mode, full=full, expected=1, contains=['Problem: required hyprlock background missing'])
-    background.touch()
+# ─── rice'y yin i yang, oba tryby ────────────────────────────────────────────
+# yang (odwrotność yin, ta sama struktura): zły link wskazuje bliźniaczy yin —
+# pomylenie pary też musi być widoczne, nie tylko link do white-blue.
+for rice, other in (('yin', 'white-blue'), ('yang', 'yin')):
+    link_rice(rice)
+    rice_dirs = sum(1 for p in (repo / 'rices' / rice).iterdir() if p.is_dir())
+    for full in (False, True):
+        mode = ' --full' if full else ''
+        doctor(f'{rice} poprawny' + mode, full=full, expected=0,
+               contains=[f'Active: {rice}', f'Expected rice links checked: {rice_dirs}']
+               + (['Link OK: waybar', 'Link OK: networkmanager-dmenu'] if full else []), absent=['stale rice link'])
+        (config / 'mako').unlink()
+        (config / 'mako').symlink_to(repo / 'rices' / rice / 'missing-mako')
+        doctor(f'{rice} wiszący link' + mode, full=full, expected=1, contains=['Problem: missing, broken or wrong rice link: mako'])
+        (config / 'mako').unlink()
+        (config / 'mako').symlink_to(repo / 'rices' / rice / 'mako')
+        (config / 'rofi').unlink()
+        (config / 'rofi').symlink_to(repo / 'rices' / other / 'rofi')
+        doctor(f'{rice} zły link (do {other})' + mode, full=full, expected=1,
+               contains=['Problem: missing, broken or wrong rice link: rofi', 'Problem: stale rice link (name withheld)'])
+        (config / 'rofi').unlink()
+        (config / 'rofi').symlink_to(repo / 'rices' / rice / 'rofi')
+        background = repo / 'config/hypr' / f'hyprlock-background-{rice}.conf'
+        background.unlink()
+        doctor(f'{rice} bez tła hyprlock' + mode, full=full, expected=1, contains=['Problem: required hyprlock background missing'])
+        background.touch()
 link_rice('white-blue')
 
 # ─── parytet Archa z rewizją ─────────────────────────────────────────────────
