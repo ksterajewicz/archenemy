@@ -647,7 +647,11 @@ Rules that follow directly from the table:
   stream's first snapshot adopts a fresh entry equal to the current state
   instead of enforcing the old file (a waybar restart right after a bluetui
   off). The entry is left behind on exit on purpose — the restarted bar must
-  see it.
+  see it. One `flock` (`archenemy-bluetooth.lock` next to it, `LOCK_WAIT`=8 s)
+  serialises the whole right-click transaction (show, write, power, rollback)
+  and every stream save and enforce `power`; a stream save writes only if the
+  file still holds what it held when the change was seen (`save_base`) —
+  otherwise a newer choice won. No `flock` binary = old unlocked behaviour.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

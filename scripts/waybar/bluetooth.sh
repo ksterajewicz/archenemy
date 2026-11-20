@@ -26,7 +26,9 @@
 #   przy starym bluetoothd nie cofa włączenia, które drugi pasek zapisuje.
 #   Przypadki graniczne z przeglądu B3 (B4, 2026-11-20): zmiana w trakcie
 #   potwierdzania jest ogłaszana innym paskom (PENDING_FILE) — pasek
-#   startujący w tym czasie ją przejmuje, zamiast cofać (F1).
+#   startujący w tym czasie ją przejmuje, zamiast cofać (F1); jedna blokada
+#   flock obejmuje PPM (odczyt, zapis, power, wycofanie) oraz zapisy i power
+#   strumieni (F2).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -41,6 +43,8 @@ POWER_FILE="$ROOT/data/bluetooth-power.dat"
 STATE_DIR=${XDG_RUNTIME_DIR:-}
 [[ -n "$STATE_DIR" && -d "$STATE_DIR" && -w "$STATE_DIR" ]] || STATE_DIR=${POWER_FILE%/*}
 PENDING_FILE="$STATE_DIR/archenemy-bluetooth.pending"
+LOCK_FILE="$STATE_DIR/archenemy-bluetooth.lock"
+LOCK_WAIT=8
 WINDOW=15
 CONFIRM=2
 ENFORCE_MAX=3
@@ -114,6 +118,26 @@ save_error() {
     command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" "$1"
 }
 
+# Blokada transakcji (F2 z B3): odczyt wyboru, zapis, power i wycofanie PPM
+# oraz zapisy i power strumieni idą po kolei, więc wycofanie nieudanego PPM
+# nie nadpisze nowszego wyboru. Bez flock albo pliku blokady — jak dawniej;
+# zajęta dłużej niż LOCK_WAIT s = kod 1 (PPM ma wtedy 2× timeout 3 s).
+lock_fd=''
+lock_take() {
+    [[ -z "$lock_fd" ]] || return 0
+    command -v flock >/dev/null 2>&1 || return 0
+    { exec {lock_fd}>>"$LOCK_FILE"; } 2>/dev/null || { lock_fd=''; return 0; }
+    flock -w "$LOCK_WAIT" "$lock_fd" 2>/dev/null && return 0
+    exec {lock_fd}>&-
+    lock_fd=''
+    return 1
+}
+lock_drop() {
+    [[ -n "$lock_fd" ]] || return 0
+    exec {lock_fd}>&-
+    lock_fd=''
+}
+
 # ─── Egzekwowanie i synchronizacja wyboru (opis w nagłówku) ─────────────────
 # Czas w setnych sekundy z /proc/uptime (CLOCK_BOOTTIME: monotoniczny, liczy
 # też uśpienie — okno sprzed uśpienia wygasa po wybudzeniu); bez /proc: SECONDS.
@@ -138,6 +162,7 @@ sleeping=0        # PrepareForSleep(true) … (false)
 shutting=0        # PrepareForShutdown(true)
 snap=''           # migawka z ostatniego tick (dla render)
 save_notified=0
+save_base=''      # plik w chwili zmiany: nowszy wybór kogoś innego wygrywa
 fresh=0           # 1 = pierwsza migawka po starcie strumienia
 pending_mine=''   # nasz wpis w PENDING_FILE
 p_value=''; p_at=0
@@ -214,16 +239,23 @@ classify() {
     esac
     ev_arg=''
 }
+# $1 = zmiana do zapisu, $2 = plik w chwili zmiany. Pod blokadą: plik inny
+# niż wtedy = nowszy wybór (PPM, inny pasek) — ten wygrywa, nic nie piszemy.
 save_choice() {
-    local tmp
-    [[ "$(power_choice)" == "$1" ]] && return 0
-    mkdir -p "${POWER_FILE%/*}" 2>/dev/null
-    if tmp=$(mktemp "$POWER_FILE.XXXXXX" 2>/dev/null); then
-        chmod 644 "$tmp" 2>/dev/null
-        if printf '%s\n' "$1" > "$tmp" 2>/dev/null && mv -f "$tmp" "$POWER_FILE" 2>/dev/null; then
-            return 0
+    local tmp file
+    if lock_take; then
+        file=$(power_choice) || file=''
+        if [[ "$file" == "$1" || "$file" != "$2" ]]; then lock_drop; return 0; fi
+        mkdir -p "${POWER_FILE%/*}" 2>/dev/null
+        if tmp=$(mktemp "$POWER_FILE.XXXXXX" 2>/dev/null); then
+            chmod 644 "$tmp" 2>/dev/null
+            if printf '%s\n' "$1" > "$tmp" 2>/dev/null && mv -f "$tmp" "$POWER_FILE" 2>/dev/null; then
+                lock_drop
+                return 0
+            fi
+            rm -f "$tmp"
         fi
-        rm -f "$tmp"
+        lock_drop
     fi
     # Zasilania nie ruszamy; powiadomienie raz na strumień, stderr zawsze.
     if (( save_notified )); then
@@ -270,6 +302,7 @@ tick() {
         # a no→yes w oknie przy "on"/braku decyzji to AutoEnable).
         if (( ! in_window )) || [[ "$cur" == off ]]; then
             save_value=$cur; save_at=$(( now + CONFIRM * 100 ))
+            save_base=$(power_choice) || save_base=''
             pending_set "$save_value" "$save_at"
         fi
     fi
@@ -283,23 +316,34 @@ tick() {
             # (F1): przejmujemy ją z jego terminem zamiast cofać do starego pliku.
             enforce=0
             save_value=$cur; save_at=$p_at
+            save_base=$(power_choice) || save_base=''
         elif (( retry_at <= now )); then
             if (( enforce_count >= ENFORCE_MAX )); then
                 enforce=0
                 printf '%s\n' "Bluetooth: gave up turning the controller $want after $ENFORCE_MAX attempts." >&2
-            else
-                enforce_count=$(( enforce_count + 1 ))
-                if timeout 3 bluetoothctl power "$want" >/dev/null 2>&1; then
-                    enforce=0; retry_at=0; known=$want
-                    pending_drop
-                    return 0
-                fi
+            elif ! lock_take; then
                 retry_at=$(( now + 100 ))
+            else
+                # Wybór ponownie pod blokadą: PPM mógł go właśnie zmienić.
+                want=$(power_choice) || want=''
+                if [[ -z "$want" || "$want" == "$cur" ]]; then
+                    enforce=0
+                else
+                    enforce_count=$(( enforce_count + 1 ))
+                    if timeout 3 bluetoothctl power "$want" >/dev/null 2>&1; then
+                        lock_drop
+                        enforce=0; retry_at=0; known=$want
+                        pending_drop
+                        return 0
+                    fi
+                    retry_at=$(( now + 100 ))
+                fi
+                lock_drop
             fi
         fi
     fi
     if [[ -n "$save_value" ]] && (( save_at <= now )); then
-        [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && save_choice "$save_value"
+        [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && save_choice "$save_value" "$save_base"
         pending_drop
     fi
     return 1
@@ -322,6 +366,11 @@ case "${1:-stream}" in
     status) render; exit ;;
     toggle)
         [[ -f "$FLAG" ]] && command -v bluetoothctl >/dev/null && command -v timeout >/dev/null || exit 0
+        # Cała transakcja pod blokadą (F2): drugi PPM czeka na koniec pierwszego.
+        if ! lock_take; then
+            save_error "Bluetooth power not changed: another Bluetooth power change is still running."
+            exit 1
+        fi
         info=$(timeout 3 bluetoothctl show 2>/dev/null) || exit 1
         [[ "$info" == *'Controller '* ]] || exit 0
         if [[ "$info" == *'Powered: yes'* ]]; then power=off; else power=on; fi
@@ -352,7 +401,12 @@ case "${1:-stream}" in
         timeout 3 bluetoothctl power "$power" >/dev/null 2>&1
         rc=$?
         if (( rc != 0 )); then
-            if [[ -n "$prev" ]]; then mv -f "$prev" "$POWER_FILE"; else rm -f "$POWER_FILE"; fi
+            # Wycofanie tylko naszego zapisu (bez flock nikt tego nie gwarantuje).
+            if [[ "$(power_choice)" == "$power" ]]; then
+                if [[ -n "$prev" ]]; then mv -f "$prev" "$POWER_FILE"; else rm -f "$POWER_FILE"; fi
+            else
+                rm -f "$prev"
+            fi
             exit "$rc"
         fi
         [[ -z "$prev" ]] || rm -f "$prev"

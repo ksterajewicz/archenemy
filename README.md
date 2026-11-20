@@ -840,7 +840,11 @@ have no power key. So the choice lives in `data/bluetooth-power.dat` (`on` or
 keeps it:
 
 - **Every deliberate change is saved.** Right-click writes the file before it
-  changes power. Turning Bluetooth on or off anywhere else — bluetui,
+  changes power; overlapping clicks and saves from the bars take turns
+  (`flock` on `$XDG_RUNTIME_DIR/archenemy-bluetooth.lock`), so a click whose
+  power change failed restores the old file without overwriting a newer
+  choice, and a newer choice always wins over an older change still being
+  saved. Turning Bluetooth on or off anywhere else — bluetui,
   blueman, a phone, `bluetoothctl` — is saved by the stream once the new
   state has held for 2 seconds.
 - **The system's own power-on is undone.** For 15 seconds after the events
