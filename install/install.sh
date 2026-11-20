@@ -1362,6 +1362,9 @@ generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-dither-flux.co
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-crt.conf" "0.60"
 # yin: przygaszony, rozmyty pulpit pod taflą matowego szkła z zegarem.
 generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-yin.conf" "0.60"
+# yang: odwrotność yin — jasny pulpit bez przygaszania (ciemny tekst na jasnej
+# tafli; przyciemnione tło tylko odbierałoby mu kontrastu).
+generate_hyprlock_background "$HYPR_LOCAL_DIR/hyprlock-background-yang.conf" "1.00"
 
 # 8i. Styl paska głośności waybara (przełączalny w Super+A → [v]) — seed
 # domyślny. volume-bar.sh ma fallback "line", ale seed daje wykrywalność

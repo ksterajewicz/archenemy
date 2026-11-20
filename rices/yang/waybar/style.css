@@ -1,0 +1,263 @@
+/* archenemy - waybar style (yang rice)
+ * Tokeny palety yang (te same w alacritty/rofi/mako/hyprlock/nvim) —
+ * odwrotność yin, szarości z odwróconą jasnością:
+ *   papier  #F3F3F5  tło                     mleko  #EEEEF1 / #E1E1E5 płyty
+ *   łupek   #CCCCD0  ramki, ANSI black       dym    #8C8C96 tylko nie-tekst
+ *   popiół  #5E5E66  tekst drugorzędny,      grafit #46464C numery
+ *                    puste/wyłączone                         workspace'ów
+ *   mgła    #3B3B41  hover                   tusz   #1E1E22 tekst
+ *   czerń   #0C0C0E  akcent
+ *   rdza    #A23A10  JEDYNY ciepły kolor — wyłącznie alarmy (bateria, urgent)
+ * Wyspy = jasne matowe szkło: mleko z alfą 0.62 (≥ ignore_alpha 0.5 → blur
+ * Hyprlanda je łapie), czarna linia 1 px z alfą 0.10 jako krawędź tafli,
+ * biały refleks u góry, miękki cień ≤ 4 px (rytm 4 px — nie wchodzi w szparę
+ * pasek↔okno). Bez poświat, bez text-shadow: jedyny „blask" to czerń
+ * aktywnego workspace'a.
+ * Kontrast (najgorszy przypadek — szkło nad najciemniejszym, rozmytym
+ * miejscem tapety yang, efektywnie #DCDCDF): tusz 12,1:1, tekst modułów
+ * #232327 11,4:1, numery #46464C 6,9:1, popiół 4,7:1, rdza 4,9:1 —
+ * rachunek w README. Puste workspace'y nie schodzą niżej niż popiół
+ * (każdy tekst ≥ 4,5:1), więc zwykłe są o stopień ciemniejsze (grafit). */
+* {
+    font-family:   "Iosevka Nerd Font", monospace;
+    font-size:     12px;
+    font-weight:   500;
+    border:        none;
+    border-radius: 0;
+    min-height:    0;
+    transition:    background 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+window#waybar {
+    background: transparent;
+    color:      #1e1e22;
+}
+.modules-left {
+    background:    rgba(238, 238, 241, 0.62);
+    color:         #232327;
+    border:        1px solid rgba(12, 12, 14, 0.10);
+    border-radius: 12px;
+    padding:       0 4px;
+    margin:        0 4px 0 0;
+    box-shadow:    0 2px 4px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.50);
+}
+.modules-right {
+    background:    rgba(238, 238, 241, 0.62);
+    color:         #232327;
+    border:        1px solid rgba(12, 12, 14, 0.10);
+    border-radius: 12px;
+    padding:       0 12px;
+    margin:        0 0 0 4px;
+    box-shadow:    0 2px 4px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.50);
+}
+.modules-center {
+    background: transparent;
+}
+#clock {
+    color:          #0c0c0e;
+    font-size:      12.5px;
+    font-weight:    600;
+    padding:        0 16px;
+    background:     rgba(238, 238, 241, 0.62);
+    border:         1px solid rgba(12, 12, 14, 0.10);
+    border-radius:  12px;
+    letter-spacing: 0.08em;
+    box-shadow:     0 2px 4px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.50);
+}
+/* Timer: druga wyspa środka, ta sama tafla co zegar, odsunięta o 4 px = rytm
+   odstępów paska. BEZ reguły `color` — kolor cyfr ustawia timer.sh
+   pango-spanem (hex z Super+A → [t]); płyta zostaje, zmieniają się cyfry. */
+#custom-timer {
+    font-size:      12.5px;
+    font-weight:    600;
+    padding:        0 16px;
+    margin-left:    4px;
+    background:     rgba(238, 238, 241, 0.62);
+    border:         1px solid rgba(12, 12, 14, 0.10);
+    border-radius:  12px;
+    letter-spacing: 0.08em;
+    box-shadow:     0 2px 4px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.50);
+}
+/* Wyłączony w TUI: skrypt zwraca pusty tekst i waybar chowa moduł. Ta klasa
+   zeruje płytę na wypadek, gdyby pusty moduł mimo wszystko został narysowany. */
+#custom-timer.off {
+    padding:    0;
+    margin:     0;
+    background: transparent;
+    border:     none;
+    box-shadow: none;
+}
+/* Launcher na początku lewej wyspy — czarny, oddzielony włosową linią od
+   workspace'ów. Dwa tryby ze scripts/waybar/launcher-logo.sh (klasa w JSON-ie,
+   wybór Super+A → [l]): .distro — glif Nerd Font dystrybucji; .archenemy —
+   logo projektu (Æ) jako obraz. Wspólne: margines i linia (oprawa wyspy
+   w obu trybach).
+   Obraz trybu archenemy: launcher.svg obok tego pliku (śledzony symlink do
+   assets/logo/rices/yang.svg). GTK liczy względny url() od katalogu, z którego
+   Waybar wczytał style.css (~/.config/waybar = link do aktywnego rice'a), więc
+   obraz idzie za zmianą rice'a bez ścieżki bezwzględnej. Waybar podaje plik
+   ścieżką tylko bez kolorów #RRGGBBAA — z nimi wczytuje przepisany CSS jako
+   tekst i względny url() przestaje działać: alfę zapisuj jako rgba()
+   (tests/waybar-launcher.sh). Tekst trybu archenemy to jedna spacja: pusty
+   tekst ukrywa moduł custom. */
+#custom-launcher {
+    margin:        4px 4px 4px 0;
+    border-right:  1px solid rgba(12, 12, 14, 0.10);
+    /* Rozmiar i padding wspólne dla obu trybów: glif dystrybucji i spacja
+       trybu archenemy mają w Iosevka Nerd Font tę samą szerokość (7,5 px przy
+       15 px), więc przełączenie w Super+A → [l] nie zmienia szerokości wyspy. */
+    font-size:     15px;
+    padding:       0 12px 0 8px;
+}
+#custom-launcher.distro {
+    color:         #0c0c0e;
+}
+#custom-launcher.distro:hover {
+    color:         #3b3b41;
+}
+/* Æ w rozmiarze glifu: pole obrazu = font-size (15 px). Tusz Æ zajmuje
+   208/256 pola (12,2 px wysokości), glif Archa przy 15 px ma 12,5 px
+   (Iosevka Nerd Font, bbox nf-md-arch). Pole mieści się w paddingu kafelka,
+   więc bez min-width/min-height. */
+#custom-launcher.archenemy {
+    background-image:    url("launcher.svg");
+    background-repeat:   no-repeat;
+    background-position: center;
+    background-size:     15px 15px;
+}
+#custom-launcher.archenemy:hover {
+    /* Glif jaśnieje do mgły #3B3B41; obraz przygasa o tyle samo. */
+    opacity:             0.80;
+}
+#workspaces {
+    padding: 0 4px;
+}
+#workspaces button {
+    color:         #46464c;
+    background:    transparent;
+    padding:       0 8px;
+    margin:        4px 1px;
+    border-radius: 8px;
+    min-width:     0;
+    /* Rozszerzająca się pigułka aktywnego workspace'a — wzorzec repo */
+    transition:    background 200ms ease, color 200ms ease,
+                   padding 200ms cubic-bezier(0.25, 0.10, 0.25, 1.00);
+}
+#workspaces button.empty {
+    color: #5e5e66;
+}
+#workspaces button:hover {
+    background:  rgba(12, 12, 14, 0.07);
+    color:       #1e1e22;
+    box-shadow:  none;
+}
+#workspaces button.active {
+    /* Aktywny workspace: papier na czerni — jedyne miejsce paska, gdzie
+       czerń jest tłem; promień 8 px = 12 px wyspy minus 4 px odstępu. */
+    background:  #0c0c0e;
+    color:       #f3f3f5;
+    font-weight: 600;
+    padding:     0 12px;
+}
+#workspaces button.urgent {
+    background: #a23a10;
+    color:      #f3f3f5;
+}
+#window {
+    color:       #5e5e66;
+    padding:     0 12px;
+    border-left: 1px solid rgba(12, 12, 14, 0.10);
+    margin-left: 4px;
+    font-size:   11px;
+}
+window#waybar.empty #window,
+window#waybar.solo  #window {
+    background: transparent;
+    border:     none;
+    padding:    0;
+    margin:     0;
+}
+#custom-volumebar,
+#custom-bluetooth,
+#network,
+#battery,
+#tray,
+#custom-profileswitcher,
+#custom-micmute {
+    padding:    0 4px;
+    background: transparent;
+    color:      #232327;
+}
+/* #custom-micmute i #network zaczynają się od glifu ikony z dużym
+   wbudowanym odstępem po lewej (Nerd Font) — z pełnym 4px paddingu
+   przerwa po poprzednim module (profileswitcher/volumebar) wyglądała
+   szerzej niż pozostałe. */
+#custom-micmute,
+#network {
+    padding-left: 1px;
+}
+#custom-profileswitcher {
+    color:       #0c0c0e;
+    font-weight: 600;
+}
+#custom-volumebar:hover,
+#custom-bluetooth:hover,
+#network:hover,
+#battery:hover,
+#custom-profileswitcher:hover,
+#custom-micmute:hover {
+    color: #0c0c0e;
+}
+#custom-volumebar.muted {
+    color: #5e5e66;
+}
+#custom-volumebar.boost {
+    color: #a23a10;
+}
+#network.disconnected {
+    color: #5e5e66;
+}
+#battery.warning {
+    color: #a23a10;
+}
+#battery.critical {
+    /* Rdza — jedyny ciepły kolor palety, wyłącznie alarmy */
+    color:         #f3f3f5;
+    font-weight:   700;
+    background:    #a23a10;
+    border-radius: 8px;
+    margin:        4px 0;
+    padding:       0 8px;
+}
+@keyframes pulse {
+    to { opacity: 0.4; }
+}
+#battery.critical:not(.charging) {
+    animation: pulse 1.0s ease-in-out infinite alternate;
+}
+#tray {
+    -gtk-icon-effect: none;
+}
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+}
+tooltip {
+    background:    rgba(238, 238, 241, 0.96);
+    border:        1px solid rgba(12, 12, 14, 0.12);
+    border-radius: 12px;
+    box-shadow:    0 2px 4px rgba(0, 0, 0, 0.14);
+}
+tooltip label {
+    color:   #1e1e22;
+    padding: 4px;
+}
+
+/* Bluetooth: kolory stanu w palecie rice'a; pusty moduł bez odstępów. */
+#custom-bluetooth.disabled { color: #5e5e66; }
+#custom-bluetooth.connected { color: #0c0c0e; }
+#custom-bluetooth.off {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}

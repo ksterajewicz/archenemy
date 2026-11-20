@@ -8,7 +8,7 @@ MAKIETĘ złożoną z kolorów, które rice naprawdę deklaruje — nic nie jest
 wpisane na sztywno poza motywem tła:
   * tło: paleta z rices/<rice>/flux-wall.conf (bg, ink, accent) + motyw
     tapety rice'a (plaster miodu blue-hex / siatka Tron / oscyloskop /
-    dither Bayera / słońce / zaćmienie) — tapet nie da się tu zmniejszyć bez dekodera, więc motyw jest
+    dither Bayera / słońce / zaćmienie / zaćmienie w negatywie) — tapet nie da się tu zmniejszyć bez dekodera, więc motyw jest
     rysowany, nie skalowany,
   * pasek: wyspy waybara z rices/<rice>/waybar/style.css (.modules-left,
     #clock, .modules-right: tło, ramka, promień; aktywny workspace),
@@ -51,6 +51,7 @@ MOTIFS = {
     'dither-flux':     'dither',
     'asia-n-rice':     'sun',
     'yin':             'eclipse',
+    'yang':            'eclipse-negative',
 }
 FALLBACK_PALETTE = {
     'white-blue_beta': ('F7F9FC', '9AA5B1', '0148ED'),
@@ -419,12 +420,39 @@ def motif_eclipse(cv, pal):
                 c = mix(c, ink, min(1.0, 0.35 * math.exp(-d / 20.0) * lit))
             cv.set(x, y, mix(c, mix(acc, ink, 0.12), min(1.0, core)))
 
+def motif_eclipse_negative(cv, pal):
+    """yang: negatyw motywu yin — jasne tło, którego winieta wybiela rogi,
+    jasna tarcza (bielsza od tła) z cienkim ciemnym rantem cienia od lewej
+    góry i słabą szarą poświatą (jak wallpapers/yang)."""
+    bg, ink, acc = pal
+    white = (255.0, 255.0, 255.0)
+    cx, cy, rad = MOTIF_CX, 168.0, 104.0
+    lx, ly = math.cos(math.radians(225.0)), math.sin(math.radians(225.0))
+    for y in range(cv.h):
+        for x in range(cv.w):
+            vx, vy = (x + 0.5) / cv.w - 0.5, (y + 0.5) / cv.h - 0.5
+            v = min(1.0, (vx * vx * 1.6 + vy * vy * 2.2) * 1.4)
+            c = mix(bg, mix(bg, white, 0.55), v * v * (3.0 - 2.0 * v))
+            px, py = x + 0.5 - cx, y + 0.5 - cy
+            r = math.hypot(px, py)
+            d = r - rad
+            lit = 0.5 + 0.5 * ((px * lx + py * ly) / r if r > 0 else 0.0)
+            lit = 0.05 + 0.95 * lit ** 3
+            if d < 0:
+                c = mix(c, mix(bg, white, 0.65), min(1.0, -d / 2.0))
+                core = math.exp(-(d / 1.2) ** 2) * lit
+            else:
+                core = math.exp(-(d / 2.0) ** 2) * lit
+                c = mix(c, ink, min(1.0, 0.15 * math.exp(-d / 20.0) * lit))
+            cv.set(x, y, mix(c, mix(ink, acc, 0.12), min(1.0, core)))
+
 def motif_flat(cv, pal):
     bg, ink, acc = pal
     bg_gradient(cv, bg, mix(bg, acc, 0.12))
 
 MOTIF_FN = {'hex': motif_hex, 'grid': motif_grid, 'scope': motif_scope,
-            'dither': motif_dither, 'sun': motif_sun, 'eclipse': motif_eclipse}
+            'dither': motif_dither, 'sun': motif_sun, 'eclipse': motif_eclipse,
+            'eclipse-negative': motif_eclipse_negative}
 
 # ─── makieta ─────────────────────────────────────────────────────────────────
 

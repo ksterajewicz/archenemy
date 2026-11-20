@@ -145,7 +145,7 @@ try:
 except OSError:
     rice = ''
 # Nazwa musi być katalogiem śledzonego rice, nie dowolną ścieżką z pliku.
-known_rices = {'white-blue', 'white-blue_beta', 'tron', 'asia-n-rice', 'dither-flux', 'crt', 'yin'}
+known_rices = {'white-blue', 'white-blue_beta', 'tron', 'asia-n-rice', 'dither-flux', 'crt', 'yin', 'yang'}
 valid_rice = (rice in known_rices and (repo / 'rices' / rice).is_dir()
               and (repo / 'rices' / rice).resolve().is_relative_to(repo / 'rices'))
 print('  Active: ' + (safe(rice) if valid_rice else 'missing or invalid'))

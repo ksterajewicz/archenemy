@@ -1,0 +1,147 @@
+# made by kst - https://github.com/ksterajewicz
+
+# ─── Font family ───────────────────────────────────────
+# Rodzina fontu rice'a jest w font.toml, a wybór z Super+A → [f] w
+# ~/.config/archenemy/fonts/alacritty.toml (poza repo). Importy wczytują się
+# po kolei, późniejszy wygrywa, brakujący plik jest pomijany; ten plik
+# wczytuje się na końcu, więc nie może ustawiać `family`. Bold/italic
+# biorą rodzinę z [font.normal]; rozmiar i style zostają tutaj.
+[general]
+import = [
+    "~/.config/alacritty/font.toml",
+    "~/.config/archenemy/fonts/alacritty.toml",
+]
+
+# ─── Window ────────────────────────────────────────────
+[window]
+padding        = { x = 16, y = 12 }   # rytm 4 px
+decorations    = "None"
+opacity        = 0.82
+blur           = true
+
+# ─── Font ──────────────────────────────────────────────
+[font]
+size = 11.5
+
+[font.normal]
+style  = "Regular"
+
+[font.bold]
+style  = "Bold"
+
+[font.italic]
+style  = "Italic"
+
+# ─── Cursor ────────────────────────────────────────────
+[cursor]
+style          = { shape = "Block", blinking = "On" }
+blink_interval = 550
+unfocused_hollow = true
+
+# ─── Selection — zaznaczenie = automatyczne kopiowanie ─
+[selection]
+save_to_clipboard = true   # samo zaznaczenie kopiuje do schowka
+
+# ─── Scrollback ────────────────────────────────────────
+[scrolling]
+history    = 10000
+multiplier = 3
+
+# ─── Kolory — yang (papier, mleko, szarości, czerń; jeden ciepły kolor) ──
+# Odwrotność yin: te same chłodne szarości z odwróconą jasnością (L* ≈ 100 −
+# L* odpowiednika w yin). Jasne matowe szkło: tło #F3F3F5 przy opacity 0.82
+# + blur Hyprlanda nad jasną tapetą „zaćmienie w negatywie" (wallpapers/yang).
+# Tekst #1E1E22, kursor i akcent = czerń #0C0C0E.
+# Kolejność KONTRASTU jak w yin, nie dosłowna jasność nazw: white to
+# najciemniejsza szarość tekstu, black to najjaśniejsza płyta (tło, nie
+# tekst) — programy pisane pod ciemny terminal zostają czytelne. Szarości
+# idą RÓWNYMI krokami (L* co ~5: blue 40 → magenta 35 → green 30 → cyan 25 →
+# yellow 20 → white 14; jasne o stopień ciemniej), więc ls, git i składnia
+# dalej niosą informację bez barwy. Jedyny ciepły kolor to rdza #A23A10
+# w miejscu czerwieni (błędy, usunięcia w diffie, alarmy).
+# Kontrast: każdy kolor tekstu (także bright black) ≥ 4,5:1 nawet na szkle
+# nad najciemniejszym miejscem tapety (rachunek: README, rice yang).
+[colors.primary]
+background = "#F3F3F5"
+foreground = "#1E1E22"
+
+[colors.cursor]
+text   = "#F3F3F5"
+cursor = "#0C0C0E"
+
+[colors.vi_mode_cursor]
+text   = "#F3F3F5"
+cursor = "#3B3B41"
+
+[colors.selection]
+text       = "#F3F3F5"
+background = "#232327"
+
+[colors.search.matches]
+foreground = "#F3F3F5"
+background = "#5E5E66"
+
+[colors.search.focused_match]
+foreground = "#F3F3F5"
+background = "#0C0C0E"
+
+[colors.hints.start]
+foreground = "#F3F3F5"
+background = "#0C0C0E"
+
+[colors.hints.end]
+foreground = "#1E1E22"
+background = "#CCCCD0"
+
+# ── Normal colors ──────────────────────────────────────
+[colors.normal]
+black   = "#CCCCD0"          # łupek (płyta widoczna na tle #F3F3F5, nie tekst)
+red     = "#A23A10"          # rdza — jedyny ciepły kolor, wyłącznie alarmy
+green   = "#46464C"          # L* 30
+yellow  = "#303035"          # L* 20
+blue    = "#5E5E66"          # L* 40 — najjaśniejszy kolor tekstu
+magenta = "#525259"          # L* 35
+cyan    = "#3B3B41"          # L* 25
+white   = "#232327"          # L* 14
+
+# ── Bright colors ──────────────────────────────────────
+[colors.bright]
+black   = "#67676E"          # przygaszony — podpowiedzi (L* 44, ≥ 4,5:1)
+red     = "#7E2E0E"          # ciemna rdza
+green   = "#39393F"
+yellow  = "#242428"
+blue    = "#4F4F56"
+magenta = "#44444A"
+cyan    = "#2E2E33"
+white   = "#0C0C0E"          # czerń — akcent
+
+# ─── Keyboard bindings ─────────────────────────────────
+[[keyboard.bindings]]
+key    = "Return"
+mods   = "Control|Shift"
+action = "SpawnNewInstance"
+
+[[keyboard.bindings]]
+key    = "C"
+mods   = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key    = "V"
+mods   = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key    = "Plus"
+mods   = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Minus"
+mods   = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key    = "Key0"
+mods   = "Control"
+action = "ResetFontSize"

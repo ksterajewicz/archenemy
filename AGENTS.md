@@ -93,16 +93,17 @@ Rules that follow directly from the table:
   — edit the library, never paste logic back into a stub (that's how
   copy-paste parity drift happens).
 - **A new rice is listed by name in several places** besides its folder and
-  stub (checked when `yin` was added, 2026-11-17): `install/install.sh` [8h]
+  stub (checked when `yin` was added, 2026-11-17, and again for `yang`,
+  2026-11-20): `install/install.sh` [8h]
   (`hyprlock-background-<rice>.conf`), `.gitignore`, `HYPRLOCK_BG_FILES` in
   `scripts/rofi/rofi_wallpaper_switcher.sh`, `known_rices` in
   `scripts/archenemy-doctor.sh`, `MOTIFS` in
   `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), and the
   hard-coded rice lists in `tests/` (`install-main`, `bluetooth`,
   `keyboard-layouts`, `mouse-settings`, `rofi-clipboard`, `font-settings`,
-  `flux-wall-dither`). Suites that glob `rices/*/` (`rice-autostart`,
-  `tui-contrast`, `rofi-inputbar`, `rofi-theme-switcher`, `fastfetch-logo`)
-  pick it up alone.
+  `flux-wall-dither`, `waybar-launcher` for a rice with a launcher). Suites
+  that glob `rices/*/` (`rice-autostart`, `tui-contrast`, `rofi-inputbar`,
+  `rofi-theme-switcher`, `fastfetch-logo`) pick it up alone.
 - **fastfetch shows the detected distribution's logo on every rice** (owner,
   2026-11-18): `"logo": { "type": "builtin", "color": { "1"…"6" } }` with no
   `"source"` (a fixed `"arch"` showed Arch on Fedora and NixOS) and no logo
