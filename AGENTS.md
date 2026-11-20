@@ -655,7 +655,10 @@ Rules that follow directly from the table:
   A batch ends after 0.3 s of silence OR `BATCH_MAX` (1 s): without the cap a
   steady signal flow (RSSI every 0.1 s) never ticks and the window expires
   unenforced. When the cap ends a batch, `line` already went through
-  `classify` — reset it, or it is replayed as `partial`.
+  `classify` — reset it, or it is replayed as `partial`. A quick rfkill
+  block/unblock merges into one batch whose snapshot already says `on`: the
+  `"off-blocked"` argument of `PropertiesChanged` (`saw_blocked`) must open
+  the window — test it with both messages in ONE batch, not two snapshots.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

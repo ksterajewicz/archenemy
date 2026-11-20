@@ -851,7 +851,8 @@ keeps it:
   where BlueZ powers on by itself — the bar starting (login, waybar restart;
   counted from when `bluetoothd` started), a controller appearing,
   `bluetoothd` starting, waking from sleep (logind `PrepareForSleep`),
-  rfkill being unblocked — a power-on while the file says `off` is switched
+  rfkill being unblocked (also a quick block/unblock seen only in the
+  `PowerState` of the signals) — a power-on while the file says `off` is switched
   off again (at most 3 times per event, so there is no on/off loop) and is
   not saved. Power-off by `bluetoothd` itself when it stops, and changes while
   the system is going to sleep or shutting down, are not saved either. A busy

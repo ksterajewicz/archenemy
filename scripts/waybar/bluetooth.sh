@@ -28,7 +28,8 @@
 #   potwierdzania jest ogłaszana innym paskom (PENDING_FILE) — pasek
 #   startujący w tym czasie ją przejmuje, zamiast cofać (F1); jedna blokada
 #   flock obejmuje PPM (odczyt, zapis, power, wycofanie) oraz zapisy i power
-#   strumieni (F2); seria zdarzeń trwa najwyżej BATCH_MAX s (F3).
+#   strumieni (F2); seria zdarzeń trwa najwyżej BATCH_MAX s (F3); koniec
+#   blokady rfkill rozpoznawany też z argumentów PropertiesChanged (F4).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -167,6 +168,7 @@ save_base=''      # plik w chwili zmiany: nowszy wybór kogoś innego wygrywa
 fresh=0           # 1 = pierwsza migawka po starcie strumienia
 pending_mine=''   # nasz wpis w PENDING_FILE
 p_value=''; p_at=0
+saw_blocked=0     # seria niosła PowerState off-blocked (rfkill, F4)
 # Oczekująca decyzja (F1 z B3): "on|off <termin>" w PENDING_FILE. Zmiana spoza
 # paska czeka CONFIRM s; pasek startujący w tym czasie (drugi monitor, restart
 # waybara) przejmuje ją zamiast cofać do starego pliku. Wpis zostaje po wyjściu
@@ -226,9 +228,15 @@ classify() {
         signal*member=PrepareForShutdown*) ev_arg=shutdown; return ;;
         signal*member=InterfacesAdded*|signal*member=InterfacesRemoved*) ev_arg=object; return ;;
         signal*member=NameOwnerChanged*)   ev_arg=''; open_window; return ;;
+        signal*member=PropertiesChanged*)  ev_arg=props; return ;;
         signal*) ev_arg=''; return ;;
     esac
     case "$ev_arg" in
+        props)
+            # Argumenty do następnego nagłówka; blokada rfkill widoczna w wiadomości,
+            # choć migawka po szybkim block/unblock pokazuje już on (F4).
+            [[ "$line" == *'"off-blocked"'* ]] && saw_blocked=1
+            return ;;
         sleep)
             if [[ "$line" =~ ^[[:space:]]*boolean\ true$ ]]; then sleeping=1; pending_drop
             elif [[ "$line" =~ ^[[:space:]]*boolean\ false$ ]]; then sleeping=0; open_window; fi ;;
@@ -274,7 +282,7 @@ tick() {
     fresh=0
     snap=''
     if [[ ! -f "$FLAG" ]] || ! command -v bluetoothctl >/dev/null || ! command -v timeout >/dev/null; then
-        known=''; pending_drop
+        known=''; pending_drop; saw_blocked=0
         return 1
     fi
     snap=$(timeout 3 bluetoothctl show 2>/dev/null) || snap=''
@@ -284,10 +292,13 @@ tick() {
     else cur=off; fi
     clock
     # Pojawienie się kontrolera i koniec blokady rfkill to zdarzenia systemowe
-    # nawet bez sygnału (np. szybki replug zlany w jedną serię).
-    if [[ "$known" == none && "$cur" != none ]] || [[ "$known" == blocked && "$cur" != blocked ]]; then
+    # nawet bez sygnału (np. szybki replug zlany w jedną serię); blokadę z
+    # wiadomości liczymy przed scaleniem migawek (szybki block/unblock).
+    if [[ "$known" == none && "$cur" != none ]] || [[ "$known" == blocked && "$cur" != blocked ]] \
+        || { (( saw_blocked )) && [[ "$cur" != blocked ]]; }; then
         open_window
     fi
+    saw_blocked=0
     (( now < window_until )) && in_window=1
     if [[ "$cur" == none || "$cur" == blocked ]]; then
         [[ "$known" == "$cur" ]] || pending_drop
