@@ -652,6 +652,10 @@ Rules that follow directly from the table:
   and every stream save and enforce `power`; a stream save writes only if the
   file still holds what it held when the change was seen (`save_base`) —
   otherwise a newer choice won. No `flock` binary = old unlocked behaviour.
+  A batch ends after 0.3 s of silence OR `BATCH_MAX` (1 s): without the cap a
+  steady signal flow (RSSI every 0.1 s) never ticks and the window expires
+  unenforced. When the cap ends a batch, `line` already went through
+  `classify` — reset it, or it is replayed as `partial`.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

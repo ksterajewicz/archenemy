@@ -854,7 +854,9 @@ keeps it:
   rfkill being unblocked — a power-on while the file says `off` is switched
   off again (at most 3 times per event, so there is no on/off loop) and is
   not saved. Power-off by `bluetoothd` itself when it stops, and changes while
-  the system is going to sleep or shutting down, are not saved either.
+  the system is going to sleep or shutting down, are not saved either. A busy
+  bus (device scans flood `PropertiesChanged`) does not delay this: the stream
+  looks at the controller at least once a second.
 - With `on`, a controller left off after such an event is switched on.
   No file, or anything other than exactly `on`/`off`, enforces nothing — the
   system decides; so does a missing icon flag.

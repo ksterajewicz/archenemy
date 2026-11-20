@@ -28,7 +28,7 @@
 #   potwierdzania jest ogłaszana innym paskom (PENDING_FILE) — pasek
 #   startujący w tym czasie ją przejmuje, zamiast cofać (F1); jedna blokada
 #   flock obejmuje PPM (odczyt, zapis, power, wycofanie) oraz zapisy i power
-#   strumieni (F2).
+#   strumieni (F2); seria zdarzeń trwa najwyżej BATCH_MAX s (F3).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -48,6 +48,7 @@ LOCK_WAIT=8
 WINDOW=15
 CONFIRM=2
 ENFORCE_MAX=3
+BATCH_MAX=1       # s — najdłuższa seria zdarzeń przed migawką (F3)
 # Haki testowe tylko z ARCHENEMY_TEST=1 (tests/bluetooth.sh).
 if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
     [[ "${ARCHENEMY_BT_WINDOW:-}" =~ ^[0-9]+$ ]] && WINDOW=$ARCHENEMY_BT_WINDOW
@@ -448,9 +449,17 @@ while :; do
             line=$partial$line; partial=''
             classify "$line"
             if [[ "$line" == signal* ]]; then
-                # Jedna migawka po serii; argumenty sygnałów klasyfikujemy, zaległych
-                # zmian RSSI nie odtwarzamy.
-                while IFS= read -r -t 0.3 -u "$events" line; do classify "$partial$line"; partial=''; done
+                # Jedna migawka po serii (cisza 0,3 s), ale najwyżej co BATCH_MAX s:
+                # ciągły ruch D-Bus (RSSI przy skanowaniu) nie wstrzymuje egzekwowania
+                # w oknie ani potwierdzeń (F3). Argumenty sygnałów klasyfikujemy,
+                # zaległych zmian RSSI nie odtwarzamy.
+                clock; batch_end=$(( now + BATCH_MAX * 100 ))
+                while :; do
+                    clock
+                    if (( now >= batch_end )); then line=''; break; fi
+                    IFS= read -r -t 0.3 -u "$events" line || break
+                    classify "$partial$line"; partial=''
+                done
                 partial=$line
                 step
             fi
