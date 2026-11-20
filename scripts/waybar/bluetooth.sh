@@ -31,7 +31,8 @@
 #   strumieni (F2); seria zdarzeń trwa najwyżej BATCH_MAX s (F3); koniec
 #   blokady rfkill rozpoznawany też z argumentów PropertiesChanged (F4);
 #   odzyskana subskrypcja D-Bus = start strumienia (F5); zmiana w trakcie
-#   zatrzymywania/startu bluetooth.service nie jest zapisywana (F6).
+#   zatrzymywania/startu bluetooth.service nie jest zapisywana (F6);
+#   nieudany zapis decyzji spoza paska jest ponawiany (F8).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -51,11 +52,15 @@ LOCK_WAIT=8
 WINDOW=15
 CONFIRM=2
 ENFORCE_MAX=3
+SAVE_RETRY=5      # s między ponowieniami nieudanego zapisu spoza paska (F8)
+SAVE_TRIES=10     # prób zapisu jednej decyzji, potem tylko pamięć strumienia
 BATCH_MAX=1       # s — najdłuższa seria zdarzeń przed migawką (F3)
 # Haki testowe tylko z ARCHENEMY_TEST=1 (tests/bluetooth.sh).
 if [[ "${ARCHENEMY_TEST:-}" == 1 ]]; then
     [[ "${ARCHENEMY_BT_WINDOW:-}" =~ ^[0-9]+$ ]] && WINDOW=$ARCHENEMY_BT_WINDOW
     [[ "${ARCHENEMY_BT_CONFIRM:-}" =~ ^[0-9]+$ ]] && CONFIRM=$ARCHENEMY_BT_CONFIRM
+    [[ "${ARCHENEMY_BT_SAVE_RETRY:-}" =~ ^[1-9][0-9]*$ ]] && SAVE_RETRY=$ARCHENEMY_BT_SAVE_RETRY
+    [[ "${ARCHENEMY_BT_SAVE_TRIES:-}" =~ ^[1-9][0-9]*$ ]] && SAVE_TRIES=$ARCHENEMY_BT_SAVE_TRIES
 fi
 monitor_pid=''
 sleeper=''
@@ -171,6 +176,16 @@ fresh=0           # 1 = pierwsza migawka po starcie strumienia
 pending_mine=''   # nasz wpis w PENDING_FILE
 p_value=''; p_at=0
 saw_blocked=0     # seria niosła PowerState off-blocked (rfkill, F4)
+# Niezapisana decyzja spoza paska (F8): ponawiana co SAVE_RETRY s (najwyżej
+# SAVE_TRIES prób) i do końca strumienia obowiązuje zamiast pliku, dopóki plik
+# ma treść sprzed niej (nowszy wybór, np. PPM, ją unieważnia).
+unsaved=''; unsaved_base=''; unsaved_tries=0; unsaved_at=0
+will_value=''
+will() {
+    will_value=$(power_choice) || will_value=''
+    [[ -n "$unsaved" ]] || return 0
+    if [[ "$will_value" == "$unsaved_base" ]]; then will_value=$unsaved; else unsaved=''; unsaved_at=0; fi
+}
 # Oczekująca decyzja (F1 z B3): "on|off <termin>" w PENDING_FILE. Zmiana spoza
 # paska czeka CONFIRM s; pasek startujący w tym czasie (drugi monitor, restart
 # waybara) przejmuje ją zamiast cofać do starego pliku. Wpis zostaje po wyjściu
@@ -256,19 +271,34 @@ save_choice() {
     local tmp file
     if lock_take; then
         file=$(power_choice) || file=''
-        if [[ "$file" == "$1" || "$file" != "$2" ]]; then lock_drop; return 0; fi
+        if [[ "$file" == "$1" || "$file" != "$2" ]]; then
+            lock_drop; unsaved=''; unsaved_at=0
+            return 0
+        fi
         mkdir -p "${POWER_FILE%/*}" 2>/dev/null
         if tmp=$(mktemp "$POWER_FILE.XXXXXX" 2>/dev/null); then
             chmod 644 "$tmp" 2>/dev/null
             if printf '%s\n' "$1" > "$tmp" 2>/dev/null && mv -f "$tmp" "$POWER_FILE" 2>/dev/null; then
-                lock_drop
+                lock_drop; unsaved=''; unsaved_at=0
                 return 0
             fi
             rm -f "$tmp"
         fi
         lock_drop
     fi
-    # Zasilania nie ruszamy; powiadomienie raz na strumień, stderr zawsze.
+    # Zasilania nie ruszamy; ponowienie po SAVE_RETRY s, powiadomienie raz na
+    # strumień, stderr zawsze.
+    clock
+    if [[ "$unsaved" != "$1" || "$unsaved_base" != "$2" ]]; then
+        unsaved=$1; unsaved_base=$2; unsaved_tries=0
+    fi
+    unsaved_tries=$(( unsaved_tries + 1 ))
+    if (( unsaved_tries >= SAVE_TRIES )); then
+        unsaved_at=0
+        printf '%s\n' "Bluetooth: gave up saving the choice $1 after $SAVE_TRIES attempts (cannot write $POWER_FILE); this bar keeps it until it exits." >&2
+    else
+        unsaved_at=$(( now + SAVE_RETRY * 100 ))
+    fi
     if (( save_notified )); then
         printf '%s\n' "Bluetooth was turned $1 outside the bar, but the choice was not saved (cannot write $POWER_FILE)." >&2
     else
@@ -317,7 +347,7 @@ tick() {
         known=$cur
         return 1
     fi
-    choice=$(power_choice) || choice=''
+    will; choice=$will_value
     if (( shutting )); then known=$cur; return 1; fi
     if (( in_window )) && [[ "$known" == off && "$cur" == on && "$choice" == off ]]; then
         enforce=1    # AutoEnable po zdarzeniu systemowym
@@ -351,7 +381,7 @@ tick() {
                 retry_at=$(( now + 100 ))
             else
                 # Wybór ponownie pod blokadą: PPM mógł go właśnie zmienić.
-                want=$(power_choice) || want=''
+                will; want=$will_value
                 if [[ -z "$want" || "$want" == "$cur" ]]; then
                     enforce=0
                 else
@@ -372,6 +402,9 @@ tick() {
         [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && ! bluez_changing && save_choice "$save_value" "$save_base"
         pending_drop
     fi
+    if [[ -n "$unsaved" ]] && (( unsaved_at && unsaved_at <= now && ! sleeping )); then
+        save_choice "$unsaved" "$unsaved_base"
+    fi
     return 1
 }
 # Najbliższy termin timera jako argument read -t ('' = brak).
@@ -380,6 +413,7 @@ next_timeout() {
     clock
     [[ -n "$save_value" ]] && at=$save_at
     (( enforce && retry_at > now )) && { (( at == 0 || retry_at < at )) && at=$retry_at; }
+    (( unsaved_at && ! sleeping && ! shutting )) && { (( at == 0 || unsaved_at < at )) && at=$unsaved_at; }
     (( at )) || { printf ''; return; }
     d=$(( at - now )); (( d < 1 )) && d=1
     printf '%d.%02d' $(( d / 100 )) $(( d % 100 ))
@@ -449,7 +483,7 @@ while :; do
         step
         # Bez zdarzeń D-Bus: rzadkie odpytywanie, częstsze w oknie i przy timerach.
         clock
-        if (( enforce || save_at || now < window_until )); then wait_s=1; else wait_s=60; fi
+        if (( enforce || save_at || unsaved_at || now < window_until )); then wait_s=1; else wait_s=60; fi
         sleep "$wait_s" & sleeper=$!
         wait "$sleeper" || :
         sleeper=''

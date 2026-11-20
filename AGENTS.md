@@ -665,7 +665,12 @@ Rules that follow directly from the table:
   Before saving, `systemctl is-active bluetooth.service` = `deactivating`/
   `activating` drops the change: `adapter_shutdown` emits `Powered` false and
   waits for the other adapters (up to 10 s grace) — `NameOwnerChanged` can
-  come later than `CONFIRM`. Mock: `$MOCK_ROOT/unit_state`.
+  come later than `CONFIRM`. Mock: `$MOCK_ROOT/unit_state`. A failed stream
+  save (`unsaved`, `unsaved_base`) is retried every `SAVE_RETRY` s up to
+  `SAVE_TRIES`, and until the stream exits `will` uses it instead of the file
+  while the file still holds `unsaved_base` (a newer choice cancels it); no
+  retry timer while sleeping — `read -t` would spin. Tests:
+  `$MOCK_ROOT/deny-save` (reversible), `ARCHENEMY_BT_SAVE_RETRY`/`_TRIES`.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

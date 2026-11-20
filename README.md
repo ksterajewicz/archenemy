@@ -877,7 +877,8 @@ system and undone — use right-click, or wait a moment. Changes made while no
 bar is running (for example from a TTY) are not seen; at the next login the
 file wins. If `data/` cannot be written, right-click changes nothing and shows
 a notification; a change from elsewhere stays, with a notification that it
-was not saved. Nothing in `/etc` is changed. To forget the choice:
+was not saved, and the bar keeps retrying the save every 5 seconds (10
+attempts) and keeps that choice itself until it exits. Nothing in `/etc` is changed. To forget the choice:
 `rm ~/archenemy/data/bluetooth-power.dat`.
 
 **Optional, for full certainty (system file, not done by archenemy):** with
