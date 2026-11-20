@@ -659,6 +659,9 @@ Rules that follow directly from the table:
   block/unblock merges into one batch whose snapshot already says `on`: the
   `"off-blocked"` argument of `PropertiesChanged` (`saw_blocked`) must open
   the window — test it with both messages in ONE batch, not two snapshots.
+  Every (re)subscription runs `start_window; known=''; fresh=1`: what
+  happened during the 5 s reconnect gap is unknown, so the snapshot is
+  aligned to the file, never saved as a decision (own pending change kept).
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

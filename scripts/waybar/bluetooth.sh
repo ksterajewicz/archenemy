@@ -29,7 +29,8 @@
 #   startujący w tym czasie ją przejmuje, zamiast cofać (F1); jedna blokada
 #   flock obejmuje PPM (odczyt, zapis, power, wycofanie) oraz zapisy i power
 #   strumieni (F2); seria zdarzeń trwa najwyżej BATCH_MAX s (F3); koniec
-#   blokady rfkill rozpoznawany też z argumentów PropertiesChanged (F4).
+#   blokady rfkill rozpoznawany też z argumentów PropertiesChanged (F4);
+#   odzyskana subskrypcja D-Bus = start strumienia (F5).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -323,6 +324,8 @@ tick() {
         want=$choice
         if [[ -z "$want" || "$want" == "$cur" ]]; then
             enforce=0
+        elif (( adopt )) && [[ -n "$save_value" && "$save_value" == "$cur" ]]; then
+            enforce=0    # własna zmiana sprzed przerwy w nasłuchu nadal czeka
         elif (( adopt )) && pending_get && [[ "$p_value" == "$cur" ]]; then
             # Start strumienia, a inny pasek właśnie potwierdza zmianę spoza paska
             # (F1): przejmujemy ją z jego terminem zamiast cofać do starego pliku.
@@ -452,6 +455,10 @@ while :; do
         "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" \
         "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',member='PrepareForShutdown'" 2>/dev/null)
     monitor_pid=$!
+    # Po (ponownej) subskrypcji nie wiemy, co zaszło bez nasłuchu (przerwa
+    # reconnectu 5 s, F5): jak start strumienia — stan wyrównany do pliku,
+    # migawka nie jest nową decyzją.
+    start_window; known=''; fresh=1
     step
     partial=''
     while :; do
