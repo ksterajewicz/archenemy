@@ -855,7 +855,9 @@ keeps it:
   `PowerState` of the signals), the stream reconnecting to D-Bus after
   losing it — a power-on while the file says `off` is switched
   off again (at most 3 times per event, so there is no on/off loop) and is
-  not saved. Power-off by `bluetoothd` itself when it stops, and changes while
+  not saved. Power-off by `bluetoothd` itself when it stops (also while
+  `bluetooth.service` is still stopping or starting, which with several
+  controllers can take longer than 2 seconds), and changes while
   the system is going to sleep or shutting down, are not saved either. A busy
   bus (device scans flood `PropertiesChanged`) does not delay this: the stream
   looks at the controller at least once a second.

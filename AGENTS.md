@@ -662,6 +662,10 @@ Rules that follow directly from the table:
   Every (re)subscription runs `start_window; known=''; fresh=1`: what
   happened during the 5 s reconnect gap is unknown, so the snapshot is
   aligned to the file, never saved as a decision (own pending change kept).
+  Before saving, `systemctl is-active bluetooth.service` = `deactivating`/
+  `activating` drops the change: `adapter_shutdown` emits `Powered` false and
+  waits for the other adapters (up to 10 s grace) — `NameOwnerChanged` can
+  come later than `CONFIRM`. Mock: `$MOCK_ROOT/unit_state`.
 
 - **Window titles are untrusted data.** `hyprctl clients` prints them unfiltered, so a
   newline in a title forges list lines. Validate the address and PID before storing

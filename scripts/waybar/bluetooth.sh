@@ -30,7 +30,8 @@
 #   flock obejmuje PPM (odczyt, zapis, power, wycofanie) oraz zapisy i power
 #   strumieni (F2); seria zdarzeń trwa najwyżej BATCH_MAX s (F3); koniec
 #   blokady rfkill rozpoznawany też z argumentów PropertiesChanged (F4);
-#   odzyskana subskrypcja D-Bus = start strumienia (F5).
+#   odzyskana subskrypcja D-Bus = start strumienia (F5); zmiana w trakcie
+#   zatrzymywania/startu bluetooth.service nie jest zapisywana (F6).
 #   RMB zapisuje plik PRZED zmianą zasilania, więc nigdy nie jest cofany.
 #   "on" w oknie: kontroler wyłączony jest włączany (potrzebne przy
 #   AutoEnable=false). Brak pliku/śmieci = brak egzekwowania; brak flagi
@@ -276,6 +277,16 @@ save_choice() {
     fi
     return 1
 }
+# bluetooth.service w trakcie zatrzymywania/startu (F6): bluetoothd przy
+# SIGTERM emituje Powered false przed utratą nazwy, a przy kilku adapterach
+# czeka na pozostałe (grace do 10 s) — dłużej niż CONFIRM. To nie wola
+# użytkownika. Bez systemctl albo z innym stanem: zapis jak dawniej.
+bluez_changing() {
+    local st=''
+    command -v systemctl >/dev/null 2>&1 || return 1
+    st=$(timeout 3 systemctl is-active bluetooth.service 2>/dev/null)
+    [[ "$st" == deactivating || "$st" == activating ]]
+}
 # Jedna migawka na serię zdarzeń albo termin timera. Zwraca 0, gdy zmieniła
 # zasilanie (trzeba nowej migawki do render).
 tick() {
@@ -358,7 +369,7 @@ tick() {
         fi
     fi
     if [[ -n "$save_value" ]] && (( save_at <= now )); then
-        [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && save_choice "$save_value" "$save_base"
+        [[ "$cur" == "$save_value" ]] && (( ! sleeping && ! shutting )) && ! bluez_changing && save_choice "$save_value" "$save_base"
         pending_drop
     fi
     return 1
