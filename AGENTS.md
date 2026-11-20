@@ -101,7 +101,15 @@ Rules that follow directly from the table:
   hard-coded rice lists in `tests/` (`install-main`, `bluetooth`,
   `keyboard-layouts`, `mouse-settings`, `rofi-clipboard`, `font-settings`,
   `flux-wall-dither`). Suites that glob `rices/*/` (`rice-autostart`,
-  `tui-contrast`, `rofi-inputbar`, `rofi-theme-switcher`) pick it up alone.
+  `tui-contrast`, `rofi-inputbar`, `rofi-theme-switcher`, `fastfetch-logo`)
+  pick it up alone.
+- **fastfetch shows the detected distribution's logo on every rice** (owner,
+  2026-11-18): `"logo": { "type": "builtin", "color": { "1"…"6" } }` with no
+  `"source"` (a fixed `"arch"` showed Arch on Fedora and NixOS) and no logo
+  file. Set all six colors: fastfetch 2.71's NixOS logo uses `$1`–`$6`, Arch
+  and Fedora `$1`–`$2`; a missing slot falls back to fastfetch's default
+  color. `tests/fastfetch-logo.sh` checks every `rices/*/fastfetch/config.jsonc`
+  and, with fastfetch installed, renders the three logos in each rice's colors.
 - **Monitors are identified by `desc:<EDID description>`, never by connector
   name.** `eDP-2`/`HDMI-A-1` became `eDP-1`/`HDMI-A-3` after a reboot on the
   owner's laptop (2026-09-21) and every rule of the machine layer stopped

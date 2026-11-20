@@ -1,15 +1,17 @@
 // archenemy — fastfetch (yin rice: czerń, szarości, biel)
-// Logo ze ZNAKÓW (alacritty nie ma protokołu grafiki): taijitu z półbloków
-// ▀▄█ w pliku logo.txt obok (20 wierszy × 40 kolumn = koło 40×40 „pikseli").
-// $1–$4 to pary kolorów ANSI z palety terminala (pierwszy plan; tło), więc
-// logo idzie za alacritty rice'a: biel 97 i dym 90 (#FFFFFF / #5E5E66).
+// Logo: wbudowane logo WYKRYTEJ dystrybucji (type builtin bez source — Arch na
+// Archu, Fedora na Fedorze, NixOS na NixOS), kolory 1–6: Arch i Fedora zużywają
+// $1–$2, NixOS $1–$6 (nieparzyste = pierwszy kolor, parzyste = drugi).
+// yin: biel #FFFFFF (akcent) i popiół #8C8C96 (5,4:1 na najgorszym tle szkła).
 {
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
 
   "logo": {
-    "type": "file",
-    "source": "~/.config/fastfetch/logo.txt",
-    "color": { "1": "97;49", "2": "90;49", "3": "97;100", "4": "90;107" },
+    "type": "builtin",
+    "color": {
+      "1": "38;2;255;255;255", "2": "38;2;140;140;150",
+      "3": "38;2;255;255;255", "4": "38;2;140;140;150", "5": "38;2;255;255;255", "6": "38;2;140;140;150"
+    },
     "padding": { "top": 1, "right": 4, "left": 2 }
   },
 
