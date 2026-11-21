@@ -2,9 +2,13 @@
 
 # =============================================
 #   archenemy - launcher-logo.sh
-#   Logo w lewym boxie waybara — moduł custom/launcher, return-type json.
-#   Dwa tryby (wybór: TUI Super+A → [l] bar logo, plik data/launcher-logo.dat,
-#   warstwa maszynowa poza gitem — przeżywa zmianę rice'a):
+#   Logo systemu: lewy box waybara (moduł custom/launcher, return-type
+#   json), a od 2026-11-22 także ekran logowania SDDM i menu GRUB-a
+#   (src/system-theme/ — biorą stąd tryb i glif dystrybucji).
+#   Dwa tryby (wybór: TUI Super+A → [l] system logo; plik
+#   data/launcher-logo.dat — nazwa sprzed rozszerzenia na cały system,
+#   zostaje, żeby nikt nie stracił wyboru; warstwa maszynowa poza gitem,
+#   przeżywa zmianę rice'a):
 #     distro    (domyślnie, także bez pliku albo ze śmieciami w nim) — glif
 #               Nerd Font wykrytej dystrybucji, jak przed 2026-11-19;
 #     archenemy — logo projektu (Æ): tekst to jedna spacja, obraz daje CSS
@@ -31,6 +35,7 @@
 #   Użycie: launcher-logo.sh          (woła waybar; jedna linia JSON)
 #           launcher-logo.sh mode     (tryb: distro|archenemy — stan w TUI)
 #           launcher-logo.sh distro   (nazwa wykrytej dystrybucji — podgląd TUI)
+#           launcher-logo.sh glyph    (sam glif dystrybucji — motywy systemowe)
 #   Kod wyjścia zawsze 0: niezerowy schowałby moduł bez śladu.
 # =============================================
 
@@ -108,6 +113,7 @@ distro_glyph() {
 case "${1:-}" in
     mode)   logo_mode ;;
     distro) distro_name ;;
+    glyph)  printf '%s\n' "$(distro_glyph)" ;;
     *)
         if [[ "$(logo_mode)" == archenemy ]]; then
             printf '{"text":" ","class":"archenemy"}\n'
