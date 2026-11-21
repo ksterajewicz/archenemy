@@ -334,6 +334,13 @@ archenemy/
 │                                     #   launcher-logo.sh — custom/launcher text and class: the distro
 │                                     #   glyph from os-release (default) or the Æ logo, Super+A → [l].
 ├── src/
+│   ├── system-theme/                 # login screen (SDDM) and boot menu (GRUB) themes per rice — work in progress:
+│   │   └── tools/                    #   render-sddm.sh — dev tool: PNG preview of an SDDM theme (the real Qt6 greeter
+│   │                                 #   in test mode under Xvfb, inside a private namespace with a fake user and
+│   │                                 #   session, so a picture never shows the machine it was made on);
+│   │                                 #   render-grub.sh — dev tool: PNG preview of a GRUB theme (the real GRUB as a
+│   │                                 #   standalone EFI file in QEMU + OVMF; /boot is not touched). Run by hand,
+│   │                                 #   never by install.sh; the packages they need are listed in each header;
 │   └── flux-wall/                    # GPU shader-driven wallpaper (C, wlr-layer-shell + EGL/GLES 3):
 │       ├── main.c                    #   Wayland/EGL: one surface per monitor, main loop, battery;
 │       ├── engine.c / engine.h       #   rendering (GLES, no Wayland): single-pass path
