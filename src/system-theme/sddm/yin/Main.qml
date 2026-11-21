@@ -1,7 +1,8 @@
-// archenemy — ekran logowania SDDM, rice yin, wariant A „w tarczy”.
+// archenemy — ekran logowania SDDM, rice yin: „w tarczy”.
 // Cały formularz mieści się w ciemnej tarczy zaćmienia z tapety yin;
 // reszta ekranu zostaje pustą tapetą. Bez szkła, bez ramek: sama typografia
-// i jedna linia pod hasłem.
+// i jedna linia pod hasłem. Układ jest wpasowany w tę jedną tapetę, więc
+// tło nie idzie za wyborem z Super+W (theme.conf: followWallpaper=0).
 import QtQuick
 import "components"
 
@@ -14,19 +15,14 @@ Item {
     readonly property real discY: (height - bg.paintedHeight) / 2 + 0.4637 * bg.paintedHeight
     readonly property real discR: 0.295 * bg.paintedHeight
 
-    Rectangle { anchors.fill: parent; color: config.base }
-    Image {
-        id: bg
-        anchors.fill: parent
-        source: root.width / Math.max(1, root.height) > 1.69 ? "background-169.png" : "background-1610.png"
-        fillMode: Image.PreserveAspectCrop
-    }
+    Backdrop { id: bg; anchors.fill: parent; base: config.base }
 
     Greeter { id: greeter; onRejected: { secret.text = ""; shake.restart() } }
     Now { id: now }
+    Seat { id: seat; wanted: config.loginScreen; focusTarget: secret }
 
     Item {
-        visible: primaryScreen
+        visible: seat.here
         anchors.fill: parent
 
         Column {

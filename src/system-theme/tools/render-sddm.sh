@@ -20,8 +20,20 @@
 #   Host zostaje nietknięty; bez przestrzeni nazw narzędzie odmawia.
 #
 #   Użycie: render-sddm.sh [-s SZERxWYS] [-f KATALOG_FONTÓW] [-w SEKUNDY]
+#                          [-m MONITOR]... [-u MONITOR] [-k TEKST]
 #                          <katalog motywu> <wynik.png>
 #     -s  rozmiar ekranu (domyślnie 1920x1080)
+#     -m  wirtualny monitor NAZWA:SZERxWYS+X+Y (np. eDP-1:1920x1080+0+0);
+#         powtórzony = kilka monitorów obok siebie, pierwszy jest główny.
+#         Greeter tworzy wtedy osobne okno na każdy monitor, jak na żywej
+#         maszynie; rozmiar ekranu wynika z monitorów (-s jest pomijane).
+#         Wymaga xorg-xrandr.
+#     -u  nazwa monitora z -m odpinanego po narysowaniu motywu; zrzut
+#         powstaje po drugim odczekaniu -w (formularz ma wtedy stać na
+#         monitorze, który został)
+#     -k  tekst wpisany z klawiatury tuż przed zrzutem (wymaga xdotool) —
+#         widać, które okno ma klawiaturę; greeter działa bez menedżera
+#         okien, jak pod prawdziwym SDDM
 #     -f  dodatkowy katalog fontów (np. rozpakowany ttf-jetbrains-mono-nerd,
 #         gdy font nie jest zainstalowany w systemie); można powtarzać
 #     -w  ile sekund czekać na narysowanie motywu (domyślnie 10; llvmpipe
@@ -36,6 +48,9 @@ set -uo pipefail
 SIZE="1920x1080"
 WAIT=10
 FONT_DIRS=()
+MONITORS=()
+KEYS=""
+UNPLUG=""
 
 usage() {
     sed -n '/^#   Użycie:/,/^#   Ostrzeżenia/p' "${BASH_SOURCE[0]}" | sed 's/^#   \{0,1\}//' >&2
@@ -44,11 +59,14 @@ usage() {
 
 # Etap wewnętrzny: już w przestrzeni nazw (patrz niżej).
 if [[ "${1:-}" != --inside ]]; then
-    while getopts ":s:f:w:" opt; do
+    while getopts ":s:f:w:m:u:k:" opt; do
         case "$opt" in
             s) SIZE="$OPTARG" ;;
             f) FONT_DIRS+=("$OPTARG") ;;
             w) WAIT="$OPTARG" ;;
+            m) MONITORS+=("$OPTARG") ;;
+            u) UNPLUG="$OPTARG" ;;
+            k) KEYS="$OPTARG" ;;
             *) usage ;;
         esac
     done
@@ -63,7 +81,25 @@ if [[ "${1:-}" != --inside ]]; then
     for d in "${FONT_DIRS[@]}"; do
         [[ -d "$d" ]] || { echo "render-sddm: font directory '$d' not found" >&2; exit 1; }
     done
-    for cmd in sddm-greeter-qt6 xvfb-run import unshare; do
+    NEEDED=(sddm-greeter-qt6 xvfb-run import unshare)
+    # Monitory wirtualne: ekran = prostokąt obejmujący wszystkie.
+    if (( ${#MONITORS[@]} > 0 )); then
+        NEEDED+=(xrandr)
+        max_w=0; max_h=0
+        for m in "${MONITORS[@]}"; do
+            [[ "$m" =~ ^[A-Za-z0-9-]+:([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$ ]] \
+                || { echo "render-sddm: bad monitor '$m' (expected NAME:WIDTHxHEIGHT+X+Y)" >&2; exit 2; }
+            (( BASH_REMATCH[1] + BASH_REMATCH[3] > max_w )) && max_w=$(( BASH_REMATCH[1] + BASH_REMATCH[3] ))
+            (( BASH_REMATCH[2] + BASH_REMATCH[4] > max_h )) && max_h=$(( BASH_REMATCH[2] + BASH_REMATCH[4] ))
+        done
+        SIZE="${max_w}x${max_h}"
+    fi
+    if [[ -n "$UNPLUG" ]]; then
+        [[ "$UNPLUG" =~ ^[A-Za-z0-9-]+$ && " ${MONITORS[*]%%:*} " == *" $UNPLUG "* ]] \
+            || { echo "render-sddm: -u '$UNPLUG' is not one of the -m monitors" >&2; exit 2; }
+    fi
+    [[ -n "$KEYS" ]] && NEEDED+=(xdotool)
+    for cmd in "${NEEDED[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || { echo "render-sddm: '$cmd' not found (see the header for packages)" >&2; exit 1; }
     done
     unshare -rm true 2>/dev/null \
@@ -98,6 +134,9 @@ if [[ "${1:-}" != --inside ]]; then
         } > "$WORK/fonts.conf"
     fi
 
+    printf '%s\n' "${MONITORS[@]}" > "$WORK/monitors"
+    printf '%s' "$KEYS" > "$WORK/keys"
+    printf '%s' "$UNPLUG" > "$WORK/unplug"
     unshare -rm -- bash "${BASH_SOURCE[0]}" --inside "$WORK" "$THEME" "$OUT" "$SIZE" "$WAIT"
     rc=$?
     if [[ $rc -eq 0 && -s "$OUT" ]]; then
@@ -122,9 +161,24 @@ export HOME="$WORK/home" XDG_RUNTIME_DIR="$WORK/run"
 mkdir -p "$HOME" "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 export WORK THEME OUT WAIT
 
-# Jedna powłoka pod xvfb-run: greeter w tle, zrzut, sprzątanie greetera.
+# Jedna powłoka pod xvfb-run: monitory, greeter w tle, klawisze, zrzut,
+# sprzątanie greetera. -noreset: serwer X bez tej flagi zeruje stan (także
+# monitory) po rozłączeniu ostatniego klienta, czyli po każdym xrandr.
 # shellcheck disable=SC2016  # zmienne rozwija powłoka wewnętrzna (są wyeksportowane)
-xvfb-run -a -s "-screen 0 ${SIZE}x24 -nolisten tcp" bash -c '
+xvfb-run -a -s "-screen 0 ${SIZE}x24 -nolisten tcp -noreset" bash -c '
+    first=1
+    while IFS= read -r spec; do
+        [[ "$spec" =~ ^([A-Za-z0-9-]+):([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$ ]] || continue
+        name="${BASH_REMATCH[1]}"; w="${BASH_REMATCH[2]}"; h="${BASH_REMATCH[3]}"
+        geometry="${w}/$(( w * 254 / 960 ))x${h}/$(( h * 254 / 960 ))+${BASH_REMATCH[4]}+${BASH_REMATCH[5]}"
+        # Pierwszy monitor przejmuje jedyne wyjście Xvfb ("screen") i jest główny.
+        if (( first )); then
+            xrandr --setmonitor "*$name" "$geometry" screen >/dev/null 2>&1 || exit 1
+            first=0
+        else
+            xrandr --setmonitor "$name" "$geometry" none >/dev/null 2>&1 || exit 1
+        fi
+    done < "$WORK/monitors"
     sddm-greeter-qt6 --test-mode --theme "$THEME" 2> "$WORK/greeter.log" >/dev/null &
     greeter=$!
     sleep "$WAIT"
@@ -132,6 +186,15 @@ xvfb-run -a -s "-screen 0 ${SIZE}x24 -nolisten tcp" bash -c '
         echo "render-sddm: greeter exited before the screenshot" >&2
         cat "$WORK/greeter.log" >&2
         exit 1
+    fi
+    if [[ -s "$WORK/unplug" ]]; then
+        xrandr --delmonitor "$(cat "$WORK/unplug")" >/dev/null 2>&1 || exit 1
+        sleep "$WAIT"
+    fi
+    if [[ -s "$WORK/keys" ]]; then
+        xdotool type --delay 40 "$(cat "$WORK/keys")" || exit 1
+        # Programowy renderer na jednym rdzeniu przerysowuje okna z opóźnieniem.
+        sleep 3
     fi
     import -window root "$OUT"
     rc=$?

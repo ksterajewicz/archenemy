@@ -1,7 +1,9 @@
-// archenemy — ekran logowania SDDM, rice tron, wariant B „pulpit sterowniczy”.
+// archenemy — ekran logowania SDDM, rice tron: „pulpit sterowniczy”.
 // Cztery narożniki-celowniki obejmują ekran jak wyświetlacz HUD; logowanie
 // to trzy wiersze „nazwa  wartość” w lewym dolnym rogu (sesja, użytkownik,
-// hasło), godzina w prawym górnym. Środek ekranu zostaje dla siatki.
+// hasło) z logo systemu obok, godzina w prawym górnym. Środek ekranu
+// zostaje dla tapety — tłem jest tapeta ostatnio ustawiona przez Super+W
+// (theme.conf.user: background), a bez niej siatka rice'a.
 import QtQuick
 import QtQuick.Effects
 import "components"
@@ -15,21 +17,23 @@ Item {
     readonly property real stroke: Math.max(1, Math.round(2 * u))
     readonly property real rowHeight: 40 * u
     readonly property real keyWidth: 132 * u
+    readonly property real logoSize: 46 * u
 
-    Rectangle { anchors.fill: parent; color: config.base }
-    Image {
-        id: bg
+    Backdrop {
+        id: backdrop
         anchors.fill: parent
-        source: root.width / Math.max(1, root.height) > 1.69 ? "background-169.png" : "background-1610.png"
-        fillMode: Image.PreserveAspectCrop
+        base: config.base
+        custom: config.background
+        dim: Number(config.backgroundDim)
     }
 
     Greeter { id: greeter; onRejected: { secret.text = ""; shake.restart() } }
     Now { id: now }
+    Seat { id: seat; wanted: config.loginScreen; focusTarget: secret }
 
     Item {
         id: hud
-        visible: primaryScreen
+        visible: seat.here
         anchors.fill: parent
 
         // Narożniki: po dwa odcinki na róg, wspólna poświata całej warstwy.
@@ -59,15 +63,36 @@ Item {
             }
         }
 
+        // Na tapecie użytkownika (może być jasna) tekst stoi na ciemnych
+        // podkładkach w kolorze tła rice'a; na siatce trona ich nie ma.
+        Repeater {
+            model: [ rows, clock, power ]
+            Rectangle {
+                required property var modelData
+                readonly property real pad: 22 * root.u
+                visible: backdrop.usingCustom
+                // Podkładka wierszy obejmuje też logo po ich lewej stronie.
+                readonly property real extra: modelData === rows ? root.logoSize + 44 * root.u : 0
+                x: modelData.x - extra - pad
+                y: modelData.y - pad
+                width: modelData.width + extra + 2 * pad
+                height: modelData.height + 2 * pad
+                color: config.base
+                opacity: 0.9
+            }
+        }
+
+        // Logo systemu: lewy dolny róg, na wysokości wierszy logowania.
         Mark {
             x: root.inset + 44 * root.u
-            y: root.inset + 44 * root.u
+            y: rows.y + rows.height - 26 * root.u - 3 * root.rowHeight / 2 - height / 2
             mode: config.logo; glyph: config.distroGlyph
             color: config.cyan
-            size: 34 * root.u
+            size: root.logoSize
         }
 
         Column {
+            id: clock
             x: root.width - width - root.inset - 44 * root.u
             y: root.inset + 26 * root.u
             spacing: 0
@@ -103,12 +128,14 @@ Item {
         // Trzy wiersze logowania nad lewym dolnym narożnikiem.
         Column {
             id: rows
-            x: root.inset + 44 * root.u
+            x: root.inset + 44 * root.u + root.logoSize + 44 * root.u
+            width: 520 * root.u
             y: root.height - height - root.inset - 44 * root.u
             spacing: 0
             transform: Translate { id: rowsShift }
 
-            Rectangle { width: 520 * root.u; height: root.stroke; color: config.cyan; opacity: 0.55 }
+            // Linia nad wierszami sięga od logo do końca wierszy.
+            Rectangle { x: -(root.logoSize + 44 * root.u); width: rows.width - x; height: root.stroke; color: config.cyan; opacity: 0.55 }
             Item { width: 1; height: 18 * root.u }
 
             Item {
@@ -179,6 +206,7 @@ Item {
         }
 
         Row {
+            id: power
             x: root.width - width - root.inset - 44 * root.u
             y: root.height - height - root.inset - 44 * root.u
             spacing: 36 * root.u

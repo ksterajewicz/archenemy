@@ -19,7 +19,9 @@ TextInput {
     selectByMouse: false
     clip: true
     focus: true
-    cursorVisible: activeFocus
+    // Kursor w środku napisu podpowiedzi wygląda jak błąd: przy pustym polu
+    // z podpowiedzią fokus pokazuje sama podpowiedź.
+    cursorVisible: activeFocus && (text.length > 0 || hint === "")
     inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
 
     Text {
