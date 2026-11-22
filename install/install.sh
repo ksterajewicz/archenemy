@@ -2112,6 +2112,27 @@ fi
         ;;
 esac
 
+# Ekran logowania (SDDM) i menu startu (GRUB) w wyglądzie rice'a — opcjonalne.
+# Pomocnik sam sprawdza, co dotyczy maszyny (SDDM jako menedżer logowania,
+# GRUB jako bootloader), nie zastępuje cudzego motywu bez osobnego „y”, pyta
+# osobno o usługę przełączającą i ma własną drogę powrotu (--remove). Działa
+# tylko na Archu (ścieżki /boot/grub, grub-mkconfig); --skip-packages nie ma
+# tu znaczenia — pomocnik niczego nie instaluje pacmanem.
+case "$PLATFORM" in
+    fedora) manual_step "Login screen and boot menu themes (optional)" "this helper only knows the Arch layout; theme sources: src/system-theme/ (build.sh)" ;;
+    nixos)  manual_step "Login screen and boot menu themes (optional)" "set services.displayManager.sddm.theme and boot.loader.grub.theme; theme sources: src/system-theme/ (build.sh)" ;;
+    *)
+read -rp "Theme the login screen (SDDM) and boot menu (GRUB) like your rice? [y/N]: " ans
+if [[ "$ans" =~ ^[Yy]$ ]]; then
+    if bash "$ARCHENEMY_DIR/install/system-theme-installation.sh" --confirmed; then
+        SUMMARY_DONE+=("Login screen and boot menu themes: finished (details above; undo: bash ~/archenemy/install/system-theme-installation.sh --remove)")
+    else
+        SUMMARY_SKIPPED+=("Login screen and boot menu themes — setup incomplete (details above; retry: bash ~/archenemy/install/system-theme-installation.sh)")
+    fi
+fi
+        ;;
+esac
+
 # Audio: pavucontrol i moduł głośności waybara mówią po PulseAudio — serwer
 # dostarcza pipewire-pulse (socket użytkownika, na Archu włączany presetem).
 # D7: ✓ dopiero po odczycie active I enabled; działający, ale niewłączony

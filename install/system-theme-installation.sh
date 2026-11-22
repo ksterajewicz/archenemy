@@ -331,17 +331,23 @@ if (( WANT_SDDM )); then
 fi
 
 if (( WANT_GRUB )); then
-    # Wysokość ekranu głównego z warstwy maszynowej (data/monitors); GRUB
-    # liczy rozmiary w pikselach. Bez danych: 1080.
-    HEIGHT=1080
+    # GRUB liczy rozmiary w pikselach, więc potrzebna jest wysokość ekranu, na
+    # którym firmware pokazuje menu: w laptopie to ekran wbudowany (eDP, LVDS,
+    # DSI), inaczej monitor główny z warstwy maszynowej (data/monitors).
+    # Bez danych: 1080. Położenia w motywie są w procentach — pomyłka zmienia
+    # tylko wielkość liter.
+    HEIGHT=""; HEIGHT_PRIMARY=""
     for dat in "$STATE_DIR"/data/monitors/*.dat; do
         [[ -f "$dat" ]] || continue
-        grep -q '^ROLE=primary$' "$dat" || continue
         res="$(grep -m1 '^RESOLUTION=' "$dat" | cut -d= -f2-)"
-        [[ "$res" =~ ^[0-9]+x([0-9]+) ]] && HEIGHT="${BASH_REMATCH[1]}"
-        break
+        [[ "$res" =~ ^[0-9]+x([0-9]{3,4})([^0-9]|$) ]] || continue
+        case "$(grep -m1 '^MONITOR=' "$dat" | cut -d= -f2-)" in
+            eDP*|LVDS*|DSI*) HEIGHT="${BASH_REMATCH[1]}" ;;
+        esac
+        grep -q '^ROLE=primary$' "$dat" && HEIGHT_PRIMARY="${BASH_REMATCH[1]}"
     done
-    (( HEIGHT >= 480 && HEIGHT <= 4320 )) || HEIGHT=1080
+    HEIGHT="${HEIGHT:-${HEIGHT_PRIMARY:-1080}}"
+    (( 10#$HEIGHT >= 480 && 10#$HEIGHT <= 4320 )) || HEIGHT=1080
     GRUB_RICES="$(bash "$BUILD" rices grub)"
     ACTIVATE="${GRUB_RICES%%$'\n'*}:$LOGO_NOW"
     grep -qx -- "$RICE_NOW" <<< "$GRUB_RICES" && ACTIVATE="$RICE_NOW:$LOGO_NOW"

@@ -247,6 +247,16 @@ if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/d
             echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages"
         fi
     fi
+    # Motywy ekranu logowania i menu startu to KOPIE w systemie (pliki roota):
+    # po pullu, który zmienił ich źródła, zostają stare aż do ponownego biegu
+    # pomocnika. Tylko gdy motywy są zainstalowane (ustawienia roota istnieją).
+    theme_sysroot=""
+    [[ "${ARCHENEMY_TEST:-}" == 1 ]] && theme_sysroot="${ARCHENEMY_SYSROOT:-}"
+    if [[ -f "$theme_sysroot/etc/archenemy/system-theme.conf" ]] \
+        && [[ -n "$(git -C "$ARCHENEMY_DIR" diff --name-only "$old_head" HEAD -- src/system-theme 'rices/*/system-theme.conf' install/system-theme-installation.sh 2>/dev/null)" ]]; then
+        echo -e "  ${YELLOW}⚠ Login screen / boot menu themes changed — the copies in the system are older. Refresh them:${NC}"
+        echo -e "    bash ~/archenemy/install/system-theme-installation.sh"
+    fi
 fi
 # Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
 # z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go
