@@ -1837,6 +1837,12 @@ echo -e "  ${GREEN}✓ Scripts made executable.${NC}"
 # Screenshots directory (hyprshot output)
 mkdir -p "$HOME/Screenshots"
 
+# Logo fastfetcha idzie za „system logo” (Super+A → [l]): plik warstwy
+# maszynowej data/fastfetch-logo.txt odtwarzany przy każdym biegu (tryb
+# archenemy = znak Æ, tryb distro = brak pliku). Cicho; porażka nie
+# zatrzymuje instalacji — fastfetch pokazuje wtedy logo dystrybucji.
+bash "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" sync 2>/dev/null || true
+
 # Tapeta: przy pierwszej instalacji pierwszy plik z wallpapers/, żeby hyprpaper
 # miał poprawny config od pierwszego startu; przy ponownym biegu (zalecanym po
 # każdym pullu) zostaje wybór użytkownika z Super+W — `--init` przywraca go,

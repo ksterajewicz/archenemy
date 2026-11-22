@@ -107,13 +107,21 @@ Rules that follow directly from the table:
   glob `rices/*/` (`rice-autostart`, `tui-contrast`, `rofi-inputbar`,
   `rofi-theme-switcher`, `fastfetch-logo`) pick it up alone;
   `rice-autostart` also checks that `yang` runs exactly what `yin` runs.
-- **fastfetch shows the detected distribution's logo on every rice** (owner,
-  2026-11-18): `"logo": { "type": "builtin", "color": { "1"…"6" } }` with no
-  `"source"` (a fixed `"arch"` showed Arch on Fedora and NixOS) and no logo
-  file. Set all six colors: fastfetch 2.71's NixOS logo uses `$1`–`$6`, Arch
+- **fastfetch follows the system logo on every rice** (owner, 2026-11-22;
+  before that, 2026-11-18: always the detected distribution's logo):
+  `"logo": { "type": "auto", "source": "~/archenemy/data/fastfetch-logo.txt",
+  "color": { "1"…"6" } }`. The file is machine-layer state written only by
+  `scripts/waybar/launcher-logo.sh sync` (a copy of
+  `assets/logo/archenemy-ae.txt` in the archenemy mode, no file in the distro
+  mode); fastfetch 2.71 with `"auto"` and a missing source file draws the
+  detected distribution's built-in logo and prints no error. Never a fixed
+  `"source": "arch"` (it showed Arch on Fedora and NixOS) and no logo file in
+  a rice folder. `archenemy-ae.txt` is generated from the SVG
+  (`assets/logo/gen_text_logo.py`), not drawn by hand. Set all six colors: fastfetch 2.71's NixOS logo uses `$1`–`$6`, Arch
   and Fedora `$1`–`$2`; a missing slot falls back to fastfetch's default
   color. `tests/fastfetch-logo.sh` checks every `rices/*/fastfetch/config.jsonc`
-  and, with fastfetch installed, renders the three logos in each rice's colors.
+  and, with fastfetch installed, renders both modes and the three distribution
+  logos in each rice's colors.
 - **Monitors are identified by `desc:<EDID description>`, never by connector
   name.** `eDP-2`/`HDMI-A-1` became `eDP-1`/`HDMI-A-3` after a reboot on the
   owner's laptop (2026-09-21) and every rule of the machine layer stopped

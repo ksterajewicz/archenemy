@@ -209,6 +209,8 @@ echo "== [l] logo systemu (pasek, ekran logowania, menu startu)"
 # modułu waybara wypisuje po zmianie. Rice'y: tron ma launcher, white-blue nie.
 mkdir -p "$A/install/lib" "$A/rices/tron/waybar" "$A/rices/white-blue/waybar"
 cp "$REPO/scripts/waybar/launcher-logo.sh" "$A/scripts/waybar/"
+mkdir -p "$A/assets/logo"; cp "$REPO/assets/logo/archenemy-ae.txt" "$A/assets/logo/"   # znak Æ dla fastfetcha
+FFL="$A/data/fastfetch-logo.txt"
 cp "$REPO/install/lib/pkg.sh" "$A/install/lib/"
 printf '"modules-left": ["custom/launcher", "hyprland/workspaces"],\n' > "$A/rices/tron/waybar/config.jsonc"
 printf '"modules-left": ["hyprland/workspaces"],\n' > "$A/rices/white-blue/waybar/config.jsonc"
@@ -226,11 +228,13 @@ check "[l] podgląd: obie opcje i dystrybucja"  '[[ "$out" == *"1  distro logo"*
 out="$(ltui 'l2\n\nq')"
 check "[l] archenemy: plik i JSON paska"       '[[ "$(<"$LL")" == archenemy && "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
 check "[l] waybar działa: ✓ po sygnale 12"     '[[ "$out" == *"detected distro: Arch Linux"*"✓ System logo: archenemy logo (Æ)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] archenemy: fastfetch dostaje znak Æ"   'cmp -s "$FFL" "$REPO/assets/logo/archenemy-ae.txt" && [[ "$out" == *"✓ fastfetch shows the archenemy logo on its next run"* ]]'
 out="$(ltui 'q')"
 check "[l] stan po zmianie: archenemy"         '[[ "$out" =~ l\ +system\ logo\ +archenemy ]]'
 : > "$T/log"; out="$(ltui 'l1\n\nq')"
 check "[l] distro: plik i glif w JSON paska"   '[[ "$(<"$LL")" == distro && "$(bar_json)" == "{\"text\":\"$(printf "\xf3\xb0\xa3\x87")\",\"class\":\"distro\"}" ]]'
 check "[l] distro: ✓ z nazwą dystrybucji"      '[[ "$out" == *"✓ System logo: distro logo (Arch Linux)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] distro: plik logo fastfetcha znika"     '[[ ! -e "$FFL" && "$out" == *"✓ fastfetch shows the distro logo on its next run"* ]]'
 out="$(ltui 'lx\n\nq')"
 check "[l] zły klawisz bez zmiany"             '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* && "$out" != *"✓ System logo"* ]]'
 out="$(ltui 'l\n\nq')"

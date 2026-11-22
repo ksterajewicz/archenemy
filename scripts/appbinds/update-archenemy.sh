@@ -219,6 +219,12 @@ if pgrep -x waybar >/dev/null 2>&1; then
         fi
     fi
 fi
+# Logo fastfetcha idzie za „system logo”: plik w warstwie maszynowej bywa
+# nieaktualny po pullu (nowy znak) albo nie istnieje u kogoś, kto wybrał logo
+# przed 2026-11-22. Cicho, bez sudo; porażka nie zatrzymuje aktualizacji.
+if [[ -f "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" ]]; then
+    bash "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" sync 2>/dev/null || true
+fi
 echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
 echo -e "  git — ${GREEN}they stay unchanged${NC}."

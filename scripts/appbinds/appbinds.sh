@@ -577,8 +577,8 @@ system_theme_report() {
 }
 
 # Wybór logo SYSTEMU: glif dystrybucji (domyślnie) albo Æ — w lewym boxie
-# paska, na ekranie logowania SDDM i w menu GRUB-a (decyzja właściciela
-# 2026-11-21: jeden wybór zamiast osobnych). Tryb czyta
+# paska, w fastfetchu, na ekranie logowania SDDM i w menu GRUB-a (decyzje
+# właściciela 2026-11-21 i 2026-11-22: jeden wybór zamiast osobnych). Tryb czyta
 # scripts/waybar/launcher-logo.sh mode — ta sama reguła co w pasku (brak
 # pliku albo śmieci = distro). Zapis do data/launcher-logo.dat (nazwa sprzed
 # rozszerzenia; warstwa maszynowa, poza rice'em, więc przeżywa Super+T),
@@ -599,7 +599,7 @@ launcher_logo_menu() {
     [[ "$cur" == archenemy ]] && sel=1
 
     echo ""
-    echo -e "  System logo (bar, login screen, boot menu): ${CYAN}${cur:-distro}${NC} · detected distro: ${CYAN}${name:-unknown}${NC}"
+    echo -e "  System logo (bar, fastfetch, login screen, boot menu): ${CYAN}${cur:-distro}${NC} · detected distro: ${CYAN}${name:-unknown}${NC}"
     warn_if_beta "launcher module"
     if missing="$(launcher_missing_rice)" && [[ "$missing" != white-blue_beta ]]; then
         echo -e "  ${YELLOW}⚠ ${missing} has no launcher module — the logo shows in $(launcher_rices) (Super+T).${NC}"
@@ -620,6 +620,14 @@ launcher_logo_menu() {
         echo -e "  ${YELLOW}Saved: system logo ${target}. ${missing} has no launcher module — the bar shows it after you switch to $(launcher_rices) (Super+T).${NC}"
     else
         bar_change_report 12 "System logo: ${label}" "system logo ${target}" "launcher module"
+    fi
+    # fastfetch: plik logo w warstwie maszynowej zakłada albo usuwa launcher-logo.sh
+    # sync (configi rice'ów mają go jako opcjonalne źródło logo); ✓ po kodzie 0,
+    # który skrypt oddaje dopiero po odczycie pliku.
+    if bash "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" sync 2>/dev/null; then
+        echo -e "  ${GREEN}✓ fastfetch shows the ${target} logo on its next run${NC}"
+    else
+        echo -e "  ${YELLOW}fastfetch keeps its previous logo — could not update data/fastfetch-logo.txt. Retry: bash ~/archenemy/scripts/waybar/launcher-logo.sh sync${NC}"
     fi
     system_theme_report logo "$target" "Login screen and boot menu use the ${target} logo"
 }
@@ -1263,7 +1271,7 @@ build_preview() {
         v) cur="$(volume_style_current)"; pvw "Now: $cur."; pv ""
            pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
         l) cur="$(state_from waybar/launcher-logo.sh mode)"
-           pvw "One logo for the bar, the login screen and the boot menu. Now: ${cur:-unknown}."; pv ""
+           pvw "One logo for the bar, fastfetch, the login screen and the boot menu. Now: ${cur:-unknown}."; pv ""
            pv "1  distro logo"; pvd "   Arch/Fedora/NixOS glyph"
            pvd "   detected: $(state_from waybar/launcher-logo.sh distro)"
            pv "2  archenemy logo (Æ)"; pv ""
