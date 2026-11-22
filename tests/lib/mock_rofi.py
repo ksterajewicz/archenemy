@@ -14,6 +14,18 @@
 #       `tekst\0klucz\x1fwartość…`,
 #     - są wiersze → ta sama instancja pokazuje nową listę; brak → koniec,
 #     - no-custom=true: tekst spoza listy nie trafia do polecenia.
+#   Klawisze zatwierdzające (`-kb-accept-entry`, domyślnie
+#   `Control+j,Control+m,Return,KP_Enter`, source/keyb.c:110–113; opcja z linii
+#   poleceń zastępuje całą listę) według libnkutils w wersji przypiętej w rofi
+#   2.0.0 (bindings/src/bindings.c:528–533, 803–816, 1104–1110) i powtarzania
+#   klawiszy po stronie klienta (source/wayland/display.c:394–450):
+#     - wpis bez `!` zatwierdza przy wciśnięciu, więc klawisz trzymany
+#       zatwierdza zaznaczony wiersz KAŻDEJ kolejnej listy (powtarzanie),
+#     - wpis z `!` zatwierdza raz, przy puszczeniu; powtarzanie nic nie robi,
+#     - `!` poza pierwszym znakiem to błąd składni: rofi pokazuje okno błędu
+#       zamiast menu (kod 2 atrapy),
+#     - klawisz spoza listy niczego nie zatwierdza.
+#   To model reguły przeczytanej w źródłach, nie dowód zachowania żywego rofi.
 #   JEDEN proces atrapy = JEDNO okno: każdy start dopisuje linię do
 #   $MOCK_ROFI/rofi.calls, więc pakiet widzi, czy drugi krok menu dostał
 #   własny proces (dawny błąd: wejście między dwoma oknami przepadało).
@@ -22,7 +34,12 @@
 #     answers    — kolejne odpowiedzi „użytkownika”, po jednej w linii:
 #                  tekst wiersza = wybór (Enter / dwuklik), pusta linia albo
 #                  koniec pliku = Esc, `custom:<tekst>` = Enter na wpisanym
-#                  tekście spoza listy. Wszystkie leżą w pliku od początku,
+#                  tekście spoza listy, `key:<klawisz>` = klawisz wciśnięty
+#                  i puszczony, `hold:<klawisz>` = klawisz wciśnięty i trzymany
+#                  dłużej niż opóźnienie powtarzania, potem puszczony; nazwa
+#                  klawisza jak we wpisie kb-accept-entry (`Return`,
+#                  `Control+j`), zatwierdzany jest zaznaczony, czyli pierwszy
+#                  wiersz. Wszystkie leżą w pliku od początku,
 #                  czyli wejście „szybsze niż menu”: nic nie czeka na ekran.
 #     rofi.log   — po jednej linii na pokazaną listę: `prompt => w1|w2`,
 #     rofi.info  — pola info tych wierszy: `w1=info1|w2=info2`,
@@ -37,6 +54,24 @@ import subprocess
 import sys
 
 state = os.environ['MOCK_ROFI']
+ACCEPT_DEFAULT = 'Control+j,Control+m,Return,KP_Enter'
+# Trzymany klawisz na wciśnięciu powtarza się bez końca; atrapa przerywa po
+# tylu listach, żeby błąd skryptu nie zawiesił pakietu.
+REPEAT_LIMIT = 50
+
+
+def accept_keys(spec):
+    """kb-accept-entry → {klawisz: 'press' | 'release'}; None = błąd składni."""
+    keys = {}
+    for entry in spec.split(','):
+        if not entry:
+            continue
+        release = entry.startswith('!')
+        name = entry[1:] if release else entry
+        if not name or '!' in name:
+            return None
+        keys[name] = 'release' if release else 'press'
+    return keys
 
 
 def append(name, line):
@@ -84,7 +119,7 @@ def main():
     opts = {}
     i = 0
     while i < len(args):
-        if args[i] in ('-show', '-modes', '-modi', '-theme-str', '-p') and i + 1 < len(args):
+        if args[i] in ('-show', '-modes', '-modi', '-theme-str', '-p', '-kb-accept-entry') and i + 1 < len(args):
             opts[args[i]] = args[i + 1]
             i += 1
         else:
@@ -100,9 +135,15 @@ def main():
     if '-dmenu' in opts or not show or name != show or not command:
         append('rofi.log', '!! wywołanie spoza trybu skryptowego: ' + ' '.join(args[:4]))
         return 2
+    accept = accept_keys(opts.get('-kb-accept-entry', ACCEPT_DEFAULT))
+    if accept is None:
+        append('rofi.log', '!! błąd składni kb-accept-entry: ' + opts['-kb-accept-entry'])
+        return 2
 
     prompt = name
     no_custom = False
+    held = False        # klawisz zatwierdzający na wciśnięciu jest trzymany
+    repeats = 0
     headers, rows = run_mode(command, {'ROFI_RETV': '0'})
     while True:
         prompt = headers.get('prompt', prompt)
@@ -112,19 +153,35 @@ def main():
         append('rofi.log', prompt + ' => ' + '|'.join(text for text, _ in rows))
         append('rofi.info', '|'.join(text + '=' + f.get('info', '') for text, f in rows))
 
-        answer = next_answer()
-        if answer == '':
-            return 1
-        if answer.startswith('custom:'):
-            if no_custom:
+        if held:
+            repeats += 1
+            if repeats > REPEAT_LIMIT:
+                append('rofi.log', '!! trzymany klawisz: lista wraca bez końca')
+                return 1
+            answer = rows[0][0]
+        else:
+            answer = next_answer()
+            if answer == '':
+                return 1
+            kind, _, key = answer.partition(':')
+            if kind in ('key', 'hold'):
+                if key not in accept:
+                    continue
+                # Na wciśnięciu trzymany klawisz zatwierdza teraz i przy każdym
+                # powtórzeniu; przy puszczeniu — jeden raz, jak zwykłe naciśnięcie.
+                held = kind == 'hold' and accept[key] == 'press'
+                answer = rows[0][0]
+            elif kind == 'custom':
+                if no_custom:
+                    continue
+                headers, rows = run_mode(command, {'ROFI_RETV': '2'}, key)
                 continue
-            headers, rows = run_mode(command, {'ROFI_RETV': '2'}, answer[len('custom:'):])
-            continue
         chosen = [f for text, f in rows if text == answer]
         if not chosen:
             append('rofi.log', '!! brak wiersza: ' + answer)
             return 1
         if chosen[0].get('nonselectable') == 'true':
+            held = False
             continue
         extra = {'ROFI_RETV': '1'}
         if 'info' in chosen[0]:

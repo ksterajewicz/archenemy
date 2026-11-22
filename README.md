@@ -545,7 +545,11 @@ archenemy/
 │                                     #   fake rofi (tests/lib/mock_rofi.py) models script mode, one process = one window:
 │                                     #   both steps in one rofi process (fast input is not lost), each row carries its
 │                                     #   action, forged callbacks do nothing, a waiting systemctl does not hold the
-│                                     #   window, every rice binds the same script. No clock: speed is checked live.
+│                                     #   window, every rice binds the same script; the script passes
+│                                     #   `-kb-accept-entry '!Return,!KP_Enter'` and the fake models that rule (accept on
+│                                     #   key release: a held Enter stops at the question, Enter-Enter shuts down, the
+│                                     #   same script without the option does not stop). No clock or real keyboard:
+│                                     #   speed and the held key are checked live.
 │                                     #   runtime-dir.sh — scripts/lib/runtime-dir.sh: no ${XDG_RUNTIME_DIR:-/tmp} left,
 │                                     #   only our private dirs, refusal on a planted one, window history then off.
 │                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
@@ -1002,7 +1006,7 @@ These tables describe the seven non-beta rices. `white-blue_beta` retains its le
 | `Super + K` | Switch keyboard layout (next on your list) |
 | `Super + Ctrl + 1…4` | Switch straight to keyboard layout #1–4 of your list (`Super + A` → `[k]`) |
 | `Super + A` | Settings menu: app shortcuts, audio, monitors, keyboard, fonts, autostart, diagnostics |
-| `Super + right Shift` | Power menu (shutdown / restart, then `Yes` in the same window, so a fast second Enter or double-click is not lost); with the screen locked (hyprlock) — direct shutdown, no menu or confirmation |
+| `Super + right Shift` | Power menu (shutdown / restart, then `Yes` in the same window, so a fast second Enter or double-click is not lost). Enter accepts when the key is released, so a held Enter stops at `Are you sure?`; `Ctrl+j` and `Ctrl+m` do not accept in this menu. With the screen locked (hyprlock) — direct shutdown, no menu or confirmation |
 
 ### Window control
 
@@ -1265,7 +1269,7 @@ CI (`.github/workflows/tests.yml`) runs `bash tests/run-all.sh` in an `archlinux
 4. In `[n]`, try a monitor change and let its 15-second confirmation expire; verify restoration. Replug a monitor, check `[w]` shared/decades workspaces and `Super+W` on every output. Run `hyprctl hyprpaper listactive` to compare the active images.
 5. On Fedora and NixOS (experimental), run the installer on a fresh installation and again after it, then repeat steps 1–4; on Fedora also the COPR/Brave questions and the tuned-ppd hint; on NixOS also the configuration built from `nix/packages.nix` with the options above, `Super+A → [k]` layout names, zsh plugins from the profile, and the installer and `Super+T` with a home-manager declaration for one rice folder (refused, nothing changed) and again after removing it. Containers do not cover sessions, PAM, SELinux or hardware.
 6. On applicable hardware, verify the ASUS profile key and bar against the actual profile; if VirtualBox was installed, check `modinfo vboxdrv`, the loaded module and a test VM after any requested reboot. For the optional music stack, test playback and `[o] → 3` with a non-empty queue.
-7. Open the power menu with `Super + right Shift` and with a right click on the bar's launcher. Press Enter twice as fast as you can; then repeat with a quick double-click on `Power off` followed at once by a double-click on `Yes`. The computer must shut down without a second, slower attempt. A single Enter or double-click must stop at `Are you sure?`; `Esc`, `No` and a click outside the window must close the menu with nothing done.
+7. Open the power menu with `Super + right Shift` and with a right click on the bar's launcher. Press Enter twice as fast as you can; then repeat with a quick double-click on `Power off` followed at once by a double-click on `Yes`. The computer must shut down without a second, slower attempt. A single Enter or double-click must stop at `Are you sure?`; `Esc`, `No` and a click outside the window must close the menu with nothing done. Then hold Enter for more than a second: nothing may happen while the key is down, `Are you sure?` must appear when you release it, and the computer must stay on; `Ctrl+j` must do nothing. If Enter does nothing at all or rofi shows an error window instead of the menu, note `rofi -version` and the error text.
 
 ## License
 

@@ -17,8 +17,14 @@
 #   Pakiet pilnuje więc: jeden proces rofi na oba kroki, wiersze niosące swoją
 #   akcję w polu info, podrobione wywołania zwrotne bez skutku, akcja w tle
 #   nietrzymająca okna i to samo wiązanie we wszystkich rice'ach.
-#   Atrapa nie ma zegara ani okna: szybkości na żywym rofi/Hyprlandzie nie
-#   sprawdza (kroki na laptopie — raport zlecenia, README „Verification”).
+#   Decyzja właściciela 2026-11-22 (wariant C): Enter zatwierdza przy
+#   puszczeniu klawisza (`-kb-accept-entry '!Return,!KP_Enter'`), żeby
+#   przytrzymany Enter nie przeszedł przez pytanie „Are you sure?”. Pakiet
+#   pilnuje, że skrypt podaje tę opcję, a atrapa modeluje jej regułę ze źródeł
+#   libnkutils (wciśnięcie z powtarzaniem kontra puszczenie).
+#   Atrapa nie ma zegara ani okna: szybkości ani prawdziwej klawiatury na żywym
+#   rofi/Hyprlandzie nie sprawdza (kroki na laptopie — raport zlecenia, README
+#   „Verification”).
 #   Uruchom: bash tests/rofi-power-menu.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -108,6 +114,31 @@ D="$T/dir with space, comma #hash"
 mkdir -p "$D" && cp "$PM" "$D/"
 run "$REBOOT"$'\n'"Yes"$'\n' "$D/rofi_power_menu.sh"
 check "ścieżka ze spacją, przecinkiem i # → reboot" '[[ "$(calls)" == reboot && "$(windows)" == 1 ]]'
+
+echo "== Enter zatwierdza przy puszczeniu klawisza"
+# Odpowiedzi atrapy: key:<klawisz> = wciśnięty i puszczony, hold:<klawisz> =
+# trzymany dłużej niż opóźnienie powtarzania. Wiązanie z „!” czeka na
+# puszczenie, więc powtarzanie niczego nie zatwierdza; bez „!” trzymany klawisz
+# zatwierdza każdą kolejną listę (tests/lib/mock_rofi.py, nagłówek).
+run "key:Return"$'\n'"key:Return"$'\n'
+check "skrypt podaje -kb-accept-entry !Return,!KP_Enter" 'grep -qF -- "-kb-accept-entry !Return,!KP_Enter" "$T/rofi.calls"'
+check "szybkie Enter-Enter → poweroff w jednym oknie" '[[ "$(calls)" == poweroff && "$(windows)" == 1 && "$(menus)" == 2 ]]'
+run "key:KP_Enter"$'\n'"key:KP_Enter"$'\n'
+check "Enter klawiatury numerycznej tak samo"       '[[ "$(calls)" == poweroff ]]'
+run "hold:Return"$'\n'
+check "przytrzymany Enter: pytanie pokazane, bez systemctl" '[[ -z "$(calls)" && "$(sed -n 2p "$T/rofi.log")" == "Are you sure? => Yes|No" && "$(menus)" == 2 ]]'
+run "hold:Return"$'\n'"key:Return"$'\n'
+check "po puszczeniu dopiero nowy Enter potwierdza"  '[[ "$(calls)" == poweroff && "$(menus)" == 2 ]]'
+# Opcja zastępuje całą domyślną listę rofi, więc Ctrl+j i Ctrl+m odpadają.
+run "key:Control+j"$'\n'"key:Control+m"$'\n'
+check "Ctrl+j i Ctrl+m nie zatwierdzają w tym menu"  '[[ -z "$(calls)" ]] && ! grep -q "Are you sure" "$T/rofi.log"'
+# Kontrola atrapy: ten sam skrypt bez opcji (domyślne wiązania rofi, Enter na
+# wciśnięciu) — przytrzymany Enter przechodzi przez pytanie. Bez tej różnicy
+# sprawdzenia wyżej nie zauważyłyby usunięcia opcji.
+mkdir -p "$T/press" && cp "$PM" "$T/press/" &&
+    sed -i 's/ -kb-accept-entry "\$ACCEPT_KEYS"//' "$T/press/rofi_power_menu.sh"
+run "hold:Return"$'\n' "$T/press/rofi_power_menu.sh"
+check "bez opcji przytrzymany Enter wyłącza (atrapa rozróżnia)" '! cmp -s "$PM" "$T/press/rofi_power_menu.sh" && [[ "$(calls)" == poweroff ]] && ! grep -qF -- "-kb-accept-entry" "$T/rofi.calls"'
 
 echo "== wiersze niosą swoją akcję (pole info)"
 run "$POWEROFF"$'\n'"No"$'\n'

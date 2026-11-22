@@ -31,9 +31,26 @@ MODE="archenemy-power"
 # zgodnej parze tekst + info — tekst wpisany z klawiatury (no-custom), „No”,
 # Esc i wszystko nieznane zamykają menu bez skutku.
 # Świadoma cena szybkości: drugim wyborem jest KAŻDE kolejne zatwierdzenie,
-# także powtarzanie przytrzymanego Entera (po opóźnieniu powtarzania klawiszy,
-# domyślnie 600 ms) i trzecie kliknięcie tej samej serii. Opóźnienie przed
-# „Yes” odrzucałoby właśnie szybkie podwójne Enter, o które chodziło w zgłoszeniu.
+# także trzecie kliknięcie tej samej serii. Opóźnienie przed „Yes” odrzucałoby
+# właśnie szybkie podwójne Enter, o które chodziło w zgłoszeniu.
+#
+# Enter zatwierdza przy PUSZCZENIU klawisza, nie przy wciśnięciu (decyzja
+# właściciela 2026-11-22, wariant C): „!” przed nazwą klawisza w
+# kb-accept-entry (rofi-keys(5)). Przy wciśnięciu rofi tylko zapamiętuje takie
+# wiązanie, powtarzanie przytrzymanego klawisza niczego nie dokłada, a akcja
+# rusza raz — przy puszczeniu klawisza bez wciśniętego modyfikatora (libnkutils
+# bindings/src/bindings.c:803–816 i 1104–1110, sprawdzone dla rofi 2.0.0).
+# Enter na wciśnięciu powtarzał się po opóźnieniu powtarzania klawiszy
+# (domyślnie 600 ms) i przytrzymany przechodził przez „Are you sure?”, zanim
+# pytanie dało się przeczytać. Teraz przytrzymany Enter kończy się na pytaniu,
+# a szybkie Enter-Enter to nadal dwa zatwierdzenia.
+# Opcja zastępuje CAŁĄ domyślną listę (Control+j,Control+m,Return,KP_Enter),
+# więc Ctrl+j i Ctrl+m w tym menu nie zatwierdzają. Nie dopisuj ich z powrotem:
+# bez „!” przytrzymane powtarzałyby się przez pytanie, a w obu postaciach
+# zderzyłyby się z konfiguracją użytkownika, który ma Control+j pod inną akcją.
+# Dotyczy tylko tego wywołania rofi; mysz i Shift+Enter (kb-accept-alt) bez zmian.
+ACCEPT_KEYS='!Return,!KP_Enter'
+
 power_menu_header() { printf '\0prompt\x1f%s\n\0no-custom\x1ftrue\n' "$1"; }
 power_menu_row()    { printf '%s\0info\x1f%s\n' "$1" "$2"; }
 
@@ -96,5 +113,5 @@ FONT_LIB="${ARCHENEMY_DIR:-$HOME/archenemy}/scripts/appbinds/lib/fonts.sh"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 SELF_NAME="$(basename "${BASH_SOURCE[0]}")"
 unset ROFI_INFO ROFI_DATA
-PATH="$SELF_DIR:$PATH" rofi -show "$MODE" -modes "$MODE:$SELF_NAME" -theme-str "$THEME_STR"
+PATH="$SELF_DIR:$PATH" rofi -show "$MODE" -modes "$MODE:$SELF_NAME" -kb-accept-entry "$ACCEPT_KEYS" -theme-str "$THEME_STR"
 exit 0

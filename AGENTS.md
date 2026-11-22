@@ -361,8 +361,19 @@ Rules that follow directly from the table:
   text + info pair; it starts in the background with stdout detached, because
   rofi reads the script's output to the end. Shutdown still takes two accepts;
   there is deliberately no delay before `Yes` (it would reject a fast double
-  Enter), so a held Enter (after the key repeat delay) or the third click of
-  one burst also confirms. The mode command is a bare file name found through
+  Enter), so the third click of one burst also confirms. Enter accepts on key
+  **release**: this one rofi call passes `-kb-accept-entry '!Return,!KP_Enter'`
+  (`rofi-keys(5)`; libnkutils `bindings/src/bindings.c`, checked for rofi 2.0.0,
+  2026-11-22: the press only arms a `!` binding, key repeat adds nothing, it
+  fires once when a key is released with no modifier held — also for an Enter
+  already down when rofi got the keyboard). A held Enter therefore stops at
+  `Are you sure?` and a fast Enter-Enter still shuts down. The option replaces
+  the whole default list, so `Ctrl+j`/`Ctrl+m` do not accept in this menu;
+  don't add them back: without `!` a held chord repeats through the question,
+  and either form collides with a user config that binds `Control+j` to another
+  action. A malformed list is not silent — rofi opens an error window instead
+  of the menu. `Shift+Enter` (`kb-accept-alt`) and the mouse keep rofi's
+  defaults. The mode command is a bare file name found through
   `PATH`: rofi splits the mode list on `,` and `#`. `bash tests/rofi-power-menu.sh`
   (mock: `tests/lib/mock_rofi.py`).
 - **App launcher: `scripts/rofi/rofi_drun.sh` is the only way to open
