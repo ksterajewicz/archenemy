@@ -37,6 +37,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/binds.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mpd-output.sh"
 # shellcheck source=../waybar/lib/waybar-reload.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../waybar/lib/waybar-reload.sh"
+# Tożsamość monitorów (selektor desc:, żywa nazwa złącza) — [g] login screen.
+# shellcheck source=scripts/hypr/lib/monitor-id.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../hypr/lib/monitor-id.sh"
 
 # Pliki, w których klawisz może już być zajęty (bindy Super+klawisz archenemy).
 # workspaces-monitors.lua: od 2026-07-17 bindy Super+1..0 są GENEROWANE tam
@@ -533,12 +536,56 @@ launcher_rices() {
     printf '%s' "$f"
 }
 
-# Wybór logo w lewym boxie paska: glif dystrybucji (domyślnie) albo Æ. Tryb
-# czyta scripts/waybar/launcher-logo.sh mode — ta sama reguła co w pasku
-# (brak pliku albo śmieci = distro). Zapis do data/launcher-logo.dat (warstwa
-# maszynowa, poza rice'em, więc przeżywa Super+T), potem sygnał 12 = launcher
-# przerysowuje się od razu (bar_change_report). Rice bez launchera: zapis
-# zostaje, ale bez zielonego ✓, bo pasek tego rice'a niczego nie pokaże.
+# Co dzieje się z wyborem poza sesją (ekran logowania SDDM, menu GRUB-a —
+# install/system-theme-installation.sh). Zielony ✓ pada tylko po ODCZYCIE:
+# usługa roota działa i motyw ekranu logowania ma już oczekiwaną wartość
+# (theme.conf.user jest czytelny dla każdego). Bez usługi: komenda ręczna.
+# Bez instalacji motywów: jedna szara linia, że to opcja.
+#   $1 klucz w theme.conf.user (logo | loginScreen), $2 oczekiwana wartość,
+#   $3 tekst sukcesu
+# SYSTEM_THEME_WAIT: ile sekund czekać na usługę (domyślnie 3) — testy skracają.
+system_theme_report() {
+    local key="$1" expected="$2" shown="$3" sysroot="" conf theme file tries i
+    [[ "${ARCHENEMY_TEST:-}" == 1 ]] && sysroot="${ARCHENEMY_SYSROOT:-}"
+    conf="$sysroot/etc/archenemy/system-theme.conf"
+    if [[ ! -f "$conf" ]]; then
+        echo -e "  ${DIM}Login screen and boot menu are not themed by archenemy (optional: bash ~/archenemy/install/system-theme-installation.sh).${NC}"
+        return 0
+    fi
+    if ! systemctl is-active --quiet archenemy-system-theme.path 2>/dev/null; then
+        echo -e "  ${YELLOW}Login screen and boot menu do not follow by themselves here. Apply: sudo /usr/local/lib/archenemy/system-theme-sync${NC}"
+        return 0
+    fi
+    if ! grep -qx 'SDDM=1' "$conf" 2>/dev/null; then
+        echo -e "  The boot menu follows through the archenemy-system-theme service."
+        return 0
+    fi
+    tries="${SYSTEM_THEME_WAIT:-3}"
+    [[ "$tries" =~ ^[0-9]+$ ]] || tries=3
+    tries=$(( tries * 5 ))
+    for (( i = 0; i <= tries; i++ )); do
+        theme="$(grep -m1 '^Current=' "$sysroot/etc/sddm.conf.d/20-archenemy-theme.conf" 2>/dev/null | cut -d= -f2)"
+        file="$sysroot/usr/share/sddm/themes/$theme/theme.conf.user"
+        if [[ "$theme" == archenemy-* && -r "$file" ]] && grep -qx -- "$key=$expected" "$file"; then
+            echo -e "  ${GREEN}✓ ${shown}${NC}"
+            return 0
+        fi
+        (( i < tries )) && sleep 0.2
+    done
+    echo -e "  ${YELLOW}Saved, but the login screen has not picked it up yet. Check: systemctl status archenemy-system-theme.service${NC}"
+    return 0
+}
+
+# Wybór logo SYSTEMU: glif dystrybucji (domyślnie) albo Æ — w lewym boxie
+# paska, na ekranie logowania SDDM i w menu GRUB-a (decyzja właściciela
+# 2026-11-21: jeden wybór zamiast osobnych). Tryb czyta
+# scripts/waybar/launcher-logo.sh mode — ta sama reguła co w pasku (brak
+# pliku albo śmieci = distro). Zapis do data/launcher-logo.dat (nazwa sprzed
+# rozszerzenia; warstwa maszynowa, poza rice'em, więc przeżywa Super+T),
+# potem sygnał 12 = launcher przerysowuje się od razu (bar_change_report).
+# Rice bez launchera: zapis zostaje, ale bez zielonego ✓ dla paska, bo pasek
+# tego rice'a niczego nie pokaże. Ekran logowania i menu startu:
+# system_theme_report.
 launcher_logo_menu() {
     local dat="$ARCHENEMY_DIR/data/launcher-logo.dat"
     local cur name sel=0 target label missing=""
@@ -552,7 +599,7 @@ launcher_logo_menu() {
     [[ "$cur" == archenemy ]] && sel=1
 
     echo ""
-    echo -e "  Bar logo (left box of waybar): ${CYAN}${cur:-distro}${NC} · detected distro: ${CYAN}${name:-unknown}${NC}"
+    echo -e "  System logo (bar, login screen, boot menu): ${CYAN}${cur:-distro}${NC} · detected distro: ${CYAN}${name:-unknown}${NC}"
     warn_if_beta "launcher module"
     if missing="$(launcher_missing_rice)" && [[ "$missing" != white-blue_beta ]]; then
         echo -e "  ${YELLOW}⚠ ${missing} has no launcher module — the logo shows in $(launcher_rices) (Super+T).${NC}"
@@ -570,10 +617,76 @@ launcher_logo_menu() {
 
     write_dat "$dat" "$target" || return 1
     if missing="$(launcher_missing_rice)" && [[ "$missing" != white-blue_beta ]]; then
-        echo -e "  ${YELLOW}Saved: bar logo ${target}. ${missing} has no launcher module — it shows after you switch to $(launcher_rices) (Super+T).${NC}"
-        return 0
+        echo -e "  ${YELLOW}Saved: system logo ${target}. ${missing} has no launcher module — the bar shows it after you switch to $(launcher_rices) (Super+T).${NC}"
+    else
+        bar_change_report 12 "System logo: ${label}" "system logo ${target}" "launcher module"
     fi
-    bar_change_report 12 "Bar logo: ${label}" "bar logo ${target}" "launcher module"
+    system_theme_report logo "$target" "Login screen and boot menu use the ${target} logo"
+}
+
+# ─── MONITOR EKRANU LOGOWANIA (SDDM) ─────────────────────────────────────────
+
+# Wybór z pliku: nazwa złącza albo primary (brak pliku i śmieci = primary).
+login_screen_current() {
+    local dat="$ARCHENEMY_DIR/data/login-screen.dat" cur=""
+    [[ -f "$dat" && -r "$dat" ]] && { IFS= read -r cur < "$dat"; } 2>/dev/null
+    cur="${cur//[[:space:]]/}"
+    [[ "$cur" =~ ^[A-Za-z][A-Za-z0-9-]{0,31}$ ]] || cur=primary
+    printf '%s' "$cur"
+}
+
+# Na którym monitorze stoi formularz logowania (decyzja właściciela
+# 2026-11-22). Domyślnie monitor główny archenemy; zmiana tylko tutaj.
+# Lista z data/monitors/*.dat (te same monitory co [n] monitors), nazwa
+# złącza żywa, gdy monitor jest teraz podłączony. Zapis do
+# data/login-screen.dat: primary albo nazwa złącza. Motyw ekranu logowania
+# dopasowuje nazwę z zapasem (src/system-theme/sddm/components/Seat.qml):
+# wybrany, ale odpięty monitor = formularz na monitorze głównym.
+login_screen_menu() {
+    local dat="$ARCHENEMY_DIR/data/login-screen.dat"
+    local cur f name role desc live shown label target expected primary_name="" sel=0 i
+    local -a values=(primary) labels=()
+    cur="$(login_screen_current)"
+    for f in "$ARCHENEMY_DIR"/data/monitors/*.dat; do
+        [[ -f "$f" ]] || continue
+        name="$(grep -m1 '^MONITOR=' "$f" | cut -d= -f2-)"
+        role="$(grep -m1 '^ROLE=' "$f" | cut -d= -f2-)"
+        desc="$(grep -m1 '^DESCRIPTION=' "$f" | cut -d= -f2-)"
+        [[ "$name" =~ ^[A-Za-z][A-Za-z0-9-]{0,31}$ ]] || continue
+        live="$(monitor_live_name "$(monitor_selector_from_dat "$f")" 2>/dev/null)"
+        [[ "$live" =~ ^[A-Za-z][A-Za-z0-9-]{0,31}$ ]] || live=""
+        shown="${live:-$name}"
+        desc="${desc//[[:cntrl:]]/}"
+        label="$shown"
+        [[ -n "$desc" ]] && label+="  ${desc:0:36}"
+        if [[ -n "$live" ]]; then label+="  · connected"; else label+="  · not connected"; fi
+        if [[ "$role" == primary ]]; then label+="  · primary"; primary_name="$shown"; fi
+        values+=("$shown"); labels+=("$label")
+    done
+    labels=("primary monitor (default${primary_name:+, now $primary_name})" "${labels[@]}")
+    for i in "${!values[@]}"; do
+        [[ "${values[$i],,}" == "${cur,,}" ]] && sel=$i
+    done
+
+    echo ""
+    echo -e "  Login screen monitor: ${CYAN}${cur}${NC}"
+    echo -e "  The login form shows on one monitor; the others show only the wallpaper."
+    echo -e "  A chosen monitor that is not connected falls back to the primary monitor."
+    (( ${#values[@]} == 1 )) && echo -e "  ${YELLOW}No monitors saved yet (data/monitors) — set them up in [n] monitors first.${NC}"
+    for i in "${!labels[@]}"; do
+        echo -e "    ${BLUE}$(( i + 1 ))${NC}) ${labels[$i]}"
+    done
+    echo ""
+    tui_menu_lines "$sel" "${labels[@]}" \
+        || { echo -e "  ${YELLOW}Cancelled.${NC}"; return; }
+    target="${values[$TUI_MENU_INDEX]}"
+    label="${labels[$TUI_MENU_INDEX]}"
+
+    write_dat "$dat" "$target" || return 1
+    echo -e "  Saved: login screen on ${CYAN}${label%%  *}${NC}"
+    expected="$target"
+    [[ "$target" == primary ]] && expected="$primary_name"
+    system_theme_report loginScreen "$expected" "The login screen now uses ${label%%  *}"
 }
 
 # ─── WYJŚCIE AUDIO mpd (pipewire / alsa) ─────────────────────────────────────
@@ -1030,14 +1143,14 @@ diagnostics_menu() {
 # zaznaczenie, Enter otwiera, litera otwiera od razu. Stan i podgląd liczone raz
 # i trzymane do następnej akcji, żeby strzałki nie uruchamiały pactl ani hyprctl.
 
-MENU_KEYS=(a e d s w n k m v l t c f p o h i u)
+MENU_KEYS=(a e d s w n k m v t c f p o l g h i u)
 declare -A MENU_LABEL=(
     [a]="add bind" [e]="edit bind" [d]="remove bind" [s]="all shortcuts"
     [w]="workspaces" [n]="monitors" [k]="keyboard" [m]="mouse"
-    [v]="volume bar" [l]="bar logo" [t]="timer" [c]="terminal" [f]="fonts" [p]="autostart" [o]="audio"
-    [h]="shell" [i]="diagnostics" [u]="update archenemy"
+    [v]="volume bar" [t]="timer" [c]="terminal" [f]="fonts" [p]="autostart" [o]="audio"
+    [l]="system logo" [g]="login screen" [h]="shell" [i]="diagnostics" [u]="update archenemy"
 )
-declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [p]="Apps" [h]="System")
+declare -A MENU_GROUP=([a]="Binds" [w]="Desktop" [v]="Bar" [p]="Apps" [l]="System")
 declare -A MENU_STATE=() MENU_PREVIEW=()
 MENU_SEL=0
 MENU_LEFT=48            # szerokość listy
@@ -1083,6 +1196,7 @@ item_state() {
         m) state_from hypr/mouse-settings.sh summary ;;
         v) volume_style_current ;;
         l) state_from waybar/launcher-logo.sh mode ;;
+        g) login_screen_current ;;
         t) state_timer ;;
         c) state_from appbinds/terminal-settings.sh summary ;;
         f) state_from appbinds/font-settings.sh summary ;;
@@ -1149,11 +1263,13 @@ build_preview() {
         v) cur="$(volume_style_current)"; pvw "Now: $cur."; pv ""
            pv "line   ━━━━━━────"; pv "ticks  ▮▮▮▮▮▮▯▯▯▯"; pv "solid  ▬▬▬▬▬▬▬▬────" ;;
         l) cur="$(state_from waybar/launcher-logo.sh mode)"
-           pvw "The left box of the bar. Now: ${cur:-unknown}."; pv ""
+           pvw "One logo for the bar, the login screen and the boot menu. Now: ${cur:-unknown}."; pv ""
            pv "1  distro logo"; pvd "   Arch/Fedora/NixOS glyph"
            pvd "   detected: $(state_from waybar/launcher-logo.sh distro)"
            pv "2  archenemy logo (Æ)"; pv ""
            pvw "Stays the same when you switch rice." ;;
+        g) pvw "Which monitor shows the login form. Now: ${MENU_STATE[g]:-primary}."; pv ""
+           pvw "Default: the primary monitor. A chosen monitor that is not connected falls back to the primary one." ;;
         t) pvw "Countdown on the bar. Now: ${MENU_STATE[t]:-unknown}."; pv ""
            pvw "Turn it on or off, set the default minutes and the text colour." ;;
         c) pvw "Copy selected text to the clipboard. Now: ${MENU_STATE[c]:-unknown}."; pv ""
@@ -1300,6 +1416,7 @@ run_item() {
         k) keyboard_layouts_menu ;;
         v) volume_style_menu ;;
         l) launcher_logo_menu ;;
+        g) login_screen_menu ;;
         t) timer_menu ;;
         o) audio_menu ;;
         i) diagnostics_menu ;;
@@ -1338,7 +1455,7 @@ while :; do
     esac
     choice="${choice,,}"
     case "$choice" in
-        a|e|d|s|w|n|k|m|v|l|t|c|f|p|o|h|i|u) ;;
+        a|e|d|s|w|n|k|m|v|l|g|t|c|f|p|o|h|i|u) ;;
         *) continue ;;
     esac
     for i in "${!MENU_KEYS[@]}"; do
