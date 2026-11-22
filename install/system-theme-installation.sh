@@ -201,11 +201,14 @@ remove_all() {
             failed=1
         fi
         rm -f "$tmp"
-    elif [[ -d "$GRUB_THEME_DIR" ]]; then
+    elif sudo test -d "$GRUB_THEME_DIR"; then
         # Konfiguracja już nie wskazuje naszego motywu — katalog jest zbędny.
         sudo rm -rf "$GRUB_THEME_DIR"
     fi
-    [[ -e "$GRUB_THEME_DIR" && $failed -eq 0 ]] && { bad "Could not remove $GRUB_THEME_DIR"; failed=1; }
+    # /boot bywa nieczytelny dla zwykłego użytkownika — stan czyta root.
+    if (( ! failed )) && sudo test -e "$GRUB_THEME_DIR"; then
+        bad "Could not remove $GRUB_THEME_DIR"; failed=1
+    fi
 
     sudo rm -f "$SYNC" "$CONF"
     sudo rmdir "${SYNC%/*}" "${CONF%/*}" 2>/dev/null || true
@@ -378,17 +381,18 @@ if (( WANT_GRUB && ! FAILED )); then
     # Nowy katalog obok, potem zamiana nazw: GRUB nie zobaczy połowy motywu.
     if sudo mkdir -p "${GRUB_THEME_DIR%/*}" && sudo rm -rf "$GRUB_THEME_DIR.new" "$GRUB_THEME_DIR.old" \
         && sudo cp -r "$WORK/grub" "$GRUB_THEME_DIR.new"; then
-        [[ -d "$GRUB_THEME_DIR" ]] && sudo mv "$GRUB_THEME_DIR" "$GRUB_THEME_DIR.old"
+        # /boot bywa nieczytelny dla zwykłego użytkownika — stan czyta root.
+        sudo test -d "$GRUB_THEME_DIR" && sudo mv "$GRUB_THEME_DIR" "$GRUB_THEME_DIR.old"
         if sudo mv "$GRUB_THEME_DIR.new" "$GRUB_THEME_DIR"; then
             sudo rm -rf "$GRUB_THEME_DIR.old"
         else
-            [[ -d "$GRUB_THEME_DIR.old" ]] && sudo mv "$GRUB_THEME_DIR.old" "$GRUB_THEME_DIR"
+            sudo test -d "$GRUB_THEME_DIR.old" && sudo mv "$GRUB_THEME_DIR.old" "$GRUB_THEME_DIR"
             FAILED=1
         fi
     else
         FAILED=1
     fi
-    if (( FAILED )) || [[ ! -f "$GRUB_THEME_DIR/theme.txt" ]]; then
+    if (( FAILED )) || ! sudo test -f "$GRUB_THEME_DIR/theme.txt"; then
         bad "Could not install $GRUB_THEME_DIR"
         FAILED=1
     else
@@ -411,7 +415,7 @@ if (( WANT_GRUB && ! FAILED )); then
         fi
         if (( ! FAILED )); then
             if regenerate_bootloader "boot menu theme" \
-                && grep -q 'themes/archenemy/theme.txt' "$_BL_BOOT_DIR/grub/grub.cfg" 2>/dev/null; then
+                && sudo grep -q 'themes/archenemy/theme.txt' "$_BL_BOOT_DIR/grub/grub.cfg" 2>/dev/null; then
                 ok "grub.cfg points to the archenemy theme (visible at the next boot)"
             else
                 warn "grub.cfg does not mention the theme yet. Run: sudo grub-mkconfig -o /boot/grub/grub.cfg"

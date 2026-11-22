@@ -10,6 +10,7 @@
 // zostawia pustego ekranu: tło wraca do tapety rice'a. `dim` przyciemnia
 // wyłącznie cudzą tapetę kolorem `base`, żeby tekst rice'a został czytelny.
 import QtQuick
+import QtQuick.Window
 
 Item {
     id: backdrop
@@ -33,9 +34,10 @@ Item {
         id: image
         anchors.fill: parent
         fillMode: Image.PreserveAspectCrop
-        // Duża tapeta nie zajmuje pamięci ponad rozmiar ekranu.
-        sourceSize.width: Math.max(1, backdrop.width)
-        sourceSize.height: Math.max(1, backdrop.height)
+        // Duża tapeta nie zajmuje pamięci ponad rozmiar ekranu — liczony
+        // w pikselach fizycznych, żeby na ekranie HiDPI nie była rozmyta.
+        sourceSize.width: Math.max(1, Math.round(backdrop.width * Screen.devicePixelRatio))
+        sourceSize.height: Math.max(1, Math.round(backdrop.height * Screen.devicePixelRatio))
         visible: backdrop.showingImage
         source: backdrop.usingCustom
             ? Qt.resolvedUrl("../" + backdrop.custom)
