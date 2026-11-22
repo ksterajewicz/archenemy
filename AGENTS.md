@@ -349,6 +349,22 @@ Rules that follow directly from the table:
   `hyprctl reload`, so errors read after the write already contain the new
   error and the reload looks clean. Super+T (`lib/switch-rice.sh`) reloads the
   same way and only says "applied" after a clean reload.
+- **The power menu is one rofi window for both steps** (`scripts/rofi/rofi_power_menu.sh`,
+  rofi script mode: `-show archenemy-power -modes archenemy-power:<file>`, the
+  script calls itself back through `ROFI_RETV`/`ROFI_INFO`). Two `rofi -dmenu`
+  processes in a row lose input: between the first window closing and the
+  second one getting focus, keys and clicks go to the window underneath, and a
+  key already held when rofi gets focus only updates its state (rofi 2.0.0
+  `wayland_keyboard_enter`) — the owner's "clicking too fast does not shut
+  down" (2026-11-22). Never chain rofi processes for a multi-step menu. Every
+  row carries its effect in `info` and the action runs only for a matching
+  text + info pair; it starts in the background with stdout detached, because
+  rofi reads the script's output to the end. Shutdown still takes two accepts;
+  there is deliberately no delay before `Yes` (it would reject a fast double
+  Enter), so a held Enter (after the key repeat delay) or the third click of
+  one burst also confirms. The mode command is a bare file name found through
+  `PATH`: rofi splits the mode list on `,` and `#`. `bash tests/rofi-power-menu.sh`
+  (mock: `tests/lib/mock_rofi.py`).
 - **App launcher: `scripts/rofi/rofi_drun.sh` is the only way to open
   `rofi -show drun`.** On Enter with no match rofi runs the typed text as a
   command and has no option to disable that in drun mode, so the script sets

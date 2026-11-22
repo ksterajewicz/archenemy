@@ -541,7 +541,8 @@ archenemy/
 │                                     #   volume-bar.sh — waybar volume module on fake pactl/wpctl: headphones in any locale.
 │                                     #   timer.sh — waybar timer: running → finished, one notification with two bars at once.
 │                                     #   rofi-power-menu.sh — Super+RShift power menu on fake rofi/pidof/systemctl (nothing
-│                                     #   is shut down): poweroff under hyprlock, confirm with Yes, Esc/No do nothing.
+│                                     #   is shut down): poweroff under hyprlock, confirm with Yes, Esc/No do nothing; the
+│                                     #   fake rofi (tests/lib/mock_rofi.py) models script mode, one process = one window.
 │                                     #   runtime-dir.sh — scripts/lib/runtime-dir.sh: no ${XDG_RUNTIME_DIR:-/tmp} left,
 │                                     #   only our private dirs, refusal on a planted one, window history then off.
 │                                     #   virtualbox.sh — VirtualBox installer on fake pacman/modprobe and a
@@ -998,7 +999,7 @@ These tables describe the seven non-beta rices. `white-blue_beta` retains its le
 | `Super + K` | Switch keyboard layout (next on your list) |
 | `Super + Ctrl + 1…4` | Switch straight to keyboard layout #1–4 of your list (`Super + A` → `[k]`) |
 | `Super + A` | Settings menu: app shortcuts, audio, monitors, keyboard, fonts, autostart, diagnostics |
-| `Super + right Shift` | Power menu (shutdown / restart); with the screen locked (hyprlock) — direct shutdown, no menu or confirmation |
+| `Super + right Shift` | Power menu (shutdown / restart, then `Yes` in the same window, so a fast second Enter or double-click is not lost); with the screen locked (hyprlock) — direct shutdown, no menu or confirmation |
 
 ### Window control
 
