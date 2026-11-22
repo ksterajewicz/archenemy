@@ -272,12 +272,16 @@ if (( WANT_SDDM )); then
     fi
 fi
 if (( WANT_GRUB )); then
+    # grub-mkconfig stosuje motyw tylko z terminalem graficznym: GRUB_TERMINAL
+    # (gdy ustawiony) wygrywa z GRUB_TERMINAL_OUTPUT, pusta wartość = gfxterm.
+    grub_terminal="$(grub_default_value GRUB_TERMINAL 2>/dev/null || true)"
+    [[ -n "$grub_terminal" ]] || grub_terminal="$(grub_default_value GRUB_TERMINAL_OUTPUT 2>/dev/null || true)"
     if [[ ! -f "$GRUB_DEFAULT" ]]; then
         warn "/etc/default/grub not found — boot menu skipped."
         WANT_GRUB=0
-    elif [[ "$(grub_default_value GRUB_TERMINAL_OUTPUT 2>/dev/null)" == console ]]; then
-        warn "GRUB_TERMINAL_OUTPUT=console in /etc/default/grub: GRUB shows a text menu and ignores themes."
-        echo "    Comment that line out, then run: $retry"
+    elif [[ -n "$grub_terminal" && " $grub_terminal " != *" gfxterm "* ]]; then
+        warn "GRUB uses a text terminal (\"$grub_terminal\" in /etc/default/grub): it shows a text menu and ignores themes."
+        echo "    Remove that setting (or add gfxterm to it), then run: $retry"
         WANT_GRUB=0
     else
         current_grub_theme="$(grub_default_value GRUB_THEME 2>/dev/null || true)"
@@ -349,8 +353,19 @@ if (( WANT_GRUB )); then
         esac
         grep -q '^ROLE=primary$' "$dat" && HEIGHT_PRIMARY="${BASH_REMATCH[1]}"
     done
+    HEIGHT_FROM="the laptop panel"
+    [[ -n "$HEIGHT" ]] || HEIGHT_FROM="the primary monitor"
+    [[ -n "$HEIGHT$HEIGHT_PRIMARY" ]] || HEIGHT_FROM="the default"
     HEIGHT="${HEIGHT:-${HEIGHT_PRIMARY:-1080}}"
-    (( 10#$HEIGHT >= 480 && 10#$HEIGHT <= 4320 )) || HEIGHT=1080
+    # Jawny tryb w GRUB_GFXMODE (np. 1920x1080 albo 1920x1080x32,auto) mówi
+    # wprost, w jakiej rozdzielczości GRUB narysuje menu — wygrywa z domysłem.
+    gfxmode="$(grub_default_value GRUB_GFXMODE 2>/dev/null || true)"
+    if [[ "${gfxmode%%,*}" =~ ^[0-9]+x([0-9]{3,4})(x[0-9]+)?$ ]]; then
+        HEIGHT="${BASH_REMATCH[1]}"; HEIGHT_FROM="GRUB_GFXMODE"
+    fi
+    (( 10#$HEIGHT >= 480 && 10#$HEIGHT <= 4320 )) || { HEIGHT=1080; HEIGHT_FROM="the default"; }
+    echo "  Boot menu sized for a screen $HEIGHT px high (from $HEIGHT_FROM). If its text looks too big or"
+    echo "  too small at boot, set GRUB_GFXMODE=<width>x<height> in /etc/default/grub and run this again."
     GRUB_RICES="$(bash "$BUILD" rices grub)"
     ACTIVATE="${GRUB_RICES%%$'\n'*}:$LOGO_NOW"
     grep -qx -- "$RICE_NOW" <<< "$GRUB_RICES" && ACTIVATE="$RICE_NOW:$LOGO_NOW"

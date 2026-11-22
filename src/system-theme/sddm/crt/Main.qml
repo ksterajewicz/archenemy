@@ -64,7 +64,8 @@ Item {
                 font.family: root.face
                 font.weight: Font.Light
                 font.pixelSize: 100 * root.u
-                layer.enabled: true
+                // Renderer programowy nie rysuje warstw z efektem (patrz tron).
+                layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
                 layer.effect: MultiEffect {
                     shadowEnabled: true
                     shadowColor: config.glow
@@ -118,14 +119,14 @@ Item {
                     text: greeter.userName
                     idleColor: config.phosphor
                     hoverColor: config.glow
-                    enabledChoice: greeter.userCount > 1
+                    enabledChoice: greeter.canSwitchUser
                     opacity: 1
                     font.family: root.face
                     font.pixelSize: 18 * root.u
                     onChosen: greeter.nextUser()
                 }
                 Item { width: 18 * root.u; height: 1 }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "password:"; color: greeter.failed ? config.alarm : config.blue; font.family: root.face; font.pixelSize: 18 * root.u }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: greeter.needsName ? "user name:" : "password:"; color: greeter.failed ? config.alarm : config.blue; font.family: root.face; font.pixelSize: 18 * root.u }
                 Secret {
                     id: secret
                     anchors.verticalCenter: parent.verticalCenter
@@ -137,7 +138,10 @@ Item {
                     hint: ""
                     blockCursor: true
                     fontFamily: root.face
-                    onAccepted: greeter.login(text)
+                    plain: greeter.needsName
+                    onAccepted: greeter.submit(text)
+                    onSwitchUser: greeter.nextUser()
+                    onSwitchSession: greeter.nextSession()
                 }
             }
             SequentialAnimation {

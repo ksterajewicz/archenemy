@@ -332,6 +332,14 @@ check "[g] stan po zmianie: nazwa złącza"         '[[ "$out" =~ g\ +login\ scr
 sed -i 's/^loginScreen=.*/loginScreen=DP-1/' "$STC"
 out="$(stui 'g1\n\nq')"
 check "[g] powrót na monitor główny: primary w pliku, ✓ dla jego złącza" '[[ "$(<"$LS")" == primary && "$out" == *"✓ The login screen now uses primary monitor (default, now DP-1)"* ]]'
+# Monitor główny z opisem EDID podłączony pod inną nazwą złącza niż w pliku
+# (HDMI-A-1 zapisane, HDMI-A-3 na żywo): skrypt roota wpisuje do motywu nazwę
+# z pliku, więc ✓ musi szukać właśnie jej.
+sed -i 's/^ROLE=.*/ROLE=secondary/' "$A/data/monitors/DP-1.dat"; sed -i 's/^ROLE=.*/ROLE=primary/' "$A/data/monitors/HDMI-A-1.dat"
+sed -i 's/^loginScreen=.*/loginScreen=HDMI-A-1/' "$STC"
+out="$(stui 'g1\n\nq')"
+check "[g] primary pod inną żywą nazwą: ✓ po nazwie z pliku monitora" '[[ "$(<"$LS")" == primary && "$out" == *"primary monitor (default, now HDMI-A-3)"*"✓ The login screen now uses primary monitor"* ]]'
+sed -i 's/^ROLE=.*/ROLE=primary/' "$A/data/monitors/DP-1.dat"; sed -i 's/^ROLE=.*/ROLE=secondary/' "$A/data/monitors/HDMI-A-1.dat"
 out="$(stui 'g9\n\nq')"
 check "[g] numer spoza listy: bez zmiany"         '[[ "$(<"$LS")" == primary && "$out" == *"Cancelled"* ]]'
 echo 'HDMI-A-1; rm -rf /' > "$LS"; out="$(stui 'q')"

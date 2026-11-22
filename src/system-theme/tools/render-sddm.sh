@@ -20,7 +20,7 @@
 #   Host zostaje nietknięty; bez przestrzeni nazw narzędzie odmawia.
 #
 #   Użycie: render-sddm.sh [-s SZERxWYS] [-f KATALOG_FONTÓW] [-w SEKUNDY]
-#                          [-m MONITOR]... [-u MONITOR] [-k TEKST]
+#                          [-m MONITOR]... [-u MONITOR] [-n] [-c X,Y] [-k TEKST]
 #                          <katalog motywu> <wynik.png>
 #     -s  rozmiar ekranu (domyślnie 1920x1080)
 #     -m  wirtualny monitor NAZWA:SZERxWYS+X+Y (np. eDP-1:1920x1080+0+0);
@@ -31,9 +31,15 @@
 #     -u  nazwa monitora z -m odpinanego po narysowaniu motywu; zrzut
 #         powstaje po drugim odczekaniu -w (formularz ma wtedy stać na
 #         monitorze, który został)
+#     -n  pusta lista użytkowników: w atrapie /etc/passwd jest tylko konto
+#         systemowe, którego SDDM nie pokazuje (UID poniżej 1000) — motyw
+#         musi wtedy pozwolić wpisać nazwę użytkownika
+#     -c  kliknięcie myszą w punkcie X,Y ekranu przed wpisaniem tekstu
+#         (wymaga xdotool) — np. na monitorze bez formularza
 #     -k  tekst wpisany z klawiatury tuż przed zrzutem (wymaga xdotool) —
 #         widać, które okno ma klawiaturę; greeter działa bez menedżera
-#         okien, jak pod prawdziwym SDDM
+#         okien, jak pod prawdziwym SDDM. {Nazwa} to pojedynczy klawisz,
+#         np. 'jan{Return}haslo{F2}'
 #     -f  dodatkowy katalog fontów (np. rozpakowany ttf-jetbrains-mono-nerd,
 #         gdy font nie jest zainstalowany w systemie); można powtarzać
 #     -w  ile sekund czekać na narysowanie motywu (domyślnie 10; llvmpipe
@@ -51,6 +57,8 @@ FONT_DIRS=()
 MONITORS=()
 KEYS=""
 UNPLUG=""
+NO_USERS=0
+CLICK=""
 
 usage() {
     sed -n '/^#   Użycie:/,/^#   Ostrzeżenia/p' "${BASH_SOURCE[0]}" | sed 's/^#   \{0,1\}//' >&2
@@ -59,7 +67,7 @@ usage() {
 
 # Etap wewnętrzny: już w przestrzeni nazw (patrz niżej).
 if [[ "${1:-}" != --inside ]]; then
-    while getopts ":s:f:w:m:u:k:" opt; do
+    while getopts ":s:f:w:m:u:k:c:n" opt; do
         case "$opt" in
             s) SIZE="$OPTARG" ;;
             f) FONT_DIRS+=("$OPTARG") ;;
@@ -67,6 +75,8 @@ if [[ "${1:-}" != --inside ]]; then
             m) MONITORS+=("$OPTARG") ;;
             u) UNPLUG="$OPTARG" ;;
             k) KEYS="$OPTARG" ;;
+            c) CLICK="$OPTARG" ;;
+            n) NO_USERS=1 ;;
             *) usage ;;
         esac
     done
@@ -98,7 +108,10 @@ if [[ "${1:-}" != --inside ]]; then
         [[ "$UNPLUG" =~ ^[A-Za-z0-9-]+$ && " ${MONITORS[*]%%:*} " == *" $UNPLUG "* ]] \
             || { echo "render-sddm: -u '$UNPLUG' is not one of the -m monitors" >&2; exit 2; }
     fi
-    [[ -n "$KEYS" ]] && NEEDED+=(xdotool)
+    if [[ -n "$CLICK" ]]; then
+        [[ "$CLICK" =~ ^[0-9]+,[0-9]+$ ]] || { echo "render-sddm: bad -c '$CLICK' (expected X,Y)" >&2; exit 2; }
+    fi
+    [[ -n "$KEYS$CLICK" ]] && NEEDED+=(xdotool)
     for cmd in "${NEEDED[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || { echo "render-sddm: '$cmd' not found (see the header for packages)" >&2; exit 1; }
     done
@@ -114,7 +127,11 @@ if [[ "${1:-}" != --inside ]]; then
     trap 'rm -rf "$WORK"' EXIT
 
     # Atrapy danych systemu widziane przez greeter.
-    printf 'root:x:0:0:root:/root:/bin/sh\narchenemy:x:1000:1000:archenemy:/nonexistent:/bin/sh\n' > "$WORK/passwd"
+    if (( NO_USERS )); then
+        printf 'root:x:0:0:root:/root:/bin/sh\nservice:x:400:400:service:/nonexistent:/bin/sh\n' > "$WORK/passwd"
+    else
+        printf 'root:x:0:0:root:/root:/bin/sh\narchenemy:x:1000:1000:archenemy:/nonexistent:/bin/sh\n' > "$WORK/passwd"
+    fi
     printf 'archenemy\n' > "$WORK/hostname"
     # SessionModel (SDDM 0.21) czyta sesje Wayland tylko przy istniejącym
     # /dev/dri; jedna atrapa w jednym katalogu = jedna pozycja na liście.
@@ -137,6 +154,7 @@ if [[ "${1:-}" != --inside ]]; then
     printf '%s\n' "${MONITORS[@]}" > "$WORK/monitors"
     printf '%s' "$KEYS" > "$WORK/keys"
     printf '%s' "$UNPLUG" > "$WORK/unplug"
+    printf '%s' "$CLICK" > "$WORK/click"
     unshare -rm -- bash "${BASH_SOURCE[0]}" --inside "$WORK" "$THEME" "$OUT" "$SIZE" "$WAIT"
     rc=$?
     if [[ $rc -eq 0 && -s "$OUT" ]]; then
@@ -191,8 +209,26 @@ xvfb-run -a -s "-screen 0 ${SIZE}x24 -nolisten tcp -noreset" bash -c '
         xrandr --delmonitor "$(cat "$WORK/unplug")" >/dev/null 2>&1 || exit 1
         sleep "$WAIT"
     fi
+    if [[ -s "$WORK/click" ]]; then
+        IFS=, read -r click_x click_y < "$WORK/click"
+        xdotool mousemove "$click_x" "$click_y" click 1 || exit 1
+        sleep 3
+    fi
     if [[ -s "$WORK/keys" ]]; then
-        xdotool type --delay 40 "$(cat "$WORK/keys")" || exit 1
+        # Zwykły tekst idzie przez `type`, {Nazwa} przez `key` (Return, F2…).
+        rest="$(cat "$WORK/keys")"
+        while [[ -n "$rest" ]]; do
+            if [[ "$rest" =~ ^\{([A-Za-z0-9_]+)\}(.*)$ ]]; then
+                xdotool key "${BASH_REMATCH[1]}" || exit 1
+                rest="${BASH_REMATCH[2]}"
+                sleep 1
+            else
+                chunk="${rest%%\{*}"
+                [[ -n "$chunk" ]] || chunk="${rest:0:1}"
+                xdotool type --delay 40 "$chunk" || exit 1
+                rest="${rest:${#chunk}}"
+            fi
+        done
         # Programowy renderer na jednym rdzeniu przerysowuje okna z opóźnieniem.
         sleep 3
     fi

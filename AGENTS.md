@@ -682,6 +682,19 @@ Rules that follow directly from the table:
     `Qt.application.screens`, always resolves to a connected monitor, and
     asks for keyboard focus itself. A layout with `visible: primaryScreen`
     fails `tests/system-theme.sh`.
+  - A monitor with the form can be connected yet invisible (docked laptop,
+    lid closed), so `Seat.qml` also shows a hint on every other monitor and
+    a click there moves the form: it writes `config.loginScreen`, and
+    `config` is one `QQmlPropertyMap` shared by all greeter windows, so every
+    window recomputes at once (checked with a click under Xvfb).
+  - SDDM lists only accounts inside its UID range with an allowed shell
+    (`UserModel.cpp`). With an empty list a layout without a name field
+    locks the user out — every layout sends the field through
+    `greeter.submit()` (name first, then password) and wires `F2`/`F3`.
+  - The software scene graph (no GL: some VMs) does not draw an item with
+    `layer.effect` at all. Gate glow layers with
+    `layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software`; a literal
+    `layer.enabled: true` in a layout fails `tests/system-theme.sh`.
   - Connector names differ between Hyprland and the greeter's X server
     (`HDMI-A-1` vs `HDMI-1`) and between boots (`eDP-2` vs `eDP-1`) — match
     with fallbacks, never by exact name only.
@@ -700,6 +713,17 @@ Rules that follow directly from the table:
     interpolate into a command, never follow a symlinked theme directory.
     A new input file = a new `PathChanged=` line in the installer's unit and
     a case in `tests/system-theme.sh`.
+  - systemd does **not** queue `.path` events while the service runs
+    (checked on a live transient unit, systemd 2026-11): a write during a
+    run is lost. The script therefore compares a fingerprint of its inputs
+    and, under systemd (`INVOCATION_ID`), waits one quiet second after each
+    pass. `echo > file`, replace by `mv`, and a new file created by `mv` all
+    trigger `PathChanged=`; twelve writes in three seconds did not trip a
+    rate limit with `StartLimitIntervalSec=0`.
+  - `grub-mkconfig` applies `GRUB_THEME` only with a graphical terminal:
+    `GRUB_TERMINAL`, when set, overrides `GRUB_TERMINAL_OUTPUT`, and an empty
+    value means `gfxterm`. With `serial console` the theme lines are not
+    written at all.
   - Previews without a laptop: `tools/render-sddm.sh` (real greeter under
     Xvfb; `-m` virtual monitors need `-noreset`, otherwise the X server
     forgets `xrandr --setmonitor` when the client disconnects) and
