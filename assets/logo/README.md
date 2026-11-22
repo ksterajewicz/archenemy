@@ -11,6 +11,8 @@ PNG files below are only renders of the SVG sources.
 | File | What it is |
 |---|---|
 | `archenemy-ae.svg` | base mark, white (`#FFFFFF`) on transparency |
+| `archenemy-ae.txt` | the mark as text for fastfetch: half-block characters, 36 columns, `$1` at the start (fastfetch puts the rice's first logo colour there). Generated — after changing the SVG run `python3 assets/logo/gen_text_logo.py` |
+| `gen_text_logo.py` | generator of `archenemy-ae.txt`: reads the path from `archenemy-ae.svg` and fills it with the same code as the boot menu logo (`src/system-theme/grub/assets.py`) |
 | `rices/<rice>.svg` | the same geometry in one rice's colour — only `<title>` and `fill` differ |
 | `banner-dark.svg` | 1280×320 banner: the mark and the `archenemy` wordmark, white `#FFFFFF` on `#0C0C0E` — the top of the repository README on a dark theme |
 | `banner-light.svg` | the same banner, blue `#0148ED` on white `#FFFFFF` — the top of the README on a light theme |
@@ -56,8 +58,9 @@ launcher glyph, `#custom-launcher.distro`, or its accent).
 ## How the bar uses it
 
 In `crt`, `dither-flux`, `tron`, `yin` and `yang` the waybar module `custom/launcher`
-shows the mark only in the **archenemy** mode, picked in `Super+A` → `[l] bar
-logo`; the default mode shows the user's distribution glyph (a Nerd Font
+shows the mark only in the **archenemy** mode, picked in `Super+A` → `[l] system
+logo` (the same choice sets the logo in fastfetch, on the login screen and in
+the boot menu); the default mode shows the user's distribution glyph (a Nerd Font
 character chosen from `/etc/os-release`, not part of this mark). The module's
 text and class come from `scripts/waybar/launcher-logo.sh`: in the archenemy
 mode the text is one space (an empty text hides the module) and the class is

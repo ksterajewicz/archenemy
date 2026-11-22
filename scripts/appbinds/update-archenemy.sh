@@ -219,6 +219,12 @@ if pgrep -x waybar >/dev/null 2>&1; then
         fi
     fi
 fi
+# Logo fastfetcha idzie za „system logo”: plik w warstwie maszynowej bywa
+# nieaktualny po pullu (nowy znak) albo nie istnieje u kogoś, kto wybrał logo
+# przed 2026-11-22. Cicho, bez sudo; porażka nie zatrzymuje aktualizacji.
+if [[ -f "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" ]]; then
+    bash "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" sync 2>/dev/null || true
+fi
 echo ""
 echo -e "  Your settings (binds, autostart, rice, monitors, volume...) are outside"
 echo -e "  git — ${GREEN}they stay unchanged${NC}."
@@ -246,6 +252,16 @@ if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/d
             echo -e "  ${YELLOW}⚠ install/ or packages/ changed ($(plural "$(grep -c . <<< "$risky")" file)) — review before running install.sh:${NC}"
             echo -e "    git -C ~/archenemy diff ${old_head} HEAD -- install packages"
         fi
+    fi
+    # Motywy ekranu logowania i menu startu to KOPIE w systemie (pliki roota):
+    # po pullu, który zmienił ich źródła, zostają stare aż do ponownego biegu
+    # pomocnika. Tylko gdy motywy są zainstalowane (ustawienia roota istnieją).
+    theme_sysroot=""
+    [[ "${ARCHENEMY_TEST:-}" == 1 ]] && theme_sysroot="${ARCHENEMY_SYSROOT:-}"
+    if [[ -f "$theme_sysroot/etc/archenemy/system-theme.conf" ]] \
+        && [[ -n "$(git -C "$ARCHENEMY_DIR" diff --name-only "$old_head" HEAD -- src/system-theme 'rices/*/system-theme.conf' install/system-theme-installation.sh 2>/dev/null)" ]]; then
+        echo -e "  ${YELLOW}⚠ Login screen / boot menu themes changed — the copies in the system are older. Refresh them:${NC}"
+        echo -e "    bash ~/archenemy/install/system-theme-installation.sh"
     fi
 fi
 # Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi

@@ -58,7 +58,16 @@ case "\$1" in
       elif [[ -f "$T/ws.inode" && "\$(stat -c %i "$A/config/hypr/workspaces-monitors.lua")" != "\$(cat "$T/ws.inode")" ]]; then echo 'hl.workspace_rule: bad rule'; fi
     else cat "$T/errors" 2>/dev/null; fi
     echo ;;
+  monitors) cat "$T/hypr-monitors" 2>/dev/null ;;
 esac
+EOS
+# Atrapa systemctl: usługa motywów systemowych „działa”, gdy jest plik
+# theme-service-active ([l] system logo, [g] login screen).
+cat > "$T/bin/systemctl" <<EOS
+#!/usr/bin/env bash
+echo "systemctl \$*" >> "$T/log"
+[[ "\$1" == is-active ]] && { [[ -f "$T/theme-service-active" ]]; exit; }
+exit 0
 EOS
 # Atrapy procesów: guard „żyje”, gdy setsid go wystartował (plik guard-alive),
 # chyba że guard-broken; waybar żyje, gdy jest plik waybar-alive.
@@ -194,12 +203,14 @@ reset; printf 'hl.bind("SUPER + x", hl.dsp.exec("xterm"))\n' >> "$BINDS"
 out="$(tui 'q')"
 check "menu mówi o bindzie spoza listy"   '[[ "$out" == *"1 written by hand"* ]]'
 
-echo "== [l] logo w lewym boxie paska"
+echo "== [l] logo systemu (pasek, ekran logowania, menu startu)"
 # Prawdziwy scripts/waybar/launcher-logo.sh (tryb i nazwa dystrybucji) na
 # atrapie os-release; skutek = data/launcher-logo.dat ORAZ to, co skrypt
 # modułu waybara wypisuje po zmianie. Rice'y: tron ma launcher, white-blue nie.
 mkdir -p "$A/install/lib" "$A/rices/tron/waybar" "$A/rices/white-blue/waybar"
 cp "$REPO/scripts/waybar/launcher-logo.sh" "$A/scripts/waybar/"
+mkdir -p "$A/assets/logo"; cp "$REPO/assets/logo/archenemy-ae.txt" "$A/assets/logo/"   # znak Æ dla fastfetcha
+FFL="$A/data/fastfetch-logo.txt"
 cp "$REPO/install/lib/pkg.sh" "$A/install/lib/"
 printf '"modules-left": ["custom/launcher", "hyprland/workspaces"],\n' > "$A/rices/tron/waybar/config.jsonc"
 printf '"modules-left": ["hyprland/workspaces"],\n' > "$A/rices/white-blue/waybar/config.jsonc"
@@ -209,28 +220,31 @@ ltui() { ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release" tui "$1"; }
 bar_json() { ARCHENEMY_TEST=1 ARCHENEMY_OS_RELEASE="$T/os-release" bash "$A/scripts/waybar/launcher-logo.sh"; }
 rm -f "$LL"; : > "$T/log"
 out="$(ltui 'q')"
-check "[l] stan bez pliku: distro"             '[[ "$out" =~ l\ +bar\ logo\ +distro ]]'
-check "[l] w grupie Bar zaraz po [v]"          '[[ "$out" == *"Bar"*"v  volume bar"*"l  bar logo"*"t  timer"* ]]'
-out="$(ltui '\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[Bq')"
+check "[l] stan bez pliku: distro"             '[[ "$out" =~ l\ +system\ logo\ +distro ]]'
+out="$(ARCHENEMY_TUI_SIZE="40 90" ltui 'q')"   # wysokie okno: cała lista naraz
+check "[l] w grupie System przed [g] i [h]"    '[[ "$out" == *"Bar"*"v  volume bar"*"t  timer"*"System"*"l  system logo"*"g  login screen"*"h  shell"* ]]'
+out="$(ltui '\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[B\e[Bq')"
 check "[l] podgląd: obie opcje i dystrybucja"  '[[ "$out" == *"1  distro logo"*"Arch/Fedora/NixOS glyph"*"detected: Arch Linux"*"2  archenemy logo (Æ)"* ]]'
 out="$(ltui 'l2\n\nq')"
 check "[l] archenemy: plik i JSON paska"       '[[ "$(<"$LL")" == archenemy && "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
-check "[l] waybar działa: ✓ po sygnale 12"     '[[ "$out" == *"detected distro: Arch Linux"*"✓ Bar logo: archenemy logo (Æ)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] waybar działa: ✓ po sygnale 12"     '[[ "$out" == *"detected distro: Arch Linux"*"✓ System logo: archenemy logo (Æ)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] archenemy: fastfetch dostaje znak Æ"   'cmp -s "$FFL" "$REPO/assets/logo/archenemy-ae.txt" && [[ "$out" == *"✓ fastfetch shows the archenemy logo on its next run"* ]]'
 out="$(ltui 'q')"
-check "[l] stan po zmianie: archenemy"         '[[ "$out" =~ l\ +bar\ logo\ +archenemy ]]'
+check "[l] stan po zmianie: archenemy"         '[[ "$out" =~ l\ +system\ logo\ +archenemy ]]'
 : > "$T/log"; out="$(ltui 'l1\n\nq')"
 check "[l] distro: plik i glif w JSON paska"   '[[ "$(<"$LL")" == distro && "$(bar_json)" == "{\"text\":\"$(printf "\xf3\xb0\xa3\x87")\",\"class\":\"distro\"}" ]]'
-check "[l] distro: ✓ z nazwą dystrybucji"      '[[ "$out" == *"✓ Bar logo: distro logo (Arch Linux)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] distro: ✓ z nazwą dystrybucji"      '[[ "$out" == *"✓ System logo: distro logo (Arch Linux)"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] distro: plik logo fastfetcha znika"     '[[ ! -e "$FFL" && "$out" == *"✓ fastfetch shows the distro logo on its next run"* ]]'
 out="$(ltui 'lx\n\nq')"
-check "[l] zły klawisz bez zmiany"             '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* && "$out" != *"✓ Bar logo"* ]]'
+check "[l] zły klawisz bez zmiany"             '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* && "$out" != *"✓ System logo"* ]]'
 out="$(ltui 'l\n\nq')"
 check "[l] Enter anuluje"                      '[[ "$(<"$LL")" == distro && "$out" == *"Cancelled"* ]]'
 rm "$T/waybar-alive"; : > "$T/log"
 out="$(ltui 'l2\n\nq')"
-check "[l] bez waybara: zapisane, bez ✓"       '[[ "$(<"$LL")" == archenemy && "$out" != *"✓ Bar logo"* && "$out" == *"Saved: bar logo archenemy"*"Waybar is not running"* ]] && ! grep -q "^pkill" "$T/log"'
+check "[l] bez waybara: zapisane, bez ✓"       '[[ "$(<"$LL")" == archenemy && "$out" != *"✓ System logo"* && "$out" == *"Saved: system logo archenemy"*"Waybar is not running"* ]] && ! grep -q "^pkill" "$T/log"'
 touch "$T/waybar-alive" "$T/pkill-fails"
 out="$(ltui 'l1\n\nq')"; rm "$T/pkill-fails"
-check "[l] sygnał nie doszedł: bez ✓"          '[[ "$(<"$LL")" == distro && "$out" != *"✓ Bar logo"* && "$out" == *"did not take the refresh signal"* ]]'
+check "[l] sygnał nie doszedł: bez ✓"          '[[ "$(<"$LL")" == distro && "$out" != *"✓ System logo"* && "$out" == *"did not take the refresh signal"* ]]'
 echo launcher-logo.dat > "$T/mv-fails"; out="$(ltui 'l2\n\nq')"; rm "$T/mv-fails"
 check "[l] nieudany zapis: bez ✓, plik bez zmian" '[[ "$(<"$LL")" == distro && "$out" != *"✓"* && "$out" != *"Saved"* && "$out" == *"Could not write"* ]] && ! compgen -G "$LL.*" >/dev/null'
 # Niezapisywalny katalog bez sztuczek z rootem: data/ to zwykły plik.
@@ -241,34 +255,92 @@ check "[l] niezapisywalny katalog: czytelny błąd" '[[ "$out" == *"✗ Could no
 check "[l] niezapisywalny katalog: stary stan"    '[[ "$(<"$LL")" == distro ]]'
 echo white-blue > "$A/.current_rice"; : > "$T/log"
 out="$(ltui 'l2\n\nq')"
-check "[l] rice bez launchera: zapisane, bez ✓" '[[ "$(<"$LL")" == archenemy && "$out" == *"white-blue has no launcher module — the logo shows in tron"* && "$out" == *"Saved: bar logo archenemy. white-blue has no launcher module"* && "$out" != *"✓ Bar logo"* ]] && ! grep -q "^pkill" "$T/log"'
+check "[l] rice bez launchera: zapisane, bez ✓" '[[ "$(<"$LL")" == archenemy && "$out" == *"white-blue has no launcher module — the logo shows in tron"* && "$out" == *"Saved: system logo archenemy. white-blue has no launcher module"* && "$out" != *"✓ System logo"* ]] && ! grep -q "^pkill" "$T/log"'
 echo white-blue_beta > "$A/.current_rice"
 out="$(ltui 'l1\n\nq')"
-check "[l] beta: ostrzeżenie i bez ✓"           '[[ "$(<"$LL")" == distro && "$out" == *"white-blue_beta has no launcher module"* && "$out" == *"Saved: bar logo distro"* && "$out" != *"✓ Bar logo"* ]]'
+check "[l] beta: ostrzeżenie i bez ✓"           '[[ "$(<"$LL")" == distro && "$out" == *"white-blue_beta has no launcher module"* && "$out" == *"Saved: system logo distro"* && "$out" != *"✓ System logo"* ]]'
 echo tron > "$A/.current_rice"; : > "$T/log"
 out="$(ltui 'l2\n\nq')"
-check "[l] rice z launcherem: ✓ po sygnale 12"  '[[ "$(<"$LL")" == archenemy && "$out" == *"✓ Bar logo: archenemy logo (Æ)"* && "$out" != *"has no launcher"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
+check "[l] rice z launcherem: ✓ po sygnale 12"  '[[ "$(<"$LL")" == archenemy && "$out" == *"✓ System logo: archenemy logo (Æ)"* && "$out" != *"has no launcher"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log"'
 # Waybar starszy niż config (git pull / [u] pod działającym paskiem): moduł
 # nie zna "signal": 12, więc zamiast RTMIN+12 idzie SIGUSR2 (reload configu).
 mkdir -p "$H/.config/waybar"; WCFG="$H/.config/waybar/config.jsonc"; touch "$WCFG"
 echo 3600 > "$T/waybar-etimes"; : > "$T/log"
 out="$(ltui 'l1\n\nq')"
-check "[l] stary config paska: ✓ po SIGUSR2"    '[[ "$(<"$LL")" == distro && "$out" == *"✓ Bar logo: distro logo (Arch Linux) (waybar reloaded: its config changed since it started)"* ]] && grep -q "^pkill -USR2 -x waybar" "$T/log" && ! grep -q "RTMIN" "$T/log"'
+check "[l] stary config paska: ✓ po SIGUSR2"    '[[ "$(<"$LL")" == distro && "$out" == *"✓ System logo: distro logo (Arch Linux) (waybar reloaded: its config changed since it started)"* ]] && grep -q "^pkill -USR2 -x waybar" "$T/log" && ! grep -q "RTMIN" "$T/log"'
 touch "$T/pkill-fails"; : > "$T/log"
 out="$(ltui 'l2\n\nq')"; rm "$T/pkill-fails"
-check "[l] stary config, reload nie doszedł: bez ✓" '[[ "$(<"$LL")" == archenemy && "$out" != *"✓ Bar logo"* && "$out" == *"Saved: bar logo archenemy. Waybar still runs an older bar config"* ]]'
+check "[l] stary config, reload nie doszedł: bez ✓" '[[ "$(<"$LL")" == archenemy && "$out" != *"✓ System logo"* && "$out" == *"Saved: system logo archenemy. Waybar still runs an older bar config"* ]]'
 : > "$T/log"; out="$(tui 'v1\n\nq')"
 check "[v] stary config paska: też SIGUSR2"     '[[ "$out" == *"✓ Volume bar style: line (waybar reloaded"* ]] && grep -q "^pkill -USR2 -x waybar" "$T/log" && ! grep -q "RTMIN" "$T/log"'
 touch -d '-2 hours' "$WCFG"; echo 60 > "$T/waybar-etimes"; : > "$T/log"
 out="$(ltui 'l1\n\nq')"
-check "[l] config starszy niż waybar: RTMIN+12"  '[[ "$out" == *"✓ Bar logo: distro logo (Arch Linux)"* && "$out" != *"reloaded"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log" && ! grep -q "USR2" "$T/log"'
+check "[l] config starszy niż waybar: RTMIN+12"  '[[ "$out" == *"✓ System logo: distro logo (Arch Linux)"* && "$out" != *"reloaded"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log" && ! grep -q "USR2" "$T/log"'
 touch "$WCFG"; echo bzdura > "$T/waybar-etimes"; : > "$T/log"
 out="$(ltui 'l2\n\nq')"
-check "[l] nieczytelny czas waybara: RTMIN+12"   '[[ "$out" == *"✓ Bar logo: archenemy logo"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log" && ! grep -q "USR2" "$T/log"'
+check "[l] nieczytelny czas waybara: RTMIN+12"   '[[ "$out" == *"✓ System logo: archenemy logo"* ]] && grep -q "^pkill -RTMIN+12 -x waybar" "$T/log" && ! grep -q "USR2" "$T/log"'
 rm -rf "$H/.config/waybar" "$T/waybar-etimes"
 echo white-blue > "$A/.current_rice"
 check "[l] zmiana rice'a nie zmienia trybu"     '[[ "$(bar_json)" == "{\"text\":\" \",\"class\":\"archenemy\"}" ]]'
 rm -f "$A/.current_rice" "$LL"
+
+echo "-- [l] ekran logowania i menu startu (motywy systemowe)"
+# Pliki systemowe pod ARCHENEMY_SYSROOT (hak tylko z ARCHENEMY_TEST=1);
+# usługa roota to atrapa systemctl. Zielony ✓ wymaga ODCZYTU z motywu.
+SYSR="$T/sysroot"; STC="$SYSR/usr/share/sddm/themes/archenemy-tron/theme.conf.user"
+stui() { ARCHENEMY_TEST=1 ARCHENEMY_SYSROOT="$SYSR" ARCHENEMY_OS_RELEASE="$T/os-release" SYSTEM_THEME_WAIT=0 tui "$1"; }
+echo tron > "$A/.current_rice"
+out="$(stui 'l2\n\nq')"
+check "[l] bez motywów systemowych: szara informacja, że to opcja" '[[ "$out" == *"not themed by archenemy (optional: bash ~/archenemy/install/system-theme-installation.sh)"* && "$out" != *"Login screen and boot menu use"* ]]'
+mkdir -p "$SYSR/etc/archenemy" "$SYSR/etc/sddm.conf.d" "${STC%/*}"
+printf 'STATE_USER=test\nSTATE_DIR=%s\nSDDM=1\nGRUB=1\n' "$A" > "$SYSR/etc/archenemy/system-theme.conf"
+printf '[Theme]\nCurrent=archenemy-tron\n' > "$SYSR/etc/sddm.conf.d/20-archenemy-theme.conf"
+printf '[General]\nlogo=distro\ndistroGlyph=x\nloginScreen=\nbackground=\n' > "$STC"
+out="$(stui 'l2\n\nq')"
+check "[l] motywy bez usługi: komenda ręczna, bez ✓" '[[ "$out" == *"do not follow by themselves here. Apply: sudo /usr/local/lib/archenemy/system-theme-sync"* && "$out" != *"✓ Login screen"* ]]'
+touch "$T/theme-service-active"
+out="$(stui 'l2\n\nq')"
+check "[l] usługa działa, motyw jeszcze stary: bez ✓, komenda diagnozy" '[[ "$out" == *"has not picked it up yet"*"systemctl status archenemy-system-theme.service"* && "$out" != *"✓ Login screen"* ]]'
+sed -i 's/^logo=.*/logo=archenemy/' "$STC"
+out="$(stui 'l2\n\nq')"
+check "[l] usługa działa i motyw ma nowe logo: ✓ po odczycie" '[[ "$out" == *"✓ Login screen and boot menu use the archenemy logo"* ]]'
+sed -i 's/^SDDM=1/SDDM=0/' "$SYSR/etc/archenemy/system-theme.conf"
+out="$(stui 'l1\n\nq')"
+check "[l] sam GRUB (bez SDDM): informacja bez ✓"   '[[ "$out" == *"The boot menu follows through the archenemy-system-theme service"* && "$out" != *"✓ Login screen"* ]]'
+sed -i 's/^SDDM=0/SDDM=1/' "$SYSR/etc/archenemy/system-theme.conf"
+rm -f "$LL"
+
+echo "== [g] monitor ekranu logowania"
+LS="$A/data/login-screen.dat"
+printf 'MONITOR=HDMI-A-1\nRESOLUTION=2560x1440\nRATE=60\nPOSITION=1920x0\nSCALE=1\nROLE=secondary\nDESCRIPTION=TEST Vendor M2 0002\nORDER=2\n' > "$A/data/monitors/HDMI-A-1.dat"
+rm -f "$LS" "$T/hypr-monitors"
+out="$(stui 'q')"
+check "[g] stan bez pliku: primary"               '[[ "$out" =~ g\ +login\ screen\ +primary ]]'
+out="$(stui 'g\n\nq')"
+check "[g] lista: monitor główny i oba monitory z warstwy maszynowej" '[[ "$out" == *"1) primary monitor (default, now DP-1)"*"2) DP-1  · not connected  · primary"*"3) HDMI-A-1  TEST Vendor M2 0002  · not connected"* ]]'
+check "[g] Enter anuluje, plik nie powstaje"      '[[ "$out" == *"Cancelled"* && ! -e "$LS" ]]'
+check "[g] ekran mówi o powrocie na monitor główny" '[[ "$out" == *"not connected falls back to the primary monitor"* ]]'
+printf 'Monitor DP-1 (ID 0):\n\tdescription: Other Panel 1\nMonitor HDMI-A-3 (ID 1):\n\tdescription: TEST Vendor M2 0002 (HDMI-A-3)\n' > "$T/hypr-monitors"
+out="$(stui 'g3\n\nq')"
+check "[g] wybór podłączonego monitora: żywa nazwa złącza w pliku" '[[ "$(<"$LS")" == HDMI-A-3 && "$out" == *"3) HDMI-A-3  TEST Vendor M2 0002  · connected"*"Saved: login screen on HDMI-A-3"* ]]'
+check "[g] motyw jeszcze bez zmiany: bez ✓"       '[[ "$out" == *"has not picked it up yet"* && "$out" != *"✓ The login screen now uses"* ]]'
+sed -i 's/^loginScreen=.*/loginScreen=HDMI-A-3/' "$STC"
+out="$(stui 'g3\n\nq')"
+check "[g] motyw ma wybrany monitor: ✓ po odczycie" '[[ "$out" == *"✓ The login screen now uses HDMI-A-3"* ]]'
+out="$(stui 'q')"
+check "[g] stan po zmianie: nazwa złącza"         '[[ "$out" =~ g\ +login\ screen\ +HDMI-A-3 ]]'
+sed -i 's/^loginScreen=.*/loginScreen=DP-1/' "$STC"
+out="$(stui 'g1\n\nq')"
+check "[g] powrót na monitor główny: primary w pliku, ✓ dla jego złącza" '[[ "$(<"$LS")" == primary && "$out" == *"✓ The login screen now uses primary monitor (default, now DP-1)"* ]]'
+out="$(stui 'g9\n\nq')"
+check "[g] numer spoza listy: bez zmiany"         '[[ "$(<"$LS")" == primary && "$out" == *"Cancelled"* ]]'
+echo 'HDMI-A-1; rm -rf /' > "$LS"; out="$(stui 'q')"
+check "[g] śmieci w pliku: stan primary"          '[[ "$out" =~ g\ +login\ screen\ +primary ]]'
+rm -rf "$A/data/monitors.bak"; mv "$A/data/monitors" "$A/data/monitors.bak"; mkdir -p "$A/data/monitors"
+out="$(stui 'g1\n\nq')"
+check "[g] bez zapisanych monitorów: podpowiedź [n], zapis primary" '[[ "$out" == *"No monitors saved yet"*"[n] monitors"* && "$(<"$LS")" == primary ]]'
+rmdir "$A/data/monitors"; mv "$A/data/monitors.bak" "$A/data/monitors"
+rm -f "$LS" "$A/data/monitors/HDMI-A-1.dat" "$T/hypr-monitors" "$T/theme-service-active" "$A/.current_rice"; rm -rf "$SYSR"
 
 echo "== [v] pasek głośności"
 reset; out="$(tui 'v2\n\nq')"
@@ -401,9 +473,9 @@ reset; out="$(tui 'q')"
 check "pusta lista skrótów"                    '[[ "$out" == *"No binds yet."* ]]'
 out="$(tui '\e[B\e[B\e[B\e[B\e[B\e[Bq')"
 check "podgląd [k]: układy"                    '[[ "$out" == *"2  us"*"Super+Ctrl+2"* ]]'
-out="$(tui '\e[A\e[A\e[A\e[A\e[Aq')"
+out="$(tui '\e[A\e[A\e[A\e[A\e[A\e[A\e[Aq')"   # od końca: u i h g l o p
 check "podgląd [p]: aplikacje"                 '[[ "$out" == *"firefox"* || "$out" == *"steam"* ]]'
-out="$(tui '\e[A\e[A\e[A\e[Aq')"   # [h] shell wszedł między [o] a [i]
+out="$(tui '\e[A\e[A\e[A\e[A\e[A\e[Aq')"   # [l] i [g] weszły między [o] a [h]
 check "podgląd [o]: wyjście i wejście"         '[[ "$out" == *"Output"*"Input"* ]]'
 out="$(tui '\e[A\e[Aq')"
 check "podgląd [i]: opis"                      '[[ "$out" == *"config check"* ]]'

@@ -37,12 +37,12 @@ bash "$S" on >/dev/null
 check "switches off to on" '[[ "$(bash "$S" show)" == on ]]'
 check "does not replace original backup" 'cmp -s "$T/original" "$CONFIG.bak"'
 
-# [c] to indeks 11 w MENU_KEYS (a e d s w n k m v l t c …): 11 × ↓, potem Enter.
+# [c] to indeks 10 w MENU_KEYS (a e d s w n k m v t c …): 10 × ↓, potem Enter.
 mkdir -p "$T/home/archenemy/scripts" "$T/home/.config/alacritty"
 cp -R "$REPO/scripts/appbinds" "$T/home/archenemy/scripts/"
 cp "$T/original" "$T/home/.config/alacritty/alacritty.toml"
 HOME="$T/home" ALACRITTY_CONFIG="$T/home/.config/alacritty/alacritty.toml" \
-    bash -c 'printf "\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\n\nq" | timeout 8 bash "$1/scripts/appbinds/appbinds.sh"' _ "$T/home/archenemy" >/dev/null 2>&1
+    bash -c 'printf "\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\033[B\n\nq" | timeout 8 bash "$1/scripts/appbinds/appbinds.sh"' _ "$T/home/archenemy" >/dev/null 2>&1
 check "main menu arrows open terminal settings and Enter toggles off" '[[ "$(ALACRITTY_CONFIG="$T/home/.config/alacritty/alacritty.toml" bash "$S" show)" == off ]]'
 
 rm "$CONFIG"

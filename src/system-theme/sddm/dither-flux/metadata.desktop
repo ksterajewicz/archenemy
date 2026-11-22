@@ -1,0 +1,13 @@
+[SddmGreeterTheme]
+Name=archenemy dither-flux
+Description=archenemy login screen for the dither-flux rice
+Author=kst
+License=GPL-3.0-or-later
+Type=sddm-theme
+Version=0.1
+Website=https://github.com/ksterajewicz/archenemy
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=archenemy-dither-flux
+Theme-API=2.0
+QtVersion=6

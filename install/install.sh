@@ -1837,6 +1837,12 @@ echo -e "  ${GREEN}✓ Scripts made executable.${NC}"
 # Screenshots directory (hyprshot output)
 mkdir -p "$HOME/Screenshots"
 
+# Logo fastfetcha idzie za „system logo” (Super+A → [l]): plik warstwy
+# maszynowej data/fastfetch-logo.txt odtwarzany przy każdym biegu (tryb
+# archenemy = znak Æ, tryb distro = brak pliku). Cicho; porażka nie
+# zatrzymuje instalacji — fastfetch pokazuje wtedy logo dystrybucji.
+bash "$ARCHENEMY_DIR/scripts/waybar/launcher-logo.sh" sync 2>/dev/null || true
+
 # Tapeta: przy pierwszej instalacji pierwszy plik z wallpapers/, żeby hyprpaper
 # miał poprawny config od pierwszego startu; przy ponownym biegu (zalecanym po
 # każdym pullu) zostaje wybór użytkownika z Super+W — `--init` przywraca go,
@@ -2108,6 +2114,27 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
         2) SUMMARY_SKIPPED+=("VirtualBox — installed, but vboxdrv is not running in the current kernel: reboot") ;;
         *) SUMMARY_SKIPPED+=("VirtualBox — installation failed (details above; retry: bash ~/archenemy/install/virtualbox-installation.sh)") ;;
     esac
+fi
+        ;;
+esac
+
+# Ekran logowania (SDDM) i menu startu (GRUB) w wyglądzie rice'a — opcjonalne.
+# Pomocnik sam sprawdza, co dotyczy maszyny (SDDM jako menedżer logowania,
+# GRUB jako bootloader), nie zastępuje cudzego motywu bez osobnego „y”, pyta
+# osobno o usługę przełączającą i ma własną drogę powrotu (--remove). Działa
+# tylko na Archu (ścieżki /boot/grub, grub-mkconfig); --skip-packages nie ma
+# tu znaczenia — pomocnik niczego nie instaluje pacmanem.
+case "$PLATFORM" in
+    fedora) manual_step "Login screen and boot menu themes (optional)" "this helper only knows the Arch layout; theme sources: src/system-theme/ (build.sh)" ;;
+    nixos)  manual_step "Login screen and boot menu themes (optional)" "set services.displayManager.sddm.theme and boot.loader.grub.theme; theme sources: src/system-theme/ (build.sh)" ;;
+    *)
+read -rp "Theme the login screen (SDDM) and boot menu (GRUB) like your rice? [y/N]: " ans
+if [[ "$ans" =~ ^[Yy]$ ]]; then
+    if bash "$ARCHENEMY_DIR/install/system-theme-installation.sh" --confirmed; then
+        SUMMARY_DONE+=("Login screen and boot menu themes: finished (details above; undo: bash ~/archenemy/install/system-theme-installation.sh --remove)")
+    else
+        SUMMARY_SKIPPED+=("Login screen and boot menu themes — setup incomplete (details above; retry: bash ~/archenemy/install/system-theme-installation.sh)")
+    fi
 fi
         ;;
 esac

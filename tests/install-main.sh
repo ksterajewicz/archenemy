@@ -291,6 +291,7 @@ UFW.*\[y/N\]:	y
 Enable NetworkManager.*\[Y/n\]:
 Set up Bluetooth.*\[y/N\]:	n
 Install Oracle VirtualBox.*\[y/N\]:	n
+Theme the login screen.*\[y/N\]:	n
 Reload Hyprland now\? \[y/N\]:	y
 EOF
 
@@ -332,6 +333,7 @@ check "[9.7] generator tapet: v1 1920x1080, v2 2560x1600" 'grep -qE "^python3 .*
 check "[10] ufw: polityki, enable, usługa"     'called "ufw default deny incoming" && called "ufw enable" && called "systemctl enable ufw"'
 check "[10] pytanie o ufw mówi, co włączenie zmienia" '[[ "$OUT" == *"blocks incoming connections"* && "$OUT" == *"rp_filter"* && "$OUT" == *"Remote Play"* ]] && asked "UFW.*\[y/N\]"'
 check "[10] NetworkManager i pipewire-pulse włączone" 'called "systemctl enable --now NetworkManager" && called "systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service"'
+check "[10] motywy logowania i menu startu: pytanie pada, N = pomocnik nie rusza" 'asked "Theme the login screen" && [[ "$OUT" != *"in the look of your rice"* && "$OUT" != *"Login screen and boot menu themes:"* ]]'
 check "[11] installed-head.dat = HEAD kopii"   '[[ "$(sed -n "s/^COMMIT=//p" "$A/data/installed-head.dat")" == "$COPY_HEAD" ]]'
 check "[11] baner pełnego sukcesu, jedyny czerwony wiersz = brakujący pakiet" '[[ "$OUT" == *"Everything is set up. Have fun!"* && "$(grep "✗" <<< "$OUT")" == "  ✗ missing: swayosd" ]]'
 check "[11] sudo -k po ostatnim sudo, reload ok" '[[ "$(grep "^sudo" "$T/log.1" | tail -1)" == "sudo -k" ]] && [[ "$OUT" == *"Hyprland reloaded"* ]]'
@@ -437,6 +439,7 @@ check "[6]–[10] bez usług, zapory i instalatorów systemowych" '! grep -qE "^
 check "[6]/[10] instrukcje zamiast kroków"      '[[ "$OUT" == *"Power profiles: tuned-ppd (Fedora'"'"'s default) is installed"* && "$OUT" == *"Fedora uses firewalld"* && "$OUT" == *"skipped: NetworkManager — not done on Fedora"* ]]'
 check "[8]/[9] warstwa maszynowa i linki jak na Archu" '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
 check "[11] baner z ostrzeżeniami"              '[[ "$OUT" == *"Setup finished with warnings"* ]]'
+check "[10] motywy logowania na Fedorze: krok ręczny, bez pytania" '[[ "$OUT" == *"Login screen and boot menu themes (optional): not done automatically"* ]] && ! asked "Theme the login screen"'
 # P2 (przegląd D5): porada przy „brak” bez asus-installation.sh (sudo pacman).
 prof_fix="$(grep -A2 "Profile switcher is not working" <<< "$OUT")"
 check "[6] profile nie działają: porada Fedory (dnf/systemctl), bez asus-installation.sh" '[[ "$prof_fix" == *"Other devices: sudo systemctl enable --now power-profiles-daemon"* && "$prof_fix" == *"asus-linux.org/guides/fedora-guide"* && "$OUT" != *"asus-installation.sh"* ]]'
@@ -459,6 +462,7 @@ check "komunikat o trybie deklaratywnym"       '[[ "$OUT" == *"NixOS is declarat
 check "[5] brakujący font: atrybut nixpkgs w podpowiedzi" '[[ "$OUT" == *"✗ missing: ttf-iosevka-nerd"* && "$OUT" == *"pkgs.nerd-fonts.iosevka"* && "$OUT" == *"skipped: REQUIRED packages missing — add them to your NixOS configuration"* ]]'
 check "nie pyta o instalacje ani usługi"       '! asked "Install|additional useful|CPU microcode|UFW|Bluetooth|VirtualBox|Enable mpd|Enable NetworkManager"'
 check "[10] opcje NixOS zamiast usług"          '[[ "$OUT" == *"networking.networkmanager.enable = true;"* && "$OUT" == *"services.pipewire.pulse.enable = true;"* ]]'
+check "[10] motywy logowania: opcje NixOS, bez pytania" '[[ "$OUT" == *"services.displayManager.sddm.theme and boot.loader.grub.theme"* ]] && ! asked "Theme the login screen"'
 check "[8]/[9] warstwa maszynowa i linki"       '[[ -s "$A/config/hypr/monitorshyprl.lua" && "$(readlink "$HOME/.config/waybar")" == "$A/rices/white-blue/waybar" ]]'
 prof_fix="$(grep -A2 "Profile switcher is not working" <<< "$OUT")"
 # P3 (przegląd D5): pkgs.mpd nie daje jednostki, którą `systemctl --user enable`

@@ -2,9 +2,13 @@
 
 # =============================================
 #   archenemy - launcher-logo.sh
-#   Logo w lewym boxie waybara — moduł custom/launcher, return-type json.
-#   Dwa tryby (wybór: TUI Super+A → [l] bar logo, plik data/launcher-logo.dat,
-#   warstwa maszynowa poza gitem — przeżywa zmianę rice'a):
+#   Logo systemu: lewy box waybara (moduł custom/launcher, return-type
+#   json), a od 2026-11-22 także ekran logowania SDDM i menu GRUB-a
+#   (src/system-theme/ — biorą stąd tryb i glif dystrybucji).
+#   Dwa tryby (wybór: TUI Super+A → [l] system logo; plik
+#   data/launcher-logo.dat — nazwa sprzed rozszerzenia na cały system,
+#   zostaje, żeby nikt nie stracił wyboru; warstwa maszynowa poza gitem,
+#   przeżywa zmianę rice'a):
 #     distro    (domyślnie, także bez pliku albo ze śmieciami w nim) — glif
 #               Nerd Font wykrytej dystrybucji, jak przed 2026-11-19;
 #     archenemy — logo projektu (Æ): tekst to jedna spacja, obraz daje CSS
@@ -31,13 +35,21 @@
 #   Użycie: launcher-logo.sh          (woła waybar; jedna linia JSON)
 #           launcher-logo.sh mode     (tryb: distro|archenemy — stan w TUI)
 #           launcher-logo.sh distro   (nazwa wykrytej dystrybucji — podgląd TUI)
-#   Kod wyjścia zawsze 0: niezerowy schowałby moduł bez śladu.
+#           launcher-logo.sh glyph    (sam glif dystrybucji — motywy systemowe)
+#           launcher-logo.sh sync     (fastfetch: data/fastfetch-logo.txt = znak Æ
+#                                      w trybie archenemy, brak pliku w trybie
+#                                      distro — configi rice'ów mają ten plik
+#                                      jako opcjonalne źródło logo; kod 1, gdy
+#                                      pliku nie dało się zapisać albo usunąć)
+#   Kod wyjścia zawsze 0 (poza sync): niezerowy schowałby moduł bez śladu.
 # =============================================
 
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGO_DAT="$HOME/archenemy/data/launcher-logo.dat"
+FASTFETCH_LOGO="$HOME/archenemy/data/fastfetch-logo.txt"
+AE_TEXT="$SELF_DIR/../../assets/logo/archenemy-ae.txt"
 
 GLYPH_ARCH="󰣇"     # U+F08C7 nf-md-arch
 GLYPH_FEDORA="󰣛"   # U+F08DB nf-md-fedora
@@ -105,9 +117,32 @@ distro_glyph() {
     esac
 }
 
+# Logo fastfetcha idzie za trybem: w trybie archenemy kopia znaku Æ w warstwie
+# maszynowej (zapis przez plik tymczasowy i mv), w trybie distro brak pliku —
+# fastfetch rysuje wtedy logo wykrytej dystrybucji. Kod 0 dopiero po odczycie.
+fastfetch_sync() {
+    local tmp
+    if [[ "$(logo_mode)" == archenemy ]]; then
+        [[ -r "$AE_TEXT" ]] || return 1
+        cmp -s "$AE_TEXT" "$FASTFETCH_LOGO" && return 0
+        mkdir -p "${FASTFETCH_LOGO%/*}" 2>/dev/null
+        tmp="$(mktemp "$FASTFETCH_LOGO.XXXXXX" 2>/dev/null)" || return 1
+        if cp "$AE_TEXT" "$tmp" 2>/dev/null && chmod 644 "$tmp" && mv -f "$tmp" "$FASTFETCH_LOGO" 2>/dev/null \
+            && cmp -s "$AE_TEXT" "$FASTFETCH_LOGO"; then
+            return 0
+        fi
+        rm -f "$tmp"
+        return 1
+    fi
+    rm -f "$FASTFETCH_LOGO" 2>/dev/null
+    [[ ! -e "$FASTFETCH_LOGO" ]]
+}
+
 case "${1:-}" in
+    sync)   fastfetch_sync; exit $? ;;
     mode)   logo_mode ;;
     distro) distro_name ;;
+    glyph)  printf '%s\n' "$(distro_glyph)" ;;
     *)
         if [[ "$(logo_mode)" == archenemy ]]; then
             printf '{"text":" ","class":"archenemy"}\n'

@@ -1,0 +1,13 @@
+[SddmGreeterTheme]
+Name=archenemy asia-n-rice
+Description=archenemy login screen for the asia-n-rice rice
+Author=kst
+License=GPL-3.0-or-later
+Type=sddm-theme
+Version=0.1
+Website=https://github.com/ksterajewicz/archenemy
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=archenemy-asia-n-rice
+Theme-API=2.0
+QtVersion=6
