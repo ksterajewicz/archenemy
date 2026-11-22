@@ -658,6 +658,47 @@ Rules that follow directly from the table:
   screen. Every position form has a test that compares the choice with the `.dat`, the
   generated Lua and `hyprctl monitors` (`placed` in `tests/monitor-settings.sh`).
 
+- **Login screen (SDDM) and boot menu (GRUB) themes — facts checked on SDDM
+  0.21.0 and GRUB 2.16 (2026-11-21/22), source `src/system-theme/`:**
+  - `metadata.desktop` must say `QtVersion=6` (default is 5: SDDM then looks
+    for a Qt5 greeter and falls back to its embedded theme). PNG, JPEG,
+    `QtQuick.Shapes` (`PathSvg`) and `QtQuick.Effects` (`MultiEffect`) work
+    without extra packages; **SVG images do not** (needs `qt6-svg`) — the Æ
+    mark is drawn as a path (`components/Mark.qml`, same `d` as
+    `assets/logo/archenemy-ae.svg`, guarded by `tests/system-theme.sh`).
+  - SDDM creates **one window per monitor**, each with its own copy of
+    `Main.qml`, and gives the keyboard only to the primary monitor's window
+    (`GreeterApp.cpp`). The `primaryScreen` context property is a constant
+    from window creation — never use it to decide where the form goes. Every
+    layout uses `components/Seat.qml`: it works from
+    `Qt.application.screens`, always resolves to a connected monitor, and
+    asks for keyboard focus itself. A layout with `visible: primaryScreen`
+    fails `tests/system-theme.sh`.
+  - Connector names differ between Hyprland and the greeter's X server
+    (`HDMI-A-1` vs `HDMI-1`) and between boots (`eDP-2` vs `eDP-1`) — match
+    with fallbacks, never by exact name only.
+  - GRUB: every `*.pf2` must be loaded by name; `progress_bar` without a
+    pixmap style has a ~27 px minimum height; a label with
+    `id = "__timeout__"` takes its own `%d` text; `item_padding` does not
+    separate text from the selection frame (the width of the `select_w/e`
+    slices does); pixmap styles accept a prefix (`<rice>-select_*.png`), so
+    all rices live in one directory and a switch replaces only `theme.txt`.
+    A broken theme falls back to the text menu, a missing `theme.txt` only
+    delays the boot — still, never leave `GRUB_THEME` pointing at a deleted
+    directory (`--remove` restores the config first).
+  - `src/system-theme/system-theme-sync.sh` runs as **root** on data from
+    the user's home. Keep the rule: read through `as_user` (setpriv) with a
+    size and time limit, validate against a pattern, never execute or
+    interpolate into a command, never follow a symlinked theme directory.
+    A new input file = a new `PathChanged=` line in the installer's unit and
+    a case in `tests/system-theme.sh`.
+  - Previews without a laptop: `tools/render-sddm.sh` (real greeter under
+    Xvfb; `-m` virtual monitors need `-noreset`, otherwise the X server
+    forgets `xrandr --setmonitor` when the client disconnects) and
+    `tools/render-grub.sh` (real GRUB in QEMU/OVMF). Software rendering on
+    one core needs ~20 s for two monitors — a too-early screenshot shows a
+    black second monitor or no typed characters.
+
 More architectural context (the full file tree, workspaces, keyboard
 shortcuts) is in `README.md` — that's the source of truth for the repo's
 structure, this file only adds behavioral rules.
