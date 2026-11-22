@@ -205,14 +205,12 @@ Item {
             }
         }
 
-        Row {
+        PowerRow {
             id: power
             x: root.width - width - root.inset - 44 * root.u
             y: root.height - height - root.inset - 44 * root.u
-            spacing: 36 * root.u
-            Choice { text: "suspend"; visible: sddm.canSuspend || config.preview === "1"; idleColor: config.ink; hoverColor: config.bright; font.family: root.face; font.pixelSize: 15 * root.u; onChosen: sddm.suspend() }
-            Choice { text: "restart"; visible: sddm.canReboot || config.preview === "1"; idleColor: config.ink; hoverColor: config.bright; font.family: root.face; font.pixelSize: 15 * root.u; onChosen: sddm.reboot() }
-            Choice { text: "shut down"; visible: sddm.canPowerOff || config.preview === "1"; idleColor: config.ink; hoverColor: config.bright; font.family: root.face; font.pixelSize: 15 * root.u; onChosen: sddm.powerOff() }
+            idleColor: config.ink; hoverColor: config.bright
+            face: root.face; size: 15 * root.u
         }
     }
 }

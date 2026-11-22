@@ -7,9 +7,9 @@
 #   te same katalogi biorą narzędzia podglądu (src/system-theme/tools/).
 #
 #   Źródła:
-#     rices/<rice>/system-theme.conf      tokeny rice'a (tapety logowania,
-#                                         kolory menu GRUB-a) — czytane jako
-#                                         dane, nigdy wykonywane;
+#     rices/<rice>/system-theme.conf      tokeny rice'a (tapety logowania —
+#                                         opcjonalne, kolory menu GRUB-a) —
+#                                         czytane jako dane, nigdy wykonywane;
 #     src/system-theme/sddm/<rice>/       układ ekranu logowania rice'a;
 #     src/system-theme/sddm/components/   logika wspólna wszystkich rice'ów;
 #     src/system-theme/grub/assets.py     obrazki menu GRUB-a.
@@ -70,7 +70,7 @@ colour_value() {
     printf '%s\n' "$value"
 }
 
-has_sddm() { [[ -f "$SRC/sddm/$1/Main.qml" ]] && conf_value "$1" SDDM_WALLPAPER_169 >/dev/null; }
+has_sddm() { [[ -f "$SRC/sddm/$1/Main.qml" && -f "$REPO/rices/$1/system-theme.conf" ]]; }
 has_grub() { conf_value "$1" GRUB_BACKGROUND >/dev/null; }
 
 list_rices() {
@@ -101,6 +101,14 @@ build_sddm() {
         || die "src/system-theme/sddm/$rice/metadata.desktop needs QtVersion=6 (SDDM would look for a Qt5 greeter)"
     mkdir -p "$out/components" || die "cannot create '$out/components'"
     cp "$SRC"/sddm/components/*.qml "$out/components/" || die "cannot copy components"
+    # Tapeta rice'a jest opcjonalna: bez obu kluczy motyw rysuje tło sam
+    # (Backdrop z builtin: false). Jeden klucz bez drugiego to błąd.
+    if ! conf_value "$rice" SDDM_WALLPAPER_169 >/dev/null && ! conf_value "$rice" SDDM_WALLPAPER_1610 >/dev/null; then
+        grep -q 'builtin: false' "$out/Main.qml" \
+            || die "rices/$rice/system-theme.conf has no SDDM_WALLPAPER_* but the layout expects a rice wallpaper"
+        chmod -R u=rwX,go=rX "$out"
+        return 0
+    fi
     for key in 169 1610; do
         file="$(conf_value "$rice" "SDDM_WALLPAPER_$key")" || die "rices/$rice/system-theme.conf: SDDM_WALLPAPER_$key is missing"
         [[ "$file" == wallpapers/*.png && "$file" != *..* ]] \

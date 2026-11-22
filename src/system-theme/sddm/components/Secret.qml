@@ -9,6 +9,8 @@ TextInput {
     property string hint: "password"
     property color hintColor: "#808080"
     property string fontFamily: "monospace"
+    // Kursor jak w terminalu: migający prostokąt zamiast kreski.
+    property bool blockCursor: false
 
     echoMode: TextInput.Password
     passwordCharacter: "●"
@@ -23,6 +25,20 @@ TextInput {
     // z podpowiedzią fokus pokazuje sama podpowiedź.
     cursorVisible: activeFocus && (text.length > 0 || hint === "")
     inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
+    cursorDelegate: Rectangle {
+        visible: secret.cursorVisible
+        width: secret.blockCursor ? secret.dotSize * 0.72 : Math.max(1, Math.round(secret.dotSize / 12))
+        height: secret.dotSize * 1.5
+        color: secret.dotColor
+        SequentialAnimation on opacity {
+            running: secret.cursorVisible
+            loops: Animation.Infinite
+            NumberAnimation { to: 1; duration: 0 }
+            PauseAnimation { duration: 600 }
+            NumberAnimation { to: 0; duration: 0 }
+            PauseAnimation { duration: 500 }
+        }
+    }
 
     Text {
         visible: secret.text.length === 0

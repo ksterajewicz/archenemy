@@ -110,24 +110,42 @@ echo "this is not an image" > "$T/notes.txt"
 
 echo "== A: build.sh — składanie motywów"
 rices_sddm="$(bash "$BUILD" rices sddm)"; rices_grub="$(bash "$BUILD" rices grub)"
-check "rice'y z ekranem logowania: yin i tron"     'grep -qx yin <<< "$rices_sddm" && grep -qx tron <<< "$rices_sddm"'
-check "rice'y z menu GRUB-a: yin i tron"           'grep -qx yin <<< "$rices_grub" && grep -qx tron <<< "$rices_grub"'
+# Każdy rice z rices/ poza legacy white-blue_beta ma oba motywy (parytet rice'ów).
+expected="$(find "$REPO/rices" -mindepth 1 -maxdepth 1 -type d ! -name white-blue_beta -printf '%f\n' | sort)"
+check "każdy rice poza betą ma ekran logowania"    '[[ "$(sort <<< "$rices_sddm")" == "$expected" ]]'
+check "każdy rice poza betą ma menu GRUB-a"        '[[ "$(sort <<< "$rices_grub")" == "$expected" ]]'
 check "legacy white-blue_beta bez własnych motywów" '! grep -qx white-blue_beta <<< "$rices_sddm$rices_grub"'
 complete=1
 while IFS= read -r r; do
     bash "$BUILD" sddm "$r" "$T/b/sddm-$r" >/dev/null 2>&1 || complete=0
-    for f in Main.qml theme.conf metadata.desktop components/Greeter.qml components/Seat.qml components/Backdrop.qml background-169.png background-1610.png; do
+    for f in Main.qml theme.conf metadata.desktop components/Greeter.qml components/Seat.qml components/Backdrop.qml; do
         [[ -s "$T/b/sddm-$r/$f" ]] || complete=0
     done
+    # Tapeta rice'a albo tło rysowane przez układ (rice bez stałej tapety w repo).
+    if grep -q '^SDDM_WALLPAPER_169=' "$REPO/rices/$r/system-theme.conf"; then
+        [[ -s "$T/b/sddm-$r/background-169.png" && -s "$T/b/sddm-$r/background-1610.png" ]] || complete=0
+    else
+        grep -q 'builtin: false' "$T/b/sddm-$r/Main.qml" && [[ ! -e "$T/b/sddm-$r/background-169.png" ]] || complete=0
+    fi
     grep -q '^QtVersion=6$' "$T/b/sddm-$r/metadata.desktop" || complete=0
     grep -q "^Theme-Id=archenemy-$r\$" "$T/b/sddm-$r/metadata.desktop" || complete=0
     grep -Eq '^followWallpaper=[01]$' "$T/b/sddm-$r/theme.conf" || complete=0
     grep -q '^loginScreen=$' "$T/b/sddm-$r/theme.conf" || complete=0
-    # Każdy układ stawia formularz przez Seat (monitor logowania), nie na sztywno.
-    grep -q 'Seat {' "$T/b/sddm-$r/Main.qml" && grep -q 'visible: seat.here' "$T/b/sddm-$r/Main.qml" || complete=0
-    grep -q 'primaryScreen' "$T/b/sddm-$r/Main.qml" && complete=0
+    # Każdy układ stawia formularz przez Seat (monitor logowania), nie na
+    # sztywno. yin i yang dzielą układ components/EclipseLogin.qml.
+    layout="$T/b/sddm-$r/Main.qml"
+    grep -q '^EclipseLogin {}$' "$layout" && layout="$T/b/sddm-$r/components/EclipseLogin.qml"
+    grep -q 'Seat {' "$layout" && grep -q 'visible: seat.here' "$layout" || complete=0
+    grep -q 'Backdrop {' "$layout" || complete=0
+    grep -q 'Mark {' "$layout" || complete=0
+    grep -q 'primaryScreen' "$layout" && complete=0
+    # Kolory układu istnieją w theme.conf tego rice'a (literówka = niewidoczny tekst).
+    while IFS= read -r token; do
+        grep -q "^$token=" "$T/b/sddm-$r/theme.conf" || { complete=0; echo "    brak klucza $token w theme.conf rice'a $r"; }
+    done < <(grep -oE 'config\.[A-Za-z]+' "$layout" "$T/b/sddm-$r/components/PowerRow.qml" | sed 's/.*config\.//' | sort -u)
 done <<< "$rices_sddm"
-check "każdy motyw SDDM kompletny (QML, QtVersion=6, tapety, Seat)" '(( complete ))'
+check "każdy motyw SDDM kompletny (QML, QtVersion=6, tło, Seat, logo, klucze kolorów)" '(( complete ))'
+check "primaryScreen tylko w Seat.qml (stała SDDM z chwili startu okna)" '[[ "$(grep -l primaryScreen "$REPO"/src/system-theme/sddm/components/*.qml "$REPO"/src/system-theme/sddm/*/Main.qml | xargs -n1 basename)" == Seat.qml ]]'
 check "SDDM: niepusty katalog docelowy → odmowa"   '! bash "$BUILD" sddm yin "$T/b/sddm-yin" 2>/dev/null'
 check "SDDM: nieznany rice → odmowa, bez katalogu" '! bash "$BUILD" sddm nope "$T/b/x" 2>/dev/null && [[ ! -e "$T/b/x" ]]'
 check "SDDM: zła nazwa rice'a → odmowa"            '! bash "$BUILD" sddm "../yin" "$T/b/y" 2>/dev/null && [[ ! -e "$T/b/y" ]]'
@@ -316,6 +334,16 @@ check "bez „y” usługa nie powstaje"                 '[[ ! -e "$S/etc/system
 check "motyw w systemie nie zawiera dowiązań do katalogu użytkownika" '[[ -z "$(find "$THEMES" "$GDIR" -type l)" ]]'
 out="$(inst 'y\nn\n')"; rc=$?
 check "ponowny bieg: kod 0, kopia grub nie nadpisana, jedna linia GRUB_THEME" '[[ $rc -eq 0 ]] && ! grep -q "^GRUB_THEME" "$GDEF.archenemy.bak" && [[ "$(grep -c "^GRUB_THEME=" "$GDEF")" -eq 1 ]]'
+
+machine sddm+grub
+printf 'MONITOR=HDMI-A-1\nRESOLUTION=2560x1440\nROLE=primary\nDESCRIPTION=\n' > "$A/data/monitors/HDMI-A-1.dat"
+printf 'MONITOR=eDP-1\nRESOLUTION=1920x1200\nROLE=secondary\nDESCRIPTION=\n' > "$A/data/monitors/eDP-1.dat"
+inst 'y\nn\n' >/dev/null
+check "GRUB: laptop z monitorem zewnętrznym jako głównym → wysokość ekranu wbudowanego" 'grep -q "screen 1200 px high" "$GDIR/theme.txt"'
+rm -f "$A/data/monitors/eDP-1.dat"; inst 'y\nn\n' >/dev/null
+check "GRUB: bez ekranu wbudowanego → wysokość monitora głównego" 'grep -q "screen 1440 px high" "$GDIR/theme.txt"'
+rm -f "$A"/data/monitors/*.dat; inst 'y\nn\n' >/dev/null
+check "GRUB: bez danych o monitorach → 1080"       'grep -q "screen 1080 px high" "$GDIR/theme.txt"'
 
 machine sddm+grub
 out="$(inst 'y\n' --confirmed)"; rc=$?
