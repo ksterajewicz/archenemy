@@ -139,12 +139,23 @@ while IFS= read -r r; do
     grep -q 'Backdrop {' "$layout" || complete=0
     grep -q 'Mark {' "$layout" || complete=0
     grep -q 'primaryScreen' "$layout" && complete=0
+    # Pusta lista użytkowników SDDM nie może zablokować logowania: pole idzie
+    # przez greeter.submit (nazwa, potem hasło), a F2/F3 zmieniają użytkownika
+    # i sesję bez myszy.
+    grep -q 'onAccepted: greeter.submit(text)' "$layout" && grep -q 'plain: greeter.needsName' "$layout" || complete=0
+    grep -q 'enabledChoice: greeter.canSwitchUser' "$layout" || complete=0
+    grep -q 'onSwitchUser: greeter.nextUser()' "$layout" && grep -q 'onSwitchSession: greeter.nextSession()' "$layout" || complete=0
+    grep -q 'greeter.login(' "$layout" && complete=0
+    # Warstwa z efektem znika w rendererze programowym — nigdy na sztywno.
+    grep -q 'layer.enabled: true' "$layout" && complete=0
     # Kolory układu istnieją w theme.conf tego rice'a (literówka = niewidoczny tekst).
     while IFS= read -r token; do
         grep -q "^$token=" "$T/b/sddm-$r/theme.conf" || { complete=0; echo "    brak klucza $token w theme.conf rice'a $r"; }
     done < <(grep -oE 'config\.[A-Za-z]+' "$layout" "$T/b/sddm-$r/components/PowerRow.qml" | sed 's/.*config\.//' | sort -u)
 done <<< "$rices_sddm"
 check "każdy motyw SDDM kompletny (QML, QtVersion=6, tło, Seat, logo, klucze kolorów)" '(( complete ))'
+check "Seat: kliknięcie na monitorze bez formularza przenosi go tam (config.loginScreen)" 'grep -q "onClicked: config.loginScreen = seat.own" "$REPO/src/system-theme/sddm/components/Seat.qml" && grep -q "enabled: !seat.here" "$REPO/src/system-theme/sddm/components/Seat.qml"'
+check "Greeter: nazwa wpisana ręcznie zastępuje pustą listę użytkowników" 'grep -q "readonly property bool needsName: !listed && typedUser === \"\"" "$REPO/src/system-theme/sddm/components/Greeter.qml" && grep -q "function submit(text)" "$REPO/src/system-theme/sddm/components/Greeter.qml"'
 check "primaryScreen tylko w Seat.qml (stała SDDM z chwili startu okna)" '[[ "$(grep -l primaryScreen "$REPO"/src/system-theme/sddm/components/*.qml "$REPO"/src/system-theme/sddm/*/Main.qml | xargs -n1 basename)" == Seat.qml ]]'
 check "SDDM: niepusty katalog docelowy → odmowa"   '! bash "$BUILD" sddm yin "$T/b/sddm-yin" 2>/dev/null'
 check "SDDM: nieznany rice → odmowa, bez katalogu" '! bash "$BUILD" sddm nope "$T/b/x" 2>/dev/null && [[ ! -e "$T/b/x" ]]'
@@ -286,6 +297,14 @@ check "w katalogu motywu nie zostają pliki tymczasowe" '[[ -z "$(find "$THEMES"
 echo yin > "$A/.current_rice"; sync >/dev/null
 check "yin nie idzie za tapetą (followWallpaper=0)" '[[ ! -e "$THEMES/archenemy-yin/user-wallpaper" && "$(user_conf yin)" == *$'"'"'\nbackground='"'"' ]]'
 
+echo "-- zmiana w trakcie biegu usługi (systemd nie budzi jej drugi raz)"
+sysroot; echo tron > "$A/.current_rice"
+( sleep 0.4; echo yin > "$A/.current_rice" ) &
+INVOCATION_ID=test SYSTEM_THEME_SETTLE=1 bash "$SYNC" >/dev/null 2>&1; wait
+check "pod systemd: zapis podczas ciszy po obiegu jest zastosowany" '[[ "$(current)" == archenemy-yin ]] && cmp -s "$GDIR/theme.txt" "$GDIR/theme-yin-distro.txt"'
+start=$SECONDS; echo tron > "$A/.current_rice"; sync >/dev/null
+check "uruchomienie ręczne nie czeka"               '[[ "$(current)" == archenemy-tron ]] && (( SECONDS - start <= 1 ))'
+
 echo "-- ustawienia roota"
 sysroot; echo tron > "$A/.current_rice"
 sed -i 's/^SDDM=1/SDDM=0/' "$S/etc/archenemy/system-theme.conf"; sync >/dev/null
@@ -377,6 +396,22 @@ check "--remove po zastąpieniu: wraca cudzy GRUB_THEME" '[[ $rc -eq 0 ]] && gre
 machine sddm+grub; echo 'GRUB_TERMINAL_OUTPUT=console' >> "$GDEF"
 out="$(inst 'y\nn\n')"; rc=$?
 check "GRUB_TERMINAL_OUTPUT=console: menu pominięte z instrukcją" '[[ $rc -eq 0 && ! -d "$GDIR" && "$out" == *"ignores themes"* ]] && ! grep -q "^grub-mkconfig" "$MOCK_LOG" && [[ "$(current)" == archenemy-tron ]]'
+
+machine sddm+grub; echo 'GRUB_TERMINAL="serial console"' >> "$GDEF"
+out="$(inst 'y\nn\n')"; rc=$?
+check "GRUB_TERMINAL=\"serial console\": menu pominięte, GRUB_THEME nietknięty" '[[ $rc -eq 0 && ! -d "$GDIR" && "$out" == *"text terminal"* ]] && ! grep -q "^GRUB_THEME" "$GDEF" && ! grep -q "^grub-mkconfig" "$MOCK_LOG"'
+machine sddm+grub; printf 'GRUB_TERMINAL_OUTPUT=gfxterm\nGRUB_TERMINAL="serial"\n' >> "$GDEF"
+out="$(inst 'y\nn\n')"; rc=$?
+check "GRUB_TERMINAL wygrywa z GRUB_TERMINAL_OUTPUT (jak w grub-mkconfig)" '[[ $rc -eq 0 && ! -d "$GDIR" && "$out" == *"text terminal"* ]]'
+machine sddm+grub; echo 'GRUB_TERMINAL_OUTPUT="gfxterm serial"' >> "$GDEF"
+out="$(inst 'y\nn\n')"; rc=$?
+check "terminal z gfxterm obok szeregowego: motyw instalowany" '[[ $rc -eq 0 && -f "$GDIR/theme.txt" ]] && grep -q "^GRUB_THEME=" "$GDEF"'
+machine sddm+grub; sed -i 's/^GRUB_GFXMODE=.*/GRUB_GFXMODE=1920x1080x32,auto/' "$GDEF"
+out="$(inst 'y\nn\n')"; rc=$?
+check "jawny GRUB_GFXMODE wygrywa z rozdzielczością monitora" 'grep -q "screen 1080 px high" "$GDIR/theme.txt" && [[ "$out" == *"1080 px high (from GRUB_GFXMODE)"* ]]'
+machine sddm+grub
+out="$(inst 'y\nn\n')"; rc=$?
+check "GRUB_GFXMODE=auto: wysokość ekranu wbudowanego i podpowiedź, jak ją zmienić" '[[ "$out" == *"1600 px high (from the laptop panel)"*"set GRUB_GFXMODE="* ]]'
 
 echo "-- maszyny bez SDDM albo bez GRUB-a"
 machine sdboot; before="$(snap)"

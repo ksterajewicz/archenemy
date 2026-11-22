@@ -39,7 +39,9 @@ Item {
         // Narożniki: po dwa odcinki na róg, wspólna poświata całej warstwy.
         Item {
             anchors.fill: parent
-            layer.enabled: true
+            // Renderer programowy (maszyna bez akceleracji) nie rysuje warstw
+            // z efektem — bez tej bramki narożniki i godzina by znikły.
+            layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowColor: config.cyan
@@ -103,7 +105,7 @@ Item {
                 font.family: root.face
                 font.weight: Font.Light
                 font.pixelSize: 104 * root.u
-                layer.enabled: true
+                layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
                 layer.effect: MultiEffect {
                     shadowEnabled: true
                     shadowColor: config.cyan
@@ -163,7 +165,7 @@ Item {
                     text: greeter.userName
                     idleColor: config.ink
                     hoverColor: config.bright
-                    enabledChoice: greeter.userCount > 1
+                    enabledChoice: greeter.canSwitchUser
                     opacity: 1
                     font.family: root.face
                     font.pixelSize: 17 * root.u
@@ -173,7 +175,7 @@ Item {
             Item {
                 width: 520 * root.u; height: root.rowHeight
                 Rectangle { x: -16 * root.u; y: 8 * root.u; width: root.stroke; height: parent.height - 16 * root.u; color: greeter.failed ? config.alarm : config.cyan }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "password"; color: greeter.failed ? config.alarm : config.cyan; font.family: root.face; font.pixelSize: 17 * root.u }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: greeter.needsName ? "user name" : "password"; color: greeter.failed ? config.alarm : config.cyan; font.family: root.face; font.pixelSize: 17 * root.u }
                 Secret {
                     id: secret
                     x: root.keyWidth
@@ -185,7 +187,10 @@ Item {
                     hint: ""
                     hintColor: config.dim
                     fontFamily: root.face
-                    onAccepted: greeter.login(text)
+                    plain: greeter.needsName
+                    onAccepted: greeter.submit(text)
+                    onSwitchUser: greeter.nextUser()
+                    onSwitchSession: greeter.nextSession()
                 }
             }
             Text {

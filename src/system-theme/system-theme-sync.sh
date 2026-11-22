@@ -290,12 +290,24 @@ Current=${theme##*/}" || { say "cannot write $SDDM_DROPIN"; return 1; }
     return 0
 }
 
-# Zmiana pliku stanu w trakcie pracy nie budzi usługi drugi raz (systemd nie
-# kolejkuje zdarzeń .path dla działającej usługi) — stąd porównanie odcisku.
-rc=0
-for _ in 1 2 3; do
+# Zmiana pliku stanu w trakcie pracy nie budzi usługi drugi raz: systemd nie
+# kolejkuje zdarzeń .path dla działającej usługi (sprawdzone na żywej
+# jednostce 2026-11-22 — drugi zapis w trakcie biegu przepadał). Stąd
+# porównanie odcisku plików. Pod systemd (INVOCATION_ID) dochodzi sekunda
+# ciszy po każdym obiegu: Super+T zapisuje rice, a tapetę chwilę później —
+# bez tej sekundy drugi zapis trafiałby w ostatnie milisekundy biegu, już
+# po porównaniu. Ręczne uruchomienie nie czeka.
+# SYSTEM_THEME_SETTLE: długość ciszy w sekundach (domyślnie 1; testy skracają).
+rc=0; passes=3; settle=0
+if [[ -n "${INVOCATION_ID:-}" ]]; then
+    passes=8
+    settle="${SYSTEM_THEME_SETTLE:-1}"
+    [[ "$settle" =~ ^[0-9]+(\.[0-9]+)?$ ]] || settle=1
+fi
+for (( pass = 0; pass < passes; pass++ )); do
     before="$(fingerprint)"
     apply || rc=1
+    [[ "$settle" == 0 ]] || sleep "$settle"
     [[ "$(fingerprint)" == "$before" ]] && break
 done
 exit "$rc"

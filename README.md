@@ -738,7 +738,7 @@ bash ~/archenemy/install/system-theme-installation.sh
 (`install.sh` offers the same in step [10], default **N**.) The helper only touches what applies to your machine and says what it skipped:
 
 - **Login screen** — only when SDDM is the enabled display manager (archenemy does not install one). Themes go to `/usr/share/sddm/themes/archenemy-<rice>/`, the choice to `/etc/sddm.conf.d/20-archenemy-theme.conf`. `/etc/sddm.conf` is never edited; if it sets a theme, the helper tells you and stops there.
-- **Boot menu** — only when GRUB is the bootloader in use (systemd-boot has no themes). One directory, `/boot/grub/themes/archenemy/`, holds all rices; `GRUB_THEME` is set in `/etc/default/grub` (a copy is kept as `grub.archenemy.bak`) and `grub.cfg` is regenerated once. A broken or missing GRUB theme does not stop the boot: GRUB falls back to its text menu.
+- **Boot menu** — only when GRUB is the bootloader in use (systemd-boot has no themes) and it draws a graphical menu: with a text terminal in `/etc/default/grub` (`GRUB_TERMINAL` or `GRUB_TERMINAL_OUTPUT` without `gfxterm`, e.g. a serial console) GRUB ignores themes, so the helper skips it and says why. GRUB sizes are in pixels: the helper takes the height from an explicit `GRUB_GFXMODE`, otherwise from the laptop panel or the primary monitor, and prints which one it used — if the text looks too big or too small at boot, set `GRUB_GFXMODE=<width>x<height>` and run the helper again. One directory, `/boot/grub/themes/archenemy/`, holds all rices; `GRUB_THEME` is set in `/etc/default/grub` (a copy is kept as `grub.archenemy.bak`) and `grub.cfg` is regenerated once. A broken or missing GRUB theme does not stop the boot: GRUB falls back to its text menu.
 - A theme you already use (SDDM or GRUB) is replaced only after its own question, default **N**.
 - **Undo everything:** `bash ~/archenemy/install/system-theme-installation.sh --remove`.
 
@@ -755,9 +755,15 @@ The helper asks separately (default **N**) whether to install `archenemy-system-
 
 **Login monitor.** By default the form is on the primary monitor (the one marked primary in `[n] monitors`). `[g] login screen` picks another one. A chosen monitor that is not connected never leaves you with an empty screen: the theme works from the monitors that are actually connected and falls back to the primary one, also when a monitor is unplugged while the login screen is up. Connector names differ between Hyprland and the login screen's display server (`HDMI-A-1` vs `HDMI-1`, `eDP-2` vs `eDP-1`), so the match goes from the exact name, through connector type, to "built-in or external screen".
 
+**If you cannot see the form.** A monitor can be connected but out of sight — a docked laptop with the lid closed still reports its panel. Every monitor without the form shows a small "click to log in on this screen" line; a click there moves the form to that monitor for this login. The lasting choice is `[g] login screen`.
+
+**Keyboard and users.** `Enter` logs in, `F2` switches the user and `F3` the session (a click on the user or session name does the same). When SDDM lists no users at all — an account outside its UID range, a network account — the field first asks for the user name, then for the password; `F2` goes back to the name.
+
 **Wallpaper.** In `tron`, `crt`, `dither-flux`, `asia-n-rice` and `white-blue` the background is the wallpaper you last set with `Super+W` (PNG or JPEG up to 64 MiB, copied into the theme directory — it is visible before login); other files, and rices whose wallpaper is not set, use the rice's own background. `yin` and `yang` always keep their eclipse wallpaper, because the form sits inside its disc.
 
 **Safety.** The root script treats everything in your home directory as untrusted data: state files are read with your own privileges (`setpriv`), with size and time limits; rice and monitor names must match a strict pattern and the rice must have a theme installed by root; nothing read from there is executed. After `git pull` the copies in the system are older than the sources — the updater (`[u]`) says so when the theme sources changed; run the helper again to refresh them.
+
+**Without graphics acceleration** (a virtual machine, a broken driver) Qt draws in software and cannot render glow or blur: the login screens stay usable, only without those effects.
 
 **Not covered:** Fedora and NixOS (the helper prints what to do and changes nothing), other display managers, Plymouth. A theme for your own rice needs `rices/<rice>/system-theme.conf` and a layout in `src/system-theme/sddm/<rice>/`; a rice without them keeps the previous login screen and boot menu. Previews without a reboot: `src/system-theme/tools/render-sddm.sh` and `render-grub.sh` (dev tools, see their headers).
 

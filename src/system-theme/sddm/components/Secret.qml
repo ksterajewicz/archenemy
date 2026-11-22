@@ -1,5 +1,8 @@
 // archenemy — pole hasła bez własnej ramki: same kropki i kursor.
 // Ramkę, linię albo tło rysuje układ danego rice'a wokół tego elementu.
+// `plain` = pole przyjmuje jawny tekst (nazwa użytkownika, gdy SDDM nie ma
+// kogo pokazać na liście); przy zmianie trybu pole się czyści. F2 i F3
+// zgłaszają zmianę użytkownika i sesji — da się to zrobić bez myszy.
 import QtQuick
 
 TextInput {
@@ -9,15 +12,28 @@ TextInput {
     property string hint: "password"
     property color hintColor: "#808080"
     property string fontFamily: "monospace"
+    property bool plain: false
+    signal switchUser()
+    signal switchSession()
     // Kursor jak w terminalu: migający prostokąt zamiast kreski.
     property bool blockCursor: false
 
-    echoMode: TextInput.Password
+    echoMode: plain ? TextInput.Normal : TextInput.Password
+    onPlainChanged: text = ""
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_F2) {
+            secret.switchUser()
+            event.accepted = true
+        } else if (event.key === Qt.Key_F3) {
+            secret.switchSession()
+            event.accepted = true
+        }
+    }
     passwordCharacter: "●"
     color: dotColor
     font.family: fontFamily
-    font.pixelSize: dotSize
-    font.letterSpacing: dotSize * 0.45
+    font.pixelSize: plain ? dotSize * 1.25 : dotSize
+    font.letterSpacing: plain ? 0 : dotSize * 0.45
     selectByMouse: false
     clip: true
     focus: true

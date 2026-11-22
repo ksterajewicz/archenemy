@@ -20,14 +20,23 @@
 // Wszystkie okna liczą to samo z tych samych danych: formularz jest na
 // dokładnie jednym. Po odpięciu monitora lista się zmienia i wynik liczy
 // się od nowa.
+//
+// Wyjście awaryjne: monitor z formularzem bywa podłączony, ale niewidoczny
+// (laptop w stacji dokującej z zamkniętą klapą — serwer X dalej widzi jego
+// ekran). Dlatego każdy monitor BEZ formularza pokazuje krótką podpowiedź,
+// a kliknięcie na nim przenosi formularz właśnie tam: zapis do
+// config.loginScreen (QQmlPropertyMap wspólny dla wszystkich okien
+// greetera) przelicza wynik we wszystkich oknach naraz. Zmiana żyje do
+// końca tego ekranu logowania; trwały wybór to Super+A → [g].
 import QtQuick
 import QtQuick.Window
 
 Item {
     id: seat
-    visible: false
+    anchors.fill: parent
 
     property string wanted: ""
+    property string hintFont: config.font
     // Element, który ma dostać klawiaturę (pole hasła).
     property Item focusTarget: null
 
@@ -123,5 +132,23 @@ Item {
         repeat: true
         running: seat.here && !seat.windowActive
         onTriggered: seat.claim()
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        enabled: !seat.here && seat.own !== ""
+        onClicked: config.loginScreen = seat.own
+    }
+    Text {
+        visible: !seat.here && seat.own !== ""
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: parent.height - height - 44 * parent.height / 1080
+        text: "click to log in on this screen"
+        color: "#E8E8E8"
+        style: Text.Outline
+        styleColor: "#161616"
+        opacity: 0.8
+        font.family: seat.hintFont
+        font.pixelSize: Math.max(11, 15 * parent.height / 1080)
     }
 }

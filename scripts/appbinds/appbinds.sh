@@ -652,7 +652,7 @@ login_screen_current() {
 # wybrany, ale odpięty monitor = formularz na monitorze głównym.
 login_screen_menu() {
     local dat="$ARCHENEMY_DIR/data/login-screen.dat"
-    local cur f name role desc live shown label target expected primary_name="" sel=0 i
+    local cur f name role desc live shown label target expected primary_name="" primary_stored="" sel=0 i
     local -a values=(primary) labels=()
     cur="$(login_screen_current)"
     for f in "$ARCHENEMY_DIR"/data/monitors/*.dat; do
@@ -668,7 +668,7 @@ login_screen_menu() {
         label="$shown"
         [[ -n "$desc" ]] && label+="  ${desc:0:36}"
         if [[ -n "$live" ]]; then label+="  · connected"; else label+="  · not connected"; fi
-        if [[ "$role" == primary ]]; then label+="  · primary"; primary_name="$shown"; fi
+        if [[ "$role" == primary ]]; then label+="  · primary"; primary_name="$shown"; primary_stored="$name"; fi
         values+=("$shown"); labels+=("$label")
     done
     labels=("primary monitor (default${primary_name:+, now $primary_name})" "${labels[@]}")
@@ -692,8 +692,10 @@ login_screen_menu() {
 
     write_dat "$dat" "$target" || return 1
     echo -e "  Saved: login screen on ${CYAN}${label%%  *}${NC}"
+    # Dla „primary” skrypt roota zapisuje do motywu nazwę złącza z pliku
+    # monitora (MONITOR=), nie żywą — ✓ musi szukać tej samej wartości.
     expected="$target"
-    [[ "$target" == primary ]] && expected="$primary_name"
+    [[ "$target" == primary ]] && expected="$primary_stored"
     system_theme_report loginScreen "$expected" "The login screen now uses ${label%%  *}"
 }
 

@@ -16,8 +16,17 @@ Item {
 
     readonly property int userCount: users.count
     readonly property int sessionCount: sessions.count
-    readonly property string userName: entryText(users, userIndex, "name")
+    // SDDM pokazuje na liście tylko konta z zakresu UID i z dozwoloną powłoką
+    // (UserModel.cpp). Gdy lista jest pusta (konto sieciowe, UID spoza
+    // zakresu), nazwę wpisuje się ręcznie — bez tego nie dałoby się zalogować.
+    property string typedUser: ""
+    readonly property bool listed: users.count > 0
+    readonly property bool needsName: !listed && typedUser === ""
+    readonly property bool canSwitchUser: listed ? users.count > 1 : typedUser !== ""
+    readonly property string userName: listed ? entryText(users, userIndex, "name") : typedUser
     readonly property string userLabel: {
+        if (!listed)
+            return typedUser
         var real = entryText(users, userIndex, "realName")
         return real !== "" ? real : userName
     }
@@ -42,7 +51,25 @@ Item {
         sddm.login(userName, password, sessionIndex)
     }
 
+    // Enter w polu: przy pustej liście użytkowników pierwszy Enter przyjmuje
+    // nazwę, kolejny loguje hasłem.
+    function submit(text) {
+        if (needsName) {
+            var name = String(text).trim()
+            if (name !== "")
+                typedUser = name
+            return
+        }
+        login(text)
+    }
+
     function nextUser() {
+        if (!listed) {
+            // Wpisana nazwa wraca do edycji.
+            typedUser = ""
+            failed = false
+            return
+        }
         if (users.count > 1)
             userIndex = (userIndex + 1) % users.count
     }

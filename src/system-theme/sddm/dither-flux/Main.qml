@@ -98,7 +98,7 @@ Item {
                     text: greeter.userLabel
                     idleColor: config.ink
                     hoverColor: config.paper
-                    enabledChoice: greeter.userCount > 1
+                    enabledChoice: greeter.canSwitchUser
                     opacity: 1
                     font.family: root.face
                     font.pixelSize: 17 * root.u
@@ -123,7 +123,11 @@ Item {
                         dotSize: 13 * root.u
                         hintColor: config.shade
                         fontFamily: root.face
-                        onAccepted: greeter.login(text)
+                        hint: greeter.needsName ? "user name" : "password"
+                        plain: greeter.needsName
+                        onAccepted: greeter.submit(text)
+                        onSwitchUser: greeter.nextUser()
+                        onSwitchSession: greeter.nextSession()
                     }
                 }
                 Text {
