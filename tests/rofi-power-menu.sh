@@ -12,6 +12,13 @@
 #   Esc albo „No” niczego nie robią, UI po angielsku (DECYZJE 2026-07-12).
 #   Od 2026-11-22 oba kroki idą w jednym oknie rofi (tryb skryptowy); atrapa
 #   rofi to tests/lib/mock_rofi.py — jej nagłówek opisuje modelowany kontrakt.
+#   Zgłoszenie właściciela 2026-11-22 („gdy klika się za szybko, to laptop się
+#   nie wyłącza”): dwa procesy rofi gubiły wejście wysłane między oknami.
+#   Pakiet pilnuje więc: jeden proces rofi na oba kroki, wiersze niosące swoją
+#   akcję w polu info, podrobione wywołania zwrotne bez skutku, akcja w tle
+#   nietrzymająca okna i to samo wiązanie we wszystkich rice'ach.
+#   Atrapa nie ma zegara ani okna: szybkości na żywym rofi/Hyprlandzie nie
+#   sprawdza (kroki na laptopie — raport zlecenia, README „Verification”).
 #   Uruchom: bash tests/rofi-power-menu.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -34,8 +41,9 @@ fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1"; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 mkdir -p "$T/bin"
-# systemctl: tylko zapis wywołania.
-printf '#!/usr/bin/env bash\necho "$*" >> "%s/systemctl.log"\n' "$T" > "$T/bin/systemctl"
+# systemctl: tylko zapis wywołania. Plik $T/systemctl.hold = akcja „wisi”
+# (np. czeka na agenta polkit), dopóki ten plik istnieje.
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/systemctl.log"\nwhile [[ -e "%s/systemctl.hold" ]]; do sleep 0.05; done\n' "$T" "$T" > "$T/bin/systemctl"
 # pidof: hyprlock „działa”, gdy istnieje plik $T/locked.
 printf '#!/usr/bin/env bash\n[[ "$1" == hyprlock && -f "%s/locked" ]]\n' "$T" > "$T/bin/pidof"
 # rofi: atrapa trybu skryptowego (jeden proces = jedno okno), stan w $MOCK_ROFI.
@@ -86,6 +94,91 @@ run "custom:Power off"$'\n'"Yes"$'\n'
 check "wpisany tekst spoza listy + Yes → nic"       '[[ -z "$(calls)" ]]'
 run "$POWEROFF"$'\n'"custom:yes"$'\n'
 check "potwierdzenie tylko wierszem Yes z listy"    '[[ -z "$(calls)" && "$(windows)" == 1 ]]'
+
+echo "== jedno okno na oba kroki (szybkie wejście nie przepada)"
+# Obie odpowiedzi leżą w kolejce, zanim menu cokolwiek pokaże — jak dwa szybkie
+# Entery. Dawny błąd: drugi krok dostawał własny proces rofi, a wejście wysłane
+# między zamknięciem pierwszego okna i pojawieniem się drugiego przepadało.
+run "$POWEROFF"$'\n'"Yes"$'\n'
+check "oba kroki w jednym procesie rofi → poweroff" '[[ "$(windows)" == 1 && "$(menus)" == 2 && "$(calls)" == poweroff ]]'
+check "tryb skryptowy pod nazwą pliku, bez -dmenu"  'grep -qF -- "-show archenemy-power -modes archenemy-power:rofi_power_menu.sh" "$T/rofi.calls" && ! grep -qF -- "-dmenu" "$T/rofi.calls"'
+check "kod 0, nic na stderr"                        '[[ $RC == 0 && -z "$ERR" ]]'
+# rofi dzieli listę trybów na „,” i „#”, a polecenie trybu na słowa.
+D="$T/dir with space, comma #hash"
+mkdir -p "$D" && cp "$PM" "$D/"
+run "$REBOOT"$'\n'"Yes"$'\n' "$D/rofi_power_menu.sh"
+check "ścieżka ze spacją, przecinkiem i # → reboot" '[[ "$(calls)" == reboot && "$(windows)" == 1 ]]'
+
+echo "== wiersze niosą swoją akcję (pole info)"
+run "$POWEROFF"$'\n'"No"$'\n'
+check "krok 1: ask:poweroff, ask:reboot"            '[[ "$(head -n1 "$T/rofi.info")" == "$POWEROFF=ask:poweroff|$REBOOT=ask:reboot" ]]'
+check "krok 2 po Power off: Yes=do:poweroff"        '[[ "$(sed -n 2p "$T/rofi.info")" == "Yes=do:poweroff|No=cancel" && -z "$(calls)" ]]'
+run "$REBOOT"$'\n'"No"$'\n'
+check "krok 2 po Reboot: Yes=do:reboot"             '[[ "$(sed -n 2p "$T/rofi.info")" == "Yes=do:reboot|No=cancel" && -z "$(calls)" ]]'
+
+echo "== wywołanie zwrotne, tak jak woła je rofi"
+# cb <ROFI_RETV> <ROFI_INFO albo - (brak)> [tekst wiersza]; wyjście w $T/cb.out.
+# stderr znów przez $(…): bieg czeka na ewentualną akcję w tle.
+cb() {
+    local retv="$1" info="$2"; shift 2
+    rm -f "$T/systemctl.log" "$T/cb.out"
+    if [[ "$info" == - ]]; then
+        ERR="$(ROFI_RETV="$retv" test_timeout 20 bash "$PM" "$@" 2>&1 >"$T/cb.out" </dev/null)"; RC=$?
+    else
+        ERR="$(ROFI_RETV="$retv" ROFI_INFO="$info" test_timeout 20 bash "$PM" "$@" 2>&1 >"$T/cb.out" </dev/null)"; RC=$?
+    fi
+}
+# NUL → @, separator pól \x1f → ^ (format linii z rofi-script(5)).
+wire() { tr '\0\037' '@^' < "$T/cb.out"; }
+NL=$'\n'
+WANT_START="@prompt^Power${NL}@no-custom^true${NL}${POWEROFF}@info^ask:poweroff${NL}${REBOOT}@info^ask:reboot"
+WANT_ASK="@prompt^Are you sure?${NL}@no-custom^true${NL}Yes@info^do:poweroff${NL}No@info^cancel"
+cb 0 -
+check "start: prompt, no-custom, dwa wiersze z info" '[[ "$(wire)" == "$WANT_START" && -z "$(calls)" ]]'
+cb 1 ask:poweroff "$POWEROFF"
+check "Power off: pytanie w tym samym oknie, bez akcji" '[[ "$(wire)" == "$WANT_ASK" && -z "$(calls)" ]]'
+cb 1 do:poweroff "Yes"
+check "Yes + do:poweroff → poweroff, pusta lista"   '[[ "$(calls)" == poweroff && ! -s "$T/cb.out" && $RC == 0 ]]'
+cb 1 do:reboot "Yes"
+check "Yes + do:reboot → reboot, pusta lista"       '[[ "$(calls)" == reboot && ! -s "$T/cb.out" && $RC == 0 ]]'
+# Podróbki: akcja wymaga zgodnej pary tekst + info z wybranego wiersza.
+QUIET='[[ -z "$(calls)" && ! -s "$T/cb.out" && $RC == 0 ]]'
+cb 1 - "Yes";                    check "Yes bez info → nic"                  "$QUIET"
+cb 1 ask:poweroff "Yes";         check "Yes z info kroku 1 → nic"            "$QUIET"
+cb 1 do:poweroff "No";           check "No z info do:poweroff → nic"         "$QUIET"
+cb 1 do:poweroff "$POWEROFF";    check "Power off z info do:poweroff → nic"  "$QUIET"
+cb 1 cancel "No";                check "No → nic, okno się zamyka"           "$QUIET"
+cb 1 do:halt "Yes";              check "nieznana akcja w info → nic"         "$QUIET"
+cb 2 do:poweroff "Yes";          check "tekst wpisany (ROFI_RETV=2) → nic"   "$QUIET"
+cb 3 do:poweroff "Yes";          check "usunięcie wiersza (ROFI_RETV=3) → nic" "$QUIET"
+
+echo "== akcja w tle nie trzyma okna menu"
+# rofi czyta wyjście skryptu do końca. systemctl, który czeka (agent polkit),
+# nie może przez to trzymać okna z wyłączną klawiaturą: bieg ma się skończyć,
+# kiedy atrapa systemctl jeszcze trwa. Tu stderr idzie do pliku, żeby bieg
+# NIE czekał na akcję.
+rm -f "$T/systemctl.log" "$T/rofi.log" "$T/rofi.info" "$T/rofi.calls"
+printf '%s\nYes\n' "$POWEROFF" > "$T/answers"
+touch "$T/systemctl.hold"
+test_timeout 20 bash "$PM" </dev/null >/dev/null 2>"$T/hold.err"; RC=$?
+check "menu kończy się, gdy systemctl jeszcze trwa" '[[ $RC == 0 && -e "$T/systemctl.hold" ]]'
+test_wait_file 10 "$T/systemctl.log"; W=$?
+check "akcja mimo to wystartowała"                  '[[ $W == 0 && "$(calls)" == poweroff ]]'
+rm -f "$T/systemctl.hold"
+
+echo "== wiązanie w rice'ach"
+# Poprawka siedzi we wspólnym skrypcie; każdy rice z tym bindem ma go wołać.
+n=0; bad=""
+for f in "$REPO"/rices/*/hypr/hyprland.lua; do
+    grep -qF 'Shift_R"' "$f" || continue        # white-blue_beta nie ma tego bindu
+    n=$((n + 1))
+    line="$(grep -F 'local power_menu' "$f")"
+    if [[ "$line" != *'= "~/archenemy/scripts/rofi/rofi_power_menu.sh"' ]] ||
+       ! grep -qF 'hl.bind(mainMod .. " + SHIFT + Shift_R", hl.dsp.exec_cmd(power_menu), { release = true, locked = true })' "$f"; then
+        bad+=" ${f#"$REPO"/}"
+    fi
+done
+check "$n rice'ów: Super+prawy Shift woła wspólny skrypt" '[[ $n -ge 7 && -z "$bad" ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
