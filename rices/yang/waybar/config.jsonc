@@ -9,7 +9,7 @@
     "reload_style_on_change": true,
     "modules-left":   ["custom/launcher", "hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock", "custom/timer"],
-    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "tray"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "custom/dnd", "tray"],
     // Logo w lewym boxie jako launcher: LPM otwiera rofi, PPM menu zasilania.
     // Tekst i klasę daje scripts/waybar/launcher-logo.sh: domyślnie glif
     // dystrybucji z os-release (klasa distro), opcjonalnie logo projektu Æ
@@ -134,6 +134,20 @@
         "exec-on-event": false,
         "on-click": "~/archenemy/scripts/waybar/bluetooth.sh open",
         "on-click-right": "~/archenemy/scripts/waybar/bluetooth.sh toggle"
+    },
+    // Dzwonek „nie przeszkadzać” (scripts/waybar/dnd.sh): stan z makoctl mode,
+    // LPM przełącza tryb do-not-disturb maka — powiadomienia znikają, krytyczne
+    // (urgency=critical: koniec timera, błędy archenemy) przechodzą (mako/config).
+    // Po kliknięciu skrypt sam wysyła sygnał 13; interval 10 to tylko backstop:
+    // waybar startuje w hyprland.lua przed makiem, a restart maka zeruje tryby.
+    // Mako nie działa → ikona „niedostępne”, kod 0 (moduł nie znika).
+    "custom/dnd": {
+        "exec": "~/archenemy/scripts/waybar/dnd.sh",
+        "return-type": "json",
+        "format": "{}",
+        "interval": 10,
+        "signal": 13,
+        "on-click": "~/archenemy/scripts/waybar/dnd.sh toggle"
     },
     "network": {
         "format-wifi":         "󰖩 {essid}",

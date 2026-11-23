@@ -9,7 +9,7 @@
     "reload_style_on_change": true,
     "modules-left":   ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock", "custom/timer"],
-    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "tray"],
+    "modules-right":  ["custom/profileswitcher", "custom/micmute", "custom/volumebar", "network", "custom/bluetooth", "battery", "custom/dnd", "tray"],
     // Każdy monitor pokazuje TYLKO swoje workspace'y ({name}: w decades = 1-10
     // przez defaultName, w shared = globalne id 1-10). Scroll przez ws-scroll.sh,
     // który czyta tryb (decades: r±1, shared: e±1) — jak bindy klawiatury.
@@ -119,6 +119,20 @@
         "exec-on-event": false,
         "on-click": "~/archenemy/scripts/waybar/bluetooth.sh open",
         "on-click-right": "~/archenemy/scripts/waybar/bluetooth.sh toggle"
+    },
+    // Dzwonek „nie przeszkadzać” (scripts/waybar/dnd.sh): stan z makoctl mode,
+    // LPM przełącza tryb do-not-disturb maka — powiadomienia znikają, krytyczne
+    // (urgency=critical: koniec timera, błędy archenemy) przechodzą (mako/config).
+    // Po kliknięciu skrypt sam wysyła sygnał 13; interval 10 to tylko backstop:
+    // waybar startuje w hyprland.lua przed makiem, a restart maka zeruje tryby.
+    // Mako nie działa → ikona „niedostępne”, kod 0 (moduł nie znika).
+    "custom/dnd": {
+        "exec": "~/archenemy/scripts/waybar/dnd.sh",
+        "return-type": "json",
+        "format": "{}",
+        "interval": 10,
+        "signal": 13,
+        "on-click": "~/archenemy/scripts/waybar/dnd.sh toggle"
     },
     "network": {
         "format-wifi":         "󰖩 {essid}",

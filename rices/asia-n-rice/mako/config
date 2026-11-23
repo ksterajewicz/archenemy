@@ -34,3 +34,10 @@ default-timeout=0
 
 [mode=do-not-disturb]
 invisible=1
+
+# Krytyczne (urgency=critical: koniec timera, błędy archenemy) przechodzą także
+# w trybie „nie przeszkadzać” (dzwonek w waybarze, scripts/waybar/dnd.sh).
+# Sekcja MUSI stać po [mode=do-not-disturb] — mako(5): przy kilku pasujących
+# sekcjach wygrywa ostatnia wartość opcji.
+[mode=do-not-disturb urgency=critical]
+invisible=0

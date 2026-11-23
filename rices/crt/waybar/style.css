@@ -173,6 +173,7 @@ window#waybar.solo  #window {
 }
 #custom-volumebar,
 #custom-bluetooth,
+#custom-dnd,
 #network,
 #battery,
 #tray,
@@ -197,6 +198,7 @@ window#waybar.solo  #window {
 }
 #custom-volumebar:hover,
 #custom-bluetooth:hover,
+#custom-dnd:hover,
 #network:hover,
 #battery:hover,
 #custom-profileswitcher:hover,
@@ -258,3 +260,9 @@ tooltip label {
     border: none;
     box-shadow: none;
 }
+
+/* Dzwonek DND (scripts/waybar/dnd.sh): wyciszone powiadomienia w akcencie
+   (widać, że tryb jest włączony), mako nie działa = przygaszony — kolory
+   jak stany Bluetooth. */
+#custom-dnd.dnd { color: #74dce2; }
+#custom-dnd.unavailable { color: #6f8fb3; }
