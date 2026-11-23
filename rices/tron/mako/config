@@ -33,12 +33,26 @@ text-color=#020A0F
 border-color=#FF7B1C
 default-timeout=0
 
+# Tryb „nie przeszkadzać” (dzwonek w waybarze, scripts/waybar/dnd.sh) chowa
+# powiadomienia aplikacji. Kolejność sekcji niżej MA znaczenie — mako(5): przy
+# kilku pasujących sekcjach wygrywa ostatnia wartość opcji.
 [mode=do-not-disturb]
 invisible=1
 
-# Krytyczne (urgency=critical: koniec timera, błędy archenemy) przechodzą także
-# w trybie „nie przeszkadzać” (dzwonek w waybarze, scripts/waybar/dnd.sh).
-# Sekcja MUSI stać po [mode=do-not-disturb] — mako(5): przy kilku pasujących
-# sekcjach wygrywa ostatnia wartość opcji.
+# Krytyczne (urgency=critical) przechodzą — także z aplikacji.
 [mode=do-not-disturb urgency=critical]
+invisible=0
+
+# Powiadomienia archenemy (notify-send -a archenemy: profil zasilania, rice,
+# tapeta, Bluetooth, timer…) przechodzą przy każdej pilności.
+[mode=do-not-disturb app-name=archenemy]
+invisible=0
+
+# …i grupują się jak poza trybem (group-by=app-name): widać pierwsze z grupy
+# z licznikiem, reszta schowana. Bez tych dwóch sekcji sekcja wyżej odsłania
+# każde z grupy osobno (wbudowane [grouped] invisible=1 stoi przed configiem).
+[mode=do-not-disturb app-name=archenemy grouped]
+invisible=1
+
+[mode=do-not-disturb app-name=archenemy group-index=0]
 invisible=0

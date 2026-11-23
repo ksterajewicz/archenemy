@@ -422,16 +422,23 @@ Rules that follow directly from the table:
   mako in `hyprland.lua`, and a mako restart drops all modes). mako ships a
   D-Bus activation file, so calling `makoctl` with no mako running can START
   it: the script checks `pgrep -u $UID -x mako` first and otherwise prints the
-  "unavailable" icon without calling `makoctl` (exit 0). Each rice's
-  `mako/config` ends with `[mode=do-not-disturb]` `invisible=1` followed by
-  `[mode=do-not-disturb urgency=critical]` `invisible=0` — critical
-  notifications (timer finished, archenemy errors) still show; the order
-  matters (mako(5): the last matching section wins). `tests/dnd.sh`.
+  "unavailable" icon without calling `makoctl` (exit 0). Do-not-disturb hides
+  app notifications only. Each rice's `mako/config` ends with
+  `[mode=do-not-disturb]` `invisible=1`, then `[mode=do-not-disturb
+  urgency=critical]` `invisible=0` (critical ones from apps still show), then
+  `[mode=do-not-disturb app-name=archenemy]` `invisible=0` (archenemy's own
+  notifications show at every urgency), then `[mode=do-not-disturb
+  app-name=archenemy grouped]` `invisible=1` and `[… group-index=0]`
+  `invisible=0`. The order matters (mako(5): the last matching section wins).
+  The last two keep `group-by=app-name` working as outside the mode: mako's
+  built-in `[grouped] invisible=1` comes before the config, so without them
+  the archenemy section would show every member of a group on its own.
+  `tests/dnd.sh` simulates the matching, with negative controls.
 - **Every `notify-send` passes `-a archenemy` right after the command name**
   (`notify-send -a archenemy [-u …] "archenemy" "…"`). Without it libnotify
-  sends the app name `notify-send`, the same as any third-party script, so mako
-  cannot tell archenemy's notifications from other apps' (`group-by=app-name`
-  in every rice groups by it). The summary "archenemy" is only the title.
+  sends the app name `notify-send`, the same as any third-party script, and
+  do-not-disturb would hide it like an app notification (`group-by=app-name`
+  in every rice groups by it, too). The summary "archenemy" is only the title.
   `tests/dnd.sh` fails on any call without the flag in `scripts/`, `config/`,
   `rices/` or `install/`.
 - **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
