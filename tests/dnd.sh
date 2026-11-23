@@ -163,6 +163,76 @@ json_is unavailable "$G_UNAVAILABLE" "zawieszony makoctl → unavailable"
 if (( elapsed <= 10 )); then ok "limit czasu makoctl (${elapsed} s)"
 else fail "moduł czekał ${elapsed} s na zawieszone makoctl"; fi
 
+PARITY=(white-blue tron asia-n-rice dither-flux crt yin yang)
+ALL_RICES=("${PARITY[@]}" white-blue_beta)
+echo "== configi waybara (7 rice'ów parytetu) i beta"
+cfg_out=$(python3 - "$REPO" "${PARITY[@]}" <<'PY'
+import json, re, sys
+repo, rices = sys.argv[1], sys.argv[2:]
+def load(rice):
+    text = open(f"{repo}/rices/{rice}/waybar/config.jsonc").read()
+    return json.loads(re.sub(r"//[^\n]*", "", text))
+for rice in rices:
+    c = load(rice)
+    m = c.get("custom/dnd", {})
+    checks = {
+        "raz w modules-right": c.get("modules-right", []).count("custom/dnd") == 1,
+        "exec dnd.sh": m.get("exec") == "~/archenemy/scripts/waybar/dnd.sh",
+        "return-type json": m.get("return-type") == "json",
+        "signal 13": m.get("signal") == 13,
+        "interval całkowity 10": type(m.get("interval")) is int and m.get("interval") == 10,
+        "on-click toggle": m.get("on-click") == "~/archenemy/scripts/waybar/dnd.sh toggle",
+        "sygnał 13 tylko u custom/dnd": [k for k, v in c.items() if isinstance(v, dict) and v.get("signal") == 13] == ["custom/dnd"],
+    }
+    for name, good in checks.items():
+        print(("ok" if good else "FAIL") + f" {rice}: {name}")
+    css = open(f"{repo}/rices/{rice}/waybar/style.css").read()
+    for sel in ("#custom-dnd", "#custom-dnd.dnd", "#custom-dnd.unavailable"):
+        print(("ok" if sel in css else "FAIL") + f" {rice}: style {sel}")
+beta = open(f"{repo}/rices/white-blue_beta/waybar/config.jsonc").read()
+print(("ok" if "custom/dnd" not in beta else "FAIL") + " white-blue_beta: bez modułu (beta zamrożona)")
+PY
+)
+while IFS= read -r line; do
+    case "$line" in
+        ok\ *) ok "${line#ok }" ;;
+        *)     fail "${line#FAIL }" ;;
+    esac
+done <<< "$cfg_out"
+
+echo "== mako: DND chowa, krytyczne przechodzą (wszystkie rice'y, beta przez symlink)"
+for rice in "${ALL_RICES[@]}"; do
+    f="$REPO/rices/$rice/mako/config"
+    verdict=$(python3 - "$f" <<'PY'
+import re, sys
+sections, cur = [], None
+for raw in open(sys.argv[1]):
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        continue
+    m = re.fullmatch(r"\[(.*)\]", line)
+    if m:
+        cur = (frozenset(m[1].split()), {})
+        sections.append(cur)
+    elif cur is not None and "=" in line:
+        k, v = line.split("=", 1)
+        cur[1][k] = v
+dnd = frozenset({"mode=do-not-disturb"})
+crit = frozenset({"mode=do-not-disturb", "urgency=critical"})
+def last(crits, key):
+    # ostatnia wartość key wśród sekcji, których kryteria pasują do crits
+    vals = [opts[key] for k, opts in sections if k <= crits and key in opts]
+    return vals[-1] if vals else None
+normal = frozenset({"mode=do-not-disturb", "urgency=normal"})
+low = frozenset({"mode=do-not-disturb", "urgency=low"})
+good = last(normal, "invisible") == "1" and last(low, "invisible") == "1" and last(crit, "invisible") == "0"
+print("ok" if good else f"zly normal={last(normal, 'invisible')} low={last(low, 'invisible')} critical={last(crit, 'invisible')}")
+PY
+)
+    if [[ "$verdict" == ok ]]; then ok "$rice: DND chowa normal/low, critical widoczne"
+    else fail "$rice: $verdict"; fi
+done
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 (( FAIL == 0 ))

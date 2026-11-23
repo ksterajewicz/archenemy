@@ -413,6 +413,20 @@ Rules that follow directly from the table:
   disappears; use `rgba()`. In `:hover` use `background-color`, the `background`
   shorthand resets the image. `bash tests/waybar-launcher.sh`,
   `bash tests/launcher-logo.sh`.
+- **The do-not-disturb bell reads mako, it keeps no state of its own.**
+  `custom/dnd` (seven non-beta rices) runs `scripts/waybar/dnd.sh`: the state
+  is the `do-not-disturb` line in `makoctl mode`, a click adds or removes it
+  with `makoctl mode -a`/`-r` (`-t` only exists since mako 1.9), success is the
+  state read back, then the script sends `pkill -RTMIN+13 -x waybar` itself
+  (`"signal": 13`; `"interval": 10` is only a backstop — waybar starts before
+  mako in `hyprland.lua`, and a mako restart drops all modes). mako ships a
+  D-Bus activation file, so calling `makoctl` with no mako running can START
+  it: the script checks `pgrep -u $UID -x mako` first and otherwise prints the
+  "unavailable" icon without calling `makoctl` (exit 0). Each rice's
+  `mako/config` ends with `[mode=do-not-disturb]` `invisible=1` followed by
+  `[mode=do-not-disturb urgency=critical]` `invisible=0` — critical
+  notifications (timer finished, archenemy errors) still show; the order
+  matters (mako(5): the last matching section wins). `tests/dnd.sh`.
 - **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
   the parity rices, not by `white-blue_beta`) swaps the active colours for the
   inactive ones while the cursor is on another monitor. It changes the look
