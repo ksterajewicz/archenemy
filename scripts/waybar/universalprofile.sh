@@ -66,6 +66,6 @@ if [[ -z "$NEXT" ]]; then
 fi
 
 pkill -RTMIN+8 waybar
-command -v notify-send >/dev/null 2>&1 && notify-send "archenemy" "Power profile: $NEXT"
+command -v notify-send >/dev/null 2>&1 && notify-send -a archenemy "archenemy" "Power profile: $NEXT"
 [[ -n "$ERR_FILE" ]] && rm -f "$ERR_FILE"
 exit 0

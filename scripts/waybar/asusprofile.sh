@@ -41,7 +41,7 @@ fi
 if [[ $ok -eq 1 ]]; then
     pkill -RTMIN+8 waybar
     command -v notify-send >/dev/null 2>&1 && \
-        notify-send "archenemy" "Power profile: ${after:-zmieniony}"
+        notify-send -a archenemy "archenemy" "Power profile: ${after:-zmieniony}"
     [[ -n "$ERR_FILE" ]] && rm -f "$ERR_FILE"
     exit 0
 fi

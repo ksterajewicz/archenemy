@@ -142,7 +142,7 @@ echo "== kolejność skutków: flux-wall startuje już dla nowego rice'a (T9)"
 sw alfa; : > "$MOCK_LOG"; sw beta
 check "autostart flux-walla widzi .current_rice = beta"  'grep -qx "FLUXWALL autostart rice=beta" "$MOCK_LOG"'
 check "autostart przed powiadomieniem o wyniku"          '[[ "$(grep -n "^FLUXWALL" "$MOCK_LOG" | cut -d: -f1)" -lt "$(grep -n "^NOTIFY" "$MOCK_LOG" | tail -1 | cut -d: -f1)" ]]'
-check "bez sesji Hyprlanda: bez reloadu, Rice applied"   '! grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Rice .beta. applied" "$MOCK_LOG"'
+check "bez sesji Hyprlanda: bez reloadu, Rice applied"   '! grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: -a archenemy archenemy Rice .beta. applied" "$MOCK_LOG"'
 
 echo "== Super+T: waybar uruchomiony od nowa (config i skrypty modułów, np. tryb launchera)"
 # Waybar czyta config tylko na starcie (scripts/waybar/lib/waybar-reload.sh),
@@ -161,7 +161,7 @@ check "błąd configu: reload przez hyprctl"                'grep -q "^hyprctl r
 check "błąd configu: bez 'applied'"                       '! grep -q "applied" "$MOCK_LOG"'
 check "błąd configu: treść błędu w powiadomieniu"         'grep -q "NOTIFY: .*config error.*bad rule in beta" "$MOCK_LOG"'
 : > "$MOCK_LOG"; HYPRLAND_INSTANCE_SIGNATURE=fake-instance sw alfa
-check "czysty config: reload i Rice applied"              'grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Rice .alfa. applied" "$MOCK_LOG"'
+check "czysty config: reload i Rice applied"              'grep -q "^hyprctl reload" "$MOCK_LOG" && grep -q "NOTIFY: -a archenemy archenemy Rice .alfa. applied" "$MOCK_LOG"'
 
 echo "== Super+T yin → yang: prawdziwe stuby i katalogi rices/yin, rices/yang"
 # Kopie prawdziwych rice'ów (white-blue = cel względnych linków

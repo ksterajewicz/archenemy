@@ -89,7 +89,7 @@ check "kod 3"                                     '[[ $rc -eq 3 ]]'
 check "~/.config i .current_rice bez zmian"       'cmp -s "$T/s0" "$T/s1"'
 check "link HM nietknięty, bez .bak"              '[[ "$(readlink "$C/waybar")" == /nix/store/aaaa-home-manager-files/.config/waybar ]] && ! ls -d "$C"/*.bak-* >/dev/null 2>&1'
 check "nasze stare linki (beta) zostały"          '[[ "$(readlink "$C/hypr")" == "$A/rices/beta/hypr" && -L "$C/rofi" ]]'
-check "powiadomienie krytyczne z nazwą ścieżki"   'grep -q "notify-send: -u critical archenemy Rice .alfa. not applied: home-manager manages ~/.config/waybar (nothing changed)" "$MOCK_LOG"'
+check "powiadomienie krytyczne z nazwą ścieżki"   'grep -q "notify-send: -a archenemy -u critical archenemy Rice .alfa. not applied: home-manager manages ~/.config/waybar (nothing changed)" "$MOCK_LOG"'
 check "porada na stderr: usuń deklarację, bez force" 'grep -q "Remove those entries from your home-manager configuration" "$T/err" && grep -q "Do not set force" "$T/err" && grep -q "~/.config/waybar -> /nix/store/aaaa" "$T/err"'
 check "bez reloadu, waybara, makoctl"             '! grep -qE "^(hyprctl: reload|waybar|makoctl|pkill)" "$MOCK_LOG"'
 

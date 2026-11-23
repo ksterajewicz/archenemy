@@ -13,7 +13,7 @@ if command -v nmcli &>/dev/null; then
     # rescan zgłasza błąd np. przy wyłączonym radiu — ignorujemy, menu i tak działa
     if nmcli device wifi rescan &>/dev/null; then
         command -v notify-send &>/dev/null \
-            && notify-send -t 1500 "archenemy" "Skanuję sieci Wi-Fi…"
+            && notify-send -a archenemy -t 1500 "archenemy" "Skanuję sieci Wi-Fi…"
         sleep 1.5   # chwila na spłynięcie wyników skanu
     fi
 fi

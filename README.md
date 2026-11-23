@@ -526,6 +526,7 @@ archenemy/
 │                                     #   toggle both ways keeping other modes, signal 13, failing/stuck/hung makoctl;
 │                                     #   custom/dnd in the seven non-beta bars (signal 13 nowhere else), and every
 │                                     #   mako/config hides notifications in do-not-disturb but lets critical ones through.
+│                                     #   Guard: every notify-send in scripts/, config/, rices/, install/ has -a archenemy.
 │                                     #   rofi-clipboard.sh — clipboard selection, deletion, clearing, previews and dependency errors on mocks.
 │                                     #   keyboard-layouts.sh — [k] on a fake HOME/hyprctl/evdev.lst: 1–4 known
 │                                     #   codes, reload + read-back, switch N, the TUI menu driven via stdin.

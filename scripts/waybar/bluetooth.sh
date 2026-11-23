@@ -124,7 +124,7 @@ power_choice() {
 # innego kanału, a cichy sukces bez pamięci wyboru wróciłby po restarcie.
 save_error() {
     printf '%s\n' "$1" >&2
-    command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" "$1"
+    command -v notify-send >/dev/null 2>&1 && notify-send -a archenemy -u critical "archenemy" "$1"
 }
 
 # Blokada transakcji (F2 z B3): odczyt wyboru, zapis, power i wycofanie PPM

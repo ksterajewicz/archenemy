@@ -137,7 +137,7 @@ case "${1:-}" in
         n="${2:-}"
         if [[ ! "$n" =~ ^[1-9]$ ]] || (( n > ${#L[@]} )); then
             command -v notify-send >/dev/null 2>&1 && \
-                notify-send "archenemy" "No keyboard layout #${n} — you have ${#L[@]} (${list}). Super+A → [k] to add more." 2>/dev/null
+                notify-send -a archenemy "archenemy" "No keyboard layout #${n} — you have ${#L[@]} (${list}). Super+A → [k] to add more." 2>/dev/null
             exit 1
         fi
         hypr_running || exit 1

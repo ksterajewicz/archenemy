@@ -13,6 +13,8 @@
 #   7 rice'ów parytetu, signal 13 tylko tam, interval całkowity, style
 #   stanów w CSS, beta bez modułu; każdy mako/config chowa powiadomienia
 #   w DND i przepuszcza krytyczne (sekcja po [mode=do-not-disturb]).
+#   Strażnik: każde notify-send w scripts/ config/ rices/ install/ ma
+#   "-a archenemy" zaraz po nazwie komendy (z kontrolą negatywną).
 #   Bez roota, bez maka i waybara, zapis tylko w mktemp.
 #   Uruchom: bash tests/dnd.sh   (kod 0 = wszystko przeszło)
 # =============================================
@@ -232,6 +234,61 @@ PY
     if [[ "$verdict" == ok ]]; then ok "$rice: DND chowa normal/low, critical widoczne"
     else fail "$rice: $verdict"; fi
 done
+
+# Każde wywołanie notify-send w kodzie repo ma "-a archenemy" zaraz po nazwie
+# komendy — po tym mako odróżnia powiadomienia archenemy od aplikacji
+# (sekcje [mode=do-not-disturb app-name=archenemy]). Bez flagi libnotify
+# wysyła app-name "notify-send", jak każdy cudzy skrypt, i DND by je schował.
+# Pomija komentarze i "command -v notify-send". Wypisuje plik:linia naruszeń.
+untagged_notify() {
+    python3 - "$@" <<'PY'
+import os, re, sys
+call = re.compile(r"(?<![\w-])notify-send(?![\w-])")
+for root in sys.argv[1:]:
+    for dirpath, _, files in os.walk(root):
+        for name in sorted(files):
+            path = os.path.join(dirpath, name)
+            try:
+                lines = open(path, encoding="utf-8").read().splitlines()
+            except (UnicodeDecodeError, OSError):
+                continue
+            for no, line in enumerate(lines, 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for m in call.finditer(line):
+                    if line[:m.start()].endswith("command -v "):
+                        continue
+                    if not re.match(r" -a archenemy(\s|$)", line[m.end():]):
+                        print(f"{path}:{no}")
+PY
+}
+
+echo "== notify-send zawsze z -a archenemy (DND przepuszcza tylko archenemy)"
+hits=$(untagged_notify "$REPO/scripts" "$REPO/config" "$REPO/rices" "$REPO/install")
+if [[ -z "$hits" ]]; then ok "scripts/ config/ rices/ install/: każde notify-send ma -a archenemy"
+else fail "notify-send bez -a archenemy: $(tr '\n' ' ' <<< "${hits//$REPO\//}")"; fi
+n_calls=$(grep -rhoE 'notify-send -a archenemy( |$)' "$REPO/scripts" | wc -l)
+if (( n_calls >= 36 )); then ok "wywołania z -a archenemy w scripts/: $n_calls (≥ 36 z inwentarza 2026-11-23)"
+else fail "tylko $n_calls wywołań notify-send -a archenemy w scripts/ (strażnik nic nie widzi?)"; fi
+# Kontrola negatywna: strażnik łapie każdą postać wywołania bez flagi.
+mkdir -p "$T/guard"
+cat > "$T/guard/bad.sh" <<'EOF'
+notify-send "archenemy" "zwykłe"
+command -v notify-send >/dev/null && notify-send -u low "archenemy" "po &&"
+notify-send -u critical -a archenemy "archenemy" "flaga nie na początku"
+x || notify-send --app-name=archenemy "archenemy" "długa postać"
+EOF
+cat > "$T/guard/good.sh" <<'EOF'
+# notify-send w komentarzu nie jest wywołaniem
+command -v notify-send >/dev/null 2>&1 || return 0
+notify-send -a archenemy "archenemy" "dobrze"
+command -v notify-send &>/dev/null && notify-send -a archenemy -u critical "archenemy" \
+    "dalej w następnej linii"
+EOF
+hits=$(untagged_notify "$T/guard")
+if [[ "$hits" == "$T/guard/bad.sh:1"$'\n'"$T/guard/bad.sh:2"$'\n'"$T/guard/bad.sh:3"$'\n'"$T/guard/bad.sh:4" ]]
+then ok "kontrola negatywna: 4 wywołania bez -a archenemy złapane, poprawne i komentarze przepuszczone"
+else fail "kontrola negatywna strażnika: [$(tr '\n' ' ' <<< "${hits//$T\//}")]"; fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

@@ -161,7 +161,7 @@ FIX="Fix: run ~/archenemy/install/install.sh again (steps [3]–[3.7] re-read th
 (( NEW_MONITORS == ${#PROBLEMS[@]} )) && FIX="Fix: Super+A → [n] sets up the new monitor."
 (( QUIET )) || printf 'machine layer: %s\n' "${PROBLEMS[@]}" "$FIX"
 if (( ! DOCTOR )) && command -v notify-send >/dev/null 2>&1; then
-    notify-send -u critical "archenemy: machine layer out of date" \
+    notify-send -a archenemy -u critical "archenemy: machine layer out of date" \
         "$(printf '%s\n' "${PROBLEMS[@]}")
 $FIX"
 fi

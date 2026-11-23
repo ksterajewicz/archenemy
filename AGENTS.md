@@ -427,6 +427,13 @@ Rules that follow directly from the table:
   `[mode=do-not-disturb urgency=critical]` `invisible=0` — critical
   notifications (timer finished, archenemy errors) still show; the order
   matters (mako(5): the last matching section wins). `tests/dnd.sh`.
+- **Every `notify-send` passes `-a archenemy` right after the command name**
+  (`notify-send -a archenemy [-u …] "archenemy" "…"`). Without it libnotify
+  sends the app name `notify-send`, the same as any third-party script, so mako
+  cannot tell archenemy's notifications from other apps' (`group-by=app-name`
+  in every rice groups by it). The summary "archenemy" is only the title.
+  `tests/dnd.sh` fails on any call without the flag in `scripts/`, `config/`,
+  `rices/` or `install/`.
 - **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
   the parity rices, not by `white-blue_beta`) swaps the active colours for the
   inactive ones while the cursor is on another monitor. It changes the look

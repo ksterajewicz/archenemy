@@ -72,7 +72,7 @@ if [[ "$TIMER_STATUS" == "running" ]] && (( $(timer_remaining_now) <= 0 )); then
         timer_unlock
     fi
     if (( notify )) && command -v notify-send &>/dev/null; then
-        notify-send -u critical "archenemy" "Timer finished."
+        notify-send -a archenemy -u critical "archenemy" "Timer finished."
     fi
 fi
 

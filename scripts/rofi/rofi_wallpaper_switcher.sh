@@ -168,7 +168,7 @@ if [[ -z "$MONITOR1" && -n "$MONITOR2" ]]; then
 fi
 
 if [[ -z "$MONITOR1" ]]; then
-    notify-send "archenemy" "Could not resolve any monitor. Run install.sh first."
+    notify-send -a archenemy "archenemy" "Could not resolve any monitor. Run install.sh first."
     exit 1
 fi
 
@@ -304,7 +304,7 @@ apply_set_folder() {
     [[ -n "$v1" ]] && v2=$(wallpaper_pair "$v1" v2 "${RES_OF[${MONITOR2:-_}]:-}")
     [[ -n "$v2" ]] || v2=$(first_tagged "$dir" v2)
     if [[ -z "$v1" ]]; then
-        notify-send "archenemy" "Missing v1 wallpaper in folder '$(basename "$dir")'."
+        notify-send -a archenemy "archenemy" "Missing v1 wallpaper in folder '$(basename "$dir")'."
         return 1
     fi
     STATE[$MONITOR1]="$v1"
@@ -615,7 +615,7 @@ if [[ "$1" == "--restore" ]]; then
     fill_missing_state
     save_and_generate
     apply_ipc; rc=$?
-    (( rc == 0 )) || notify-send -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
+    (( rc == 0 )) || notify-send -a archenemy -u critical "archenemy" "Wallpaper restore failed — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
     report_init "$rc"
     exit 0
 elif [[ -n "$1" ]]; then
@@ -630,7 +630,7 @@ elif [[ -n "$1" ]]; then
         apply_set_folder "$WALLPAPERS_DIR/$1" || exit 1
         CHOICE="$1"
     else
-        notify-send "archenemy" "No such wallpaper: $1"
+        notify-send -a archenemy "archenemy" "No such wallpaper: $1"
         exit 1
     fi
 else
@@ -640,7 +640,7 @@ else
         | sort)
 
     if [[ ${#FILES[@]} -eq 0 ]]; then
-        notify-send "archenemy" "No wallpapers found in $WALLPAPERS_DIR"
+        notify-send -a archenemy "archenemy" "No wallpapers found in $WALLPAPERS_DIR"
         exit 1
     fi
 
@@ -731,15 +731,15 @@ else
     # hyprpapera zostaje nietknięty (animacja rysuje nad nią).
     if [[ "$KIND" == "anim-off" ]]; then
         bash "$FLUX_WALL" off >/dev/null 2>&1
-        notify-send "archenemy" "Animation off."
+        notify-send -a archenemy "archenemy" "Animation off."
         exit 0
     elif [[ "$KIND" == "anim" ]]; then
         anim="$CHOICE"
         if bash "$FLUX_WALL" select "$anim" >/dev/null 2>&1; then
-            notify-send "archenemy" "Animation '$anim' applied."
+            notify-send -a archenemy "archenemy" "Animation '$anim' applied."
             exit 0
         fi
-        notify-send -u critical "archenemy" "Animation '$anim' failed to start — see $FLUX_WALL_LOG"
+        notify-send -a archenemy -u critical "archenemy" "Animation '$anim' failed to start — see $FLUX_WALL_LOG"
         exit 1
     fi
 
@@ -748,7 +748,7 @@ else
     # path szedł do wallpaper.dat + hyprpaper.conf i wracał przy --restore
     # (guard jak w gałęzi wywołania bezpośredniego wyżej).
     if [[ ! -f "$FILE" ]]; then
-        notify-send "archenemy" "No such wallpaper: $CHOICE"
+        notify-send -a archenemy "archenemy" "No such wallpaper: $CHOICE"
         exit 1
     fi
     if [[ "$MODE_ALL" -eq 1 ]]; then
@@ -770,10 +770,10 @@ fi
 
 save_and_generate
 if apply_ipc; then
-    notify-send "archenemy" "Wallpaper '$CHOICE' applied."
+    notify-send -a archenemy "archenemy" "Wallpaper '$CHOICE' applied."
     report_init 0
 else
-    notify-send -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
+    notify-send -a archenemy -u critical "archenemy" "Wallpaper '$CHOICE' failed to apply — hyprpaper didn't come back up. Log: $HYPRPAPER_ERR_LOG"
     report_init 1
 fi
 exit 0
