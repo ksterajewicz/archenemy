@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Atrapa makoctl (mako 1.11.0, podkomenda mode) do tests/dnd.sh. Stan w
+# $MOCK_MAKO: modes (tryby, jeden na linię, jak lista ListModes), log
+# (wywołania). Flagi-pliki: down = D-Bus/mako nie odpowiada (kod 1, jak
+# makoctl.c przy błędzie), stuck = SetModes przyjęte bez zmiany stanu,
+# hang = makoctl wisi (test limitu czasu).
+D="$MOCK_MAKO"; echo "makoctl $*" >> "$D/log"
+[[ -f "$D/hang" ]] && exec sleep 30
+[[ -f "$D/down" ]] && { echo "Failed to call method: mock" >&2; exit 1; }
+[[ "${1:-}" == mode ]] || { echo "Unknown command: ${1:-}" >&2; exit 1; }
+shift
+mapfile -t modes < "$D/modes"
+changed=0
+while (( $# )); do
+    case "$1" in
+        -a) modes+=("$2"); changed=1; shift 2 ;;
+        -r) keep=(); for m in "${modes[@]}"; do [[ "$m" == "$2" ]] || keep+=("$m"); done
+            modes=("${keep[@]}"); changed=1; shift 2 ;;
+        -t) keep=(); found=0
+            for m in "${modes[@]}"; do if [[ "$m" == "$2" ]]; then found=1; else keep+=("$m"); fi; done
+            (( found )) || keep+=("$2"); modes=("${keep[@]}"); changed=1; shift 2 ;;
+        -s) shift; modes=("$@"); changed=1; set -- ;;
+        *) echo "positional arguments can only be used with -s" >&2; exit 1 ;;
+    esac
+done
+if (( changed )) && [[ ! -f "$D/stuck" ]]; then
+    printf '%s\n' "${modes[@]}" | sed '/^$/d' > "$D/modes"
+fi
+printf '%s\n' "${modes[@]}" | sed '/^$/d'
+exit 0

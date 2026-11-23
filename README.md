@@ -338,6 +338,8 @@ archenemy/
 │                                     #   timer.sh + timer-ctl.sh — countdown timer next to the clock,
 │                                     #   optional, enabled in Super+A → [t];
 │                                     #   lib/timer-state.sh — shared read/write of timer state.
+│                                     #   dnd.sh — do-not-disturb bell: state from `makoctl mode`, click toggles
+│                                     #   mako's do-not-disturb mode; "unavailable" icon when mako is not running.
 │                                     #   launcher-logo.sh — the system logo: custom/launcher text and class (the
 │                                     #   distro glyph from os-release by default, or the Æ logo, Super+A → [l]);
 │                                     #   `glyph` prints the distro glyph for the login screen and boot menu themes;
@@ -519,6 +521,9 @@ archenemy/
 │                                     #   launcher-logo.sh — the launcher script on a fake HOME and os-release: mode
 │                                     #   from data/launcher-logo.dat (missing/garbage = distro), Arch/derivative/
 │                                     #   Fedora/NixOS/unknown glyph, os-release read as data, always exit 0.
+│                                     #   dnd.sh — do-not-disturb bell on a fake makoctl (tests/mock/makoctl) and
+│                                     #   fake pgrep/pkill: no makoctl call without a running mako, exact mode match,
+│                                     #   toggle both ways keeping other modes, signal 13, failing/stuck/hung makoctl.
 │                                     #   rofi-clipboard.sh — clipboard selection, deletion, clearing, previews and dependency errors on mocks.
 │                                     #   keyboard-layouts.sh — [k] on a fake HOME/hyprctl/evdev.lst: 1–4 known
 │                                     #   codes, reload + read-back, switch N, the TUI menu driven via stdin.
