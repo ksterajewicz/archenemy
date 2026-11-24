@@ -1954,7 +1954,7 @@ echo ""
 # minut, więc generowanie idzie W TLE — instalator nie czeka; pliki pojawiają
 # się w Super+W, gdy będą gotowe. Idempotentne: gotowe pliki pomijane, a pliki
 # pod monitory spoza data/monitors (i nieużywane w zapisanym wyborze) idą do
-# ukrytego generated/.bak-* (dither_flux_prune).
+# ukrytego generated/.bak-* (dither_flux_prune; zostaje tylko ostatni .bak-*).
 
 echo -e "${CYAN}[9.7] Generating dither-flux wallpapers for detected monitors...${NC}"
 
@@ -1970,6 +1970,9 @@ if command -v python3 &>/dev/null && [[ -f "$FLUX_GEN" ]]; then
     if (( FLUX_PRUNED > 0 )); then
         echo -e "  ${GREEN}✓ moved $FLUX_PRUNED wallpaper(s) for monitors no longer configured to ${FLUX_PRUNE_DIR#"$ARCHENEMY_DIR"/}${NC}"
         SUMMARY_DONE+=("dither-flux: $FLUX_PRUNED old wallpaper(s) moved out of Super+W (${FLUX_PRUNE_DIR#"$ARCHENEMY_DIR"/})")
+    fi
+    if (( FLUX_BAK_REMOVED > 0 )); then
+        echo -e "  ${GREEN}✓ removed $FLUX_BAK_REMOVED older backup folder(s) — only the latest generated/.bak-* is kept${NC}"
     fi
     for _flux in "${FLUX_READY[@]}"; do
         echo -e "  ${GREEN}✓ $_flux — already generated${NC}"

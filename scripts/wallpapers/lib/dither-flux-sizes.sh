@@ -93,14 +93,21 @@ except Exception:
 #     pliki swojego tagu; brak jakiegokolwiek .dat = nic nie ruszamy;
 #   - nie rm, tylko mv do ukrytego generated/.bak-<czas>-XXXX (menu Super+W
 #     pomija ukryte ścieżki); stamtąd można je przywrócić albo skasować ręcznie.
+# Zostaje tylko OSTATNI .bak (odpowiedź właściciela 2026-11-24, „4A”: dok ↔ bez
+# doku dokładał przy każdym install.sh kolejny katalog PNG-ów). Starsze kasujemy,
+# ale wyłącznie własne: katalog (nie symlink) w tym generated/ z nazwą
+# dokładnie w formacie mktemp z niżej (.bak-RRRRMMDD-GGMMSS-XXXX) i bez pliku,
+# który wskazuje zapisany wybór. Ostatni = właśnie utworzony, a bez nowego —
+# najpóźniejszy po nazwie (czas w nazwie).
 # Ścieżki stanu liczone od katalogu .dat: <archenemy>/data/monitors → data/,
 # a config/ obok data/ (tak wołają install.sh [9.7] i monitor-settings.sh).
 # Argumenty: <katalog data/monitors> <katalog generated/>.
-# Wynik: FLUX_PRUNED (liczba przeniesionych), FLUX_PRUNE_DIR (dokąd; puste = nic).
+# Wynik: FLUX_PRUNED (liczba przeniesionych), FLUX_PRUNE_DIR (dokąd; puste = nic),
+# FLUX_BAK_REMOVED (liczba skasowanych starszych katalogów .bak-*).
 dither_flux_prune() {
-    local mon_dir="$1" out_dir="$2" data_dir f base keep w t
-    local -a refs=()
-    FLUX_PRUNED=0; FLUX_PRUNE_DIR=""
+    local mon_dir="$1" out_dir="$2" data_dir f base keep w t b newest=""
+    local -a refs=() baks=()
+    FLUX_PRUNED=0; FLUX_PRUNE_DIR=""; FLUX_BAK_REMOVED=0
     (( ${FLUX_MONS:-0} > 0 )) || return 0
     [[ -d "$out_dir" ]] || return 0
     data_dir="$(dirname "$mon_dir")"
@@ -133,6 +140,20 @@ dither_flux_prune() {
         rmdir -- "$FLUX_PRUNE_DIR" 2>/dev/null
         FLUX_PRUNE_DIR=""
     fi
+    # Tylko ostatni .bak (glob sortuje po nazwie, czyli po czasie).
+    for b in "$out_dir"/.bak-*; do
+        [[ -d "$b" && ! -L "$b" ]] || continue
+        [[ "${b##*/}" =~ ^\.bak-[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{4}$ ]] || continue
+        baks+=("$b")
+    done
+    (( ${#baks[@]} > 1 )) || return 0
+    newest="${FLUX_PRUNE_DIR:-${baks[-1]}}"
+    for b in "${baks[@]}"; do
+        [[ "$b" == "$newest" ]] && continue
+        # Zapisany wybór wskazuje plik w tym katalogu (np. wpisana ścieżka) — zostaje.
+        (( ${#refs[@]} > 0 )) && grep -qF -- "/${b##*/}/" "${refs[@]}" && continue
+        rm -rf -- "$b" && FLUX_BAK_REMOVED=$((FLUX_BAK_REMOVED + 1))
+    done
     return 0
 }
 

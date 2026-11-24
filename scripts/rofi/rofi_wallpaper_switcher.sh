@@ -55,8 +55,11 @@
 #
 #   Wallpapers/ pokazuje każdy obraz RAZ (2026-11-24, „tapety się dublują”):
 #   warianty v1/v2, rozdzielczości i m-<złącze> jednego obrazu to jeden kafel
-#   (wallpaper_key, group_wallpapers); ukryte pliki i katalogi (np.
-#   generated/.bak-* z dither_flux_prune) nie wchodzą do menu.
+#   (wallpaper_key, group_wallpapers) podpisany nazwą obrazu, np. crt/crt-scope
+#   (wall_labels); ukryte pliki i katalogi (np. generated/.bak-* z
+#   dither_flux_prune) nie wchodzą do menu. Każdy monitor dostaje wariant pod
+#   siebie: primary v1, secondary v2, rola other (trzeci) — plik pod swoją
+#   rozdzielczość z .dat (variant_by_resolution).
 #
 #   Stan: data/wallpaper.dat w formacie "monitor=ścieżka" (po linii na monitor).
 #   Stary format (sama nazwa zestawu) jest migrowany automatycznie.
@@ -127,11 +130,13 @@ source "$ARCHENEMY_DIR/scripts/rofi/lib/rofi-preview.sh"
 MONITOR1=""   # primary  -> dostaje v1
 MONITOR2=""   # secondary -> dostaje v2
 MONITOR2_ROLE=""
-MONITORS_EXTRA=()   # trzeci i kolejne -> jak secondary (v2)
+MONITORS_EXTRA=()   # trzeci i kolejne -> v2, a rola other -> po rozdzielczości
 
 declare -A SELECTOR_KNOWN   # selektor z .dat -> 1 (dzisiejszy format klucza)
 declare -A SEL_OF_LIVE      # żywa nazwa złącza -> selektor tego samego monitora
 declare -A RES_OF           # selektor -> RESOLUTION z .dat (tylko WxH; do wyboru pary v1/v2)
+declare -A ROLE_OF          # selektor -> ROLE z .dat (primary|secondary|other)
+declare -A MTAG_OF          # selektor -> tag plików dither-flux tego monitora (m-<złącze>)
 
 if [[ -d "$DATA_DIR/monitors" ]]; then
     for dat in "$DATA_DIR/monitors"/*.dat; do
@@ -140,6 +145,10 @@ if [[ -d "$DATA_DIR/monitors" ]]; then
         role=$(grep '^ROLE='    "$dat" | cut -d= -f2)
         res=$(grep '^RESOLUTION=' "$dat" | cut -d= -f2)
         [[ "$res" =~ ^[0-9]+x[0-9]+$ ]] && RES_OF[$mon]="$res"
+        ROLE_OF[$mon]="$role"
+        # Ten sam tag co dither_flux_plan (lib/dither-flux-sizes.sh): m-<MONITOR=>.
+        name=$(grep '^MONITOR=' "$dat" | cut -d= -f2)
+        [[ -n "$name" ]] && MTAG_OF[$mon]="m-${name//[^A-Za-z0-9-]/-}"
         SELECTOR_KNOWN[$mon]=1
         live=$(monitor_live_name "$mon")
         [[ -n "$live" ]] && SEL_OF_LIVE[$live]="$mon"
@@ -291,12 +300,66 @@ wallpaper_pair() {
     return 0
 }
 
-# Plik $1 w wariancie dla monitora $2 (menu z fokusem): primary bierze v1, reszta
-# v2, każdy pod swoją rozdzielczość z .dat — ta sama reguła co apply_file_allmon.
-# Brak pary albo plik bez tagu = ten sam plik. Wynik w REPLY.
+# Wariant obrazu pliku $1 (ten sam klucz wallpaper_key, ten sam katalog) pod
+# ekran $2 (WxH); $3 = tag m-<złącze> tego monitora (może być pusty). Odpowiedź
+# właściciela 2026-11-24 („3A”): trzeci monitor ma dostać ostrą tapetę w SWOJEJ
+# rozdzielczości, nie zawsze v2 — dither-flux ma dla niego wygenerowany
+# m-<złącze> (raster 1 px nie znosi skalowania). Kolejność: dokładnie ta
+# rozdzielczość (najpierw własny m-<złącze>), potem najmniejszy wariant, który
+# pokrywa ekran w obu wymiarach (hyprpaper go pomniejsza — ostro), na końcu
+# największy z mniejszych. Pod uwagę idą tylko warianty z rozdzielczością
+# w nazwie; brak takich albo plik bez tagu = pusto (wołający bierze dawną regułę).
+# Wynik w REPLY.
+variant_by_resolution() {
+    local f="$1" want="${2,,}" mtag="${3,,}" key c lc w h W H rank area pick="" pick_rank=9 pick_area=0
+    wallpaper_key "$f"
+    if [[ -z "$REPLY_TAG" || ! "$want" =~ ^[0-9]+x[0-9]+$ ]]; then REPLY=""; return 0; fi
+    key="$REPLY"; W="${want%x*}"; H="${want#*x}"
+    for c in "${f%/*}"/*; do
+        [[ -f "$c" ]] || continue
+        lc="${c##*/}"; lc="${lc,,}"
+        [[ "$lc" =~ \.(jpe?g|png|webp)$ ]] || continue
+        wallpaper_key "$c"
+        [[ "$REPLY" == "$key" && -n "$REPLY_TAG" && -n "$REPLY_RES" ]] || continue
+        w="${REPLY_RES%x*}"; h="${REPLY_RES#*x}"
+        if [[ "$REPLY_RES" == "$want" ]]; then
+            rank=1; area=0
+            [[ -n "$mtag" && "${lc%.*}" == *"-$mtag-$want" ]] && rank=0
+        elif (( w >= W && h >= H )); then
+            rank=2; area=$(( w * h ))
+        else
+            rank=3; area=$(( -w * h ))
+        fi
+        if (( rank < pick_rank || (rank == pick_rank && area < pick_area) )); then
+            pick="$c"; pick_rank=$rank; pick_area=$area
+        fi
+    done
+    REPLY="$pick"
+}
+
+# Plik $1 dla monitora $2 z rolą other (trzeci i dalsze, nie primary/secondary)
+# o znanej rozdzielczości — variant_by_resolution; inny monitor albo brak
+# wariantu z rozdzielczością = pusto. Wynik w REPLY.
+other_variant() {
+    local role="${ROLE_OF[$2]:-}"
+    REPLY=""
+    [[ -n "$role" && "$role" != primary && "$role" != secondary && "$2" != "$MONITOR1" ]] || return 0
+    [[ -n "${RES_OF[$2]:-}" ]] || return 0
+    variant_by_resolution "$1" "${RES_OF[$2]}" "${MTAG_OF[$2]:-}"
+}
+
+# Plik $1 w wariancie dla monitora $2: primary bierze v1, secondary v2 pod swoją
+# rozdzielczość z .dat, rola other — po rozdzielczości (other_variant), a bez
+# takiego wariantu v2 jak secondary. Ta sama reguła w menu z fokusem i dla
+# wszystkich monitorów. Brak pary albo plik bez tagu = ten sam plik. Wynik w REPLY.
 variant_for_monitor() {
     local to=v2
-    [[ "$2" == "$MONITOR1" ]] && to=v1
+    if [[ "$2" == "$MONITOR1" ]]; then
+        to=v1
+    else
+        other_variant "$1" "$2"
+        [[ -n "$REPLY" ]] && return 0
+    fi
     REPLY=$(wallpaper_pair "$1" "$to" "${RES_OF[$2]:-}")
     [[ -n "$REPLY" ]] || REPLY="$1"
 }
@@ -359,6 +422,40 @@ group_wallpapers() {
     for f in "${order[@]}"; do MENU_FILES+=("${best[$f]}"); done
 }
 
+# Podpisy kafli z MENU_FILES (odpowiedź właściciela 2026-11-24, „1A”): nazwa
+# obrazu względem wallpapers/, bez tagu, rozdzielczości i rozszerzenia —
+# crt/crt-scope zamiast crt/crt-scope-v1-1920x1080.png; plik bez tagu bez
+# rozszerzenia (own/sunset). Wielkość liter jak w nazwie pliku. Gdy dwa kafle
+# dostałyby ten sam podpis (sunset.jpg i sunset.png, city-v1.jpg i city-v1.png),
+# oba biorą ścieżkę z rozszerzeniem — nic nie ginie i każdy podpis wskazuje
+# jeden plik. Wynik: MENU_LABELS (równolegle do MENU_FILES) i FILE_OF_LABEL.
+wall_labels() {
+    local f rel dir base n label i
+    local -a cand=()
+    local -A count=()
+    MENU_LABELS=(); FILE_OF_LABEL=()
+    for f in "${MENU_FILES[@]}"; do
+        rel="${f#"$WALLPAPERS_DIR"/}"
+        wallpaper_key "$f"
+        if [[ -n "$REPLY_TAG" ]]; then
+            dir="${f%/*}"; base="${f##*/}"
+            n=$(( ${#REPLY} - ${#dir} - 1 ))
+            label="${rel%"$base"}${base:0:n}"
+        else
+            label="${rel%.*}"
+        fi
+        [[ -n "$label" && "${label##*/}" != "" ]] || label="$rel"
+        cand+=("$label"); count[$label]=$(( ${count[$label]:-0} + 1 ))
+    done
+    for i in "${!MENU_FILES[@]}"; do
+        f="${MENU_FILES[$i]}"; label="${cand[$i]}"
+        if [[ "${count[$label]}" -gt 1 || -n "${FILE_OF_LABEL[$label]+x}" ]]; then
+            label="${f#"$WALLPAPERS_DIR"/}"
+        fi
+        MENU_LABELS+=("$label"); FILE_OF_LABEL[$label]="$f"
+    done
+}
+
 # Pierwszy alfabetycznie plik katalogu $1 z tagiem $2 w nazwie (bez względu na wielkość liter).
 first_tagged() {
     local c lc
@@ -383,13 +480,17 @@ apply_set_folder() {
     STATE[$MONITOR1]="$v1"
     [[ -n "$MONITOR2" && -n "$v2" ]] && STATE[$MONITOR2]="$v2"
     local m
-    for m in "${MONITORS_EXTRA[@]}"; do STATE[$m]="${v2:-$v1}"; done
+    for m in "${MONITORS_EXTRA[@]}"; do
+        other_variant "$v1" "$m"
+        STATE[$m]="${REPLY:-${v2:-$v1}}"
+    done
     return 0
 }
 
 # Plik na wszystkie monitory; jeśli obok leży druga połowa pary v1/v2 (ta sama
 # nazwa przed tagiem — wallpaper_pair), primary dostaje v1, reszta v2 — każdy
-# monitor pod swoją rozdzielczość, gdy jest taki plik. Inaczej ten sam plik wszędzie.
+# monitor pod swoją rozdzielczość, gdy jest taki plik; rola other wybiera po
+# rozdzielczości (variant_for_monitor). Inaczej ten sam plik wszędzie.
 apply_file_allmon() {
     local f="$1" lbase m pair
     lbase=$(basename "$f"); lbase="${lbase,,}"
@@ -397,13 +498,17 @@ apply_file_allmon() {
         STATE[$MONITOR1]="$f"
         for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
             [[ -n "$m" ]] || continue
-            pair=$(wallpaper_pair "$f" v2 "${RES_OF[$m]:-}")
-            STATE[$m]="${pair:-$f}"
+            variant_for_monitor "$f" "$m"
+            STATE[$m]="$REPLY"
         done
     elif [[ "$lbase" == *v2* ]]; then
         pair=$(wallpaper_pair "$f" v1 "${RES_OF[$MONITOR1]:-}")
         STATE[$MONITOR1]="${pair:-$f}"
-        for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do [[ -n "$m" ]] && STATE[$m]="$f"; done
+        for m in "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
+            [[ -n "$m" ]] || continue
+            other_variant "$f" "$m"
+            STATE[$m]="${REPLY:-$f}"
+        done
     else
         for m in "$MONITOR1" "$MONITOR2" "${MONITORS_EXTRA[@]}"; do [[ -n "$m" ]] && STATE[$m]="$f"; done
     fi
@@ -412,13 +517,16 @@ apply_file_allmon() {
 
 # Monitor bez zapisanej tapety (właśnie dodany w Super+A → [n]) dostaje to, co
 # secondary, a bez niego to, co primary: --restore ma go nie zostawić pustego.
+# Rola other bierze ten obraz w wariancie pod swoją rozdzielczość (other_variant).
 fill_missing_state() {
     local fallback="" m
     [[ -n "$MONITOR2" ]] && fallback="${STATE[$MONITOR2]:-}"
     [[ -n "$fallback" ]] || fallback="${STATE[$MONITOR1]:-}"
     [[ -n "$fallback" ]] || return 0
     for m in "$MONITOR1" "$MONITOR2" "${MONITORS_EXTRA[@]}"; do
-        [[ -z "$m" || -n "${STATE[$m]:-}" ]] || STATE[$m]="$fallback"
+        [[ -z "$m" || -n "${STATE[$m]:-}" ]] && continue
+        other_variant "$fallback" "$m"
+        STATE[$m]="${REPLY:-$fallback}"
     done
 }
 
@@ -716,6 +824,8 @@ else
         | LC_ALL=C sort)
     group_wallpapers "${ALL_FILES[@]}"
     FILES=("${MENU_FILES[@]}")
+    declare -A FILE_OF_LABEL=()
+    wall_labels
 
     if [[ ${#FILES[@]} -eq 0 ]]; then
         notify-send "archenemy" "No wallpapers found in $WALLPAPERS_DIR"
@@ -728,13 +838,13 @@ else
     # zawsze jest CO pokazać (najwyżej oryginał).
     WALL_LABELS=(); WALL_ICONS=()
     build_wall_menu() {
-        local f
+        local i
         (( ${#WALL_LABELS[@]} )) && return 0
         WALL_LABELS=("$BACK"); WALL_ICONS=("")
         thumb_init
-        for f in "${FILES[@]}"; do
-            thumb_get "$f"
-            WALL_LABELS+=("${f#"$WALLPAPERS_DIR"/}"); WALL_ICONS+=("$REPLY")
+        for i in "${!FILES[@]}"; do
+            thumb_get "${FILES[$i]}"
+            WALL_LABELS+=("${MENU_LABELS[$i]}"); WALL_ICONS+=("$REPLY")
         done
     }
 
@@ -821,7 +931,9 @@ else
         exit 1
     fi
 
-    FILE="$WALLPAPERS_DIR/$CHOICE"
+    # Podpis kafla → plik (wall_labels); tekst spoza podpisów to ścieżka
+    # względem wallpapers/ jak dawniej (wpisana ręcznie, np. wariant v2).
+    FILE="${FILE_OF_LABEL[$CHOICE]:-$WALLPAPERS_DIR/$CHOICE}"
     # rofi -dmenu zwraca wpisany tekst także BEZ dopasowania — bez guarda zły
     # path szedł do wallpaper.dat + hyprpaper.conf i wracał przy --restore
     # (guard jak w gałęzi wywołania bezpośredniego wyżej).
