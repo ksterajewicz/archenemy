@@ -54,3 +54,10 @@ ZSH_HIGHLIGHT_STYLES[history-expansion]='fg=#8fa6c4'
 ZSH_HIGHLIGHT_STYLES[globbing]='fg=#8fa6c4'
 ZSH_HIGHLIGHT_STYLES[named-fd]='fg=#a6c2c4'
 ZSH_HIGHLIGHT_STYLES[numeric-fd]='fg=#a6c2c4'
+
+# Prompt bez Starshipa (config/shell/rice-look.zsh): [user@host katalog]$ —
+# te same role co w starship.toml (directory, character), tekst = default.
+ARCHENEMY_PROMPT_TEXT='#e8e8e8'
+ARCHENEMY_PROMPT_PATH='#c98a99'
+ARCHENEMY_PROMPT_OK='#c98a99'
+ARCHENEMY_PROMPT_ERROR='#d98a97'
