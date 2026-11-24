@@ -82,6 +82,7 @@
     "fd" = pkgs.fd;
     "ripgrep" = pkgs.ripgrep;
     "zoxide" = pkgs.zoxide;
+    "starship" = pkgs.starship;
     "hyprpicker" = pkgs.hyprpicker;
     "networkmanagerapplet" = pkgs.networkmanagerapplet;
     "mangohud" = pkgs.mangohud;

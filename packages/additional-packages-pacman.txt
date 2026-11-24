@@ -33,6 +33,11 @@ zsh-completions
 fd
 ripgrep
 zoxide
+# starship: opcjonalny silnik promptu zsh z konfiguracją aktywnego rice'a
+# (config/shell/rice-look.zsh: STARSHIP_CONFIG=~/.config/zsh/starship.toml);
+# bez niego prompt bierze kolory rice'a z ~/.config/zsh/colors.zsh. Fedora 43/44
+# nie ma go w repo (mdapi 2026-11-24), NixOS: pkgs.starship.
+starship
 # libratbag: ratbagctl — prawdziwe DPI i częstotliwość raportowania myszy w Super+A → [m]
 # (zapis w pamięci myszy, tylko wspierane modele); bez niego DPI jest emulowane szybkością
 libratbag

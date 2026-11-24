@@ -85,6 +85,7 @@ zsh-completions	zsh-completions	pacman	-	-	zsh-completions	-	-	fedora=unavailabl
 fd	fd	pacman	fd-find	fedora	fd	cmd:fd	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/fd-find
 ripgrep	ripgrep	pacman	ripgrep	fedora	ripgrep	cmd:rg	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/ripgrep
 zoxide	zoxide	pacman	zoxide	fedora	zoxide	cmd:zoxide	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/zoxide
+starship	starship	pacman	-	-	starship	cmd:starship	-	fedora=unavailable;nixos=ok	https://github.com/starship/starship
 libratbag	libratbag	pacman	libratbag-ratbagd	fedora	services.ratbagd.enable	cmd:ratbagctl	-	fedora=ok;nixos=system-managed	https://mdapi.fedoraproject.org/f44/pkg/libratbag-ratbagd
 hyprpicker	hyprpicker	pacman	hyprpicker	copr:nett00n/hyprland	hyprpicker	cmd:hyprpicker	-	fedora=ok;nixos=ok	https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/
 nm-connection-editor	nm-connection-editor	pacman	nm-connection-editor	fedora	networkmanagerapplet	cmd:nm-connection-editor	-	fedora=ok;nixos=ok	https://mdapi.fedoraproject.org/f44/pkg/nm-connection-editor
