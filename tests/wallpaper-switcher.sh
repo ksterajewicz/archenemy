@@ -435,7 +435,9 @@ menu "Wallpapers/" "zestaw/nowa-v1.png"
 check "domyślnie wszystkie: primary v1, secondary v2"  '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/nowa-v1.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
 start_old
 menu "[x] Upload to all monitors" "Wallpapers/" "zestaw/nowa-v1.png"
-check "odznaczone: tylko monitor z fokusem dostaje plik" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v1.png" ]]'
+# Kafel = wariant pod primary (v1); od 2026-11-24 (sekcja O) monitor z fokusem
+# dostaje wariant pod siebie — tu secondary, więc v2 tego samego obrazu.
+check "odznaczone: tylko monitor z fokusem dostaje plik (swój wariant v2)" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$WP/nowa-v2.png" ]]'
 check "odznaczone: drugi monitor bez zmian"            '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$WP/stara-v1.png" ]] && grep -qxF "desc:$DESC_HDMI=$WP/stara-v1.png" "$A/data/wallpaper.dat"'
 
 echo "== M: menu — tło hyprlocka bez rozmycia i powrót do zrzutu (T7)"
@@ -511,15 +513,16 @@ menu "Wallpapers/" ""
 check "menu główne bez ikon i bez siatki"      '! grep -q "$X1F" "$MOCK_ROFI_DIR/in-1" && ! grep -q -- "-theme-str" "$MOCK_ROFI_DIR/args-1"'
 check "← Back bez ikony"                      'rofi_in 2 | grep -qx "← Back"'
 all_thumbs=1
-for f in zestaw/stara-v1.png zestaw/nowa-v2.png "inne/o'neil tapeta.png"; do
+# Kafle: po jednym na obraz (para v1/v2 = jeden kafel, sekcja O).
+for f in zestaw/stara-v1.png zestaw/nowa-v1.png "inne/o'neil tapeta.png"; do
     ic="$(icon_of 2 "$f")"
     [[ "$ic" == "$THUMBS"/*.png && -s "$ic" ]] || { all_thumbs=0; echo "    brak miniatury: $f → '$ic'"; }
 done
 check "każda tapeta ma ikonę = istniejąca miniatura"   '(( all_thumbs == 1 ))'
 check "siatka: -show-icons + columns w -theme-str"    'grep -qx -- "-show-icons" "$MOCK_ROFI_DIR/args-2" && grep -q "columns: 3" "$MOCK_ROFI_DIR/args-2"'
 check "glycin dostał URL (spacja/apostrof zakodowane)" 'grep -qF "file://$A/wallpapers/inne/o%27neil%20tapeta.png" "$MOCK_LOG"'
-n_files=$(find "$A/wallpapers" -type f -name '*.png' | wc -l)
-check "po jednej miniaturze na plik"           '[[ $(n_thumbs) -eq $n_files ]]'
+n_files=$(rofi_in 2 | grep -c '|icon#')
+check "po jednej miniaturze na kafel (3: stara, nowa, o'neil)" '[[ $n_files -eq 3 && $(n_thumbs) -eq $n_files ]]'
 : > "$MOCK_LOG"
 menu "Wallpapers/" ""
 check "drugie otwarcie: nic nie generuje"      '[[ $(glycin_calls) -eq 0 ]]'
@@ -606,6 +609,9 @@ mkdir -p "$W/crt" "$W/blue-hex" "$W/arch-white" "$W/own"
 ln -s ../blue-hex/blue-hex-v1-1920x1080.png "$W/arch-white/arch-logo-v1-1920x1080.png"
 ln -s ../blue-hex/blue-hex-v2-2560x1600.png "$W/arch-white/arch-logo-v2-2560x1600.png"
 : > "$W/own/sunset.jpg"
+# Dwa różne zdjęcia użytkownika z „v1” w środku nazwy: grupowanie nie może
+# schować żadnego (łączy tylko nazwy różniące się tagiem i rozdzielczością).
+: > "$W/own/trip-v1-plaza.png"; : > "$W/own/trip-v1-las.png"
 # Atrapa generatora: te same nazwy co gen_dither_flux_wallpaper.py (forma-tag-WxH),
 # formy w tej samej kolejności, ostatnia = znacznik kompletu.
 cat > "$T/fakegen.py" <<'EOF'
@@ -656,12 +662,12 @@ mapfile -t O_LABELS < <(rofi_in 2 | sed 's/|icon#.*//' | grep -vxF "← Back")
 img_key() { local k="${1%.*}"; k="${k%-[0-9]*x[0-9]*}"; k="${k%-m-*}"; k="${k%-v[12]}"; printf '%s\n' "$k"; }
 O_DUPS="$(for l in "${O_LABELS[@]}"; do img_key "$l"; done | sort | uniq -d)"
 O_KEYS="$(for l in "${O_LABELS[@]}"; do img_key "$l"; done | sort -u | paste -sd' ')"
-O_WANT="blue-hex/blue-hex crt/crt-scope dither-flux/generated/dither-flux-atraktor dither-flux/generated/dither-flux-przeplyw dither-flux/generated/dither-flux-przeplyw2 own/sunset yin/yin-eclipse"
+O_WANT="blue-hex/blue-hex crt/crt-scope dither-flux/generated/dither-flux-atraktor dither-flux/generated/dither-flux-przeplyw dither-flux/generated/dither-flux-przeplyw2 own/sunset own/trip-v1-las own/trip-v1-plaza yin/yin-eclipse"
 if [[ -n "$O_DUPS" || "$O_KEYS" != "$O_WANT" ]]; then
     echo "    menu Wallpapers/ (${#O_LABELS[@]} kafli):"; printf '      %s\n' "${O_LABELS[@]}"
 fi
-check "każdy obraz dokładnie raz (v1/v2 i rozdzielczości to jeden kafel)" '[[ -z "$O_DUPS" && ${#O_LABELS[@]} -eq 7 ]]'
-check "żaden obraz nie zniknął z menu"          '[[ "$O_KEYS" == "$O_WANT" ]]'
+check "każdy obraz dokładnie raz (v1/v2 i rozdzielczości to jeden kafel)" '[[ -z "$O_DUPS" && ${#O_LABELS[@]} -eq 9 ]]'
+check "żaden obraz nie zniknął z menu (też trip-v1-plaza i trip-v1-las)"          '[[ "$O_KEYS" == "$O_WANT" ]]'
 check "kafel zestawu = wariant pod primary (v1, rozdzielczość z .dat)" 'printf "%s\n" "${O_LABELS[@]}" | grep -qxF "crt/crt-scope-v1-1920x1080.png" && printf "%s\n" "${O_LABELS[@]}" | grep -qxF "dither-flux/generated/dither-flux-atraktor-v1-1920x1080.png"'
 O_GEN="$(cd "$G" && find . -maxdepth 1 -type f -name '*.png' | sed 's|^\./||' | sort | paste -sd' ')"
 O_GEN_WANT=""

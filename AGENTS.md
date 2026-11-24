@@ -312,6 +312,19 @@ Rules that follow directly from the table:
   (`$XDG_RUNTIME_DIR/archenemy-new-monitors.notified`); `tests/monitor-settings.sh`.
 - **Wallpapers cover every monitor:** primary gets v1, all others get v2. A monitor
   with no saved wallpaper takes secondary's on `--restore`.
+- **One image = one tile in `Super+W`** (owner, 2026-11-24: "wallpapers keep
+  duplicating after updates"). Every repo set is a `v1`/`v2` pair and
+  `wallpapers/dither-flux/generated/` holds each form per `tag-WxH`, so the menu
+  groups variants (`wallpaper_key`/`group_wallpapers` in
+  `rofi_wallpaper_switcher.sh`, same prefix rule as `wallpaper_pair`) and skips
+  hidden paths; the focused-monitor mode picks the monitor's own variant.
+  `dither_flux_prune` (`scripts/wallpapers/lib/dither-flux-sizes.sh`, right
+  after `dither_flux_plan` in `install.sh` [9.7] and `monitor-settings.sh`)
+  moves generator-named files for monitors no longer in `data/monitors/` to a
+  hidden `generated/.bak-*` — never `rm`, never a file named in `wallpaper.dat`,
+  `hyprlock-wallpaper.dat` or `hyprpaper.conf`, never with zero `.dat` files.
+  A new wallpaper set keeps the `-v1-`/`-v2-` naming. Tests:
+  `tests/wallpaper-switcher.sh` (O), `tests/dither-flux-sizes.sh`.
 - **Main TUI keys (Super+A):** `[p]` opens autostart (programs), and `[u]` opens
   update archenemy. Keep labels, groups, state, previews and dispatch in sync.
 - **Alacritty copy on select:** `[c] terminal` in Super+A edits only

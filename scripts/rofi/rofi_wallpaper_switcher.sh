@@ -53,6 +53,11 @@
 #   renderuje je src/flux-wall/tools/render-previews.sh); brak kadru = wpis
 #   bez ikony.
 #
+#   Wallpapers/ pokazuje każdy obraz RAZ (2026-11-24, „tapety się dublują”):
+#   warianty v1/v2, rozdzielczości i m-<złącze> jednego obrazu to jeden kafel
+#   (wallpaper_key, group_wallpapers); ukryte pliki i katalogi (np.
+#   generated/.bak-* z dither_flux_prune) nie wchodzą do menu.
+#
 #   Stan: data/wallpaper.dat w formacie "monitor=ścieżka" (po linii na monitor).
 #   Stary format (sama nazwa zestawu) jest migrowany automatycznie.
 #   Stan hyprlocka: data/hyprlock-wallpaper.dat — "off" albo bezwzględna
@@ -284,6 +289,74 @@ wallpaper_pair() {
     done
     for c in "${best[@]}"; do printf '%s\n' "$c"; return 0; done   # najniższy stopień
     return 0
+}
+
+# Plik $1 w wariancie dla monitora $2 (menu z fokusem): primary bierze v1, reszta
+# v2, każdy pod swoją rozdzielczość z .dat — ta sama reguła co apply_file_allmon.
+# Brak pary albo plik bez tagu = ten sam plik. Wynik w REPLY.
+variant_for_monitor() {
+    local to=v2
+    [[ "$2" == "$MONITOR1" ]] && to=v1
+    REPLY=$(wallpaper_pair "$1" "$to" "${RES_OF[$2]:-}")
+    [[ -n "$REPLY" ]] || REPLY="$1"
+}
+
+# Jeden obraz = jeden kafel w Wallpapers/ (zgłoszenie właściciela 2026-11-24:
+# „tapety się dublują”). Warianty tego samego obrazu różnią się tylko tagiem
+# monitora i rozdzielczością: zestaw z repo to para v1/v2 (crt-scope-v1-1920x1080
+# + crt-scope-v2-2560x1600), a generated/ dither-flux ma formę × v1/v2/m-<złącze>
+# × rozdzielczość. Klucz obrazu = katalog + nazwa przed tagiem. Łączymy WYŁĄCZNIE
+# nazwy, w których po tagu jest już tylko rozdzielczość albo nic, a przed tagiem
+# separator: lepiej dwa kafle niż schowany obraz (trip-v1-plaza.png i
+# trip-v1-las.png to dwa zdjęcia, nav1.png nie ma tagu). Wynik: REPLY = klucz
+# (bez tagu: cała ścieżka), REPLY_TAG = v1 | v2 | m | pusto, REPLY_RES = WxH
+# albo pusto.
+wallpaper_key() {
+    local f="$1" dir l pre=""
+    dir="${f%/*}"; l="${f##*/}"; l="${l,,}"; l="${l%.*}"
+    REPLY_TAG=""; REPLY_RES=""
+    if [[ "$l" =~ ^(.+)-m-[a-z0-9-]+-([0-9]+x[0-9]+)$ ]]; then
+        pre="${BASH_REMATCH[1]}"; REPLY_RES="${BASH_REMATCH[2]}"; REPLY_TAG=m
+    elif [[ "$l" =~ ^(.*[-_.\ ])?(v[12])([-_.\ ]([0-9]+x[0-9]+))?$ ]]; then
+        pre="${BASH_REMATCH[1]}"; REPLY_TAG="${BASH_REMATCH[2]}"; REPLY_RES="${BASH_REMATCH[4]}"
+    fi
+    if [[ -z "$REPLY_TAG" ]]; then REPLY="$f"; return 0; fi
+    while [[ "$pre" == *[-_.\ ] ]]; do pre="${pre%?}"; done
+    REPLY="$dir/$pre"
+}
+
+# Kafle menu: z listy plików $@ (posortowanej) po jednym na obraz. Kaflem jest
+# wariant pod primary: v1 z rozdzielczością primary w nazwie, potem dowolne v1,
+# potem pierwszy plik obrazu — wybór kafla idzie dalej jak wybór tego pliku
+# (apply_file_allmon dobiera v2 pozostałym monitorom). Dwa pliki z tym samym
+# kluczem, tagiem i rozdzielczością (city-v1.jpg i city-v1.png) to dwa różne
+# obrazy — drugi dostaje własny kafel. Wynik w tablicy MENU_FILES, w kolejności
+# pierwszego wystąpienia obrazu.
+group_wallpapers() {
+    local f key rank want="${RES_OF[$MONITOR1]:-}"
+    local -A best=() best_rank=() seen=()
+    local -a order=()
+    want="${want,,}"
+    for f in "$@"; do
+        wallpaper_key "$f"; key="$REPLY"
+        if [[ -n "$REPLY_TAG" ]]; then
+            [[ -n "${seen[$key|$REPLY_TAG|$REPLY_RES]+x}" ]] && key="$f"
+            seen[$key|$REPLY_TAG|$REPLY_RES]=1
+        fi
+        rank=2
+        if [[ "$REPLY_TAG" == v1 ]]; then
+            rank=1
+            [[ -n "$want" && "$REPLY_RES" == "$want" ]] && rank=0
+        fi
+        if [[ -z "${best[$key]+x}" ]]; then
+            order+=("$key"); best[$key]="$f"; best_rank[$key]=$rank
+        # Klucz to ścieżka (spacje, apostrofy) — poza (( )), które by ją liczyło.
+        elif [[ "$rank" -lt "${best_rank[$key]}" ]]; then
+            best[$key]="$f"; best_rank[$key]=$rank
+        fi
+    done
+    MENU_FILES=()
+    for f in "${order[@]}"; do MENU_FILES+=("${best[$f]}"); done
 }
 
 # Pierwszy alfabetycznie plik katalogu $1 z tagiem $2 w nazwie (bez względu na wielkość liter).
@@ -634,10 +707,15 @@ elif [[ -n "$1" ]]; then
         exit 1
     fi
 else
-    # Menu: wszystkie obrazy z wallpapers/ (rekurencyjnie), ścieżki względne.
-    mapfile -t FILES < <(find "$WALLPAPERS_DIR" -type f \
-        \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
-        | sort)
+    # Menu: obrazy z wallpapers/ (rekurencyjnie), ścieżki względne, po jednym
+    # kaflu na obraz (group_wallpapers). Ukryte pliki i katalogi pomijamy:
+    # generated/.bak-* (stare tapety dither-flux odsunięte przez install.sh
+    # [9.7]) i pliki .part generatora to nie tapety do wyboru.
+    mapfile -t ALL_FILES < <(find "$WALLPAPERS_DIR" -mindepth 1 -name '.*' -prune -o -type f \
+        \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print \
+        | LC_ALL=C sort)
+    group_wallpapers "${ALL_FILES[@]}"
+    FILES=("${MENU_FILES[@]}")
 
     if [[ ${#FILES[@]} -eq 0 ]]; then
         notify-send "archenemy" "No wallpapers found in $WALLPAPERS_DIR"
@@ -754,7 +832,12 @@ else
     if [[ "$MODE_ALL" -eq 1 ]]; then
         apply_file_allmon "$FILE"
     else
-        STATE[$(focused_monitor)]="$FILE"
+        # Kafel to wariant pod primary (v2 nie ma osobnego kafla) — monitor z
+        # fokusem dostaje wariant pod siebie: secondary v2, każdy pod swoją
+        # rozdzielczość, gdy taki plik leży obok.
+        mon="$(focused_monitor)"
+        variant_for_monitor "$FILE" "$mon"
+        STATE[$mon]="$REPLY"
     fi
 
     # Hyprlock: tylko w tej (interaktywnej) gałęzi — bezpośrednie wywołanie

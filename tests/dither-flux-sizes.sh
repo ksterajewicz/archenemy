@@ -156,6 +156,44 @@ check "DITHER_FLUX_LAST_FORM to ostatnia z FORMS" '[[ "${FORMS[-1]}" == "$DITHER
 last="$(sed -n 's/^  ✓ dither-flux-\(.*\)-v1-64x64\.png .*/\1/p' "$T/one.log" | tail -n 1)"
 check "generator zapisuje ją jako ostatnią"   '[[ -n "$last" && "$last" == "$DITHER_FLUX_LAST_FORM" ]]'
 
+echo "== sprzątanie generated/ (dither_flux_prune, zgłoszenie 2026-11-24)"
+# Tapety pod monitory, których już nie ma, wychodzą z Super+W do ukrytego
+# generated/.bak-*; zostaje wszystko, czego nie stworzył generator, co wskazuje
+# zapisany wybór i co należy do monitora o nieznanej rozdzielczości.
+# Własne drzewo <archenemy>/{data,config,wallpapers}: funkcja liczy ścieżki
+# stanu od katalogu .dat.
+AE="$T/ae"; PM="$AE/data/monitors"; PG="$AE/wallpapers/dither-flux/generated"
+mkdir -p "$PM" "$PG" "$AE/config/hypr"
+hyprctl() { return 1; }   # tryb nazwany bez Hyprlanda = monitor pominięty
+printf 'MONITOR=eDP-1\nRESOLUTION=64x64\nROLE=primary\n'       > "$PM/eDP-1.dat"
+printf 'MONITOR=DP-1\nRESOLUTION=preferred\nROLE=secondary\n'  > "$PM/DP-1.dat"
+for f in przeplyw-v1-64x64 przeplyw-v1-128x128 atraktor-v1-128x128 przeplyw2-v1-128x128 \
+         przeplyw-v2-80x64 przeplyw-m-HDMI-A-1-96x64; do
+    printf 'PNG-%s' "$f" > "$PG/dither-flux-$f.png"
+done
+: > "$PG/my-photo.png"; : > "$PG/dither-flux-custom.png"; : > "$PG/generate.log"
+ln -s dither-flux-przeplyw-v1-64x64.png "$PG/dither-flux-atraktor-v1-256x256.png"
+printf 'desc:X=%s\n' "$PG/dither-flux-atraktor-v1-128x128.png" > "$AE/data/wallpaper.dat"
+printf 'wallpaper {\n    monitor = HDMI-A-1\n    path = %s\n}\n' "$PG/dither-flux-przeplyw2-v1-128x128.png" > "$AE/config/hypr/hyprpaper.conf"
+dither_flux_plan "$PM" "$PG"
+dither_flux_prune "$PM" "$PG"
+pruned="$(cd "$PG" && find . -mindepth 2 -type f | sed 's|^\./||' | sort | paste -sd' ')"
+check "przeniesione dokładnie 2 pliki bez monitora" '(( FLUX_PRUNED == 2 )) && [[ "$pruned" == "${FLUX_PRUNE_DIR##*/}/dither-flux-przeplyw-m-HDMI-A-1-96x64.png ${FLUX_PRUNE_DIR##*/}/dither-flux-przeplyw-v1-128x128.png" ]]'
+check "katalog .bak ukryty, w generated/"      '[[ "$FLUX_PRUNE_DIR" == "$PG"/.bak-* && -d "$FLUX_PRUNE_DIR" ]]'
+check "przeniesiony plik nietknięty (mv, nie rm)" '[[ "$(<"$FLUX_PRUNE_DIR/dither-flux-przeplyw-v1-128x128.png")" == PNG-przeplyw-v1-128x128 ]]'
+check "zostaje: plik dzisiejszego monitora"    '[[ -f "$PG/dither-flux-przeplyw-v1-64x64.png" ]]'
+check "zostaje: plik z wallpaper.dat i z hyprpaper.conf" '[[ -f "$PG/dither-flux-atraktor-v1-128x128.png" && -f "$PG/dither-flux-przeplyw2-v1-128x128.png" ]]'
+check "zostaje: monitor o nieznanej rozdzielczości (tag v2)" '[[ -f "$PG/dither-flux-przeplyw-v2-80x64.png" ]]'
+check "zostaje: pliki spoza generatora, symlink, log" '[[ -f "$PG/my-photo.png" && -f "$PG/dither-flux-custom.png" && -L "$PG/dither-flux-atraktor-v1-256x256.png" && -f "$PG/generate.log" ]]'
+n_bak=$(find "$PG" -maxdepth 1 -name '.bak-*' | wc -l)
+dither_flux_plan "$PM" "$PG"; dither_flux_prune "$PM" "$PG"
+check "drugi bieg: nic do przeniesienia, bez nowego .bak" '(( FLUX_PRUNED == 0 )) && [[ -z "$FLUX_PRUNE_DIR" && $(find "$PG" -maxdepth 1 -name ".bak-*" | wc -l) -eq $n_bak ]]'
+rm -f "$PM"/*.dat
+printf 'PNG' > "$PG/dither-flux-atraktor-v1-512x512.png"
+dither_flux_plan "$PM" "$PG"; dither_flux_prune "$PM" "$PG"
+check "brak data/monitors/*.dat: nic nie ruszone" '(( FLUX_PRUNED == 0 )) && [[ -f "$PG/dither-flux-atraktor-v1-512x512.png" ]]'
+unset -f hyprctl
+
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"
 ((FAIL == 0))
