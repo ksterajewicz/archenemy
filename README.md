@@ -491,6 +491,10 @@ archenemy/
 │                                     #   built-in logo without the file), colors 1–6 set (NixOS uses 1–6, Arch/Fedora 1–2);
 │                                     #   launcher-logo.sh sync on a fake HOME; with fastfetch installed, both modes and
 │                                     #   Arch/Fedora/NixOS render only in the rice's colors.
+│                                     #   rice-completeness.sh — every rice except the beta has the full set of configs
+│                                     #   (one list, equal to white-blue/tron at the top level), no empty dir or file,
+│                                     #   its looks in its own folder (links to another rice only for networkmanager-dmenu,
+│                                     #   ncmpcpp/bindings, hyprpaper.conf), the alacritty background in nvim and zsh.
 │                                     #   yang-wallpaper.sh — gen_yang_wallpaper.py twice: same SHA-256, equal to
 │                                     #   wallpapers/yang/, v1/v2 sizes, darkest level ≥ #6E6E73 (README contrast).
 │                                     #   repo-hygiene.sh — executable bits, `#!/usr/bin/env bash` shebangs (also tested without /bin/bash),

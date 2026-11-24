@@ -105,8 +105,17 @@ Rules that follow directly from the table:
   a launcher), plus named scenarios in `doctor-platforms`, `switch-rice`,
   `install-link` and `hm-conflict` (`yin` and `yang` have them). Suites that
   glob `rices/*/` (`rice-autostart`, `tui-contrast`, `rofi-inputbar`,
-  `rofi-theme-switcher`, `fastfetch-logo`) pick it up alone;
-  `rice-autostart` also checks that `yang` runs exactly what `yin` runs.
+  `rofi-theme-switcher`, `fastfetch-logo`, `rice-completeness`) pick it up
+  alone; `rice-autostart` also checks that `yang` runs exactly what `yin` runs.
+- **Every rice (except `white-blue_beta`) has its own full set of configs**
+  (owner, 2026-11-24): the list in `tests/rice-completeness.sh`
+  (`REQUIRED_FILES`, equal to `white-blue`/`tron` at the top level) — a new
+  program in the reference rices means a new entry there. No empty directory
+  or file; the looks (MangoHud, mako, nvim, zsh, …) live in the rice's own
+  folder in its own palette, and only configs without looks
+  (`networkmanager-dmenu`, `ncmpcpp/bindings`, `hypr/hyprpaper.conf`) may be
+  committed relative links to another rice. The alacritty background must
+  appear in `nvim/lua/config/colorscheme.lua` and `zsh/colors.zsh`.
 - **fastfetch follows the system logo on every rice** (owner, 2026-11-22;
   before that, 2026-11-18: always the detected distribution's logo):
   `"logo": { "type": "auto", "source": "~/archenemy/data/fastfetch-logo.txt",

@@ -5,6 +5,7 @@
 #   zbiorczy wynik. Każdy pakiet działa na atrapach w mktemp — bez
 #   Hyprlanda, bez roota, bez zapisu poza katalogami tymczasowymi.
 #   Glob obejmuje też shell-cli-tools.sh (bash/zsh i instalacja na atrapach).
+#   Glob obejmuje też rice-completeness.sh (komplet konfiguracji każdego rice'a).
 #   Limit czasu na pakiet (T8, audyt 2026-11-05: jedna regresja wieszała cały
 #   bieg bez słowa): RUN_ALL_TIMEOUT sekund, domyślnie 600, 0 = bez limitu.
 #   Po limicie pakiet i jego procesy potomne dostają SIGTERM, po 10 s SIGKILL,
