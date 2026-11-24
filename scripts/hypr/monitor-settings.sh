@@ -386,6 +386,11 @@ refresh_dither_flux() {
     # shellcheck source=/dev/null
     source "$lib"
     dither_flux_plan "$MON_DIR" "$out"
+    # Pliki pod poprzedni rozmiar wychodzą z Super+W (ukryty generated/.bak-*;
+    # zostaje tylko ostatni).
+    dither_flux_prune "$MON_DIR" "$out"
+    (( FLUX_PRUNED > 0 )) && echo -e "  ${CYAN}  $FLUX_PRUNED dither-flux wallpaper(s) for the old size moved out of Super+W.${NC}"
+    (( FLUX_BAK_REMOVED > 0 )) && echo -e "  ${CYAN}  $FLUX_BAK_REMOVED older dither-flux backup folder(s) removed (only the latest .bak-* is kept).${NC}"
     ((${#FLUX_SIZES[@]})) || return 0
     dither_flux_start "$gen" "$out"
     echo -e "  ${CYAN}  dither-flux wallpapers for this size are being generated in the background.${NC}"

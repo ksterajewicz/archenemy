@@ -310,8 +310,31 @@ Rules that follow directly from the table:
   per monitor: a dock with two new screens fires two events and each run sees both,
   so runs take a `flock` and skip a monitor announced in the last 30 s
   (`$XDG_RUNTIME_DIR/archenemy-new-monitors.notified`); `tests/monitor-settings.sh`.
-- **Wallpapers cover every monitor:** primary gets v1, all others get v2. A monitor
-  with no saved wallpaper takes secondary's on `--restore`.
+- **Wallpapers cover every monitor:** primary gets v1, secondary gets v2, and a
+  monitor with the `other` role gets the variant for its own resolution from
+  `.dat` (owner, 2026-11-24, "3A": `variant_by_resolution` — its `m-<connector>`,
+  then the smallest variant covering the screen, then the largest; no sized
+  variant or unknown resolution → v2). A monitor with no saved wallpaper takes
+  secondary's image on `--restore` (`other`: in its own resolution).
+- **One image = one tile in `Super+W`** (owner, 2026-11-24: "wallpapers keep
+  duplicating after updates"). Every repo set is a `v1`/`v2` pair and
+  `wallpapers/dither-flux/generated/` holds each form per `tag-WxH`, so the menu
+  groups variants (`wallpaper_key`/`group_wallpapers` in
+  `rofi_wallpaper_switcher.sh`, same prefix rule as `wallpaper_pair`) and skips
+  hidden paths; the focused-monitor mode picks the monitor's own variant. A tile
+  is labelled with the image name (`crt/crt-scope`, `wall_labels`; owner "1A"),
+  never a variant file name; colliding labels fall back to the relative file
+  path, and typed relative paths still work (`FILE_OF_LABEL`, then path).
+  `dither_flux_prune` (`scripts/wallpapers/lib/dither-flux-sizes.sh`, right
+  after `dither_flux_plan` in `install.sh` [9.7] and `monitor-settings.sh`)
+  moves generator-named files for monitors no longer in `data/monitors/` to a
+  hidden `generated/.bak-*` (mv, not rm) — never a file named in `wallpaper.dat`,
+  `hyprlock-wallpaper.dat` or `hyprpaper.conf`, never with zero `.dat` files.
+  Only the latest `.bak-*` stays (owner "4A"): it removes older ones it made —
+  only real directories in that `generated/` named exactly
+  `.bak-YYYYMMDD-HHMMSS-XXXX`, never one holding a file a saved choice names.
+  A new wallpaper set keeps the `-v1-`/`-v2-` naming. Tests:
+  `tests/wallpaper-switcher.sh` (O, P), `tests/dither-flux-sizes.sh`.
 - **Main TUI keys (Super+A):** `[p]` opens autostart (programs), and `[u]` opens
   update archenemy. Keep labels, groups, state, previews and dispatch in sync.
 - **Alacritty copy on select:** `[c] terminal` in Super+A edits only
