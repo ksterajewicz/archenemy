@@ -36,6 +36,9 @@
 #pragma flux seed 2041
 #pragma flux audio_tempo 0
 #pragma flux audio_glow 0.5
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const int   P         = 14;      /* bok siatki cząstek: ceil(sqrt(184)) */
 const int   BARS      = 64;      /* 32 biny × 2 (lustro: bas w środku) */

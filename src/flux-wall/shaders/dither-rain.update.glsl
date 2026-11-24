@@ -16,6 +16,9 @@
 #pragma flux gain 14
 #pragma flux splat 0
 #pragma flux seed 2033
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float FALL  = 0.55 / 240.0;     /* wysokości ekranu na krok (0.55 ekranu/s) */
 const float WIND  = 0.12;            /* maksymalne odchylenie poziome (części FALL) */

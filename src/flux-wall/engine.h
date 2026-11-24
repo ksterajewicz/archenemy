@@ -44,6 +44,10 @@
  *   · step_scale, wiek w krokach nominalnych = wiek · step_scale). Przy tempie
  *   nominalnym step_scale = 1.0 dokładnie — obraz bit w bit jak bez skalowania.
  *   Silnik sam skaluje `inc` (jasność śladu · step_scale), `life_steps` i `warm`.
+ *   Prelude definiuje makro FLUX_STEP_SCALE; shader używający step_scale zaczyna
+ *   od `#ifndef FLUX_STEP_SCALE` / `const float step_scale = 1.0;` / `#endif` —
+ *   starsza binarka (git pull bez przebudowy) nie zna uniformu i bez tej stałej
+ *   shader by się nie skompilował (animacja nie wstaje, kod 3).
  * Parametry w nagłówku .update.glsl: `#pragma flux <klucz> <wartość>`.
  */
 #ifndef FLUX_ENGINE_H

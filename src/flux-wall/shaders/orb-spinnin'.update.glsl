@@ -19,6 +19,9 @@
 #pragma flux seed 2040
 #pragma flux audio_tempo 0.6
 #pragma flux audio_glow 0.8
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float ORB_R   = 0.20;      /* promień tarczy w jednostkach wysokości/2 (jak c w .frag) */
 const float ORB_BR  = 0.22;      /* przyrost promienia przy pełnym basie */

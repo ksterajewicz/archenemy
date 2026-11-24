@@ -16,6 +16,9 @@
 #pragma flux gain 14
 #pragma flux splat 0
 #pragma flux seed 2032
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float FIELD_SCALE = 3.5;
 const float STEP        = 1.35 / 960.0;

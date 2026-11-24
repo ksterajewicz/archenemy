@@ -31,6 +31,9 @@
 #pragma flux seed 2041
 #pragma flux audio_tempo 0
 #pragma flux audio_glow 0.5
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float SRC_R      = 0.07;       /* promień źródła w jednostkach c (pion ±1) — jak w .frag */
 const float RING_V     = 0.70;       /* jednostek c na sekundę = 0,35 wysokości ekranu/s */

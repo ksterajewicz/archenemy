@@ -18,6 +18,9 @@
 #pragma flux scale 0.11
 #pragma flux warm 60
 #pragma flux seed 2028
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float B = 0.208186;
 const float H = 0.06;      /* krok całkowania na jeden krok symulacji */

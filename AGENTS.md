@@ -217,7 +217,11 @@ Rules that follow directly from the table:
   (`STEP`, `FALL`, an integrator's `H`), a per-step chance (`WAKE_*`), an age
   in steps (`age * step_scale`), a per-step hash seed
   (`int(time * 60.0 / step_scale)`). The engine itself scales `inc`,
-  `life_steps` and `warm`. Audio features (50 per second) are eased per
+  `life_steps` and `warm`. A shader using `step_scale` starts with
+  `#ifndef FLUX_STEP_SCALE` / `const float step_scale = 1.0;` / `#endif`
+  (the prelude defines the macro): an older binary after a `git pull`
+  without a rebuild has no such uniform and would fail to compile the
+  shader — no animation, exit 3 (`bash tests/flux-wall-shaders.sh`). Audio features (50 per second) are eased per
   monitor in `audio_features_follow` before each frame. `bash
   tests/flux-wall-rate.sh` (after `make -C src/flux-wall tools`) renders
   every particle animation at 60 and 144 Hz and compares brightness and lit

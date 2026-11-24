@@ -15,6 +15,12 @@
 #     2. każde źródło GLSL wpisane w engine.c jako `static const char *X =`
 #        („#version …”), które używa sampler2D, deklaruje tę precyzję
 #        przed pierwszym użyciem; *.update.glsl dostają ją z UPDATE_PRELUDE.
+#     3. każdy *.update.glsl, który używa `step_scale` (krok symulacji idzie
+#        za monitorem — engine.h), ma PRZED pierwszym użyciem zapasową stałą
+#        `#ifndef FLUX_STEP_SCALE` … `const float step_scale = 1.0;`, a
+#        UPDATE_PRELUDE definiuje to makro razem z uniformem. Bez stałej
+#        nowy shader na binarce sprzed 2026-11-24 (git pull bez make) się
+#        nie kompiluje i animacja nie startuje.
 #   Uruchom: bash tests/flux-wall-shaders.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -112,6 +118,49 @@ if ((glsl >= 4 && with_sampler >= 2 && seen_splat == 1)); then
 else
     fail "parser: $glsl źródeł GLSL, $with_sampler z sampler2D, VS_SPLAT: $seen_splat — zmienił się zapis shaderów w engine.c?"
 fi
+
+echo "kroki symulacji (*.update.glsl): zapasowa stała step_scale dla starszej binarki"
+# Linie kodu bez komentarzy blokowych i liniowych; numer pierwszego użycia
+# step_scale poza dyrektywą/stałą zapasową i numer stałej zapasowej w #ifndef.
+uses=0
+for f in "$FW"/shaders/*.update.glsl; do
+    [[ -f "$f" ]] || continue
+    rel="${f#"$REPO"/}"
+    res="$(awk '
+        {
+            rest = $0; code = ""
+            while (rest != "") {
+                if (inc) { p = index(rest, "*/"); if (!p) { rest = ""; break } rest = substr(rest, p + 2); inc = 0 }
+                else {
+                    p = index(rest, "/*"); q = index(rest, "//")
+                    if (q && (!p || q < p)) { code = code substr(rest, 1, q - 1); rest = ""; break }
+                    if (p) { code = code substr(rest, 1, p - 1); rest = substr(rest, p + 2); inc = 1 }
+                    else   { code = code rest; rest = "" }
+                }
+            }
+        }
+        code ~ /^[ \t]*#ifndef[ \t]+FLUX_STEP_SCALE[ \t]*$/ { guard = NR; next }
+        guard && !fallback && code ~ /^[ \t]*const[ \t]+float[ \t]+step_scale[ \t]*=[ \t]*1\.0[ \t]*;/ { fallback = NR; next }
+        code ~ /step_scale/ { if (!use) use = NR }
+        END {
+            if (!use)                           print "nie-uzywa"
+            else if (!fallback)                 print "brak"
+            else if (fallback > use)            print "za-pozno"
+            else                                print "ok"
+        }' "$f")"
+    case "$res" in
+        nie-uzywa) ;;
+        ok)        uses=$((uses + 1)); ok "$rel" ;;
+        za-pozno)  uses=$((uses + 1)); fail "$rel: stała zapasowa step_scale po pierwszym użyciu" ;;
+        *)         uses=$((uses + 1)); fail "$rel: używa step_scale bez \`#ifndef FLUX_STEP_SCALE\` / \`const float step_scale = 1.0;\`" ;;
+    esac
+done
+if grep -q '"#define FLUX_STEP_SCALE' "$FW/engine.c" && grep -q '"uniform float step_scale;' "$FW/engine.c"; then
+    ok "engine.c: UPDATE_PRELUDE definiuje FLUX_STEP_SCALE i uniform step_scale"
+else
+    fail "engine.c: UPDATE_PRELUDE bez #define FLUX_STEP_SCALE albo uniformu step_scale"
+fi
+((uses > 0)) || fail "żaden *.update.glsl nie używa step_scale — zmienił się kontrakt kroku symulacji?"
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

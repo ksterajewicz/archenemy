@@ -18,6 +18,9 @@
 #pragma flux scale 0.26
 #pragma flux warm 60
 #pragma flux seed 2030
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float A = 0.95, B = 0.7, C = 0.6, D = 3.5, E = 0.25, F = 0.1;
 const float H = 0.012;

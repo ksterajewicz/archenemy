@@ -19,6 +19,9 @@
 #pragma flux gain 14
 #pragma flux splat 0
 #pragma flux seed 2027
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 /* Stałe z generatora, przeliczone na ekran 0..1:
  *   siatka szumu: 26 komórek × (4 px kroku siatki) = 104 px na jednostkę szumu

@@ -39,6 +39,7 @@ static const char *UPDATE_PRELUDE =
     "uniform sampler2D pos;\n"
     "uniform float time;\n"
     "uniform float dt;\n"
+    "#define FLUX_STEP_SCALE 1   /* shadery: #ifndef → stałe 1.0 dla binarki sprzed step_scale */\n"
     "uniform float step_scale;   /* tempo nominalne / faktyczne: 1.0, gdy symulacja idzie w tempie z pragmy */\n"
     "uniform float detail;\n"
     "uniform vec2  resolution;\n"
