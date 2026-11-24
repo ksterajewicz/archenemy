@@ -588,6 +588,100 @@ for bad in "nie-ma-takiej" "../shaders/plain" "Plain" "plain;x"; do
 done
 check "zła nazwa (brak pliku, ../, wielkie litery, ;): wybór bez zmian, krytyczne powiadomienie" '(( bad_kept == 1 ))'
 
+echo "== O: Wallpapers/ bez duplikatów po kolejnych aktualizacjach (zgłoszenie 2026-11-24)"
+# Objaw ze zrzutu właściciela: crt-scope-v1 i -v2, blue-hex-v1 i -v2 oraz wiele
+# kafli dither-flux/generated/… — ten sam obraz kilka razy. Przyczyny: (1) menu
+# pokazywało KAŻDY plik, a każdy zestaw z repo to para v1/v2 (każda aktualizacja
+# z nowym zestawem dokładała dwa kafle); (2) install.sh [9.7] i Super+A → [n]
+# generują trzy formy dither-flux pod KAŻDĄ parę tag:rozdzielczość z
+# data/monitors i nic nie sprzątało plików pod monitory, których już nie ma
+# (dok/bez doku, zmiana trybu, rola other po nazwie złącza).
+# Symulacja: instalacja w doku → aktualizacja + install.sh bez doku →
+# aktualizacja z nowym zestawem + install.sh w doku z trzecim monitorem.
+rm -rf "$A/wallpapers"; mkdir -p "$A/wallpapers"
+W="$A/wallpapers"; G="$W/dither-flux/generated"
+mkdir -p "$W/crt" "$W/blue-hex" "$W/arch-white" "$W/own"
+: > "$W/crt/crt-scope-v1-1920x1080.png"; : > "$W/crt/crt-scope-v2-2560x1600.png"
+: > "$W/blue-hex/blue-hex-v1-1920x1080.png"; : > "$W/blue-hex/blue-hex-v2-2560x1600.png"
+ln -s ../blue-hex/blue-hex-v1-1920x1080.png "$W/arch-white/arch-logo-v1-1920x1080.png"
+ln -s ../blue-hex/blue-hex-v2-2560x1600.png "$W/arch-white/arch-logo-v2-2560x1600.png"
+: > "$W/own/sunset.jpg"
+# Atrapa generatora: te same nazwy co gen_dither_flux_wallpaper.py (forma-tag-WxH),
+# formy w tej samej kolejności, ostatnia = znacznik kompletu.
+cat > "$T/fakegen.py" <<'EOF'
+import os, re, sys
+out = sys.argv[1]
+os.makedirs(out, exist_ok=True)
+for form in ('przeplyw', 'atraktor', 'przeplyw2'):
+    for arg in sys.argv[4:]:
+        m = re.fullmatch(r'([A-Za-z0-9][A-Za-z0-9-]*):(\d+x\d+)', arg)
+        if m:
+            open(os.path.join(out, 'dither-flux-%s-%s-%s.png' % (form, m.group(1), m.group(2))), 'wb').write(b'PNG')
+EOF
+# install.sh [9.7]: plan → sprzątanie → generowanie (w tle; tu czekamy na koniec)
+step_97() {
+    (
+        # shellcheck source=scripts/wallpapers/lib/dither-flux-sizes.sh
+        source "$REPO/scripts/wallpapers/lib/dither-flux-sizes.sh"
+        dither_flux_plan "$A/data/monitors" "$G"
+        dither_flux_prune "$A/data/monitors" "$G"
+        ((${#FLUX_SIZES[@]})) || exit 0
+        dither_flux_start "$T/fakegen.py" "$G"; wait "$!"
+    )
+}
+docked() {
+    setup_dat "$1"
+    sed -i '$a RESOLUTION=1920x1080' "$A/data/monitors/HDMI-A-3.dat"
+    sed -i '$a RESOLUTION=2560x1600' "$A/data/monitors/eDP-1.dat"
+    [[ -f "$A/data/monitors/DP-3.dat" ]] && sed -i '$a RESOLUTION=2560x1440' "$A/data/monitors/DP-3.dat"
+    return 0
+}
+# 1. pierwsza instalacja w doku (HDMI primary 1920x1080, panel secondary 2560x1600)
+docked a; step_97
+# wybór z Super+W w doku: forma atraktor na obu ekranach
+printf 'desc:%s=%s\ndesc:%s=%s\n' "$DESC_HDMI" "$G/dither-flux-atraktor-v1-1920x1080.png" \
+    "$DESC_EDP" "$G/dither-flux-atraktor-v2-2560x1600.png" > "$A/data/wallpaper.dat"
+# 2. aktualizacja + install.sh bez doku: sam panel, primary 2560x1600 ([3] pisze .dat od nowa)
+rm -f "$A/data/monitors"/*.dat
+printf 'MONITOR=eDP-1\nROLE=primary\nDESCRIPTION=%s\nRESOLUTION=2560x1600\nORDER=1\n' "$DESC_EDP" > "$A/data/monitors/eDP-1.dat"
+step_97
+# 3. aktualizacja z nowym zestawem (jak yin 2026-11-17) + install.sh w doku z trzecim monitorem
+mkdir -p "$W/yin"; : > "$W/yin/yin-eclipse-v1-1920x1080.png"; : > "$W/yin/yin-eclipse-v2-2560x1600.png"
+docked three; step_97
+boot_daemon_with ""
+menu "Wallpapers/" ""
+mapfile -t O_LABELS < <(rofi_in 2 | sed 's/|icon#.*//' | grep -vxF "← Back")
+# Klucz obrazu niezależny od implementacji: katalog + nazwa bez rozszerzenia,
+# rozdzielczości i tagu wariantu (v1/v2, m-<złącze>).
+img_key() { local k="${1%.*}"; k="${k%-[0-9]*x[0-9]*}"; k="${k%-m-*}"; k="${k%-v[12]}"; printf '%s\n' "$k"; }
+O_DUPS="$(for l in "${O_LABELS[@]}"; do img_key "$l"; done | sort | uniq -d)"
+O_KEYS="$(for l in "${O_LABELS[@]}"; do img_key "$l"; done | sort -u | paste -sd' ')"
+O_WANT="blue-hex/blue-hex crt/crt-scope dither-flux/generated/dither-flux-atraktor dither-flux/generated/dither-flux-przeplyw dither-flux/generated/dither-flux-przeplyw2 own/sunset yin/yin-eclipse"
+if [[ -n "$O_DUPS" || "$O_KEYS" != "$O_WANT" ]]; then
+    echo "    menu Wallpapers/ (${#O_LABELS[@]} kafli):"; printf '      %s\n' "${O_LABELS[@]}"
+fi
+check "każdy obraz dokładnie raz (v1/v2 i rozdzielczości to jeden kafel)" '[[ -z "$O_DUPS" && ${#O_LABELS[@]} -eq 7 ]]'
+check "żaden obraz nie zniknął z menu"          '[[ "$O_KEYS" == "$O_WANT" ]]'
+check "kafel zestawu = wariant pod primary (v1, rozdzielczość z .dat)" 'printf "%s\n" "${O_LABELS[@]}" | grep -qxF "crt/crt-scope-v1-1920x1080.png" && printf "%s\n" "${O_LABELS[@]}" | grep -qxF "dither-flux/generated/dither-flux-atraktor-v1-1920x1080.png"'
+O_GEN="$(cd "$G" && find . -maxdepth 1 -type f -name '*.png' | sed 's|^\./||' | sort | paste -sd' ')"
+O_GEN_WANT=""
+for form in atraktor przeplyw przeplyw2; do
+    for tr in m-DP-3-2560x1440 v1-1920x1080 v2-2560x1600; do O_GEN_WANT+="dither-flux-$form-$tr.png "; done
+done
+O_GEN_WANT="$(tr ' ' '\n' <<< "$O_GEN_WANT" | grep . | sort | paste -sd' ')"
+[[ "$O_GEN" == "$O_GEN_WANT" ]] || echo "    generated/: $O_GEN"
+check "generated/: tylko pliki pod dzisiejsze monitory (3 formy × 3 ekrany)" '[[ "$O_GEN" == "$O_GEN_WANT" ]]'
+check "pliki bez monitora przeniesione do generated/.bak-*, nie skasowane" '[[ -n "$(find "$G" -mindepth 2 -path "*/.bak-*/dither-flux-przeplyw-v1-2560x1600.png")" ]]'
+# Upload to all monitors z kafla: primary v1, pozostałe v2 — jak dotąd.
+menu "Wallpapers/" "crt/crt-scope-v1-1920x1080.png"
+check "kafel → primary v1, secondary v2"         '[[ "$(MOCK_MONS=both active_of HDMI-A-3)" == "$W/crt/crt-scope-v1-1920x1080.png" && "$(MOCK_MONS=both active_of eDP-1)" == "$W/crt/crt-scope-v2-2560x1600.png" ]]'
+# Tylko monitor z fokusem (eDP-1 = secondary): dostaje SWÓJ wariant (v2), bo v2
+# nie ma już osobnego kafla.
+menu "[x] Upload to all monitors" "Wallpapers/" "blue-hex/blue-hex-v1-1920x1080.png"
+check "monitor z fokusem dostaje wariant pod siebie (secondary → v2)" '[[ "$(MOCK_MONS=both active_of eDP-1)" == "$W/blue-hex/blue-hex-v2-2560x1600.png" ]] && grep -qxF "desc:$DESC_HDMI=$W/crt/crt-scope-v1-1920x1080.png" "$A/data/wallpaper.dat"'
+rm -rf "$W"; mkdir -p "$WP"
+for f in stara-v1.png stara-v2.png nowa-v1.png nowa-v2.png; do : > "$WP/$f"; done
+
 echo ""
 echo "passed: $PASS, failed: $FAIL"
 (( FAIL == 0 ))
