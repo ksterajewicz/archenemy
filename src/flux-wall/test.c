@@ -841,6 +841,65 @@ int main(void) {
         CHECK(left < 0.01f, "cisza 2 s → całe widmo ~0");
     }
 
+    /* Audyt 2026-11-24, U3: podłoga auto-gain była STAŁA (0.004 na średni bin
+     * pasma), więc przy ściszonym odtwarzaczu (monitor wyjścia bierze sygnał
+     * po głośności aplikacji) szerokie pasma wysokich spadały pod podłogę
+     * i gasły: ta sama muzyka ×0.05 dawała `high` 0.03 zamiast 0.65. Podłogi
+     * są teraz ułamkiem szczytu poziomu ogólnego — sygnał ×0.05 (−26 dB) ma
+     * dawać te same cechy co ×1 (±10 %). Sygnał: stopa 120 BPM, linia basu
+     * 55 Hz, szum różowy (pełne pasmo). Bramka ciszy −60 dBFS zostaje. */
+    printf("audio_analyze: cichy strumień (×0.05) daje te same cechy co głośny\n");
+    {
+        static struct audio_state qs;
+        static float ring[AUDIO_FFT_N];
+        static double feat[2][5 + AUDIO_SPECTRUM_BINS];
+        int beats[2] = { 0, 0 };
+        const float gain[2] = { 1.0f, 0.05f };
+        for (int v = 0; v < 2; v++) {
+            audio_state_init(&qs);
+            memset(ring, 0, sizeof ring);
+            memset(feat[v], 0, sizeof feat[v]);
+            uint32_t lcg = 4242u;
+            float kb[6] = {0}, prev_beat = 0.0f;
+            int counted = 0;
+            for (int h = 0; h < 300; h++) {                        /* 6 s; średnie z ostatnich 3 s */
+                memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+                for (int i = 0; i < AUDIO_HOP; i++) {
+                    double t = (double)(h * AUDIO_HOP + i) / AUDIO_RATE, b = fmod(t, 0.5);
+                    lcg = lcg * 1664525u + 1013904223u;
+                    float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                    kb[0] = 0.99886f * kb[0] + w * 0.0555179f; kb[1] = 0.99332f * kb[1] + w * 0.0750759f;
+                    kb[2] = 0.96900f * kb[2] + w * 0.1538520f; kb[3] = 0.86650f * kb[3] + w * 0.3104856f;
+                    kb[4] = 0.55000f * kb[4] + w * 0.5329522f; kb[5] = -0.7616f * kb[5] - w * 0.0168980f;
+                    float pink = (kb[0] + kb[1] + kb[2] + kb[3] + kb[4] + kb[5] + w * 0.5362f) * 0.04f;
+                    ring[AUDIO_FFT_N - AUDIO_HOP + i] = gain[v] * ((float)(sin(2.0 * M_PI * 60.0 * b * (1.0 - b)) * exp(-b * 9.0) * 0.6
+                                                      + 0.35 * sin(2.0 * M_PI * 55.0 * t)) + pink);
+                }
+                audio_analyze(&qs, ring, 0.02f, 1.0 + h * 0.02);
+                if (qs.out.beat >= 0.99f && prev_beat < 0.99f) beats[v]++;
+                prev_beat = qs.out.beat;
+                if (h >= 150) {
+                    feat[v][0] += qs.out.level; feat[v][1] += qs.out.bass; feat[v][2] += qs.out.lowmid;
+                    feat[v][3] += qs.out.mid;   feat[v][4] += qs.out.high;
+                    for (int k = 0; k < AUDIO_SPECTRUM_BINS; k++) feat[v][5 + k] += qs.out.spectrum[k];
+                    counted++;
+                }
+            }
+            for (int k = 0; k < 5 + AUDIO_SPECTRUM_BINS; k++) feat[v][k] /= counted;
+            printf("       ×%-4g level %.3f bass %.3f lowmid %.3f mid %.3f high %.3f, widmo[4] %.3f widmo[28] %.3f, uderzeń %d\n",
+                   (double)gain[v], feat[v][0], feat[v][1], feat[v][2], feat[v][3], feat[v][4], feat[v][5 + 4], feat[v][5 + 28], beats[v]);
+        }
+        int off_band = 0, off_spec = 0;
+        for (int k = 0; k < 5; k++)
+            if (fabs(feat[0][k] - feat[1][k]) > 0.10 * feat[0][k] + 0.005) off_band++;
+        for (int k = 5; k < 5 + AUDIO_SPECTRUM_BINS; k++)
+            if (fabs(feat[0][k] - feat[1][k]) > 0.10 * feat[0][k] + 0.005) off_spec++;
+        CHECK(feat[0][4] > 0.3, "warunek testu: przy ×1 pasmo wysokich wyraźnie gra (high > 0.3)");
+        CHECK(off_band == 0, "level/bass/lowmid/mid/high: ×0.05 w granicach ±10 % wartości z ×1");
+        CHECK(off_spec == 0, "32 biny widma: ×0.05 w granicach ±10 % wartości z ×1");
+        CHECK(beats[0] >= 10 && beats[0] == beats[1], "uderzenia: tyle samo przy ×0.05 co przy ×1");
+    }
+
     /* Bramka szumu −60 dBFS (AUDIO_GATE 0.001 RMS): cichy szum toru nie może
      * zostać wzmocniony przez auto-gain do pełnej reakcji. Sinus 60 Hz o RMS
      * 0.0005 (−66 dBFS) → wszystko dokładnie 0; RMS 0.003 (−50 dBFS) → reaguje

@@ -95,6 +95,9 @@ void audio_bands(const float *power, int n_power, float sample_rate,
 
 /* Auto-gain: dzieli przez bieżące maksimum (zanik ~2 s), podłoga chroni ciszę
  * przed wzmocnieniem do pełnej reakcji. Zwraca x/peak przycięte do 0..1.
+ * Podłogę podaje wołający: stałą dla poziomu ogólnego, a dla pasm — ułamek
+ * szczytu poziomu (audio.c: AUDIO_FLOOR_*), żeby ściszenie całego strumienia
+ * nie zmieniało cech.
  * x NaN/inf (moc FFT przepełniona olbrzymią próbką) liczy się jak 0,
  * a szczyt NaN/inf wraca do podłogi — wynik zawsze skończony. */
 struct audio_agc { float peak; };

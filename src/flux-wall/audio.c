@@ -260,8 +260,24 @@ void audio_features_age(struct audio_features *f, double now, float release) {
 /* Bramka szumu: poniżej −60 dBFS RMS wszystko = 0 (cisza nie ma być
  * wzmacniana przez auto-gain do pełnej reakcji). */
 #define AUDIO_GATE   0.001f
-/* Podłoga auto-gain per pasmo — poniżej niej szum/syk nie liczy się jako sygnał. */
+/* Podłoga auto-gain POZIOMU ogólnego (RMS okna): sygnał cichszy niż −48 dBFS
+ * nie jest już wzmacniany do pełnej reakcji, tylko gaśnie ku bramce. */
 #define AUDIO_FLOOR  0.004f
+/* Podłogi pasm, widma, spektrogramu i przyrostu basu są UŁAMKIEM szczytu
+ * poziomu ogólnego (agc_level.peak), nie stałą: pasmo, które jest po prostu
+ * ciche względem reszty muzyki (sam syk), dalej nie rośnie do pełnej reakcji,
+ * ale ściszenie całego strumienia nic nie zmienia. Stała podłoga 0.004 na
+ * średni bin gasiła szerokie pasma wysokich przy ściszonym odtwarzaczu —
+ * monitor wyjścia bierze sygnał po głośności aplikacji (audyt 2026-11-24, U3).
+ *   BAND     — bass/lowmid/mid/high (średnia na bin FFT): −48 dB od poziomu,
+ *   SPECTRUM — 32 biny (energia pasma, skala 45 dB): −26 dB; niżej przeciek
+ *              okna Hanna z tonu spoza zakresu rysowałby słupki,
+ *   SPECTRO  — spektrogram (średnia na bin, skala 60 dB): −40 dB,
+ *   FLUX     — przyrost basu: wahania poniżej −34 dB od poziomu to nie uderzenia. */
+#define AUDIO_FLOOR_BAND     0.004f
+#define AUDIO_FLOOR_SPECTRUM 0.05f
+#define AUDIO_FLOOR_SPECTRO  0.01f
+#define AUDIO_FLOOR_FLUX     0.02f
 #define AUDIO_ATTACK 0.03f
 #define AUDIO_RELEASE 0.25f
 
@@ -292,10 +308,15 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
         o->beat = audio_beat_step(&st->beat, 0.0f, dt);
     } else {
         float lv = audio_agc_step(&st->agc_level,  raw.level,  dt, AUDIO_FLOOR);
-        float ba = audio_agc_step(&st->agc_bass,   raw.bass,   dt, AUDIO_FLOOR);
-        float lm = audio_agc_step(&st->agc_lowmid, raw.lowmid, dt, AUDIO_FLOOR);
-        float mi = audio_agc_step(&st->agc_mid,    raw.mid,    dt, AUDIO_FLOOR);
-        float hi = audio_agc_step(&st->agc_high,   raw.high,   dt, AUDIO_FLOOR);
+        /* Jak głośny jest strumień: szczyt poziomu, AUDIO_FLOOR..1. Sufit 1.0
+         * (pełna skala): jedna skończona próbka rzędu 1e20 winduje szczyt
+         * poziomu na ~100 s — bez sufitu pociągnęłaby za sobą podłogi pasm
+         * i wizualizacja stałaby do tego czasu (przegląd 2026-11-15, R1). */
+        float ref = fminf(st->agc_level.peak, 1.0f);
+        float ba = audio_agc_step(&st->agc_bass,   raw.bass,   dt, AUDIO_FLOOR_BAND * ref);
+        float lm = audio_agc_step(&st->agc_lowmid, raw.lowmid, dt, AUDIO_FLOOR_BAND * ref);
+        float mi = audio_agc_step(&st->agc_mid,    raw.mid,    dt, AUDIO_FLOOR_BAND * ref);
+        float hi = audio_agc_step(&st->agc_high,   raw.high,   dt, AUDIO_FLOOR_BAND * ref);
         o->level  = audio_smooth(o->level,  lv, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->bass   = audio_smooth(o->bass,   ba, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->lowmid = audio_smooth(o->lowmid, lm, dt, AUDIO_ATTACK, AUDIO_RELEASE);
@@ -306,20 +327,20 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
         {
             float smx = 0.0f, col[AUDIO_SPECTRUM_BINS];
             for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) if (raw.spectrum[i] > smx) smx = raw.spectrum[i];
-            audio_agc_step(&st->agc_spectrum, smx, dt, AUDIO_FLOOR);
+            audio_agc_step(&st->agc_spectrum, smx, dt, AUDIO_FLOOR_SPECTRUM * ref);
             audio_db_column(raw.spectrum, AUDIO_SPECTRUM_BINS, st->agc_spectrum.peak, AUDIO_SPECTRUM_RANGE_DB, col);
             for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
                 o->spectrum[i] = audio_smooth(o->spectrum[i], col[i], dt, AUDIO_ATTACK, AUDIO_RELEASE);
         }
         {
             float fx = audio_bass_flux(&st->beat, st->power);
-            o->beat = audio_beat_step(&st->beat, audio_agc_step(&st->agc_flux, fx, dt, AUDIO_FLOOR), dt);
+            o->beat = audio_beat_step(&st->beat, audio_agc_step(&st->agc_flux, fx, dt, AUDIO_FLOOR_FLUX * ref), dt);
         }
         /* spektrogram: jeden szczyt globalny (najgłośniejsze pasmo, zanik ~2 s),
          * kolumna w dB względem niego — proporcje między pasmami zostają */
         float mx = 0.0f;
         for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) if (raw.spectro[i] > mx) mx = raw.spectro[i];
-        audio_agc_step(&st->agc_spectro, mx, dt, AUDIO_FLOOR);
+        audio_agc_step(&st->agc_spectro, mx, dt, AUDIO_FLOOR_SPECTRO * ref);
         audio_spectro_column(raw.spectro, st->agc_spectro.peak, o->spectro);
     }
     o->raw_level = isfinite(raw.level) ? raw.level : 0.0f;

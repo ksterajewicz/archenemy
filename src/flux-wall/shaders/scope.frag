@@ -43,7 +43,9 @@ out vec4 fragColor;
 const int   WAVE_N   = 1024;
 const float LEVEL    = 0.62;     /* maksymalny ton (jak w innych animacjach) */
 const float AMP      = 0.72;     /* docelowa amplituda szczytu: część połowy wysokości ekranu */
-const float GAIN_MAX = 8.0;      /* maksymalne wzmocnienie automatyczne (cisza nie ma wybuchać) */
+const float GAIN_MAX = 32.0;     /* maksymalne wzmocnienie automatyczne (= GAIN_MAX w scope-xy.update.glsl): szczyt do
+                                  * −30 dBFS wypełnia ekran — ściszony odtwarzacz nie spłaszcza śladu; szum toru
+                                  * rzędu −60 dBFS zostaje zmarszczką 3 % (cisza nie ma wybuchać) */
 const float CORE_PX  = 1.6;      /* promień rdzenia wiązki (px) przy ciszy */
 const float GLOW_PX  = 9.0;      /* zasięg poświaty (px) */
 const float CELLS    = 10.0;     /* działek podziałki w pionie */
