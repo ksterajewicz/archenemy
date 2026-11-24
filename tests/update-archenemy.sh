@@ -364,6 +364,89 @@ out=$(run_upd '1n\n')
 check "waybar nie działa: bez sygnału i bez komunikatu" '[[ "$out" == *"✓ Updated"* && "$out" != *"Waybar"* ]] && ! grep -q "pkill" "$T/proc.log"'
 rm -rf "$HOME/.config/waybar" "$T/waybar-etimes"
 
+# flux-wall jest kompilowany: po pullu, który zmienił jego źródła, działa
+# stara binarka (audyt 2026-11-24, U6 — aktualizator nie mówił o tym nic).
+# Atrapy: `make` w PATH (buduje „binarkę” albo pada przy $T/make-fails),
+# wrapper flux-wall.sh śledzony w origin (zapisuje wywołanie, kod z $T/fw-rc),
+# pgrep widzi flux-walla tylko z plikiem $T/flux-alive.
+echo "== flux-wall: zmienione źródła → propozycja przebudowy i restart animacji"
+cat > "$T/bin/make" <<EOS
+#!/usr/bin/env bash
+echo "make \$*" >> "$T/make.log"
+[[ "\$1" == -C ]] || exit 2
+if [[ -f "$T/make-fails" ]]; then echo "main.c:1: error: atrapa" >&2; exit 2; fi
+mkdir -p "\$2/build"; printf '#!/bin/sh\n' > "\$2/build/flux-wall"; chmod +x "\$2/build/flux-wall"
+EOS
+cat > "$T/bin/pgrep" <<EOS
+#!/usr/bin/env bash
+[[ "\$*" == *waybar* && -f "$T/waybar-alive" ]] && { echo 4242; exit 0; }
+[[ "\$*" == "-x flux-wall" && -f "$T/flux-alive" ]] && { echo 4343; exit 0; }
+exit 1
+EOS
+chmod +x "$T/bin/make" "$T/bin/pgrep"
+fw_seed="$T/fw-seed"; rm -rf "$fw_seed"; git clone -q -b dev "$T/origin.git" "$fw_seed"
+mkdir -p "$fw_seed/src/flux-wall/shaders" "$fw_seed/scripts/wallpapers"
+echo 'int main(void){return 0;}' > "$fw_seed/src/flux-wall/main.c"
+echo 'void main(){}' > "$fw_seed/src/flux-wall/shaders/a.frag"
+printf '#!/usr/bin/env bash\necho "wrapper $*" >> "%s"\nexit "$(cat "%s" 2>/dev/null || echo 0)"\n' "$T/fw.log" "$T/fw-rc" \
+    > "$fw_seed/scripts/wallpapers/flux-wall.sh"
+g "$fw_seed" add -A; g "$fw_seed" commit -m fw-base; g "$fw_seed" push origin dev
+fw_setup() {   # fw_setup [binarka|brak] — świeży klon ze zbudowaną (starą) binarką albo bez niej
+    fresh_clone dev
+    rm -f "$T/make.log" "$T/fw.log" "$T/make-fails" "$T/flux-alive" "$T/fw-rc"
+    if [[ "${1:-binarka}" == binarka ]]; then
+        mkdir -p "$A/src/flux-wall/build"
+        printf '#!/bin/sh\n' > "$A/src/flux-wall/build/flux-wall"; chmod +x "$A/src/flux-wall/build/flux-wall"
+        touch -d '-1 hour' "$A/src/flux-wall/build/flux-wall"
+    fi
+}
+fw_setup; touch "$T/flux-alive"
+upstream_commit dev src/flux-wall/main.c 'int main(void){return 1;}'
+out=$(run_upd '1yn\n')
+check "źródła zmienione: ostrzeżenie i pytanie z domyślnym TAK" '[[ "$out" == *"flux-wall) has new sources"* && "$out" == *"Rebuild flux-wall now?"*"[Y/n]"* ]]'
+check "„y”: make -C src/flux-wall i ✓ po odczycie (binarka nowsza od źródeł)" 'grep -q "^make -C $A/src/flux-wall$" "$T/make.log" && [[ "$out" == *"✓ flux-wall rebuilt."* ]]'
+check "działająca animacja: restart przez wrapper i ✓" 'grep -qx "wrapper start" "$T/fw.log" && [[ "$out" == *"✓ Animation restarted with the updated flux-wall."* ]]'
+check "pytanie o install.sh dalej jest i dalej domyślnie N" '[[ "$out" == *"Run install.sh now"*"[y/N]"* && "$out" != *INSTALL-RAN* ]]'
+fw_setup
+upstream_commit dev src/flux-wall/main.c 'int main(void){return 2;}'
+out=$(run_upd '1\nn\n')
+check "Enter = TAK: przebudowa; animacja nie działa → bez restartu" '[[ "$out" == *"✓ flux-wall rebuilt."* && "$out" != *"Animation restarted"* ]] && [[ ! -e "$T/fw.log" ]]'
+fw_setup; touch "$T/flux-alive" "$T/make-fails"
+upstream_commit dev src/flux-wall/engine.h '/* h */'
+out=$(run_upd '1yn\n')
+check "make pada: ✗ z ogonem logu, bez ✓ i bez restartu" '[[ "$out" == *"✗ flux-wall build failed"* && "$out" == *"error: atrapa"* && "$out" != *"✓ flux-wall rebuilt"* ]] && [[ ! -e "$T/fw.log" ]]'
+check "make pada: aktualizacja i tak udana" '[[ "$out" == *"✓ Updated"* ]]'
+fw_setup; touch "$T/flux-alive"
+upstream_commit dev src/flux-wall/Makefile 'all:'
+out=$(run_upd '1nn\n')
+check "„n”: bez make, komenda na później" '[[ ! -e "$T/make.log" && "$out" == *"Later: make -C ~/archenemy/src/flux-wall"* && "$out" != *"✓ flux-wall rebuilt"* ]] && [[ ! -e "$T/fw.log" ]]'
+fw_setup; touch "$T/flux-alive"; echo 3 > "$T/fw-rc"
+upstream_commit dev src/flux-wall/main.c 'int main(void){return 3;}'
+out=$(run_upd '1yn\n')
+check "restart bez pierwszej klatki (kod 3 wrappera): ⚠ zamiast ✓" '[[ "$out" == *"✓ flux-wall rebuilt."* && "$out" == *"⚠ The animation did not confirm its first frame"* && "$out" != *"✓ Animation restarted"* ]]'
+fw_setup; touch "$T/flux-alive"
+upstream_commit dev src/flux-wall/shaders/a.frag 'void main(){ }'
+out=$(run_upd '1n\n')
+check "same shadery, animacja działa: restart bez pytania i bez make" '[[ "$out" != *"Rebuild flux-wall"* && "$out" == *"✓ Animation restarted"* && ! -e "$T/make.log" ]] && grep -qx "wrapper start" "$T/fw.log"'
+fw_setup
+upstream_commit dev src/flux-wall/shaders/a.frag 'void main(){  }'
+out=$(run_upd '1n\n')
+check "same shadery, animacja nie działa: nic" '[[ "$out" != *"Rebuild flux-wall"* && "$out" != *"Animation"* && ! -e "$T/make.log" && ! -e "$T/fw.log" ]]'
+fw_setup brak; touch "$T/flux-alive"
+upstream_commit dev src/flux-wall/main.c 'int main(void){return 4;}'
+out=$(run_upd '1n\n')
+check "brak zbudowanej binarki: bez pytania (buduje ją install.sh)" '[[ "$out" != *"has new sources"* && "$out" != *"Animation"* && ! -e "$T/make.log" && ! -e "$T/fw.log" ]]'
+fw_setup; touch "$T/flux-alive"
+upstream_commit dev f.txt fw-inne
+out=$(run_upd '1n\n')
+check "flux-wall bez zmian: nic o flux-wallu" '[[ "$out" == *"✓ Updated"* && "$out" != *"flux-wall"* && ! -e "$T/make.log" && ! -e "$T/fw.log" ]]'
+fw_setup; touch "$T/flux-alive"
+upstream_commit dev src/flux-wall/shaders/previews/x.png fw-kadr
+upstream_commit dev src/flux-wall/test.sh fw-nie-zrodlo
+out=$(run_upd '1n\n')
+check "same kadry podglądu i pliki spoza *.c/*.h/Makefile: nic" '[[ "$out" != *"has new sources"* && "$out" != *"Animation"* && ! -e "$T/make.log" && ! -e "$T/fw.log" ]]'
+rm -f "$T/flux-alive" "$T/make-fails" "$T/fw-rc"
+
 # Parytet z bazą (UPDATE_ARCHENEMY_REV=<rewizja>): te same scenariusze Archa na
 # aktualizatorze z rewizji, na identycznej kopii klonu — całe wyjście równe.
 if [[ -n "${UPDATE_ARCHENEMY_REV:-}" ]]; then

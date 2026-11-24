@@ -889,6 +889,14 @@ so these rules are tested, not just conventions:
   offer. Its git advice must work as printed: after a `stash pop` conflict
   `git add` + `git stash drop`, and never `drop` when nothing was applied
   (`bash tests/update-archenemy.sh` runs the advice on real git).
+  flux-wall is compiled, so a pull that changed `src/flux-wall/*.c`, `*.h`,
+  `Makefile` or `protocols/` leaves an older binary running: with a built
+  binary present the updater asks "Rebuild flux-wall now?" (default Yes —
+  `make` inside the checkout, no sudo), says ✓ only when no source is newer
+  than the binary, and restarts a running animation through
+  `flux-wall.sh start` (✓ only on exit 0 = first frame); shader-only pulls
+  restart a running animation without a question. The block prints nothing
+  when flux-wall did not change, so the Arch parity run stays byte-identical.
 - **shellcheck with a baseline:** `bash tests/shellcheck.sh` runs
   `shellcheck -x -S info -e SC1091` on every tracked script and fails only on
   findings that are not in `tests/shellcheck.baseline`. Keep `-x`: without it
