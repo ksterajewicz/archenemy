@@ -177,19 +177,34 @@ float audio_smooth(float prev, float x, float dt, float attack, float release) {
     return prev + (x - prev) * k;
 }
 
-float audio_beat_step(struct audio_beat *b, float bass, float dt) {
+float audio_bass_flux(struct audio_beat *b, const float *power) {
+    float flux = 0.0f;
+    for (int k = 0; k < AUDIO_FLUX_BINS; k++) {
+        float a = power ? sqrtf(power[k + 1]) : 0.0f;       /* bin 0 = składowa stała, pomijamy */
+        if (!isfinite(a)) a = 0.0f;
+        float d = a - b->prev[k];
+        if (power && d > 0.0f) flux += d;
+        b->prev[k] = a;
+    }
+    return flux;
+}
+
+float audio_beat_step(struct audio_beat *b, float flux, float dt) {
+    if (!isfinite(flux)) flux = 0.0f;
+    if (!isfinite(b->avg)) b->avg = 0.0f;
     b->since += dt;
-    if (bass > 1.5f * b->avg && bass > 0.2f && b->since > 0.15f) {
+    if (b->since > AUDIO_BEAT_GAP && flux > AUDIO_BEAT_MIN && flux > AUDIO_BEAT_RATIO * b->avg) {
         b->out = 1.0f;
         b->since = 0.0f;
-        /* Po uderzeniu średnia skacze do poziomu uderzenia: ciągły ton daje
-         * JEDEN onset, a nie serię co 150 ms, dopóki średnia nie dogoni. */
-        b->avg = bass;
     } else {
         b->out *= expf(-dt / 0.1f);
         if (b->out < 0.001f) b->out = 0.0f;
     }
-    b->avg += (bass - b->avg) * (dt / 1.0f > 1.0f ? 1.0f : dt / 1.0f);
+    /* Średnia NIE skacze do szczytu po trafieniu (dawniej skakała i przez
+     * ~1 s zasłaniała kolejne uderzenia): ciągły przyrost i tak daje jeden
+     * onset, bo średnia dogania go w ~AUDIO_BEAT_AVG s. */
+    float k = dt / AUDIO_BEAT_AVG;
+    b->avg += (flux - b->avg) * (k > 1.0f ? 1.0f : k);
     return b->out;
 }
 
@@ -253,6 +268,7 @@ void audio_features_age(struct audio_features *f, double now, float release) {
 void audio_state_init(struct audio_state *st) {
     memset(st, 0, sizeof *st);
     audio_fft_init(&st->fft);
+    st->beat.since = 1.0f;               /* pierwszy dźwięk po starcie może być uderzeniem */
 }
 
 void audio_analyze(struct audio_state *st, const float *window, float dt, double now) {
@@ -272,6 +288,7 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
             o->spectrum[i] = audio_smooth(o->spectrum[i], 0.0f, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         /* spektrogram bez wygładzania — kolumna to jedna chwila; cisza = 0 od razu */
         for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) o->spectro[i] = 0.0f;
+        audio_bass_flux(&st->beat, NULL);                    /* po ciszy pierwszy dźwięk = pełny przyrost */
         o->beat = audio_beat_step(&st->beat, 0.0f, dt);
     } else {
         float lv = audio_agc_step(&st->agc_level,  raw.level,  dt, AUDIO_FLOOR);
@@ -294,7 +311,10 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
             for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
                 o->spectrum[i] = audio_smooth(o->spectrum[i], col[i], dt, AUDIO_ATTACK, AUDIO_RELEASE);
         }
-        o->beat = audio_beat_step(&st->beat, ba, dt);
+        {
+            float fx = audio_bass_flux(&st->beat, st->power);
+            o->beat = audio_beat_step(&st->beat, audio_agc_step(&st->agc_flux, fx, dt, AUDIO_FLOOR), dt);
+        }
         /* spektrogram: jeden szczyt globalny (najgłośniejsze pasmo, zanik ~2 s),
          * kolumna w dB względem niego — proporcje między pasmami zostają */
         float mx = 0.0f;

@@ -4,7 +4,7 @@
  * Wątek czyta próbki przez libpulse-simple (pipewire-pulse), liczy co ~20 ms
  * FFT 2048 z oknem Hanna i sprowadza widmo do pasm jak w wizualizerach:
  *   bass 20–150 Hz · lowmid 150–500 · mid 500–2000 · high 2000–10000
- * plus poziom RMS, detektor uderzenia (onset basu) i 32 biny log-freq.
+ * plus poziom RMS, detektor uderzenia (przyrost energii basu) i 32 biny log-freq.
  * Od 2026-09-17 strumień jest STEREO: FFT/pasma liczone z miksu (L+R)/2,
  * a osobno trzymany jest PRZEBIEG (ostatnie AUDIO_WAVE_N próbek L i R) dla
  * wizualizacji oscyloskopowych — z triggerem jak w prawdziwym oscyloskopie
@@ -104,10 +104,28 @@ float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value);
  * x NaN/inf → zostaje prev; prev NaN/inf → liczy od 0 (stan wychodzi z NaN). */
 float audio_smooth(float prev, float x, float dt, float attack, float release);
 
-/* Detektor uderzenia: onset basu względem średniej kroczącej (~1 s), nie
- * częściej niż co 150 ms; wyjście 1.0 z zanikiem ~100 ms. */
-struct audio_beat { float avg; float since; float out; };
-float audio_beat_step(struct audio_beat *b, float bass, float dt);
+/* Detektor uderzenia na PRZYROŚCIE energii basu (spectral flux): suma
+ * dodatnich przyrostów amplitud binów FFT 1..AUDIO_FLUX_BINS (12–152 Hz)
+ * między kolejnymi analizami. Stopa to nagły przyrost w kilku binach naraz,
+ * ciągła linia basu przyrostu nie daje — dawny próg „bas > 1.5 × średnia”
+ * (średnia skakała do szczytu po trafieniu) gubił uderzenia na tle basu
+ * (audyt 2026-11-24, U2: 3 z 16 przy stopie 120 BPM i mocnej linii basu).
+ *   audio_bass_flux: przyrost z mocy widma (`power` = NULL → cisza: zeruje
+ *                    pamięć binów, zwraca 0; NaN/inf w mocy liczy się jak 0),
+ *   audio_beat_step: `flux` po auto-gain (0..1) → onset, gdy przekracza
+ *                    AUDIO_BEAT_MIN i AUDIO_BEAT_RATIO × swoją krótką średnią
+ *                    (stała AUDIO_BEAT_AVG s), nie częściej niż co
+ *                    AUDIO_BEAT_GAP s; wyjście 1.0 z zanikiem ~100 ms.
+ * `since` = 0 w świeżej strukturze blokuje onset przez pierwsze AUDIO_BEAT_GAP
+ * s — audio_state_init ustawia je tak, żeby pierwszy dźwięk mógł wyzwolić. */
+#define AUDIO_FLUX_BINS  6
+#define AUDIO_BEAT_GAP   0.22f
+#define AUDIO_BEAT_MIN   0.40f
+#define AUDIO_BEAT_RATIO 3.0f
+#define AUDIO_BEAT_AVG   0.5f
+struct audio_beat { float prev[AUDIO_FLUX_BINS]; float avg; float since; float out; };
+float audio_bass_flux(struct audio_beat *b, const float *power);
+float audio_beat_step(struct audio_beat *b, float flux, float dt);
 
 /* Trigger oscyloskopu: w buforze `mono` (n próbek, najnowsza na końcu) szuka
  * NAJPÓŹNIEJSZEGO narastającego przejścia przez zero (z histerezą `hyst`), po
@@ -148,6 +166,7 @@ struct audio_state {
      * muzyce prawie wszystkie stały wysoko (audyt 2026-11-24, U1) */
     struct audio_agc  agc_spectrum;
     struct audio_agc  agc_spectro;   /* JEDEN szczyt dla całej kolumny spektrogramu */
+    struct audio_agc  agc_flux;      /* szczyt przyrostu basu (wejście detektora uderzeń w 0..1) */
     struct audio_beat beat;
     struct audio_features out;
 };

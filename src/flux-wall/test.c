@@ -25,6 +25,9 @@
 #include "cli.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"  /* ZWLR_LAYER_SHELL_V1_LAYER_* */
 #define TEST_PI 3.14159265f
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <math.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -647,8 +650,12 @@ int main(void) {
         CHECK(isfinite(rec) && rec > 0.4f, "smooth: poprzednia NaN → liczy od 0 (stan wychodzi z NaN)");
     }
 
+    /* Detektor uderzenia pracuje na PRZYROŚCIE energii basu (suma dodatnich
+     * przyrostów amplitud binów 12–152 Hz między analizami, po auto-gain 0..1):
+     * onset, gdy przyrost przekracza AUDIO_BEAT_MIN i 3× swoją krótką średnią,
+     * nie częściej niż co 220 ms. Wejście niżej to gotowy przyrost 0..1. */
     printf("audio_beat_step\n");
-    struct audio_beat bt = {0};
+    struct audio_beat bt = { .since = 1.0f };
     int hits = 0;
     for (int i = 0; i < 110; i++) {                       /* impulsy co 500 ms, pierwszy po 200 ms */
         bool imp = (i % 25 == 10);
@@ -656,24 +663,90 @@ int main(void) {
         if (imp && o >= 0.99f) hits++;
     }
     CHECK(hits == 4, "4 impulsy co 500 ms → 4 detekcje");
-    struct audio_beat bt2 = {0}; int onsets = 0;
+    struct audio_beat bt2 = { .since = 1.0f }; int onsets = 0;
     for (int i = 0; i < 100; i++) if (audio_beat_step(&bt2, 0.8f, 0.02f) >= 0.99f) onsets++;
-    CHECK(onsets == 1, "ton ciągły → dokładnie jeden onset, bez serii");
-    /* Odstęp 150 ms między uderzeniami: drugie, mocniejsze uderzenie 100 ms po
-     * pierwszym (ponad progiem 1.5 × średnia) się nie liczy, trzecie 200 ms po
-     * pierwszym — tak. */
+    CHECK(onsets == 1, "stały przyrost → dokładnie jeden onset, bez serii (średnia dogania)");
     {
-        struct audio_beat b3 = {0};
+        struct audio_beat bq = { .since = 1.0f }; int weak = 0;
+        for (int i = 0; i < 100; i++) if (audio_beat_step(&bq, (i % 10 == 5) ? 0.3f : 0.02f, 0.02f) >= 0.99f) weak++;
+        CHECK(weak == 0, "przyrosty poniżej progu 0.4 (drobne wahania basu) → bez detekcji");
+    }
+    /* Odstęp 220 ms między uderzeniami: drugie, mocniejsze 100 ms po pierwszym
+     * się nie liczy (ogon tej samej stopy), trzecie 300 ms po pierwszym — tak. */
+    {
+        struct audio_beat b3 = { .since = 1.0f };
         float o1 = 0, o2 = 0, o3 = 0;
-        for (int i = 0; i <= 20; i++) {                            /* krok 20 ms; tło 0.1 */
-            float in = i == 10 ? 1.0f : (i == 15 || i == 20) ? 2.0f : 0.1f;
+        for (int i = 0; i <= 25; i++) {                            /* krok 20 ms; tło 0.05 */
+            float in = i == 10 ? 1.0f : (i == 15 || i == 25) ? 1.0f : 0.05f;
             float o = audio_beat_step(&b3, in, 0.02f);
             if (i == 10) o1 = o;
             if (i == 15) o2 = o;                                   /* 100 ms po pierwszym */
-            if (i == 20) o3 = o;                                   /* 200 ms po pierwszym */
+            if (i == 25) o3 = o;                                   /* 300 ms po pierwszym */
         }
-        CHECK(o1 >= 0.99f && o2 < 0.99f, "uderzenie 100 ms po poprzednim → bez detekcji (odstęp 150 ms)");
-        CHECK(o3 >= 0.99f, "uderzenie 200 ms po poprzednim → detekcja");
+        CHECK(o1 >= 0.99f && o2 < 0.99f, "uderzenie 100 ms po poprzednim → bez detekcji (odstęp 220 ms)");
+        CHECK(o3 >= 0.99f, "uderzenie 300 ms po poprzednim → detekcja");
+    }
+
+    /* Audyt 2026-11-24, U2: dawny detektor (bas > 1.5 × średnia, po trafieniu
+     * średnia = bas, powrót ze stałą 1 s) przy stopie 120 BPM na tle ciągłej
+     * linii basu łapał co czwarte uderzenie — rings (pierścień tylko z beat)
+     * prawie stało. Sygnał: stopa co 500 ms (60 Hz z zanikiem), linia basu
+     * 55 Hz o amplitudzie 0.35 albo 0.10, szum biały ±0.05 (LCG). Uderzenie
+     * trafione = onset do 70 ms po stopie; wymagane ≥ 14 z 16 i ani jednego
+     * onsetu poza stopą. Ton ciągły: jeden onset (start dźwięku), potem nic. */
+    printf("audio_analyze: uderzenia — stopa 120 BPM na tle linii basu, ton ciągły\n");
+    {
+        static struct audio_state bs;
+        static float ring[AUDIO_FFT_N];
+        const float bass_amp[2] = { 0.35f, 0.10f };
+        for (int v = 0; v < 2; v++) {
+            audio_state_init(&bs);
+            memset(ring, 0, sizeof ring);
+            uint32_t lcg = 777u;
+            int got = 0, extra = 0, total = 0;
+            bool kick_hit[16] = { false };
+            float prev_beat = 0.0f;
+            for (int h = 0; h < 400; h++) {                        /* 8 s = 16 uderzeń */
+                memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+                for (int i = 0; i < AUDIO_HOP; i++) {
+                    double t = (double)(h * AUDIO_HOP + i) / AUDIO_RATE, b = fmod(t, 0.5);
+                    lcg = lcg * 1664525u + 1013904223u;
+                    float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                    ring[AUDIO_FFT_N - AUDIO_HOP + i] = (float)(sin(2.0 * M_PI * 60.0 * b * (1.0 - b)) * exp(-b * 9.0) * 0.6
+                                                      + bass_amp[v] * sin(2.0 * M_PI * 55.0 * t)) + 0.05f * w;
+                }
+                audio_analyze(&bs, ring, 0.02f, 1.0 + h * 0.02);
+                if (bs.out.beat >= 0.99f && prev_beat < 0.99f) {   /* onset w tej analizie */
+                    double t = (h + 1) * 0.02, since_kick = fmod(t + 0.02, 0.5) - 0.02;   /* -20..480 ms od stopy */
+                    int k = (int)((t + 0.02) / 0.5);
+                    total++;
+                    if (since_kick <= 0.07 && k < 16) kick_hit[k] = true; else extra++;
+                }
+                prev_beat = bs.out.beat;
+            }
+            for (int k = 0; k < 16; k++) if (kick_hit[k]) got++;
+            printf("       linia basu %.2f: trafione %d/16, poza stopą %d (onsetów %d)\n", bass_amp[v], got, extra, total);
+            CHECK(got >= 14, v == 0 ? "stopa na tle MOCNEJ linii basu: ≥ 14 z 16 uderzeń" : "stopa na tle cichej linii basu: ≥ 14 z 16 uderzeń");
+            CHECK(extra == 0, "żadnego onsetu poza stopą (ogon stopy i linia basu nie wyzwalają)");
+        }
+        audio_state_init(&bs);
+        for (int i = 0; i < AUDIO_FFT_N; i++) ring[i] = 0.0f;
+        int tone_onsets = 0;
+        float prev_beat = 0.0f;
+        uint32_t lcg = 5u;
+        for (int h = 0; h < 200; h++) {                            /* 4 s tonu 80 Hz z lekkim szumem */
+            memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+            for (int i = 0; i < AUDIO_HOP; i++) {
+                lcg = lcg * 1664525u + 1013904223u;
+                float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                ring[AUDIO_FFT_N - AUDIO_HOP + i] = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)(h * AUDIO_HOP + i) / AUDIO_RATE) + 0.02f * w;
+            }
+            audio_analyze(&bs, ring, 0.02f, 1.0 + h * 0.02);
+            if (bs.out.beat >= 0.99f && prev_beat < 0.99f) tone_onsets++;
+            prev_beat = bs.out.beat;
+        }
+        printf("       ton ciągły 80 Hz, 4 s: onsetów %d\n", tone_onsets);
+        CHECK(tone_onsets == 1, "ton ciągły → jeden onset (początek dźwięku), zero fałszywych potem");
     }
 
     printf("audio_features_age\n");
