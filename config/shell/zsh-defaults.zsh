@@ -4,9 +4,9 @@
 #   config/shell/shellrc, so you can override anything here in the
 #   "zsh only" section of that file. No frameworks (oh-my-zsh etc.), only
 #   what zsh has built in: history, completion, bash-like keys and the Arch
-#   default bash prompt. The block may be added to an existing ~/.zshrc and
-#   must not break someone else's setup: history and prompt only when unset,
-#   compinit only once.
+#   default bash prompt, in the colours of the active rice (rice-look.zsh).
+#   The block may be added to an existing ~/.zshrc and must not break someone
+#   else's setup: history and prompt only when unset, compinit only once.
 # =============================================
 
 # ── history ──
@@ -52,6 +52,11 @@ bindkey '^[[1;5D' backward-word
 # Like the Arch default bash PS1: [user@host dir]$ (# for root).
 # Only while the prompt is still the zsh default, so your own theme stays.
 if [[ "$PROMPT" == '%m%# ' ]]; then PROMPT='[%n@%m %1~]%# '; fi
+# Look of the active rice (~/.config/archenemy-zsh from Super+T): colours and
+# the prompt in the rice palette, Starship with the rice config if installed.
+if [[ -f "${archenemy_shell_dir}/rice-look.zsh" ]]; then
+    source "${archenemy_shell_dir}/rice-look.zsh"
+fi
 
 # Compatibility for existing rc blocks; refreshed blocks load widgets after CLI tools.
 if [[ "${archenemy_plugins_deferred:-0}" != 1 && -f "${archenemy_shell_dir}/plugins.zsh" ]]; then

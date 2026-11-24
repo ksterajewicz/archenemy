@@ -17,6 +17,9 @@
 #   zmiany rice'a — mutant „kod 0” przechodził cały run-all.
 #   yang (2026-11-20): prawdziwe stuby yin.sh → yang.sh na kopii rices/:
 #   każdy folder yang podlinkowany, nic z yin, launcher/rofi/hyprlock yang.
+#   R3 (2026-11-24): własny ~/.config/zsh (ZDOTDIR) zostaje nietknięty,
+#   wygląd zsh idzie do ~/.config/archenemy-zsh; migracja starego
+#   dowiązania ~/.config/zsh → rices/ i przywrócenie kopii zsh.bak-<czas>.
 #   Uruchom: bash tests/switch-rice.sh   (kod 0 = wszystko przeszło)
 # =============================================
 
@@ -193,6 +196,82 @@ check "hyprlock: tło z hyprlock-background-yang.conf"      'grep -qx "source = 
 check "flux-wall autostart już dla yang"                   'grep -q "^FLUXWALL autostart rice=yang$" "$MOCK_LOG"'
 check "waybar wystartował od nowa"                         'grep -q "^pkill -x waybar" "$MOCK_LOG"'
 check "repo bez zmian: rices/yang bez nowych linków"       '[[ $(find "$REPO/rices/yang" -type l | wc -l) -eq 4 ]]'
+
+# ─── własny ~/.config/zsh (ZDOTDIR) i migracja (R3, 2026-11-24) ──────────────
+# Do 2026-11-24 rice'y miały folder zsh/, więc Super+T odkładał prawdziwy
+# ~/.config/zsh użytkownika (popularny ZDOTDIR: .zshrc, historia) do
+# zsh.bak-<czas> i linkował tam wygląd rice'a — powłoka „znikała”. Wygląd zsh
+# leży teraz w rices/<rice>/archenemy-zsh/ (→ ~/.config/archenemy-zsh), a
+# przełącznik jednorazowo sprząta po starej wersji. Atrapy $HOME z kopią
+# prawdziwych rices/ (yin, yang, white-blue) z sekcji wyżej.
+zhome() {
+    local h="$1"
+    mkdir -p "$h/archenemy/scripts/changing-theme-scripts" "$h/archenemy/scripts/wallpapers" "$h/.config"
+    cp -a "$YA/rices" "$h/archenemy/rices"; cp -a "$YA/assets" "$h/archenemy/assets"
+    ln -s "$REPO/scripts/changing-theme-scripts/lib" "$h/archenemy/scripts/changing-theme-scripts/lib"
+    ln -s "$REPO/scripts/hypr" "$h/archenemy/scripts/hypr"
+    ln -s "$REPO/scripts/lib" "$h/archenemy/scripts/lib"
+    cp "$YA/scripts/changing-theme-scripts/"{yin,yang}.sh "$h/archenemy/scripts/changing-theme-scripts/"
+    cp "$A/scripts/wallpapers/flux-wall.sh" "$h/archenemy/scripts/wallpapers/"
+}
+zsw() { HOME="$1" bash "$1/archenemy/scripts/changing-theme-scripts/$2.sh" >/dev/null 2>&1; }
+no_zsh_bak() { ! compgen -G "$1/.config/zsh.bak-*" >/dev/null; }
+
+echo "== Super+T yin → yang: własny ~/.config/zsh (ZDOTDIR) zostaje nietknięty"
+Z="$T/home-zdotdir"; zhome "$Z"
+mkdir -p "$Z/.config/zsh"
+printf 'echo moj-zshrc\n' > "$Z/.config/zsh/.zshrc"; printf ': 1:0;ls\n' > "$Z/.config/zsh/.zsh_history"
+zsw "$Z" yin; zsw "$Z" yang
+check "~/.config/zsh to dalej prawdziwy katalog"           '[[ -d "$Z/.config/zsh" && ! -L "$Z/.config/zsh" ]]'
+check ".zshrc i historia bez zmian"                        '[[ "$(<"$Z/.config/zsh/.zshrc")" == "echo moj-zshrc" && "$(<"$Z/.config/zsh/.zsh_history")" == ": 1:0;ls" ]]'
+check "brak zsh.bak-* (nic nie przeniesione)"              'no_zsh_bak "$Z"'
+check "wygląd zsh: ~/.config/archenemy-zsh → rices/yang/archenemy-zsh" '[[ "$(readlink "$Z/.config/archenemy-zsh")" == "$Z/archenemy/rices/yang/archenemy-zsh" && -s "$Z/.config/archenemy-zsh/colors.zsh" ]]'
+check "żaden rice nie ma już folderu zsh/"                 '! compgen -G "$REPO/rices/*/zsh" >/dev/null'
+
+echo "== migracja: stare dowiązanie ~/.config/zsh → rices/<rice>/zsh, bez kopii"
+M1="$T/home-mig1"; zhome "$M1"
+ln -s "$M1/archenemy/rices/yin/zsh" "$M1/.config/zsh"
+: > "$MOCK_LOG"; zsw "$M1" yang
+check "stare dowiązanie usunięte"                          '[[ ! -e "$M1/.config/zsh" && ! -L "$M1/.config/zsh" ]]'
+check "nowe miejsce podlinkowane, zsh.bak-* nie powstał"   '[[ "$(readlink "$M1/.config/archenemy-zsh")" == "$M1/archenemy/rices/yang/archenemy-zsh" ]] && no_zsh_bak "$M1"'
+check "bez komunikatu o przywróceniu"                      '! grep -q "Restored" "$MOCK_LOG"'
+
+echo "== migracja: stare dowiązanie + kopia z dawnego Super+T → kopia wraca na miejsce"
+M2="$T/home-mig2"; zhome "$M2"
+ln -s "$M2/archenemy/rices/yin/zsh" "$M2/.config/zsh"
+mkdir -p "$M2/.config/zsh.bak-20261124_181217" "$M2/.config/zsh.bak-20261123_090000"
+printf 'echo nowszy\n' > "$M2/.config/zsh.bak-20261124_181217/.zshrc"
+printf 'echo starszy\n' > "$M2/.config/zsh.bak-20261123_090000/.zshrc"
+mkdir -p "$M2/.config/zsh.bak-moja"; printf 'echo obca\n' > "$M2/.config/zsh.bak-moja/.zshrc"
+: > "$MOCK_LOG"; zsw "$M2" yang
+check "najnowsza kopia przywrócona do ~/.config/zsh (mv)"  '[[ -d "$M2/.config/zsh" && ! -L "$M2/.config/zsh" && "$(<"$M2/.config/zsh/.zshrc")" == "echo nowszy" && ! -e "$M2/.config/zsh.bak-20261124_181217" ]]'
+check "starsza kopia i obca nazwa nietknięte"              '[[ "$(<"$M2/.config/zsh.bak-20261123_090000/.zshrc")" == "echo starszy" && "$(<"$M2/.config/zsh.bak-moja/.zshrc")" == "echo obca" ]]'
+check "powiadomienie o przywróceniu"                       'grep -q "NOTIFY: .*Restored ~/.config/zsh from zsh.bak-20261124_181217" "$MOCK_LOG"'
+check "wygląd zsh w nowym miejscu"                         '[[ "$(readlink "$M2/.config/archenemy-zsh")" == "$M2/archenemy/rices/yang/archenemy-zsh" ]]'
+: > "$MOCK_LOG"; zsw "$M2" yin
+check "kolejny Super+T: przywrócony katalog nietknięty, starsza kopia dalej leży" '[[ "$(<"$M2/.config/zsh/.zshrc")" == "echo nowszy" && -d "$M2/.config/zsh.bak-20261123_090000" ]] && ! grep -q "Restored" "$MOCK_LOG"'
+
+echo "== migracja: bez starego dowiązania kopie zostają (decyzja użytkownika)"
+M3="$T/home-mig3"; zhome "$M3"
+mkdir -p "$M3/.config/zsh.bak-20261124_181217"; printf 'echo kopia\n' > "$M3/.config/zsh.bak-20261124_181217/.zshrc"
+zsw "$M3" yang
+check "brak ~/.config/zsh, kopia nietknięta"               '[[ ! -e "$M3/.config/zsh" && ! -L "$M3/.config/zsh" && -f "$M3/.config/zsh.bak-20261124_181217/.zshrc" ]]'
+
+echo "== migracja: kopia, która sama jest dowiązaniem do rices/, nie wraca"
+# Nasz link bez danych: sprząta go pętla „usuń każdy link do rices/”.
+M4="$T/home-mig4"; zhome "$M4"
+ln -s "$M4/archenemy/rices/yin/zsh" "$M4/.config/zsh"
+ln -s "$M4/archenemy/rices/white-blue/zsh" "$M4/.config/zsh.bak-20261124_181217"
+zsw "$M4" yang
+check "~/.config/zsh nie istnieje (nic nie przywrócone)"   '[[ ! -e "$M4/.config/zsh" && ! -L "$M4/.config/zsh" ]]'
+
+echo "== migracja w instalatorze (SWITCH_RICE_LINK_ONLY=1): komunikat na stdout"
+M5="$T/home-mig5"; zhome "$M5"
+ln -s "$M5/archenemy/rices/yin/zsh" "$M5/.config/zsh"
+mkdir -p "$M5/.config/zsh.bak-20261124_181217"; printf 'echo moj\n' > "$M5/.config/zsh.bak-20261124_181217/.zshrc"
+out="$(HOME="$M5" RICE_NAME=yang SWITCH_RICE_LINK_ONLY=1 bash "$M5/archenemy/scripts/changing-theme-scripts/lib/switch-rice.sh" 2>&1)"; rc=$?
+check "kod 0, katalog przywrócony"                         '(( rc == 0 )) && [[ "$(<"$M5/.config/zsh/.zshrc")" == "echo moj" ]]'
+check "stdout mówi, co przywrócono"                        '[[ "$out" == *"Restored ~/.config/zsh from zsh.bak-20261124_181217"* ]]'
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

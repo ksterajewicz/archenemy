@@ -1,0 +1,56 @@
+# =============================================
+#   archenemy · yang · Starship
+#   Tło terminala: #F3F3F5; tylko szybkie moduły i znaki ASCII.
+#   Jasny monochrom; rdza #A23A10 tylko dla błędu (error_symbol, ro).
+# =============================================
+"$schema" = 'https://starship.rs/config-schema.json'
+add_newline = false
+format = '$directory$git_branch$git_status$cmd_duration$line_break$character'
+scan_timeout = 30
+command_timeout = 200
+
+[directory]
+format = '[$path]($style)[$read_only]($read_only_style) '
+style = '#0C0C0E'
+read_only = ' ro'
+read_only_style = '#A23A10'
+truncation_length = 3
+truncation_symbol = '../'
+
+[git_branch]
+format = '[$symbol$branch]($style) '
+symbol = 'git:'
+style = '#232327'
+truncation_length = 28
+truncation_symbol = '...'
+
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+style = '#3B3B41'
+conflicted = '='
+ahead = 'a${count}'
+behind = 'b${count}'
+diverged = 'a${ahead_count}/b${behind_count}'
+up_to_date = ''
+untracked = '?'
+stashed = 's'
+modified = '!'
+staged = '+'
+renamed = 'r'
+deleted = 'x'
+ignore_submodules = true
+
+[cmd_duration]
+format = '[$duration]($style) '
+min_time = 2000
+style = '#5E5E66'
+show_notifications = false
+
+[character]
+format = '$symbol '
+success_symbol = '[>](#0C0C0E)'
+error_symbol = '[!](#A23A10)'
+vimcmd_symbol = '[<](#0C0C0E)'
+vimcmd_replace_one_symbol = '[r](#3B3B41)'
+vimcmd_replace_symbol = '[R](#3B3B41)'
+vimcmd_visual_symbol = '[v](#0C0C0E)'
