@@ -39,8 +39,11 @@ const float T_FALL    = 7.0;     /* sekundy: droga wiersza od górnej do dolnej 
 const float FADE_FROM = 0.35;    /* od tej części drogi wiersz zaczyna gasnąć (cząstki umierają) */
 const float NOISE     = 0.05;    /* szum tła: prawdopodobieństwo druku bez sygnału (× fBm 0.5..1.5) */
 const float BEAT_ROW  = 0.5;     /* uderzenie: dodatek do prawdopodobieństwa druku w całym wierszu */
-const float KNEE      = 0.25;    /* poziom pasma poniżej tego = brak sygnału (podłoga AGC ≈ 0.3 w binach bez sygnału) */
-const float GAMMA_IN  = 2.0;     /* (poziom − KNEE) → prawdopodobieństwo druku: kontrast wodospadu */
+/* Widmo jest w dB względem wspólnego szczytu (audio.h, AUDIO_SPECTRUM_RANGE_DB):
+ * bin bez sygnału = 0, typowe pasmo muzyki 0.4–0.6, najgłośniejsze ~1. Dawne
+ * KNEE 0.25 / GAMMA_IN 2.0 obchodziły podłogę ~0.3 szczytu per bin (do 2026-11-24). */
+const float KNEE      = 0.10;    /* poziom pasma poniżej tego = brak sygnału (ok. 40 dB pod szczytem) */
+const float GAMMA_IN  = 1.5;     /* (poziom − KNEE) → prawdopodobieństwo druku: kontrast wodospadu */
 const float PHI       = 0.6180339887;
 const int   BINS      = 32;
 

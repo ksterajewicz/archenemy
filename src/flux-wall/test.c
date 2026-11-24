@@ -705,6 +705,69 @@ int main(void) {
       /* szczyt AGC z basu 60 Hz jeszcze nie opadł (zanik ~2 s) → ton 1 kHz kilka dB pod 0 dB, ale > 0.9 */
       CHECK(abs(smax - expect) <= 1 && st.out.spectro[smax] > 0.9f, "ton 1 kHz w łańcuchu → szczyt spektrogramu > 0.9 we właściwym paśmie"); }
 
+    /* Widmo 32 binów (uniform audio_spectrum — słupki bars/orb/tunnel, radar,
+     * waterfall). Audyt 2026-11-24, U1: każdy bin był dzielony przez WŁASNY
+     * szczyt z ~2 s, więc przy muzyce 28–29 z 32 słupków stało średnio ponad
+     * 0.5 — ściana wysokich słupków zamiast kształtu muzyki. Decyzja
+     * właściciela 2026-11-24 (1A): jeden wspólny szczyt dla wszystkich binów
+     * i skala dB (AUDIO_SPECTRUM_RANGE_DB), a bin to ENERGIA pasma (suma mocy,
+     * nie średnia) — szum różowy, czyli równa energia na oktawę, daje równe
+     * słupki, a nie opadające o 3 dB na oktawę. */
+    printf("audio_analyze: widmo 32 binów — wspólny szczyt i skala dB\n");
+    {
+        static struct audio_state ws; audio_state_init(&ws);
+        const int b_lo = 18, b_hi = 27;                /* środki binów: ~1082 Hz i ~5380 Hz */
+        float f_lo = 40.0f * powf(300.0f, ((float)b_lo + 0.5f) / AUDIO_SPECTRUM_BINS);
+        float f_hi = 40.0f * powf(300.0f, ((float)b_hi + 0.5f) / AUDIO_SPECTRUM_BINS);
+        for (int i = 0; i < AUDIO_FFT_N; i++)
+            sig[i] = 0.5f  * sinf(2.0f * TEST_PI * f_lo * (float)i / AUDIO_RATE)
+                   + 0.05f * sinf(2.0f * TEST_PI * f_hi * (float)i / AUDIO_RATE);   /* drugi ton 20 dB ciszej */
+        for (int i = 0; i < 50; i++) audio_analyze(&ws, sig, 0.02f, 1.0 + i * 0.02);
+        printf("       ton głośny %.3f, ton -20 dB %.3f, bin bez sygnału %.3f\n",
+               ws.out.spectrum[b_lo], ws.out.spectrum[b_hi], ws.out.spectrum[5]);
+        CHECK(ws.out.spectrum[b_lo] > 0.95f, "najgłośniejszy bin → ~1.0 (0 dB względem wspólnego szczytu)");
+        CHECK(fabsf(ws.out.spectrum[b_hi] - (1.0f - 20.0f / AUDIO_SPECTRUM_RANGE_DB)) < 0.06f,
+              "ton o 20 dB cichszy → 1 - 20/zakres (nie ~1.0 jak przy szczycie per bin)");
+        CHECK(ws.out.spectrum[5] < 0.02f, "bin bez sygnału → 0");
+
+        /* szum różowy (filtr Kelleta na LCG), okno przesuwane hopami jak w wątku */
+        audio_state_init(&ws);
+        static float ring[AUDIO_FFT_N];
+        memset(ring, 0, sizeof ring);
+        uint32_t lcg = 12345u;
+        float kb[6] = {0};
+        static double acc_bin[AUDIO_SPECTRUM_BINS];
+        memset(acc_bin, 0, sizeof acc_bin);
+        int counted = 0;
+        for (int h = 0; h < 250; h++) {                /* 5 s; średnie z ostatnich 2 s */
+            memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+            for (int i = 0; i < AUDIO_HOP; i++) {
+                lcg = lcg * 1664525u + 1013904223u;
+                float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                kb[0] = 0.99886f * kb[0] + w * 0.0555179f; kb[1] = 0.99332f * kb[1] + w * 0.0750759f;
+                kb[2] = 0.96900f * kb[2] + w * 0.1538520f; kb[3] = 0.86650f * kb[3] + w * 0.3104856f;
+                kb[4] = 0.55000f * kb[4] + w * 0.5329522f; kb[5] = -0.7616f * kb[5] - w * 0.0168980f;
+                ring[AUDIO_FFT_N - AUDIO_HOP + i] = (kb[0] + kb[1] + kb[2] + kb[3] + kb[4] + kb[5] + w * 0.5362f) * 0.04f;
+            }
+            audio_analyze(&ws, ring, 0.02f, 10.0 + h * 0.02);
+            if (h >= 150) { for (int b = 0; b < AUDIO_SPECTRUM_BINS; b++) acc_bin[b] += ws.out.spectrum[b]; counted++; }
+        }
+        double mn = 1e9, mx = -1e9;
+        for (int b = 0; b < AUDIO_SPECTRUM_BINS; b++) {
+            double m = acc_bin[b] / counted;
+            if (m < mn) mn = m;
+            if (m > mx) mx = m;
+        }
+        printf("       szum różowy: średnie binów %.3f..%.3f\n", mn, mx);
+        CHECK(mx - mn < 0.15, "szum różowy (równa energia na oktawę) → słupki równe: rozrzut średnich < 0.15");
+        CHECK(mn > 0.5 && mx < 0.98, "szum różowy: słupki wysoko, ale pod sufitem (szczyt łapie chwilowe maksima)");
+        for (int i = 0; i < AUDIO_FFT_N; i++) ring[i] = 0.0f;
+        for (int i = 0; i < 100; i++) audio_analyze(&ws, ring, 0.02f, 20.0 + i * 0.02);
+        float left = 0.0f;
+        for (int b = 0; b < AUDIO_SPECTRUM_BINS; b++) if (ws.out.spectrum[b] > left) left = ws.out.spectrum[b];
+        CHECK(left < 0.01f, "cisza 2 s → całe widmo ~0");
+    }
+
     /* Bramka szumu −60 dBFS (AUDIO_GATE 0.001 RMS): cichy szum toru nie może
      * zostać wzmocniony przez auto-gain do pełnej reakcji. Sinus 60 Hz o RMS
      * 0.0005 (−66 dBFS) → wszystko dokładnie 0; RMS 0.003 (−50 dBFS) → reaguje

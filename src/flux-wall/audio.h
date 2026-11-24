@@ -10,8 +10,10 @@
  * wizualizacji oscyloskopowych — z triggerem jak w prawdziwym oscyloskopie
  * (start okna na ostatnim narastającym przejściu przez zero, żeby ślad
  * okresowego tonu stał w miejscu zamiast skakać co klatkę).
- * Każde pasmo przechodzi auto-gain (bieżące maksimum z zanikiem, z podłogą)
- * i wygładzanie attack/release — wynik w 0..1, w ciszy dokładnie 0.
+ * Pasma bass/lowmid/mid/high i poziom przechodzą auto-gain per pasmo (bieżące
+ * maksimum z zanikiem, z podłogą) i wygładzanie attack/release — wynik w 0..1,
+ * w ciszy dokładnie 0. Widmo 32 binów (słupki) ma JEDEN wspólny szczyt i skalę
+ * dB — pokazuje kształt muzyki, nie każdy bin względem samego siebie.
  *
  * Wątek nie dotyka GL ani Waylanda. Render bierze snapshot pod mutexem raz na
  * klatkę. Snapshot ma znacznik czasu: gdy sink śpi, `pa_simple_read` blokuje
@@ -46,10 +48,13 @@
 #define AUDIO_SPECTRO_LO    40.0f
 #define AUDIO_SPECTRO_HI    16000.0f
 #define AUDIO_SPECTRO_RANGE_DB 60.0f
+#define AUDIO_SPECTRUM_RANGE_DB 45.0f   /* widmo 32 binów: zakres dB pod wspólnym szczytem */
 
 /* Cechy dźwięku dla silnika — wszystko w 0..1, `beat` to impuls z zanikiem. */
 struct audio_features {
     float level, bass, lowmid, mid, high, beat;
+    /* widmo 32 binów log-freq (40 Hz – 12 kHz): 0..1 = -AUDIO_SPECTRUM_RANGE_DB..0 dB
+     * względem najgłośniejszego binu z ostatnich ~2 s, wygładzone attack/release */
     float spectrum[AUDIO_SPECTRUM_BINS];
     /* przebieg po triggerze: wave[2*i] = L, wave[2*i+1] = R, i = 0..AUDIO_WAVE_N-1,
      * próbki w -1..1 (bez auto-gain — oscyloskop ma pokazywać prawdziwą amplitudę,
@@ -79,6 +84,11 @@ void audio_fft_init(struct audio_fft *f);
 void audio_fft_power(struct audio_fft *f, const float *in, float *power);
 
 /* Surowe pasma z mocy widma i RMS z próbek czasu (bez auto-gain). */
+/* `spectrum[i]` to ENERGIA binu log-freq (pierwiastek z sumy mocy binów FFT
+ * w paśmie), pozostałe pola — średnia (RMS na bin FFT). Biny log mają stałą
+ * szerokość w oktawach, więc energia jest równa dla szumu różowego (równa moc
+ * na oktawę, typowe nachylenie muzyki); średnia opadałaby o 3 dB na oktawę
+ * i góra widma leżałaby przy każdej muzyce. */
 struct audio_bands_raw { float level, bass, lowmid, mid, high; float spectrum[AUDIO_SPECTRUM_BINS]; float spectro[AUDIO_SPECTRO_BINS]; };
 void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out);
@@ -109,6 +119,9 @@ int audio_trigger(const float *mono, int n, int span, float hyst);
  * z buforów L i R długości n. */
 void audio_wave_fill(struct audio_features *out, const float *l, const float *r, int n, int start);
 
+/* `n` surowych pasm → dB względem wspólnego szczytu `peak`, zakres `range_db`
+ * przeskalowany na 0..1 (0 dB = 1, -range_db i mniej = 0; peak <= 0 → zera). */
+void audio_db_column(const float *raw, int n, float peak, float range_db, float *out);
 /* Kolumna spektrogramu ze SUROWYCH pasm: dB względem `peak` (szczyt globalny
  * po auto-gain), zakres AUDIO_SPECTRO_RANGE_DB → 0..1. Czyste, testowane. */
 void audio_spectro_column(const float *raw, float peak, float *out);
@@ -129,7 +142,11 @@ float audio_sample_clean(float x);
 struct audio_state {
     struct audio_fft  fft;
     float             power[AUDIO_FFT_N / 2 + 1];
-    struct audio_agc  agc_level, agc_bass, agc_lowmid, agc_mid, agc_high, agc_spec[AUDIO_SPECTRUM_BINS];
+    struct audio_agc  agc_level, agc_bass, agc_lowmid, agc_mid, agc_high;
+    /* JEDEN szczyt dla 32 binów widma (decyzja właściciela 2026-11-24, 1A):
+     * dawny szczyt per bin normalizował każdy słupek do samego siebie i przy
+     * muzyce prawie wszystkie stały wysoko (audyt 2026-11-24, U1) */
+    struct audio_agc  agc_spectrum;
     struct audio_agc  agc_spectro;   /* JEDEN szczyt dla całej kolumny spektrogramu */
     struct audio_beat beat;
     struct audio_features out;

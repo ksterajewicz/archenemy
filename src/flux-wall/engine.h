@@ -19,7 +19,8 @@
  *   animacji; shader bez tego uniformu działa jak dotąd),
  *   accum (sampler2D), gain                            — tylko tryb cząstkowy,
  *   audio_level/bass/lowmid/mid/high/beat (0..1), audio_spectrum (sampler2D
- *   32×1 R, jednostka 2), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
+ *   32×1 R, jednostka 2: 32 biny log-freq w dB względem WSPÓLNEGO szczytu —
+ *   bin bez sygnału = 0, najgłośniejszy ~1, patrz audio.h), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
  *   g = R, próbki -1..1 po triggerze — oscyloskop), audio_wave_peak (szczyt
  *   |mono| tego okna — auto-wzmocnienie), audio_spectrogram (sampler2D
  *   COLS×AUDIO_SPECTRO_BINS R8, jednostka 4: historia kolumn spektrogramu w

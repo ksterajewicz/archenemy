@@ -92,6 +92,22 @@ static float band_rms(const float *power, int n_power, float hz_per_bin, float l
     return sqrtf(sum / weight);
 }
 
+/* Energia pasma [lo, hi) Hz: pierwiastek z SUMY mocy binów FFT, z tym samym
+ * ułamkowym pokryciem co band_rms (pasmo węższe niż bin bierze jego część). */
+static float band_energy(const float *power, int n_power, float hz_per_bin, float lo, float hi) {
+    if (hi <= lo) return 0.0f;
+    float sum = 0.0f;
+    int a = (int)floorf(lo / hz_per_bin + 0.5f), b = (int)floorf(hi / hz_per_bin + 0.5f);
+    if (a < 1) a = 1;
+    if (b > n_power - 1) b = n_power - 1;
+    for (int k = a; k <= b; k++) {
+        float k_lo = ((float)k - 0.5f) * hz_per_bin, k_hi = ((float)k + 0.5f) * hz_per_bin;
+        float ov = fminf(hi, k_hi) - fmaxf(lo, k_lo);
+        if (ov > 0.0f) sum += power[k] * (ov / hz_per_bin);
+    }
+    return sqrtf(sum);
+}
+
 void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out) {
     float hz_per_bin = sample_rate / (float)AUDIO_FFT_N;
@@ -102,11 +118,11 @@ void audio_bands(const float *power, int n_power, float sample_rate,
     out->lowmid = band_rms(power, n_power, hz_per_bin,  150.0f,   500.0f);
     out->mid    = band_rms(power, n_power, hz_per_bin,  500.0f,  2000.0f);
     out->high   = band_rms(power, n_power, hz_per_bin, 2000.0f, 10000.0f);
-    /* 32 biny log-freq od 40 Hz do 12 kHz */
+    /* 32 biny log-freq od 40 Hz do 12 kHz — energia pasma (patrz audio.h) */
     for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) {
         float lo = 40.0f * powf(300.0f, (float)i / AUDIO_SPECTRUM_BINS);
         float hi = 40.0f * powf(300.0f, (float)(i + 1) / AUDIO_SPECTRUM_BINS);
-        out->spectrum[i] = band_rms(power, n_power, hz_per_bin, lo, hi);
+        out->spectrum[i] = band_energy(power, n_power, hz_per_bin, lo, hi);
     }
     /* drobne pasma spektrogramu (log od AUDIO_SPECTRO_LO do _HI) */
     float ratio = AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO;
@@ -117,15 +133,19 @@ void audio_bands(const float *power, int n_power, float sample_rate,
     }
 }
 
-void audio_spectro_column(const float *raw, float peak, float *out) {
-    for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) {
+void audio_db_column(const float *raw, int n, float peak, float range_db, float *out) {
+    for (int i = 0; i < n; i++) {
         float v = 0.0f;
         if (peak > 0.0f && raw[i] > 0.0f) {
             float db = 20.0f * log10f(raw[i] / peak);        /* <= 0 przy raw <= peak */
-            v = 1.0f + db / AUDIO_SPECTRO_RANGE_DB;
+            v = 1.0f + db / range_db;
         }
-        out[i] = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+        out[i] = v > 0.0f ? (v < 1.0f ? v : 1.0f) : 0.0f;    /* NaN → 0 */
     }
+}
+
+void audio_spectro_column(const float *raw, float peak, float *out) {
+    audio_db_column(raw, AUDIO_SPECTRO_BINS, peak, AUDIO_SPECTRO_RANGE_DB, out);
 }
 
 /* ── auto-gain, wygładzanie, beat, starzenie ────────────────────────────── */
@@ -264,9 +284,15 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
         o->lowmid = audio_smooth(o->lowmid, lm, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->mid    = audio_smooth(o->mid,    mi, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->high   = audio_smooth(o->high,   hi, dt, AUDIO_ATTACK, AUDIO_RELEASE);
-        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) {
-            float v = audio_agc_step(&st->agc_spec[i], raw.spectrum[i], dt, AUDIO_FLOOR);
-            o->spectrum[i] = audio_smooth(o->spectrum[i], v, dt, AUDIO_ATTACK, AUDIO_RELEASE);
+        /* widmo 32 binów: wspólny szczyt (najgłośniejszy bin, zanik ~2 s), biny
+         * w dB względem niego — głośne pasma wysoko, ciche nisko */
+        {
+            float smx = 0.0f, col[AUDIO_SPECTRUM_BINS];
+            for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) if (raw.spectrum[i] > smx) smx = raw.spectrum[i];
+            audio_agc_step(&st->agc_spectrum, smx, dt, AUDIO_FLOOR);
+            audio_db_column(raw.spectrum, AUDIO_SPECTRUM_BINS, st->agc_spectrum.peak, AUDIO_SPECTRUM_RANGE_DB, col);
+            for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
+                o->spectrum[i] = audio_smooth(o->spectrum[i], col[i], dt, AUDIO_ATTACK, AUDIO_RELEASE);
         }
         o->beat = audio_beat_step(&st->beat, ba, dt);
         /* spektrogram: jeden szczyt globalny (najgłośniejsze pasmo, zanik ~2 s),

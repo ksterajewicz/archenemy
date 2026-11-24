@@ -58,9 +58,11 @@ void main() {
     /* gęstość: pierścienie wewnętrzne mają mniejsze pole na krok — wyrównujemy
      * prawdopodobieństwem ∝ promień, żeby bas nie był jaśniejszy tylko dlatego,
      * że leży bliżej środka */
-    /* kwadrat poziomu: widmo ma podłogę ~0.2 w wysokich — bez tego obwód
-     * jest jednolicie zamglony, a pierścienie nie odcinają się od siebie */
-    float prob = (NOISE + SPEC_G * lvl * lvl * (1.0 + BEAT_G * audio_beat)) * (r / R_OUT);
+    /* poziom^1.5: widmo jest w dB względem wspólnego szczytu (bin bez sygnału
+     * = 0, typowe pasmo 0.4–0.6) — wykładnik zostawia ciche pierścienie
+     * ciemne, a głośne odcina od siebie; dawny kwadrat obchodził podłogę ~0.2
+     * szczytu per bin (do 2026-11-24) i przy nowej skali gasiłby środek pasma */
+    float prob = (NOISE + SPEC_G * lvl * sqrt(lvl) * (1.0 + BEAT_G * audio_beat)) * (r / R_OUT);
     bool  hit  = u_h < prob;
 
     vec2 p = vec2(-1.0);                                 /* poza ekranem: bez śladu */
