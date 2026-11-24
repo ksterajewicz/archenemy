@@ -427,6 +427,15 @@ Rules that follow directly from the table:
   `[mode=do-not-disturb urgency=critical]` `invisible=0` — critical
   notifications (timer finished, archenemy errors) still show; the order
   matters (mako(5): the last matching section wins). `tests/dnd.sh`.
+- **Off/muted states share ONE dimmed color per rice, never the accent**
+  (owner, 2026-11-24): `#custom-micmute.muted`, `#custom-volumebar.muted`,
+  `#custom-bluetooth.disabled`, `#custom-dnd.dnd` and `#custom-dnd.unavailable`
+  (beta: `#custom-micmute.muted` = `#pulseaudio.muted`). Do-not-disturb ON is
+  an off state (dimmed), not a highlight. The color is the rice's Bluetooth
+  "off" shade (crt: border blue `#3069AD`, because its old `#6f8fb3` was as
+  bright as the text). `custom/micmute` needs `return-type: json` from
+  `scripts/waybar/micmute.sh` — a bare glyph carries no class for CSS to dim.
+  A new rice or a new off state must pass `tests/waybar-dimmed.sh`.
 - **Active window highlight: `config/hypr/focus-highlight.lua`** (required by
   the parity rices, not by `white-blue_beta`) swaps the active colours for the
   inactive ones while the cursor is on another monitor. It changes the look

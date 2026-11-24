@@ -205,8 +205,13 @@ window#waybar.solo  #window {
 #custom-micmute:hover {
     color: #74dce2;
 }
+/* Stany wyłączone/wyciszone — wyciszony mikrofon (micmute.sh, klasa
+   muted) i głośność, wyłączony Bluetooth, włączone „nie przeszkadzać” —
+   mają JEDEN kolor przygaszenia rice'a (#3069ad, jak #custom-bluetooth.disabled);
+   pilnuje tests/waybar-dimmed.sh. */
+#custom-micmute.muted,
 #custom-volumebar.muted {
-    color: #0b358b;
+    color: #3069ad;
 }
 #custom-volumebar.boost {
     color: #ffb000;
@@ -250,8 +255,10 @@ tooltip label {
     padding: 4px;
 }
 
-/* Bluetooth: kolory stanu w palecie rice'a; pusty moduł bez odstępów. */
-#custom-bluetooth.disabled { color: #6f8fb3; }
+/* Bluetooth: kolory stanu w palecie rice'a; pusty moduł bez odstępów.
+   Wyłączony = błękit ramki #3069AD (2,9:1 do płyty): dawny #6f8fb3 miał
+   1,07:1 do tekstu #5695d6, więc wcale nie był przygaszony. */
+#custom-bluetooth.disabled { color: #3069ad; }
 #custom-bluetooth.connected { color: #74dce2; }
 #custom-bluetooth.off {
     padding: 0;
@@ -261,8 +268,9 @@ tooltip label {
     box-shadow: none;
 }
 
-/* Dzwonek DND (scripts/waybar/dnd.sh): wyciszone powiadomienia w akcencie
-   (widać, że tryb jest włączony), mako nie działa = przygaszony — kolory
-   jak stany Bluetooth. */
-#custom-dnd.dnd { color: #74dce2; }
-#custom-dnd.unavailable { color: #6f8fb3; }
+/* Dzwonek DND (scripts/waybar/dnd.sh): włączone „nie przeszkadzać” (glif
+   przekreślonego dzwonka) i mako niedziałające = przygaszony jak wyłączony
+   Bluetooth — tryb wyciszenia wygląda jak inne wyłączone stany, nie jak
+   akcent (właściciel 2026-11-24). */
+#custom-dnd.dnd { color: #3069ad; }
+#custom-dnd.unavailable { color: #3069ad; }
