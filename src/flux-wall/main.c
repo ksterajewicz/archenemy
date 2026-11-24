@@ -103,6 +103,7 @@ struct output {
     double last_render;          /* do limitu fps — osobno na monitor, inaczej dwa
                                   * monitory z -f N dławiłyby się nawzajem */
     struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
+    struct flux_stats stats;     /* -v: klatki/s i czas klatki tego monitora (logic.h) */
     struct output *next;
 };
 
@@ -350,13 +351,19 @@ static void render_output(struct output *o) {
         o->needs_frame = true;
         return;
     }
-    double t = flux_now_seconds() - (s->start.tv_sec + s->start.tv_nsec / 1e9);
+    double frame_start = flux_now_seconds();
+    double t = frame_start - (s->start.tv_sec + s->start.tv_nsec / 1e9);
     /* Snapshot audio raz na klatkę; stęchły (sink śpi → read blokuje) gaśnie tu. */
     struct audio_features feat;
     const struct audio_features *audio = NULL;
+    double audio_age = -1.0;                 /* wiek danych w sekundach; < 0 = jeszcze żadnych */
+    float  audio_raw = 0.0f;
+    bool   audio_live = false;
     if (s->audio) {
         audio_snapshot(s->audio, &feat);
-        audio_features_age(&feat, flux_now_seconds(), 0.25f);
+        if (feat.t > 0.0) audio_age = frame_start - feat.t;
+        audio_raw = feat.raw_level; audio_live = feat.live;
+        audio_features_age(&feat, frame_start, 0.25f);
         audio = &feat;
     }
     flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current, s->cfg.dither,
@@ -380,6 +387,25 @@ static void render_output(struct output *o) {
             logv(s, "%s: pierwsza klatka — %s", o->name, s->cfg.ready_file);
     }
     o->last_render = flux_now_seconds();
+    if (s->cfg.verbose) {
+        double fps, ms;
+        flux_stats_frame(&o->stats, o->last_render, o->last_render - frame_start);
+        if (flux_stats_due(&o->stats, o->last_render, &fps, &ms)) {
+            char snd[256] = "brak (animacja bez dźwięku)";
+            if (s->audio) {
+                char src[128];
+                audio_source(s->audio, src, sizeof src);
+                if (audio_age < 0.0)
+                    snprintf(snd, sizeof snd, "%s, jeszcze bez danych", src[0] ? src : "brak połączenia");
+                else if (audio_live && src[0])
+                    snprintf(snd, sizeof snd, "%s, poziom %.1f dBFS, dane sprzed %.0f ms",
+                             src, flux_dbfs(audio_raw), audio_age * 1000.0);
+                else
+                    snprintf(snd, sizeof snd, "brak połączenia, ostatnie dane sprzed %.0f ms", audio_age * 1000.0);
+            }
+            logv(s, "%s: %.1f kl/s, %.2f ms/klatkę (CPU), dźwięk: %s", o->name, fps, ms, snd);
+        }
+    }
 }
 
 /* Ile sekund brakuje TEMU monitorowi do następnej klatki z `needs_frame`
@@ -610,6 +636,7 @@ static void output_teardown_surface(struct output *o) {
     o->logical_w = o->logical_h = 0;
     o->width = o->height = 0;
     o->frac_scale120 = 0;
+    o->stats = (struct flux_stats){0};
 }
 
 static void output_destroy(struct output *o) {

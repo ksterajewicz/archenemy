@@ -45,6 +45,8 @@ cp "$REPO/scripts/wallpapers/flux-wall.sh" "$A/scripts/wallpapers/"
 cp "$REPO/scripts/lib/runtime-dir.sh" "$A/scripts/lib/"   # katalog sesji na log i plik gotowości (S12)
 WRAP="$A/scripts/wallpapers/flux-wall.sh"
 for n in alpha beta; do printf '#version 300 es\nvoid main(){}\n' > "$A/src/flux-wall/shaders/$n.frag"; done
+# wizualizacja muzyki (pragma od początku linii, jak w prawdziwych shaderach)
+printf '#version 300 es\n#pragma flux audio 1\nvoid main(){}\n' > "$A/src/flux-wall/shaders/music.frag"
 printf '%s\n' 'FLUX_WALL_PALETTE="000000,777777,FFFFFF"' 'FLUX_WALL_SHADER="src/flux-wall/shaders/alpha.frag"' \
     'FLUX_WALL_AUTOSTART=1' 'FLUX_WALL_DITHER=0' > "$A/rices/test-rice/flux-wall.conf"
 echo test-rice > "$A/.current_rice"
@@ -107,7 +109,17 @@ pids="$("$(dirname "$0")/pgrep" -x flux-wall)" || exit 1
 for pid in $pids; do kill -s "$sig" "$pid" 2>/dev/null; done
 exit 0
 EOF
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/pactl"
+# pactl ze stanem z plików: domyślne wyjście, strumienie nagrywania, źródła
+# (brak plików = serwer bez wyjścia i bez strumieni, jak dawna atrapa `exit 0`).
+cat > "$T/bin/pactl" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+    "get-default-sink")     cat "$FW_STATE/pa-sink" 2>/dev/null ;;
+    "list source-outputs")  cat "$FW_STATE/pa-source-outputs" 2>/dev/null ;;
+    "list short sources")   cat "$FW_STATE/pa-sources" 2>/dev/null ;;
+esac
+exit 0
+EOF
 chmod +x "$BIN" "$T/bin/"*
 export PATH="$T/bin:$PATH"
 
@@ -197,6 +209,50 @@ if [[ $RC -eq 0 && "$OUT" == *"flux-wall nie działa"* && "$OUT" != *"flux-wall 
     ok "doctor po stop: „nie działa”, ostrzeżenie o nieistniejącym wyborze"
 else fail "doctor po stop: rc=$RC, wyjście: $OUT"; fi
 rm -f "$A/data/flux-wall.dat"
+
+# Sekcja „dźwięk” (audyt 2026-11-24, U4): doctor mówi, czy animacja słucha,
+# skąd flux-wall bierze strumień (pactl) i co o dźwięku jest w logu.
+echo "doctor: dźwięk"
+pa_stream() {   # $1 = numer źródła strumienia klienta $2; obok cudzy strumień z mikrofonu (źródło 3)
+    printf 'Source Output #7\n\tDriver: PipeWire\n\tSource: 3\n\tProperties:\n\t\tapplication.name = "obcy"\n'
+    printf 'Source Output #9\n\tDriver: PipeWire\n\tSource: %s\n\tBuffer Latency: 0 usec\n\tProperties:\n\t\tapplication.name = "%s"\n' "$1" "$2"
+}
+printf '3\tmic-input\tPipeWire\n57\ttest-sink.monitor\tPipeWire\n58\told-sink.monitor\tPipeWire\n' > "$FW_STATE/pa-sources"
+echo test-sink > "$FW_STATE/pa-sink"
+wrap doctor
+if [[ $RC -eq 0 && "$OUT" == *"== dźwięk"* && "$OUT" == *"'alpha' nie jest wizualizacją muzyki"* \
+      && "$OUT" != *"domyślne wyjście"* ]]; then
+    ok "zwykła animacja: „nie jest wizualizacją muzyki”, pactl niepytany o strumień"
+else fail "doctor dźwięk, zwykła animacja: rc=$RC, wyjście: $OUT"; fi
+wrap select music
+pa_stream 57 flux-wall > "$FW_STATE/pa-source-outputs"
+echo "flux-wall: audio: strumień z @DEFAULT_MONITOR@ (monitor wyjścia, nigdy mikrofon)" >> "$XDG_RUNTIME_DIR/flux-wall.log"
+wrap doctor
+if [[ $RC -eq 0 && "$OUT" == *"'music' to wizualizacja muzyki"* && "$OUT" == *"domyślne wyjście: test-sink"* \
+      && "$OUT" == *"strumień flux-wall: źródło test-sink.monitor"* && "$OUT" != *"NIE jest monitor"* \
+      && "$OUT" == *"ostatnie linie o dźwięku:"*"audio: strumień z @DEFAULT_MONITOR@"* ]]; then
+    ok "wizualizacja, strumień z monitora domyślnego wyjścia: źródło nazwane, bez ostrzeżenia, linie audio z logu"
+else fail "doctor dźwięk, strumień z monitora: rc=$RC, wyjście: $OUT"; fi
+pa_stream 58 flux-wall > "$FW_STATE/pa-source-outputs"
+wrap doctor
+if [[ "$OUT" == *"strumień flux-wall: źródło old-sink.monitor"* && "$OUT" == *"⚠ to NIE jest monitor domyślnego wyjścia (test-sink.monitor)"* ]]; then
+    ok "strumień z monitora INNEGO wyjścia (po zmianie wyjścia): ostrzeżenie z nazwą właściwego monitora"
+else fail "doctor dźwięk, inne wyjście: wyjście: $OUT"; fi
+pa_stream 57 nie-flux > "$FW_STATE/pa-source-outputs"
+wrap doctor
+if [[ "$OUT" == *"⚠ flux-wall działa, ale nie ma otwartego strumienia dźwięku"* ]]; then
+    ok "flux-wall działa bez własnego strumienia: ostrzeżenie (cudze strumienie się nie liczą)"
+else fail "doctor dźwięk, brak strumienia: wyjście: $OUT"; fi
+: > "$FW_STATE/pa-sink"
+wrap doctor
+if [[ "$OUT" == *"⚠ domyślne wyjście: pactl nic nie zwrócił"* ]]; then ok "serwer bez domyślnego wyjścia: ostrzeżenie"
+else fail "doctor dźwięk, brak wyjścia: wyjście: $OUT"; fi
+bash "$WRAP" stop >/dev/null 2>&1
+wrap doctor
+if [[ "$OUT" == *"strumień flux-wall: brak (flux-wall nie działa)"* && "$OUT" != *"nie ma otwartego strumienia"* ]]; then
+    ok "po stop: „strumień: brak (flux-wall nie działa)”, bez ostrzeżenia o strumieniu"
+else fail "doctor dźwięk po stop: wyjście: $OUT"; fi
+rm -f "$A/data/flux-wall.dat" "$FW_STATE/pa-source-outputs" "$FW_STATE/pa-sink"
 
 # „działa” tylko po potwierdzonej PIERWSZEJ klatce (audyt 2026-11-05, F7):
 # dawniej wrapper patrzył na żywy proces po 0,5 s, a błąd EGL/shadera przy

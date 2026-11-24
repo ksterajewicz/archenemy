@@ -979,6 +979,53 @@ int main(void) {
               "przerwa między próbami 1 s, potem 2 s (backoff się podwaja)");
     }
 
+    /* Audyt 2026-11-24, U4: komunikaty audio szły tylko z -v, którego wrapper
+     * nie podaje — brak serwera albo zły monitor nie zostawiał w flux-wall.log
+     * żadnego śladu. Bez -v do logu ma trafić: pierwsze połączenie z nazwą
+     * źródła, zerwanie, a brak połączenia RAZ na przerwę (nie co próbę).
+     * audio_source oddaje nazwę źródła bieżącego strumienia (linia stanu -v),
+     * raw_level — surowy RMS okna (sinus 0.5 → 0.354). */
+    printf("audio: log stanu strumienia bez -v, nazwa źródła, surowy poziom (atrapa libpulse)\n");
+    {
+        FILE *lf = tmpfile();
+        CHECK(lf != NULL, "plik tymczasowy na log");
+        audio_log_stream(lf);
+        fake_pa_setup("@DEFAULT_MONITOR@", 15);        /* 0.3 s danych z --audio-device, potem zerwanie */
+        struct audio *au = audio_start("test-sink.monitor", NULL, false);
+        struct audio_features snap = {0};
+        char src[128] = "?";
+        bool heard = false;
+        for (double end = test_now() + 2.0; !heard && test_now() < end; test_sleep_ms(5)) {
+            audio_snapshot(au, &snap);
+            heard = snap.live && snap.bass > 0.5f;
+            if (heard) audio_source(au, src, sizeof src);
+        }
+        CHECK(heard && strcmp(src, "test-sink.monitor") == 0, "audio_source: nazwa źródła bieżącego strumienia");
+        CHECK(fabsf(snap.raw_level - 0.3536f) < 0.02f, "raw_level: surowy RMS okna (sinus 0.5 → 0.354), nie wartość po auto-gain");
+        for (double end = test_now() + 3.0; fake_pa_get().fails < 1 && test_now() < end; ) test_sleep_ms(10);
+        test_sleep_ms(60);                             /* wątek zdąży zapisać linię o zerwaniu */
+        audio_source(au, src, sizeof src);
+        CHECK(src[0] == 0, "audio_source po zerwaniu: pusty napis (brak połączenia)");
+        audio_stop(au);
+        fake_pa_setup("*", 0);                         /* brak serwera: próby po 0, 1 i 3 s */
+        au = audio_start(NULL, NULL, false);
+        for (double end = test_now() + 4.0; fake_pa_get().tries < 2 && test_now() < end; ) test_sleep_ms(10);
+        audio_stop(au);
+        audio_log_stream(NULL);
+        static char logbuf[4096];
+        rewind(lf);
+        size_t ln = fread(logbuf, 1, sizeof logbuf - 1, lf);
+        logbuf[ln] = 0;
+        int n_conn = 0, n_lost = 0, n_none = 0;
+        for (const char *q = logbuf; (q = strstr(q, "strumień z test-sink.monitor (monitor")) != NULL; q++) n_conn++;
+        for (const char *q = logbuf; (q = strstr(q, "zerwany")) != NULL; q++) n_lost++;
+        for (const char *q = logbuf; (q = strstr(q, "brak połączenia z monitorem wyjścia")) != NULL; q++) n_none++;
+        CHECK(n_conn == 1, "bez -v: pierwsze połączenie w logu, z nazwą źródła");
+        CHECK(n_lost == 1, "bez -v: zerwanie strumienia w logu");
+        CHECK(fake_pa_get().tries >= 2 && n_none == 1, "bez -v: brak połączenia w logu RAZ, nie co próbę");
+        CHECK(strstr(logbuf, "flux-wall: audio: ") == logbuf, "linie zaczynają się od „flux-wall: audio: ” (doctor filtruje po „audio:”)");
+    }
+
     /* Kody wyjścia to kontrakt z flux-wall.sh (DECYZJE 2026-09-07h): 1 =
      * argumenty albo plik shadera, 2 = brak Waylanda/layer-shell, 3 = EGL/
      * shader. Bez kompozytora sprawdzalne są 1 i 2: kod 2 = argumenty
@@ -1303,6 +1350,32 @@ int main(void) {
               flux_audio_mode(true, true, false, true) == FLUX_AUDIO_SKIPPED,
               "--once i --no-audio → nigdy wątku, także z --audio-file");
         CHECK(flux_audio_mode(false, false, true, true) == FLUX_AUDIO_OFF, "--once bez audio → OFF (bez logu „pominięte”)");
+    }
+
+    /* Linia stanu `-v` co FLUX_STATS_PERIOD s (audyt 2026-11-24, U4): klatki na
+     * sekundę z liczby klatek i czasu okna, średni czas klatki, poziom w dBFS. */
+    printf("logic: statystyki -v (klatki/s, ms/klatkę, dBFS)\n");
+    {
+        struct flux_stats fs = {0};
+        double fps = -1, ms = -1;
+        CHECK(!flux_stats_due(&fs, 100.0, &fps, &ms), "przed pierwszą klatką: nic do wypisania");
+        flux_stats_frame(&fs, 100.0, 0.5);                   /* pierwsza klatka tylko otwiera okno */
+        int due_early = 0;
+        for (int i = 1; i <= 720; i++) {                     /* 144 kl/s przez 5 s, 2 ms na klatkę */
+            double now = 100.0 + i / 144.0;
+            flux_stats_frame(&fs, now, 0.002);
+            if (i < 720 && flux_stats_due(&fs, now, &fps, &ms)) due_early++;
+        }
+        CHECK(due_early == 0, "przed upływem 5 s: bez linii");
+        bool due = flux_stats_due(&fs, 105.0, &fps, &ms);
+        CHECK(due && fabs(fps - 144.0) < 0.01 && fabs(ms - 2.0) < 0.001,
+              "po 5 s: 144.0 kl/s i 2.00 ms/klatkę (klatka otwierająca okno się nie liczy)");
+        CHECK(!flux_stats_due(&fs, 105.1, &fps, &ms) && fs.frames == 0, "po linii okno liczy od nowa");
+        for (int i = 1; i <= 10; i++) flux_stats_frame(&fs, 105.0 + i * 0.5, 0.001);
+        due = flux_stats_due(&fs, 110.0, &fps, &ms);
+        CHECK(due && fabs(fps - 2.0) < 0.01, "rzadkie klatki (zasłonięta tapeta): 2.0 kl/s");
+        CHECK(fabs(flux_dbfs(1.0)) < 1e-9 && fabs(flux_dbfs(0.1) + 20.0) < 1e-6 && flux_dbfs(0.0) == -120.0 &&
+              flux_dbfs(NAN) == -120.0, "dBFS: 1.0 → 0, 0.1 → -20, cisza i NaN → -120");
     }
 
     /* --once (tapeta statyczna) liczy rozgrzewkę przed jedyną klatką. Zmiana

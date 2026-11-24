@@ -276,6 +276,7 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
         audio_agc_step(&st->agc_spectro, mx, dt, AUDIO_FLOOR);
         audio_spectro_column(raw.spectro, st->agc_spectro.peak, o->spectro);
     }
+    o->raw_level = isfinite(raw.level) ? raw.level : 0.0f;
     o->t = now;
 }
 
@@ -289,6 +290,7 @@ struct audio {
     char           *device;
     char           *file;
     struct audio_features snap;
+    char            source[128];                /* źródło bieżącego strumienia; "" = brak (pod `lock`) */
     struct audio_state    st;
     float           ring[AUDIO_FFT_N];          /* miks (L+R)/2 — okno FFT */
     float           ring_l[AUDIO_FFT_N], ring_r[AUDIO_FFT_N];   /* przebieg L/R dla oscyloskopu */
@@ -296,11 +298,34 @@ struct audio {
     bool            started;
 };
 
+static FILE *log_stream;                    /* NULL = stderr; audio_log_stream() */
+
+void audio_log_stream(FILE *f) { log_stream = f; }
+
+static void log_line(const char *fmt, va_list ap) {
+    FILE *f = log_stream ? log_stream : stderr;
+    fputs("flux-wall: audio: ", f); vfprintf(f, fmt, ap); fputc('\n', f);
+    fflush(f);
+}
+
 static void logv(const struct audio *a, const char *fmt, ...) {
     if (!a->verbose) return;
     va_list ap; va_start(ap, fmt);
-    fputs("flux-wall: audio: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
+    log_line(fmt, ap);
     va_end(ap);
+}
+
+/* Jak logv, ale zawsze (także bez -v): zmiany stanu strumienia — patrz audio.h. */
+static void logw(const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    log_line(fmt, ap);
+    va_end(ap);
+}
+
+static void set_source(struct audio *a, const char *name) {
+    pthread_mutex_lock(&a->lock);
+    snprintf(a->source, sizeof a->source, "%s", name ? name : "");
+    pthread_mutex_unlock(&a->lock);
 }
 
 /* Dosuń hop (stereo, przeplatany) do buforów przesuwanych: miks do okna FFT,
@@ -334,7 +359,9 @@ static void set_live(struct audio *a, bool live) {
 
 static void run_file(struct audio *a) {
     FILE *f = fopen(a->file, "rb");
-    if (!f) { logv(a, "nie mogę otworzyć %s: %s", a->file, strerror(errno)); return; }
+    if (!f) { logw("nie mogę otworzyć pliku %s: %s — bez reakcji na dźwięk", a->file, strerror(errno)); return; }
+    set_source(a, a->file);
+    logw("dźwięk z pliku %s (--audio-file)", a->file);
     struct timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
     while (a->running) {
         const size_t want = AUDIO_HOP * AUDIO_CHANNELS;
@@ -350,6 +377,7 @@ static void run_file(struct audio *a) {
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
     }
     fclose(f);
+    set_source(a, NULL);
 }
 
 static pa_simple *open_stream(struct audio *a, const char **used) {
@@ -382,24 +410,29 @@ static void retry_pause(struct audio *a, int *backoff) {
 
 static void run_pulse(struct audio *a) {
     int backoff = 1;
-    bool reported = false;
+    bool reported = false;               /* brak połączenia już zgłoszony (jedna linia na przerwę) */
     while (a->running) {
         const char *used = NULL;
         pa_simple *s = open_stream(a, &used);
         if (!s) {
             set_live(a, false);
-            if (!reported) { logv(a, "brak serwera dźwięku — ponawiam (backoff do 30 s)"); reported = true; }
+            if (!reported) {
+                logw("brak połączenia z monitorem wyjścia (@DEFAULT_MONITOR@%s%s) — bez reakcji na dźwięk, ponawiam co 1–30 s",
+                     a->device ? ", " : "", a->device ? a->device : "");
+                reported = true;
+            }
             retry_pause(a, &backoff);
             continue;
         }
-        logv(a, "strumień z %s", used);
+        set_source(a, used);
+        logw("strumień z %s (monitor wyjścia, nigdy mikrofon)", used);
         reported = false;
         int err = 0;
         while (a->running) {
             /* Blokuje, gdy sink śpi (nic nie gra) — wtedy snapshot się starzeje,
              * a render gasi go sam (audio_features_age). */
             if (pa_simple_read(s, a->hop, sizeof a->hop, &err) < 0) {
-                logv(a, "strumień zerwany: %s", pa_strerror(err));
+                logw("strumień z %s zerwany: %s — ponawiam", used, pa_strerror(err));
                 break;
             }
             /* Backoff wraca do 1 s dopiero po danych, nie po samym otwarciu:
@@ -408,6 +441,7 @@ static void run_pulse(struct audio *a) {
             push_hop(a);
         }
         pa_simple_free(s);
+        set_source(a, NULL);
         set_live(a, false);
         /* Po zerwanym strumieniu też pauza — wcześniej pętla od razu otwierała
          * nowy i biła w serwer bez przerwy (audyt 2026-11-05, F8). */
@@ -442,6 +476,13 @@ struct audio *audio_start(const char *device, const char *file, bool verbose) {
 void audio_snapshot(struct audio *a, struct audio_features *out) {
     pthread_mutex_lock(&a->lock);
     *out = a->snap;
+    pthread_mutex_unlock(&a->lock);
+}
+
+void audio_source(struct audio *a, char *out, size_t outlen) {
+    if (!outlen) return;
+    pthread_mutex_lock(&a->lock);
+    snprintf(out, outlen, "%s", a->source);
     pthread_mutex_unlock(&a->lock);
 }
 

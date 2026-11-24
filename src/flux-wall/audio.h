@@ -30,6 +30,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #define AUDIO_RATE          48000
 #define AUDIO_FFT_N         2048
@@ -59,6 +60,10 @@ struct audio_features {
     float spectro[AUDIO_SPECTRO_BINS];
     double t;        /* czas snapshotu (sekundy, zegar monotoniczny); 0 = nigdy */
     bool   live;     /* strumień z serwera działa */
+    /* surowy RMS okna analizy (0..1, PRZED auto-gain i wygładzaniem) — tylko
+     * diagnostyka: log `-v` pokazuje, czy do flux-walla w ogóle dociera dźwięk
+     * i jak głośny (cechy wyżej są już znormalizowane, więc tego nie powiedzą) */
+    float  raw_level;
 };
 
 /* ── czyste ─────────────────────────────────────────────────────────────── */
@@ -143,5 +148,17 @@ struct audio;
 struct audio *audio_start(const char *device, const char *file, bool verbose);
 void audio_snapshot(struct audio *a, struct audio_features *out);
 void audio_stop(struct audio *a);
+
+/* Diagnostyka (bez `-v`): pierwsze połączenie ze strumieniem i pierwsza
+ * porażka ZAWSZE trafiają do logu, razem z nazwą źródła — bez tego brak
+ * serwera albo zły monitor wyglądał jak „wizualizacja nie działa” i nie
+ * zostawiał śladu (audyt 2026-11-24, U4). Potem log tylko przy zmianie stanu
+ * (połączony ↔ zerwany), więc ponawianie co 1–30 s go nie zalewa.
+ * audio_log_stream: gdzie pisać (NULL = stderr, czyli flux-wall.log wrappera);
+ * testy podają własny strumień. Ustawiać PRZED audio_start. */
+void audio_log_stream(FILE *f);
+/* Nazwa źródła, z którego idzie strumień (`@DEFAULT_MONITOR@`, nazwa z
+ * --audio-device albo ścieżka --audio-file); pusty napis = brak połączenia. */
+void audio_source(struct audio *a, char *out, size_t outlen);
 
 #endif
