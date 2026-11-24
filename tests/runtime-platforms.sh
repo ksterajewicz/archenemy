@@ -140,7 +140,7 @@ guard() {   # guard <os> <socat: yes|no> <socket: yes|no> [kod] → $RC, $N (pow
 nl=$'\n'
 guard arch no no; a_n="$N"
 check "Arch bez socat: kod 0 po 5 nieudanych odczytach (3 udane + 5)" '[[ $RC == 0 && "$MON" == 8 ]]'
-check "Arch bez socat: jedno powiadomienie, dotychczasowy tekst" '[[ "$N" == "-u low archenemy workspace-guard: brak socat — działam sondą co 2 s (szybciej: sudo pacman -S socat i przeloguj)." ]]'
+check "Arch bez socat: jedno powiadomienie, dotychczasowy tekst" '[[ "$N" == "-a archenemy -u low archenemy workspace-guard: brak socat — działam sondą co 2 s (szybciej: sudo pacman -S socat i przeloguj)." ]]'
 check "Arch bez socat: zero instalacji" '[[ -z "$C" ]]'
 guard endeavouros no no
 check "EndeavourOS = Arch" '[[ "$N" == "$a_n" && $RC == 0 && -z "$C" ]]'
@@ -158,7 +158,7 @@ guard fedora yes yes
 check "socat i gniazdo są: tryb zdarzeń, bez powiadomienia" '[[ -z "$N" && $RC == 0 && "$C" == *"socat -U - UNIX-CONNECT:"* ]]'
 if [[ -n "$BASE" ]]; then
     guard arch no no base
-    check "Arch bez socat = $RUNTIME_PLATFORMS_REV (powiadomienie, kod, odczyty)" '[[ "$N" == "$a_n" && $RC == 0 && "$MON" == 8 && -z "$C" ]]'
+    check "Arch bez socat = $RUNTIME_PLATFORMS_REV (powiadomienie, kod, odczyty)" '[[ "${N#-a archenemy }" == "${a_n#-a archenemy }" && $RC == 0 && "$MON" == 8 && -z "$C" ]]'
     # L5 (przegląd D8–D10): ścieżka socat dotąd bez parytetu.
     guard arch yes yes; c_n="$N"; c_rc="$RC"; c_c="$C"; c_mon="$MON"
     guard arch yes yes base
@@ -166,7 +166,7 @@ if [[ -n "$BASE" ]]; then
     guard arch yes no; c_n="$N"; c_rc="$RC"; c_c="$C"; c_mon="$MON"
     guard arch yes no base
     # Jedyna zamierzona różnica: baza mówiła „brak socat” mimo socat w PATH.
-    check "Arch socat bez gniazda = $RUNTIME_PLATFORMS_REV poza tekstem powiadomienia (kod, odczyty, wywołania)" '[[ "$RC" == "$c_rc" && "$C" == "$c_c" && "$MON" == "$c_mon" && "$N" != *"$nl"* && "$c_n" != *"$nl"* && ( "$N" == "$c_n" || ( "$N" == *"brak socat"* && "$c_n" == *"brak gniazda zdarzeń Hyprlanda"* ) ) ]]'
+    check "Arch socat bez gniazda = $RUNTIME_PLATFORMS_REV poza tekstem powiadomienia (kod, odczyty, wywołania)" '[[ "$RC" == "$c_rc" && "$C" == "$c_c" && "$MON" == "$c_mon" && "$N" != *"$nl"* && "$c_n" != *"$nl"* && ( "${N#-a archenemy }" == "${c_n#-a archenemy }" || ( "$N" == *"brak socat"* && "$c_n" == *"brak gniazda zdarzeń Hyprlanda"* ) ) ]]'
 fi
 
 echo "== odbiorcy runtime: rice'y (także yin i yang) → wspólne TUI i guard"

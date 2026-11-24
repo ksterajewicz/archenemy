@@ -1111,7 +1111,7 @@ notify_new() {
     fi
     while IFS= read -r name; do
         [[ -n "$name" && -z "${recent[$name]:-}" ]] || continue
-        notify-send "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
+        notify-send -a archenemy "archenemy: new monitor" "${name}: Super+A → [n] sets it up."
         recent[$name]="$now"
     done < <(new_monitors)
     [[ -n "$NOTIFIED_FILE" ]] || return 0

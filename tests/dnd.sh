@@ -11,8 +11,13 @@
 #   zawieszony (limit czasu), poprawny JSON z podpowiedzią kliknięcia,
 #   kod wyjścia modułu zawsze 0. Configi: custom/dnd raz w modules-right
 #   7 rice'ów parytetu, signal 13 tylko tam, interval całkowity, style
-#   stanów w CSS, beta bez modułu; każdy mako/config chowa powiadomienia
-#   w DND i przepuszcza krytyczne (sekcja po [mode=do-not-disturb]).
+#   stanów w CSS, beta bez modułu. Mako: symulacja dopasowania sekcji
+#   każdego mako/config (beta przez symlink) — w DND archenemy widoczne przy
+#   każdej pilności i grupuje się jak poza DND, aplikacje ukryte, krytyczne
+#   z aplikacji widoczne, poza DND styl bez zmian; kontrole negatywne
+#   (brak/zła kolejność sekcji, bez grupowania, sekcja globalna, nieznane pole).
+#   Strażnik: każde notify-send w scripts/ config/ rices/ install/ ma
+#   "-a archenemy" zaraz po nazwie komendy (z kontrolą negatywną).
 #   Bez roota, bez maka i waybara, zapis tylko w mktemp.
 #   Uruchom: bash tests/dnd.sh   (kod 0 = wszystko przeszło)
 # =============================================
@@ -115,6 +120,9 @@ state_is notify "state → notify"
 reset_mako default do-not-disturb
 run
 json_is dnd "$G_DND" "default + do-not-disturb → przekreślony dzwonek (dnd)"
+if [[ "$OUT" == *'"tooltip":"Do not disturb: on (app notifications hidden; archenemy and critical ones still show)\nClick: show notifications"'* ]]
+then ok "podpowiedź DND: aplikacje ukryte, archenemy i krytyczne przechodzą"
+else fail "podpowiedź DND: [$OUT]"; fi
 state_is dnd "state → dnd"
 reset_mako do-not-disturb
 state_is dnd "sam do-not-disturb → dnd"
@@ -200,38 +208,191 @@ while IFS= read -r line; do
     esac
 done <<< "$cfg_out"
 
-echo "== mako: DND chowa, krytyczne przechodzą (wszystkie rice'y, beta przez symlink)"
-for rice in "${ALL_RICES[@]}"; do
-    f="$REPO/rices/$rice/mako/config"
-    verdict=$(python3 - "$f" <<'PY'
+# Symulacja dopasowania sekcji maka (mako 1.11.0: criteria.c match_criteria,
+# config.c — trzy kryteria wbudowane na początku listy: (root) z opcjami
+# globalnymi, [grouped] invisible=1 z formatem grupy, [group-index=0]
+# invisible=0; potem sekcje configu po kolei, ostatnia wartość opcji wygrywa).
+# Pola sekcji: app-name, urgency, mode, grouped, group-index — inne pole w
+# configu = błąd symulacji (✗), żeby nowa sekcja nie przeszła niezbadana.
+# mako_sim.py <config> [mutacja] → "ok" albo lista naruszeń (jedna linia).
+cat > "$T/mako_sim.py" <<'PY'
 import re, sys
-sections, cur = [], None
-for raw in open(sys.argv[1]):
-    line = raw.strip()
-    if not line or line.startswith("#"):
-        continue
-    m = re.fullmatch(r"\[(.*)\]", line)
-    if m:
-        cur = (frozenset(m[1].split()), {})
-        sections.append(cur)
-    elif cur is not None and "=" in line:
-        k, v = line.split("=", 1)
-        cur[1][k] = v
-dnd = frozenset({"mode=do-not-disturb"})
-crit = frozenset({"mode=do-not-disturb", "urgency=critical"})
-def last(crits, key):
-    # ostatnia wartość key wśród sekcji, których kryteria pasują do crits
-    vals = [opts[key] for k, opts in sections if k <= crits and key in opts]
-    return vals[-1] if vals else None
-normal = frozenset({"mode=do-not-disturb", "urgency=normal"})
-low = frozenset({"mode=do-not-disturb", "urgency=low"})
-good = last(normal, "invisible") == "1" and last(low, "invisible") == "1" and last(crit, "invisible") == "0"
-print("ok" if good else f"zly normal={last(normal, 'invisible')} low={last(low, 'invisible')} critical={last(crit, 'invisible')}")
+KNOWN = {"app-name", "urgency", "mode", "grouped", "group-index"}
+
+def parse(path):
+    root, sections, cur, errors = {}, [], None, []
+    for raw in open(path, encoding="utf-8"):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.fullmatch(r"\[(.*)\]", line)
+        if m:
+            fields = {}
+            for tok in m[1].split():
+                if '"' in tok or "\\" in tok:
+                    errors.append(f"cytowanie w sekcji [{m[1]}]")
+                k, eq, v = tok.partition("=")
+                if not eq:   # [grouped] / [!grouped]
+                    k, v = (k[1:], "0") if k.startswith("!") else (k, "1")
+                if k not in KNOWN:
+                    errors.append(f"pole {k} nieznane symulacji")
+                fields[k] = v
+            cur = (fields, {})
+            sections.append(cur)
+        elif "=" in line:
+            k, v = line.split("=", 1)
+            (cur[1] if cur is not None else root)[k] = v
+    return root, sections, errors
+
+def criteria(root, sections):
+    return [({}, root),
+            ({"grouped": "1"}, {"invisible": "1", "format": "(%g) <b>%s</b>\\n%b"}),
+            ({"group-index": "0"}, {"invisible": "0"})] + sections
+
+def matches(fields, n):
+    for k, v in fields.items():
+        if k == "app-name" and v != n["app"]: return False
+        if k == "urgency" and v != n["urgency"]: return False
+        if k == "mode" and v not in n["modes"]: return False
+        if k == "grouped" and (v in ("1", "true")) != (n["gi"] >= 0): return False
+        if k == "group-index" and int(v) != n["gi"]: return False
+    return True
+
+def style(crit, app, urgency, modes, gi=-1):
+    n = dict(app=app, urgency=urgency, modes=set(modes), gi=gi)
+    out = {"invisible": "0"}
+    for fields, opts in crit:
+        if matches(fields, n):
+            out.update(opts)
+    return out
+
+def visible(st): return st.get("invisible") in ("0", "false")
+
+def mutate(sections, how):
+    arch = lambda f: f.get("app-name") == "archenemy"
+    if how == "bez-archenemy":
+        return [s for s in sections if not (arch(s[0]) and "grouped" not in s[0] and "group-index" not in s[0])]
+    if how == "archenemy-przed-dnd":
+        a = [s for s in sections if arch(s[0])]
+        rest = [s for s in sections if not arch(s[0])]
+        i = next(i for i, s in enumerate(rest) if s[0] == {"mode": "do-not-disturb"})
+        return rest[:i] + a + rest[i:]
+    if how == "bez-grupowania":
+        return [s for s in sections if not (arch(s[0]) and ("grouped" in s[0] or "group-index" in s[0]))]
+    if how == "bez-krytycznych":
+        return [s for s in sections if s[0] != {"mode": "do-not-disturb", "urgency": "critical"}]
+    if how == "archenemy-globalnie":   # sekcja bez mode= zmienia zachowanie poza DND
+        return sections + [({"app-name": "archenemy"}, {"invisible": "1"})]
+    return sections
+
+root, sections, errors = parse(sys.argv[1])
+sections = mutate(sections, sys.argv[2] if len(sys.argv) > 2 else "")
+crit = criteria(root, sections)
+DND, OFF = ("default", "do-not-disturb"), ("default",)
+URG = ("low", "normal", "critical")
+APPS = ("archenemy", "firefox", "notify-send", "Archenemy", "archenemy-x")
+bad = list(errors)
+# 1. DND: archenemy (bez grupy) widoczne przy każdej pilności.
+for u in URG:
+    if not visible(style(crit, "archenemy", u, DND)): bad.append(f"DND archenemy {u} ukryte")
+# 2. DND: aplikacje (też notify-send bez -a, inna wielkość liter) ukryte, krytyczne widoczne.
+for app in APPS[1:]:
+    for u in URG:
+        if visible(style(crit, app, u, DND)) != (u == "critical"):
+            bad.append(f"DND {app} {u} {'widoczne' if u != 'critical' else 'ukryte'}")
+# 3. DND: archenemy wygląda i grupuje się dokładnie jak poza DND.
+for u in URG:
+    for gi in (-1, 0, 1, 2):
+        if style(crit, "archenemy", u, DND, gi) != style(crit, "archenemy", u, OFF, gi):
+            bad.append(f"DND archenemy {u} group-index={gi} inaczej niż poza DND")
+# 4. Poza DND: każdy styl = config bez sekcji mode= (jak przed trybem).
+plain = criteria(root, [s for s in sections if "mode" not in s[0]])
+for app in APPS:
+    for u in URG:
+        for gi in (-1, 0, 1):
+            if style(crit, app, u, OFF, gi) != style(plain, app, u, OFF, gi):
+                bad.append(f"poza DND {app} {u} group-index={gi} zmienione")
+# 5. Poza DND bez grupy wszystko widoczne; w grupie widać tylko pierwsze.
+for app in APPS:
+    for u in URG:
+        if not visible(style(crit, app, u, OFF)): bad.append(f"poza DND {app} {u} ukryte")
+        if visible(style(crit, app, u, OFF, 1)): bad.append(f"poza DND {app} {u} drugie z grupy widoczne")
+print("ok" if not bad else "; ".join(bad[:6]) + (f" (+{len(bad) - 6})" if len(bad) > 6 else ""))
 PY
-)
-    if [[ "$verdict" == ok ]]; then ok "$rice: DND chowa normal/low, critical widoczne"
+
+echo "== mako: DND chowa aplikacje, archenemy i krytyczne przechodzą (wszystkie rice'y, beta przez symlink)"
+for rice in "${ALL_RICES[@]}"; do
+    verdict=$(python3 "$T/mako_sim.py" "$REPO/rices/$rice/mako/config" 2>&1)
+    if [[ "$verdict" == ok ]]; then ok "$rice: DND — archenemy widoczne, aplikacje ukryte, krytyczne widoczne, poza DND bez zmian"
     else fail "$rice: $verdict"; fi
 done
+if [[ "$(readlink "$REPO/rices/white-blue_beta/mako")" == "../white-blue/mako" ]]; then ok "white-blue_beta dziedziczy mako z white-blue (symlink)"
+else fail "white-blue_beta/mako nie jest symlinkiem do ../white-blue/mako"; fi
+# Kontrola negatywna: każda z tych zmian w configu musi dać ✗.
+for how in bez-archenemy archenemy-przed-dnd bez-grupowania bez-krytycznych archenemy-globalnie; do
+    verdict=$(python3 "$T/mako_sim.py" "$REPO/rices/tron/mako/config" "$how" 2>&1)
+    if [[ "$verdict" != ok && -n "$verdict" ]]; then ok "kontrola negatywna ($how) → wykryte: ${verdict%%;*}"
+    else fail "kontrola negatywna ($how): symulacja nie zauważyła zmiany"; fi
+done
+printf '[mode=do-not-disturb body~=x]\ninvisible=0\n' > "$T/unknown.conf"
+verdict=$(python3 "$T/mako_sim.py" "$T/unknown.conf" 2>&1)
+if [[ "$verdict" == *"pole body~ nieznane"* ]]; then ok "kontrola negatywna: nieznane pole sekcji → ✗, nie cicha zgoda"
+else fail "nieznane pole sekcji: [$verdict]"; fi
+
+# Każde wywołanie notify-send w kodzie repo ma "-a archenemy" zaraz po nazwie
+# komendy — po tym mako odróżnia powiadomienia archenemy od aplikacji
+# (sekcje [mode=do-not-disturb app-name=archenemy]). Bez flagi libnotify
+# wysyła app-name "notify-send", jak każdy cudzy skrypt, i DND by je schował.
+# Pomija komentarze i "command -v notify-send". Wypisuje plik:linia naruszeń.
+untagged_notify() {
+    python3 - "$@" <<'PY'
+import os, re, sys
+call = re.compile(r"(?<![\w-])notify-send(?![\w-])")
+for root in sys.argv[1:]:
+    for dirpath, _, files in os.walk(root):
+        for name in sorted(files):
+            path = os.path.join(dirpath, name)
+            try:
+                lines = open(path, encoding="utf-8").read().splitlines()
+            except (UnicodeDecodeError, OSError):
+                continue
+            for no, line in enumerate(lines, 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for m in call.finditer(line):
+                    if line[:m.start()].endswith("command -v "):
+                        continue
+                    if not re.match(r" -a archenemy(\s|$)", line[m.end():]):
+                        print(f"{path}:{no}")
+PY
+}
+
+echo "== notify-send zawsze z -a archenemy (DND przepuszcza tylko archenemy)"
+hits=$(untagged_notify "$REPO/scripts" "$REPO/config" "$REPO/rices" "$REPO/install")
+if [[ -z "$hits" ]]; then ok "scripts/ config/ rices/ install/: każde notify-send ma -a archenemy"
+else fail "notify-send bez -a archenemy: $(tr '\n' ' ' <<< "${hits//$REPO\//}")"; fi
+n_calls=$(grep -rhoE 'notify-send -a archenemy( |$)' "$REPO/scripts" | wc -l)
+if (( n_calls >= 36 )); then ok "wywołania z -a archenemy w scripts/: $n_calls (≥ 36 z inwentarza 2026-11-23)"
+else fail "tylko $n_calls wywołań notify-send -a archenemy w scripts/ (strażnik nic nie widzi?)"; fi
+# Kontrola negatywna: strażnik łapie każdą postać wywołania bez flagi.
+mkdir -p "$T/guard"
+cat > "$T/guard/bad.sh" <<'EOF'
+notify-send "archenemy" "zwykłe"
+command -v notify-send >/dev/null && notify-send -u low "archenemy" "po &&"
+notify-send -u critical -a archenemy "archenemy" "flaga nie na początku"
+x || notify-send --app-name=archenemy "archenemy" "długa postać"
+EOF
+cat > "$T/guard/good.sh" <<'EOF'
+# notify-send w komentarzu nie jest wywołaniem
+command -v notify-send >/dev/null 2>&1 || return 0
+notify-send -a archenemy "archenemy" "dobrze"
+command -v notify-send &>/dev/null && notify-send -a archenemy -u critical "archenemy" \
+    "dalej w następnej linii"
+EOF
+hits=$(untagged_notify "$T/guard")
+if [[ "$hits" == "$T/guard/bad.sh:1"$'\n'"$T/guard/bad.sh:2"$'\n'"$T/guard/bad.sh:3"$'\n'"$T/guard/bad.sh:4" ]]
+then ok "kontrola negatywna: 4 wywołania bez -a archenemy złapane, poprawne i komentarze przepuszczone"
+else fail "kontrola negatywna strażnika: [$(tr '\n' ' ' <<< "${hits//$T\//}")]"; fi
 
 echo ""
 echo "Wynik: $PASS ✓ / $FAIL ✗"

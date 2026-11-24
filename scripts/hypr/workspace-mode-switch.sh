@@ -35,7 +35,7 @@ LIB="$ARCHENEMY_DIR/scripts/hypr/lib/gen-workspaces.sh"
 
 GREEN='\033[0;92m'; YELLOW='\033[0;93m'; RED='\033[0;91m'; CYAN='\033[0;96m'; NC='\033[0m'
 
-notify() { command -v notify-send &>/dev/null && notify-send "archenemy" "$1"; }
+notify() { command -v notify-send &>/dev/null && notify-send -a archenemy "archenemy" "$1"; }
 
 # ─── Argument: docelowy tryb ───
 usage() { echo "usage: workspace-mode-switch.sh <shared|decades|toggle>" >&2; exit 1; }

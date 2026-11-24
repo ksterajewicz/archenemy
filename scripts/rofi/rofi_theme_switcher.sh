@@ -44,7 +44,7 @@ SCRIPT_NAME=$(rofi_preview_menu "Select rice:" LABELS ICONS)
 RICE_SCRIPT="$SCRIPTS_DIR/$SCRIPT_NAME.sh"
 if [[ ! -f "$RICE_SCRIPT" ]]; then
     command -v notify-send &>/dev/null && \
-        notify-send -u critical "archenemy" "No such rice script: $SCRIPT_NAME"
+        notify-send -a archenemy -u critical "archenemy" "No such rice script: $SCRIPT_NAME"
     exit 1
 fi
 

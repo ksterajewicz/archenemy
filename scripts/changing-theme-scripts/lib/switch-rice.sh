@@ -15,7 +15,7 @@
 
 # Stub musi ustawić RICE_NAME przed source.
 if [[ -z "${RICE_NAME:-}" ]]; then
-    notify-send "archenemy" "switch-rice.sh: RICE_NAME not set (broken stub)."
+    notify-send -a archenemy "archenemy" "switch-rice.sh: RICE_NAME not set (broken stub)."
     exit 1
 fi
 
@@ -28,7 +28,7 @@ DATA_DIR="$ARCHENEMY_DIR/data"
 # ─── KONTROLA WSTĘPNA ─────────────────────────────────────────────────────────
 
 if [[ ! -d "$RICE_DIR" ]]; then
-    notify-send "archenemy" "Rice '$RICE_NAME' not found in $ARCHENEMY_DIR/rices."
+    notify-send -a archenemy "archenemy" "Rice '$RICE_NAME' not found in $ARCHENEMY_DIR/rices."
     exit 1
 fi
 
@@ -47,7 +47,7 @@ fi
 # shellcheck source=scripts/lib/runtime-dir.sh
 source "$ARCHENEMY_DIR/scripts/lib/runtime-dir.sh"
 if ! RUN_DIR="$(archenemy_runtime_dir)"; then
-    notify-send "archenemy" "No private runtime directory (XDG_RUNTIME_DIR) — rice switch cancelled."
+    notify-send -a archenemy "archenemy" "No private runtime directory (XDG_RUNTIME_DIR) — rice switch cancelled."
     exit 1
 fi
 LOCK_FILE="$RUN_DIR/archenemy-switch-rice.lock"
@@ -55,7 +55,7 @@ LOCK_WAIT="${SWITCH_RICE_LOCK_WAIT:-30}"
 [[ "$LOCK_WAIT" =~ ^[0-9]+$ ]] || LOCK_WAIT=30
 exec 9>"$LOCK_FILE"
 if ! flock -w "$LOCK_WAIT" 9; then
-    notify-send "archenemy" "Another rice switch is still running — try again."
+    notify-send -a archenemy "archenemy" "Another rice switch is still running — try again."
     exit 1
 fi
 
@@ -94,7 +94,7 @@ if [[ -f "$HM_LIB" ]]; then
     mapfile -t HM_HITS < <(hm_rice_conflicts "$RICE_DIR" "$CONFIG_DIR")
     if (( ${#HM_HITS[@]} > 0 )); then
         hm_advice "${HM_HITS[@]}" >&2
-        [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || notify-send -u critical "archenemy" \
+        [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || notify-send -a archenemy -u critical "archenemy" \
             "Rice '$RICE_NAME' not applied: home-manager manages ${HM_HITS[0]/#$HOME/\~} (nothing changed). Remove it from your home-manager configuration, then try again."
         exit 3
     fi
@@ -206,7 +206,7 @@ fi
 # sesji: zmiana wejdzie przy starcie). Inaczej krytyczne powiadomienie z
 # pierwszym błędem — linki zostają, poprawkę wskazuje treść błędu.
 case $HYPR_RELOAD_RC in
-    0|3) notify-send "archenemy" "Rice '$RICE_NAME' applied." ;;
-    2)   notify-send -u critical "archenemy" "Rice '$RICE_NAME' switched, but Hyprland reports a config error: $(head -n1 <<<"$HYPR_RELOAD_ERRORS")" ;;
-    *)   notify-send -u critical "archenemy" "Rice '$RICE_NAME' switched, but Hyprland did not respond to reload — reload it manually." ;;
+    0|3) notify-send -a archenemy "archenemy" "Rice '$RICE_NAME' applied." ;;
+    2)   notify-send -a archenemy -u critical "archenemy" "Rice '$RICE_NAME' switched, but Hyprland reports a config error: $(head -n1 <<<"$HYPR_RELOAD_ERRORS")" ;;
+    *)   notify-send -a archenemy -u critical "archenemy" "Rice '$RICE_NAME' switched, but Hyprland did not respond to reload — reload it manually." ;;
 esac

@@ -55,7 +55,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/runtime-dir.sh"
 if ! RUNTIME="$(archenemy_runtime_dir)"; then
     echo "window-history.sh: no private runtime directory (XDG_RUNTIME_DIR) — window history is off" >&2
     [[ "${1:-}" == restore ]] && command -v notify-send >/dev/null 2>&1 && \
-        notify-send -u low "archenemy" "Super+Tab: no private runtime directory (XDG_RUNTIME_DIR)"
+        notify-send -a archenemy -u low "archenemy" "Super+Tab: no private runtime directory (XDG_RUNTIME_DIR)"
     exit 1
 fi
 STATE_DIR="$RUNTIME/archenemy-window-history"
@@ -74,7 +74,7 @@ mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR"
 touch "$OPEN_TSV" "$CLOSED_TSV"
 
 notify() {
-    command -v notify-send >/dev/null 2>&1 && notify-send -u low "archenemy" "$1"
+    command -v notify-send >/dev/null 2>&1 && notify-send -a archenemy -u low "archenemy" "$1"
 }
 
 # Czas startu procesu (pole 22 /proc/<pid>/stat) — odróżnia proces od

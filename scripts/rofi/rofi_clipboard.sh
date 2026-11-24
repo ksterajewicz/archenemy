@@ -14,7 +14,7 @@ message() {
     if command -v rofi >/dev/null 2>&1; then
         rofi -e "$1" >/dev/null 2>&1 || :
     elif command -v notify-send >/dev/null 2>&1; then
-        notify-send archenemy "$1" || :
+        notify-send -a archenemy archenemy "$1" || :
     fi
 }
 for dependency in rofi cliphist wl-copy; do

@@ -298,7 +298,7 @@ else
         guard_msg="workspace-guard: brak gniazda zdarzeń Hyprlanda (.socket2.sock) — działam sondą co 2 s; socat jest zainstalowany."
     fi
     command -v notify-send >/dev/null 2>&1 && \
-        notify-send -u low "archenemy" "$guard_msg"
+        notify-send -a archenemy -u low "archenemy" "$guard_msg"
     # Kontrola żywotności: po śmierci Hyprlanda hyprctl przestaje odpowiadać —
     # bez wyjścia martwy demon trzymałby flock w XDG_RUNTIME_DIR i głodził
     # guarda następnej sesji (tryb socat kończy się sam na EOF socketa).

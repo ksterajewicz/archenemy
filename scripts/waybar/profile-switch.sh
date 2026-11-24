@@ -53,6 +53,6 @@ PKG_LIB="$SCRIPTS_DIR/../../install/lib/pkg.sh"
 if [[ -r "$PKG_LIB" ]] && source "$PKG_LIB" 2>/dev/null && pkg_route 2>/dev/null && [[ "$PKG_ROUTE" == nixos ]]; then
     HINT="NixOS: w configuration.nix services.asusd.enable = true; (ASUS) i services.power-profiles-daemon.enable = true;, potem nixos-rebuild switch."
 fi
-command -v notify-send >/dev/null 2>&1 && notify-send -u critical "archenemy" \
+command -v notify-send >/dev/null 2>&1 && notify-send -a archenemy -u critical "archenemy" \
     "Przełączenie profilu nie zadziałało.${DIAG:+ Błąd: $DIAG.} $HINT"
 exit 1

@@ -774,10 +774,10 @@ mpd_output_menu() {
             msg="$(apply_mpd_output pipewire "" "$prev_state")"; rc=$?
             if (( rc != 1 )); then
                 echo -e "  ${GREEN}✓ mpd output: pipewire (restored)${NC}"
-                notify-send "archenemy" "mpd: ALSA $hw failed — output restored to pipewire." 2>/dev/null
+                notify-send -a archenemy "archenemy" "mpd: ALSA $hw failed — output restored to pipewire." 2>/dev/null
             else
                 echo -e "  ${RED}✗ Rollback failed too: ${msg}${NC}"
-                notify-send -u critical "archenemy" "mpd: ALSA failed and pipewire rollback failed — see journalctl --user -u mpd" 2>/dev/null
+                notify-send -a archenemy -u critical "archenemy" "mpd: ALSA failed and pipewire rollback failed — see journalctl --user -u mpd" 2>/dev/null
             fi
             ;;
         ""|$'\e') echo -e "  ${YELLOW}Cancelled.${NC}" ;;

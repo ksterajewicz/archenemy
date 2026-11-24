@@ -4,8 +4,10 @@
 #   Dzwonek „nie przeszkadzać” w waybarze (moduł custom/dnd, return-type
 #   json, 2026-11-23). Kliknięcie przełącza tryb mako "do-not-disturb";
 #   sekcja [mode=do-not-disturb] w rices/*/mako/config chowa wtedy
-#   powiadomienia (invisible=1), a [mode=do-not-disturb urgency=critical]
-#   zostawia widoczne krytyczne (błędy profilu, bateria, alarmy).
+#   powiadomienia APLIKACJI (invisible=1). Przechodzą: krytyczne (sekcja
+#   [mode=do-not-disturb urgency=critical], także z aplikacji) i wszystkie
+#   powiadomienia archenemy, każdej pilności (notify-send -a archenemy →
+#   sekcja [mode=do-not-disturb app-name=archenemy], od 2026-11-23).
 #
 #   Stan czytany WYŁĄCZNIE z "makoctl mode" (lista trybów, jeden na linię —
 #   makoctl.c, run_mode, mako 1.11.0) — żadnego własnego pliku stanu, który
@@ -88,7 +90,7 @@ render() {
     case "$(dnd_state)" in
         dnd)
             text="$GLYPH_DND"; class=dnd
-            tooltip='Do not disturb: on (critical notifications still show)\nClick: show notifications' ;;
+            tooltip='Do not disturb: on (app notifications hidden; archenemy and critical ones still show)\nClick: show notifications' ;;
         notify)
             text="$GLYPH_NOTIFY"; class=notify
             tooltip='Notifications: on\nClick: do not disturb' ;;
