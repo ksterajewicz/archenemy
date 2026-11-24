@@ -91,8 +91,11 @@
         "signal": 8,
         "tooltip": false
     },
+    // Mikrofon (scripts/waybar/micmute.sh): glif + klasa muted/unmuted,
+    // wyciszony przygaszony w style.css jak wyłączony Bluetooth.
     "custom/micmute": {
-        "exec": "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo '󰍭' || echo '󰍬'",
+        "exec": "~/archenemy/scripts/waybar/micmute.sh",
+        "return-type": "json",
         "interval": 1,
         "format": "{}",
         "on-click": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle; pkill -RTMIN+9 waybar",
