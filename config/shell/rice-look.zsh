@@ -4,10 +4,12 @@
 #   the "archenemy shell" block of ~/.zshrc and BEFORE your file
 #   config/shell/shellrc, so anything you set there still wins.
 #
-#   Super+T links rices/<rice>/zsh to ~/.config/zsh. From there:
+#   Super+T links rices/<rice>/archenemy-zsh to ~/.config/archenemy-zsh
+#   (a name nothing else uses: ~/.config/zsh is often ZDOTDIR and archenemy
+#   never touches it). From there:
 #   - colors.zsh: highlight/suggestion styles and the prompt colours of the
-#     rice. Loaded only when ~/.config/zsh is the archenemy rice link, never
-#     a zsh directory of your own (e.g. ZDOTDIR=~/.config/zsh).
+#     rice. Loaded only when ~/.config/archenemy-zsh is the archenemy rice
+#     link, never a directory or a link of your own.
 #   - prompt: only while it is still the default one ([user@host dir]$ from
 #     zsh-defaults.zsh or the bare zsh default). A theme of your own, set
 #     earlier in ~/.zshrc, stays untouched.
@@ -23,13 +25,14 @@
 #   can run it without zsh. Expects archenemy_shell_dir (set by the block).
 # =============================================
 
-archenemy_look_dir="$HOME/.config/zsh"
+archenemy_look_dir="$HOME/.config/archenemy-zsh"
 archenemy_look_rices="$(readlink -f -- "${archenemy_shell_dir:-.}/../../rices" 2>/dev/null)"
 archenemy_look_real="$(readlink -f -- "$archenemy_look_dir" 2>/dev/null)"
 
-# ~/.config/zsh is ours only as a link into <archenemy>/rices/<rice>/zsh.
+# ~/.config/archenemy-zsh is ours only as a link into
+# <archenemy>/rices/<rice>/archenemy-zsh.
 if [[ -n "$archenemy_look_rices" && -L "$archenemy_look_dir" \
-    && "$archenemy_look_real" == "$archenemy_look_rices"/*/zsh \
+    && "$archenemy_look_real" == "$archenemy_look_rices"/*/archenemy-zsh \
     && -r "$archenemy_look_dir/colors.zsh" ]]; then
 
     . "$archenemy_look_dir/colors.zsh"

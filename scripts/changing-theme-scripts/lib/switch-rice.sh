@@ -109,11 +109,41 @@ fi
 # a $HOME bywa logiczny (np. /home jako symlink) — porównanie fizycznej
 # z logiczną nigdy nie pasowało i sprzątanie cicho się pomijało.
 RICES_REAL=$(readlink -f "$ARCHENEMY_DIR/rices")
+OLD_ZSH_LINK=0
 for link in "$CONFIG_DIR"/*; do
     [[ -L "$link" ]] || continue
     target=$(readlink -f "$link")
-    [[ -n "$RICES_REAL" && "$target" == "$RICES_REAL/"* ]] && rm "$link"
+    if [[ -n "$RICES_REAL" && "$target" == "$RICES_REAL/"* ]]; then
+        rm "$link"
+        [[ "$link" == "$CONFIG_DIR/zsh" ]] && OLD_ZSH_LINK=1
+    fi
 done
+
+# ─── MIGRACJA: ~/.config/zsh ZDOTDIR-a (R3, 2026-11-24) ──────────────────────
+# Do 2026-11-24 wygląd zsh był folderem rices/<rice>/zsh, więc Super+T
+# odkładał prawdziwy ~/.config/zsh użytkownika (popularny ZDOTDIR: .zshrc,
+# historia) do zsh.bak-<czas> i linkował tam rice — powłoka „znikała”. Dziś
+# folder nazywa się archenemy-zsh (→ ~/.config/archenemy-zsh, nazwa, której
+# nikt inny nie używa), a ~/.config/zsh nie jest przez nas ruszany.
+# Sprzątanie po starej wersji, jednorazowe i tylko przez mv: stare dowiązanie
+# ~/.config/zsh → rices/ usunęła pętla wyżej (było nasze). Jeśli właśnie je
+# usunęliśmy, miejsce jest wolne i leży kopia o NASZYM wzorcu nazwy
+# zsh.bak-RRRRMMDD_GGMMSS, wraca najnowsza (nazwa sortuje się po czasie).
+# Kopia będąca dowiązaniem do rices/ to nasz link bez danych — zniknęła już
+# w pętli wyżej. Starsze kopie i inne nazwy zostają.
+# Bez starego dowiązania nic nie przywracamy: użytkownik naprawił już sam.
+if (( OLD_ZSH_LINK )) && [[ ! -e "$CONFIG_DIR/zsh" && ! -L "$CONFIG_DIR/zsh" ]]; then
+    zsh_bak=""
+    for b in "$CONFIG_DIR"/zsh.bak-*; do
+        [[ "${b##*/}" =~ ^zsh\.bak-[0-9]{8}_[0-9]{6}$ ]] || continue
+        [[ -e "$b" || -L "$b" ]] && zsh_bak="$b"
+    done
+    if [[ -n "$zsh_bak" ]] && mv "$zsh_bak" "$CONFIG_DIR/zsh"; then
+        zsh_msg="Restored ~/.config/zsh from ${zsh_bak##*/} (an earlier rice switch had moved it there). Rice zsh colours now live in ~/.config/archenemy-zsh."
+        echo "$zsh_msg"
+        [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || notify-send "archenemy" "$zsh_msg"
+    fi
+fi
 
 for src in "$RICE_DIR"/*/; do
     [[ -d "$src" ]] || continue

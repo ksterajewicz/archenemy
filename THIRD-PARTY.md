@@ -27,7 +27,7 @@ These tools are installed from distribution packages after user consent. Their s
 | fd | [sharkdp/fd](https://github.com/sharkdp/fd) | MIT OR Apache-2.0 | installed from the distribution package, not bundled |
 | ripgrep (`rg`) | [BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) | MIT OR Unlicense | installed from the distribution package, not bundled |
 | zoxide | [ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) | MIT | installed from the distribution package, not bundled |
-| Starship (optional zsh prompt, `config/shell/rice-look.zsh`) | [starship/starship](https://github.com/starship/starship) | ISC | installed from the distribution package, not bundled; `rices/*/zsh/starship.toml` are our own configs |
+| Starship (optional zsh prompt, `config/shell/rice-look.zsh`) | [starship/starship](https://github.com/starship/starship) | ISC | installed from the distribution package, not bundled; `rices/*/archenemy-zsh/starship.toml` are our own configs |
 
 Upstream license texts: fd [MIT](https://github.com/sharkdp/fd/blob/master/LICENSE-MIT) / [Apache-2.0](https://github.com/sharkdp/fd/blob/master/LICENSE-APACHE), ripgrep [MIT](https://github.com/BurntSushi/ripgrep/blob/master/LICENSE-MIT) / [Unlicense](https://github.com/BurntSushi/ripgrep/blob/master/UNLICENSE), zoxide [MIT](https://github.com/ajeetdsouza/zoxide/blob/main/LICENSE).
 

@@ -258,13 +258,14 @@ zsw "$M3" yang
 check "brak ~/.config/zsh, kopia nietknięta"               '[[ ! -e "$M3/.config/zsh" && ! -L "$M3/.config/zsh" && -f "$M3/.config/zsh.bak-20261124_181217/.zshrc" ]]'
 
 echo "== migracja: kopia, która sama jest dowiązaniem do rices/, nie wraca"
+# Nasz link bez danych: sprząta go pętla „usuń każdy link do rices/”.
 M4="$T/home-mig4"; zhome "$M4"
 ln -s "$M4/archenemy/rices/yin/zsh" "$M4/.config/zsh"
 ln -s "$M4/archenemy/rices/white-blue/zsh" "$M4/.config/zsh.bak-20261124_181217"
 zsw "$M4" yang
-check "~/.config/zsh nie istnieje, kopia-dowiązanie leży"  '[[ ! -e "$M4/.config/zsh" && ! -L "$M4/.config/zsh" && -L "$M4/.config/zsh.bak-20261124_181217" ]]'
+check "~/.config/zsh nie istnieje (nic nie przywrócone)"   '[[ ! -e "$M4/.config/zsh" && ! -L "$M4/.config/zsh" ]]'
 
-echo "== migracja w instalatorze (tryb „tylko linki”): komunikat na stdout"
+echo "== migracja w instalatorze (SWITCH_RICE_LINK_ONLY=1): komunikat na stdout"
 M5="$T/home-mig5"; zhome "$M5"
 ln -s "$M5/archenemy/rices/yin/zsh" "$M5/.config/zsh"
 mkdir -p "$M5/.config/zsh.bak-20261124_181217"; printf 'echo moj\n' > "$M5/.config/zsh.bak-20261124_181217/.zshrc"

@@ -52,7 +52,7 @@ bindkey '^[[1;5D' backward-word
 # Like the Arch default bash PS1: [user@host dir]$ (# for root).
 # Only while the prompt is still the zsh default, so your own theme stays.
 if [[ "$PROMPT" == '%m%# ' ]]; then PROMPT='[%n@%m %1~]%# '; fi
-# Look of the active rice (~/.config/zsh from Super+T): highlight colours and
+# Look of the active rice (~/.config/archenemy-zsh from Super+T): colours and
 # the prompt in the rice palette, Starship with the rice config if installed.
 if [[ -f "${archenemy_shell_dir}/rice-look.zsh" ]]; then
     source "${archenemy_shell_dir}/rice-look.zsh"

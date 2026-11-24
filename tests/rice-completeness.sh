@@ -4,7 +4,8 @@
 #   Każdy rice ma komplet WŁASNYCH konfiguracji (polecenie właściciela
 #   2026-11-24: „czy przy nowych riceach są zrobione adekwatne do nich
 #   odpowiedniki na przykład neovima, ncmpcpp itd”). Luka, którą to łapie:
-#   yin i yang weszły bez zsh/ (colors.zsh, starship.toml), a asia-n-rice
+#   yin i yang weszły bez zsh/ (dziś archenemy-zsh/: colors.zsh,
+#   starship.toml), a asia-n-rice
 #   brał wygląd MangoHuda z white-blue przez dowiązanie.
 #   Dla każdego rices/<rice>/ spoza EXCEPTIONS:
 #     - każdy plik z REQUIRED_FILES istnieje (po rozwiązaniu dowiązań) i nie
@@ -16,7 +17,10 @@
 #       wolno tylko dla konfiguracji funkcjonalnych z INHERITABLE
 #       (usankcjonowane dziedziczenie, jak networkmanager-dmenu);
 #     - paleta: tło z alacritty ([colors.primary] background) występuje
-#       w nvim/lua/config/colorscheme.lua i w zsh/colors.zsh.
+#       w nvim/lua/config/colorscheme.lua i w archenemy-zsh/colors.zsh;
+#     - żaden rice (także beta) nie ma folderu zsh/: Super+T linkuje folder
+#       do ~/.config/<nazwa>, a ~/.config/zsh bywa ZDOTDIR-em użytkownika
+#       (R3 2026-11-24: Super+T odkładał go do .bak i powłoka „znikała”).
 #   Jedno źródło listy: REQUIRED_FILES + REQUIRED_LINKS niżej, zgodne
 #   z rice'ami referencyjnymi white-blue i tron (test pilnuje, że ich
 #   katalogi najwyższego poziomu są dokładnie te z listy — nowy program
@@ -61,8 +65,8 @@ REQUIRED_FILES=(
     swayosd/style.css
     waybar/config.jsonc
     waybar/style.css
-    zsh/colors.zsh
-    zsh/starship.toml
+    archenemy-zsh/colors.zsh
+    archenemy-zsh/starship.toml
     flux-wall.conf
     system-theme.conf
     preview.png
@@ -106,6 +110,13 @@ for ref in "${REFERENCES[@]}"; do
     fi
 done
 
+# ~/.config/zsh to częsty ZDOTDIR (.zshrc, historia) — żaden rice, także
+# wyjątek z EXCEPTIONS, nie może mieć folderu o tej nazwie (R3, 2026-11-24).
+echo "── folder zsh/ w rice'ach (zderzenie z ZDOTDIR=~/.config/zsh)"
+zsh_dirs="$(find "$RICES" -mindepth 2 -maxdepth 2 -name zsh -printf '%P ' 2>/dev/null)"
+if [[ -z "$zsh_dirs" ]]; then ok "żaden rice nie ma folderu zsh/ (wygląd zsh: archenemy-zsh/)"
+else fail "folder zsh/ zabrałby ~/.config/zsh użytkownika: $zsh_dirs"; fi
+
 for dir in "$RICES"/*/; do
     rice="$(basename "$dir")"
     is_in "$rice" "${EXCEPTIONS[@]}" && { echo "── $rice: wyjątek (beta), pominięty"; continue; }
@@ -145,7 +156,7 @@ for dir in "$RICES"/*/; do
         fail "$rice: alacritty bez [colors.primary] background w formacie #RRGGBB (jest: '$bg')"
         continue
     fi
-    for rel in nvim/lua/config/colorscheme.lua zsh/colors.zsh; do
+    for rel in nvim/lua/config/colorscheme.lua archenemy-zsh/colors.zsh; do
         if [[ -f "$dir$rel" ]] && grep -qiF -- "$bg" "$dir$rel"; then ok "$rice: $rel używa tła rice'a $bg"
         else fail "$rice: $rel nie zawiera tła rice'a $bg (paleta z innego rice'a albo brak pliku)"; fi
     done

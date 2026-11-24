@@ -6,7 +6,9 @@
 #   załadowany, więc nie może być to czysty starship”).
 #   Łańcuch: blok „archenemy shell” w ~/.zshrc (rc_block_text zsh) →
 #   config/shell/zsh-defaults.zsh → config/shell/rice-look.zsh →
-#   ~/.config/zsh/colors.zsh (dowiązanie z Super+T do rices/<rice>/zsh).
+#   ~/.config/archenemy-zsh/colors.zsh (dowiązanie z Super+T do
+#   rices/<rice>/archenemy-zsh; do R3 2026-11-24 było to ~/.config/zsh, ale
+#   tam bywa ZDOTDIR użytkownika, którego archenemy nie rusza).
 #   Na atrapie $HOME (prawdziwy lib/switch-rice.sh w trybie „tylko linki”,
 #   ~/archenemy jako dowiązanie do ~/.local/share/archenemy) sprawdzamy:
 #     - blok zsh wczytuje zsh-defaults.zsh, a ten rice-look.zsh po ustawieniu
@@ -14,14 +16,18 @@
 #     - po przełączeniu na rice X wczytany jest colors.zsh rice'a X (style
 #       podświetlania), prompt bez Starshipa jest w kolorach X, po zmianie
 #       na Y — kolory Y; każdy rice spoza bety ma ARCHENEMY_PROMPT_*;
-#     - Starship (atrapa w PATH): STARSHIP_CONFIG = ~/.config/zsh/starship.toml
+#     - Starship (atrapa w PATH): STARSHIP_CONFIG =
+#       ~/.config/archenemy-zsh/starship.toml
 #       i start Starshipa przy domyślnym prompcie; bez Starshipa zmienna nie
 #       powstaje; własny ~/.config/starship.toml albo inny STARSHIP_CONFIG
 #       zostaje; już uruchomiony Starship nie startuje drugi raz;
 #       ARCHENEMY_ZSH_STARSHIP=0 wyłącza start;
-#     - własny prompt użytkownika zostaje; brak ~/.config/zsh, własny katalog
-#       ~/.config/zsh (np. ZDOTDIR) albo obce dowiązanie: nic nie jest
-#       wczytywane, zero błędów, zero śmieci w zmiennych.
+#     - własny prompt użytkownika zostaje; brak ~/.config/archenemy-zsh,
+#       własny katalog albo obce dowiązanie pod tą nazwą: nic nie jest
+#       wczytywane, zero błędów, zero śmieci w zmiennych;
+#     - własny ~/.config/zsh (ZDOTDIR) z colors.zsh: nie jest czytany, a po
+#       Super+T zostaje nietknięty; stare dowiązanie ~/.config/zsh →
+#       rices/<rice>/zsh (sprzed R3) też nie jest czytane.
 #   Prawdziwego zsh i starshipa nie ma na serwerze: rice-look.zsh jest pisany
 #   we wspólnym podzbiorze zsh i basha, więc wykonujemy go bashem; zsh -n
 #   i zsh -i tylko, gdy zsh jest w systemie (inaczej pominięte i wypisane).
@@ -95,15 +101,15 @@ look() {
         printf "LEFT=%s\n" "$(compgen -v archenemy_ | tr "\n" " ")"' 2>"$T/look.err"
 }
 val() { sed -n "s/^$1=//p" <<<"$OUT"; }
-rice_var() { sed -n "s/^$2='\\(.*\\)'\$/\\1/p" "$REPO/rices/$1/zsh/colors.zsh"; }
-rice_style() { sed -n "s/^ZSH_HIGHLIGHT_STYLES\\[default\\]='\\(.*\\)'\$/\\1/p" "$REPO/rices/$1/zsh/colors.zsh"; }
+rice_var() { sed -n "s/^$2='\\(.*\\)'\$/\\1/p" "$REPO/rices/$1/archenemy-zsh/colors.zsh"; }
+rice_style() { sed -n "s/^ZSH_HIGHLIGHT_STYLES\\[default\\]='\\(.*\\)'\$/\\1/p" "$REPO/rices/$1/archenemy-zsh/colors.zsh"; }
 colored_prompt() {
     local t p o e
     t="$(rice_var "$1" ARCHENEMY_PROMPT_TEXT)"; p="$(rice_var "$1" ARCHENEMY_PROMPT_PATH)"
     o="$(rice_var "$1" ARCHENEMY_PROMPT_OK)"; e="$(rice_var "$1" ARCHENEMY_PROMPT_ERROR)"
     printf '%s' "%F{$t}[%n@%m %F{$p}%1~%F{$t}]%(?.%F{$o}.%F{$e})%#%f "
 }
-OWN="$H/.config/zsh/starship.toml"
+OWN="$H/.config/archenemy-zsh/starship.toml"
 
 echo "== łańcuch: blok zsh → zsh-defaults.zsh → rice-look.zsh"
 (
@@ -138,7 +144,7 @@ done
 
 echo "== przełączenie X → Y bez Starshipa"
 switch crt; OUT="$(look)"
-check "crt: ~/.config/zsh → rices/crt/zsh" '[[ "$(readlink "$H/.config/zsh")" == "$H/archenemy/rices/crt/zsh" ]]'
+check "crt: ~/.config/archenemy-zsh → rices/crt/archenemy-zsh" '[[ "$(readlink "$H/.config/archenemy-zsh")" == "$H/archenemy/rices/crt/archenemy-zsh" ]]'
 check "crt: colors.zsh wczytany (style i podpowiedzi)" '[[ "$(val STYLE)" == "$(rice_style crt)" && "$(val SUGGEST)" == fg=* ]]'
 check "crt: prompt w kolorach crt" '[[ "$(val PROMPT)" == "$(colored_prompt crt)" ]]'
 check "bez starshipa: STARSHIP_CONFIG nie powstaje" '[[ "$(val STARSHIP_CONFIG)" == "<unset>" && ! -s "$T/starship.log" ]]'
@@ -149,7 +155,7 @@ check "yin po crt: prompt i style yin" '[[ "$(val PROMPT)" == "$(colored_prompt 
 echo "== Starship zainstalowany (atrapa)"
 BASE_PATH="$STAR:$T/bin"
 OUT="$(look)"
-check "STARSHIP_CONFIG = ~/.config/zsh/starship.toml" '[[ "$(val STARSHIP_CONFIG)" == "$OWN" ]]'
+check "STARSHIP_CONFIG = ~/.config/archenemy-zsh/starship.toml" '[[ "$(val STARSHIP_CONFIG)" == "$OWN" ]]'
 check "domyślny prompt: Starship uruchomiony raz" '[[ "$(val PROMPT)" == TEST_STARSHIP_PROMPT && "$(grep -c "^starship init zsh$" "$T/starship.log")" -eq 1 ]]'
 check "style podświetlania i tak z rice'a" '[[ "$(val STYLE)" == "$(rice_style yin)" && ! -s "$T/look.err" ]]'
 OUT="$(look STARSHIP_CONFIG="$OWN")"
@@ -178,19 +184,34 @@ BASE_PATH="$T/bin"
 switch white-blue_beta; OUT="$(look)"
 check "beta (bez ARCHENEMY_PROMPT_*): prompt domyślny, style bety" \
     '[[ "$(val PROMPT)" == "[%n@%m %1~]%# " && "$(val STYLE)" == "$(rice_style white-blue_beta)" && ! -s "$T/look.err" ]]'
-rm "$H/.config/zsh"
+rm "$H/.config/archenemy-zsh"
 OUT="$(look)"; rc=$?
-check "brak ~/.config/zsh: kod 0, nic nie wczytane, zero błędów" \
+check "brak ~/.config/archenemy-zsh: kod 0, nic nie wczytane, zero błędów" \
     '[[ $rc -eq 0 && "$(val PROMPT)" == "[%n@%m %1~]%# " && "$(val STYLE)" == "<unset>" && ! -s "$T/look.err" && -z "$(val LEFT | tr -d " ")" ]]'
+mkdir -p "$H/.config/archenemy-zsh"
+printf '%s\n' "ZSH_HIGHLIGHT_STYLES[default]='TEST_OWN'" "ARCHENEMY_PROMPT_TEXT='#000000'" > "$H/.config/archenemy-zsh/colors.zsh"
+OUT="$(look)"
+check "własny katalog ~/.config/archenemy-zsh: colors.zsh NIE wczytany" '[[ "$(val STYLE)" == "<unset>" && "$(val PROMPT)" == "[%n@%m %1~]%# " && ! -s "$T/look.err" ]]'
+rm -rf "$H/.config/archenemy-zsh"
+mkdir -p "$T/stow/archenemy-zsh"; cp "$REPO/rices/crt/archenemy-zsh/colors.zsh" "$T/stow/archenemy-zsh/"
+ln -s "$T/stow/archenemy-zsh" "$H/.config/archenemy-zsh"
+OUT="$(look)"
+check "obce dowiązanie ~/.config/archenemy-zsh (np. stow): nic nie wczytane" '[[ "$(val STYLE)" == "<unset>" && "$(val PROMPT)" == "[%n@%m %1~]%# " ]]'
+rm "$H/.config/archenemy-zsh"
+
+echo "== ~/.config/zsh użytkownika (ZDOTDIR) — poza archenemy"
 mkdir -p "$H/.config/zsh"
 printf '%s\n' "ZSH_HIGHLIGHT_STYLES[default]='TEST_OWN'" "ARCHENEMY_PROMPT_TEXT='#000000'" > "$H/.config/zsh/colors.zsh"
+printf 'echo moj-zshrc\n' > "$H/.config/zsh/.zshrc"
 OUT="$(look)"
-check "własny katalog ~/.config/zsh (ZDOTDIR): colors.zsh NIE wczytany" '[[ "$(val STYLE)" == "<unset>" && "$(val PROMPT)" == "[%n@%m %1~]%# " && ! -s "$T/look.err" ]]'
-rm -rf "$H/.config/zsh"
-mkdir -p "$T/stow/zsh"; cp "$REPO/rices/crt/zsh/colors.zsh" "$T/stow/zsh/"
-ln -s "$T/stow/zsh" "$H/.config/zsh"
+check "własny ~/.config/zsh (ZDOTDIR) z colors.zsh: NIE wczytany" '[[ "$(val STYLE)" == "<unset>" && "$(val PROMPT)" == "[%n@%m %1~]%# " && ! -s "$T/look.err" ]]'
+switch crt; OUT="$(look)"
+check "po Super+T crt: ~/.config/zsh nietknięty, kolory crt z nowego miejsca" \
+    '[[ -d "$H/.config/zsh" && ! -L "$H/.config/zsh" && "$(<"$H/.config/zsh/.zshrc")" == "echo moj-zshrc" && "$(val STYLE)" == "$(rice_style crt)" ]] && ! compgen -G "$H/.config/zsh.bak-*" >/dev/null'
+rm -rf "$H/.config/zsh" "$H/.config/archenemy-zsh"
+ln -s "$H/archenemy/rices/crt/zsh" "$H/.config/zsh"
 OUT="$(look)"
-check "obce dowiązanie ~/.config/zsh (np. stow): nic nie wczytane" '[[ "$(val STYLE)" == "<unset>" && "$(val PROMPT)" == "[%n@%m %1~]%# " ]]'
+check "stare dowiązanie ~/.config/zsh → rices/crt/zsh (sprzed R3): nic nie wczytane" '[[ "$(val STYLE)" == "<unset>" && "$(val PROMPT)" == "[%n@%m %1~]%# " && ! -s "$T/look.err" ]]'
 rm "$H/.config/zsh"
 
 echo "== prawdziwy zsh -i (tylko, gdy zsh jest w systemie)"
