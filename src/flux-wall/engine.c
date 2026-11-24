@@ -39,6 +39,7 @@ static const char *UPDATE_PRELUDE =
     "uniform sampler2D pos;\n"
     "uniform float time;\n"
     "uniform float dt;\n"
+    "uniform float step_scale;   /* tempo nominalne / faktyczne: 1.0, gdy symulacja idzie w tempie z pragmy */\n"
     "uniform float detail;\n"
     "uniform vec2  resolution;\n"
     "uniform float aspect;\n"
@@ -136,7 +137,7 @@ struct flux_engine {
     /* present */
     GLint u_resolution, u_time, u_bg, u_ink, u_accent, u_detail, u_dither, u_accum, u_gain;
     /* update */
-    GLint uu_pos, uu_time, uu_dt, uu_detail, uu_resolution, uu_aspect, uu_seed, uu_life, uu_accum;
+    GLint uu_pos, uu_time, uu_dt, uu_scale, uu_detail, uu_resolution, uu_aspect, uu_seed, uu_life, uu_accum;
     /* splat */
     GLint us_pos, us_P, us_active, us_splat, us_scale, us_aspect, us_warm, us_inc;
     /* fade */
@@ -153,7 +154,8 @@ struct flux_target {
     GLuint pos_tex[2], pos_fbo[2];
     int src;                                /* która tekstura pozycji jest aktualna */
     double last_time;                       /* < 0 = jeszcze nie renderowano */
-    double step_acc;                        /* ułamek kroku przeniesiony na następną klatkę */
+    double step_acc;                        /* ułamek kroku przeniesiony na następną klatkę (−0.5..0.5) */
+    double sim_rate;                        /* faktyczne tempo symulacji (kroków/s) — flux_sim_rate */
     double warp_offset;                     /* anim_time = time + warp_offset (0 bez muzyki — bit w bit) */
     GLuint spec_tex;                        /* widmo 32×1 R32F, jednostka 2 */
     GLuint wave_tex;                        /* przebieg AUDIO_WAVE_N×1 RG32F (L, R), jednostka 3 */
@@ -249,6 +251,22 @@ char *flux_strip_directives(const char *src, bool keep_version) {
         line = nl ? nl + 1 : NULL;
     }
     return out;
+}
+
+double flux_sim_rate(float rate, double frame_hz) {
+    if (!(frame_hz >= 10.0 && frame_hz <= 1000.0) || !(rate > 0.0f)) return (double)rate;
+    double k = ceil((double)rate / frame_hz - 0.05);
+    if (k < 1.0) k = 1.0;
+    return k * frame_hz;
+}
+
+int flux_sim_steps(double *acc, double dt_sim, double sim_rate, int cap) {
+    *acc += dt_sim * sim_rate;
+    int steps = (int)floor(*acc + 0.5);
+    if (steps < 0) steps = 0;
+    if (steps > cap) { *acc = 0.0; return cap; }       /* po pauzie nie doganiamy */
+    *acc -= steps;
+    return steps;
 }
 
 double flux_warp(const struct flux_params *p, const struct audio_features *audio, float strength) {
@@ -358,6 +376,7 @@ struct flux_engine *flux_engine_create(const char *frag_src, const char *frag_la
     e->uu_pos        = glGetUniformLocation(e->prog_update, "pos");
     e->uu_time       = glGetUniformLocation(e->prog_update, "time");
     e->uu_dt         = glGetUniformLocation(e->prog_update, "dt");
+    e->uu_scale      = glGetUniformLocation(e->prog_update, "step_scale");
     e->uu_detail     = glGetUniformLocation(e->prog_update, "detail");
     e->uu_resolution = glGetUniformLocation(e->prog_update, "resolution");
     e->uu_aspect     = glGetUniformLocation(e->prog_update, "aspect");
@@ -456,6 +475,7 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
     struct flux_target *t = calloc(1, sizeof *t);
     if (!t) { snprintf(err, errlen, "brak pamięci"); return NULL; }
     t->e = e; t->w = w; t->h = h; t->last_time = -1.0;
+    t->sim_rate = (double)e->params.rate;
     {
         float zero[AUDIO_SPECTRUM_BINS] = {0};
         t->spec_tex = make_tex(AUDIO_SPECTRUM_BINS, 1, GL_R32F, GL_RED, GL_FLOAT, zero);
@@ -522,6 +542,13 @@ void flux_target_destroy(struct flux_target *t) {
     target_free_gl(t);
     free(t);
 }
+
+void flux_target_set_frame_rate(struct flux_target *t, double frame_hz) {
+    double r = flux_sim_rate(t->e->params.rate, frame_hz);
+    if (r != t->sim_rate) { t->sim_rate = r; t->step_acc = 0.0; }
+}
+
+double flux_target_sim_rate(const struct flux_target *t) { return t->sim_rate; }
 
 /* ── GL: render ───────────────────────────────────────────────────────────── */
 
@@ -605,6 +632,9 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
                      float inc_eff, const struct audio_features *audio, float strength) {
     const struct flux_params *p = &e->params;
     float aspect = (float)t->w / (float)t->h;
+    /* tempo nominalne / faktyczne; przy tempie z pragmy dokładnie 1.0f, a dt
+     * i life_steps wychodzą bit w bit jak przed skalowaniem */
+    float step_scale = (float)((double)p->rate / t->sim_rate);
 
     /* a. krok cząstek → druga tekstura pozycji */
     glBindFramebuffer(GL_FRAMEBUFFER, t->pos_fbo[1 - t->src]);
@@ -615,12 +645,13 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
     glBindTexture(GL_TEXTURE_2D, t->pos_tex[t->src]);
     if (e->uu_pos        >= 0) glUniform1i(e->uu_pos, 0);
     if (e->uu_time       >= 0) glUniform1f(e->uu_time, (float)fmod(step_time, FLUX_TIME_PERIOD));
-    if (e->uu_dt         >= 0) glUniform1f(e->uu_dt, 1.0f / p->rate);
+    if (e->uu_dt         >= 0) glUniform1f(e->uu_dt, (float)(1.0 / t->sim_rate));
+    if (e->uu_scale      >= 0) glUniform1f(e->uu_scale, step_scale);
     if (e->uu_detail     >= 0) glUniform1f(e->uu_detail, detail);
     if (e->uu_resolution >= 0) glUniform2f(e->uu_resolution, (float)t->w, (float)t->h);
     if (e->uu_aspect     >= 0) glUniform1f(e->uu_aspect, aspect);
     if (e->uu_seed       >= 0) glUniform1i(e->uu_seed, p->seed);
-    if (e->uu_life       >= 0) glUniform1f(e->uu_life, p->life * p->rate);
+    if (e->uu_life       >= 0) glUniform1f(e->uu_life, (float)((double)p->life * t->sim_rate));
     if (e->uu_accum      >= 0) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, t->acc_tex);
@@ -648,8 +679,8 @@ static void sim_step(struct flux_engine *e, struct flux_target *t, double step_t
     if (e->us_splat  >= 0) glUniform1i(e->us_splat, p->splat);
     if (e->us_scale  >= 0) glUniform1f(e->us_scale, p->scale);
     if (e->us_aspect >= 0) glUniform1f(e->us_aspect, aspect);
-    if (e->us_warm   >= 0) glUniform1f(e->us_warm, (float)p->warm);
-    if (e->us_inc    >= 0) glUniform1f(e->us_inc, inc_eff);
+    if (e->us_warm   >= 0) glUniform1f(e->us_warm, (float)p->warm / step_scale);   /* `warm` to kroki nominalne */
+    if (e->us_inc    >= 0) glUniform1f(e->us_inc, inc_eff * step_scale);           /* ta sama jasność na sekundę */
     glDrawArrays(GL_POINTS, 0, total);
     glDisable(GL_BLEND);
 }
@@ -674,12 +705,8 @@ static void simulate(struct flux_engine *e, struct flux_target *t, double anim_t
                      double dt_sim, float detail, const struct audio_features *audio, float strength) {
     const struct flux_params *p = &e->params;
     if (dt_real > 0) fade(e, t, dt_real);
-    t->step_acc += dt_sim * p->rate;
-    int steps = (int)floor(t->step_acc);
-    int cap = flux_step_cap(p, audio ? strength : 0.0f);
-    if (steps > cap) { steps = cap; t->step_acc = 0; }   /* po pauzie nie doganiamy */
-    else t->step_acc -= steps;
-    double step_dt = 1.0 / p->rate;
+    int steps = flux_sim_steps(&t->step_acc, dt_sim, t->sim_rate, flux_step_cap(p, audio ? strength : 0.0f));
+    double step_dt = 1.0 / t->sim_rate;
     float inc_eff = p->inc;
     if (audio && strength > 0.0f) inc_eff *= 1.0f + p->audio_glow * strength * audio->bass;
     for (int i = 0; i < steps; i++)
@@ -721,8 +748,8 @@ void flux_engine_render(struct flux_engine *e, struct flux_target *t, GLuint des
 
     if (e->particle) {
         if (warmup_once && !t->warmed) {
-            int n = (int)(p->warmup * p->rate);
-            double step_dt = 1.0 / p->rate;
+            int n = (int)((double)p->warmup * t->sim_rate);
+            double step_dt = 1.0 / t->sim_rate;
             for (int i = 0; i < n; i++)
                 simulate(e, t, time - (n - i) * step_dt, step_dt, step_dt, detail, NULL, 0.0f);
             t->warmed = true;

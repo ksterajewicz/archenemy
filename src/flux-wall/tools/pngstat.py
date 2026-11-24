@@ -16,6 +16,15 @@ Tryby:
       piksele akcentu w paśmie xc±1 per połowa (surowe stemple akumulatora)
       + informacyjnie xc±2.
 Kod 0 = obie połowy niezerowe i w proporcji tol..1/tol (domyślnie 0.5).
+  pngstat.py mean <klatka.png>          średnia jasność klatki (0..255, luma
+      Rec. 601) i udział pikseli jaśniejszych od najciemniejszego o > 8.
+  pngstat.py same <a.png> <b.png> [tol] czy dwie klatki wyglądają tak samo
+      w skali całego kadru: średnia jasność |a - b| <= tol · max(a, b) + 1
+      ORAZ udział zapalonych pikseli |a - b| <= tol · max(a, b) + 1.5 punktu
+      (domyślnie tol 0.15). Do porównań tej samej animacji w różnym tempie
+      symulacji (tests/flux-wall-rate.sh) — obraz nie ma zależeć od Hz
+      monitora. Łapie grube różnice (2× jaśniej, ślady 2× krótsze/dłuższe),
+      nie zastępuje obejrzenia animacji.
 """
 import struct
 import sys
@@ -64,7 +73,26 @@ def read_png(path):
     return W, H, bpp, bytes(out)
 
 
+def mean_luma(path):
+    W, H, bpp, px = read_png(path)
+    n = W * H
+    lum = [(299 * px[i * bpp] + 587 * px[i * bpp + 1] + 114 * px[i * bpp + 2]) // 1000 if bpp >= 3 else px[i * bpp]
+           for i in range(n)]
+    lo = min(lum)
+    return sum(lum) / n, sum(1 for v in lum if v > lo + 8) / n
+
+
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == 'mean':
+        m, lit = mean_luma(sys.argv[2])
+        print(f'srednia {m:.2f}, zapalone {lit * 100:.1f}%')
+        return 0
+    if len(sys.argv) >= 4 and sys.argv[1] == 'same':
+        tol = float(sys.argv[4]) if len(sys.argv) > 4 else 0.15
+        (a, la), (b, lb) = mean_luma(sys.argv[2]), mean_luma(sys.argv[3])
+        ok = abs(a - b) <= tol * max(a, b) + 1.0 and abs(la - lb) <= tol * max(la, lb) + 0.015
+        print(f'srednia {a:.2f} / {b:.2f}, zapalone {la * 100:.1f}% / {lb * 100:.1f}%  {"OK" if ok else "ROZNE"}')
+        return 0 if ok else 1
     if len(sys.argv) < 3 or sys.argv[1] not in ('marks', 'accum'):
         print(__doc__)
         return 2

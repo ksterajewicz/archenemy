@@ -77,6 +77,20 @@ static inline int flux_poll_timeout(int timeout, double wait) {
     return (timeout < 0 || ms < timeout) ? ms : timeout;
 }
 
+/* Ile razy na sekundę monitor dostaje klatkę animacji: odświeżanie z
+ * wl_output.mode (`refresh_mhz`, mHz — to, co ustawiono dla TEGO monitora,
+ * np. w Super+A → monitory) albo niższy limit `-f`. Klatki przychodzą z frame
+ * callbacków kompozytora, czyli w rytmie monitora i nigdy częściej niż jego
+ * Hz (decyzja właściciela 2026-11-24); ta wartość mówi silnikowi, do jakiego
+ * rytmu dopasować krok symulacji (engine.h: flux_sim_rate). 0 = nieznane
+ * (kompozytor nie podał odświeżania i nie ma -f) → tempo nominalne shadera. */
+static inline double flux_frame_hz(int32_t refresh_mhz, int fps_limit) {
+    double hz = refresh_mhz / 1000.0;
+    if (!(hz >= 10.0 && hz <= 1000.0)) hz = 0.0;
+    if (fps_limit > 0 && (hz <= 0.0 || fps_limit < hz)) hz = (double)fps_limit;
+    return hz;
+}
+
 /* Co ile sekund --battery czyta /sys/class/power_supply. */
 #define FLUX_BATTERY_POLL 30.0
 

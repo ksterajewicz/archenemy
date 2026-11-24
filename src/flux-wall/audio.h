@@ -150,6 +150,17 @@ void audio_spectro_column(const float *raw, float peak, float *out);
 /* Zanik stęchłego snapshotu: gdy `now - t` > 0.1 s, cechy gasną z `release`. */
 void audio_features_age(struct audio_features *f, double now, float release);
 
+/* Render: cechy dla TEJ klatki. Analiza daje nowe wartości 50 razy na sekundę,
+ * a monitor rysuje 60–240 klatek: bez tego słupki na 144 Hz stały przez 2–3
+ * klatki i skakały. `cur` (stan per monitor) dochodzi do najnowszego
+ * snapshotu wykładniczo ze stałą AUDIO_FOLLOW_TAU — poziom, pasma i 32 biny
+ * widma; uderzenie gaśnie w sposób ciągły (snapshot niesie jego wartość
+ * z chwili analizy, tu dokładamy zanik za czas, który minął do klatki);
+ * przebieg, spektrogram, znaczniki — kopia. `dt` = czas od poprzedniej
+ * klatki tego monitora (<= 0 albo pierwsza klatka → od razu snapshot). */
+#define AUDIO_FOLLOW_TAU 0.008f
+void audio_features_follow(struct audio_features *cur, const struct audio_features *snap, double now, float dt);
+
 /* Próbka wejściowa (serwer dźwięku, plik): NaN i ±inf → 0, reszta bez zmian.
  * Jedna taka próbka w oknie FFT zatruwała auto-gain, wygładzanie i średnią
  * beatu na stałe (NaN nie wychodzi z rekurencji) — wizualizacja stała do

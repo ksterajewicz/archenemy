@@ -289,6 +289,23 @@ static const char *ONCE_FRAG =
     "    fragColor = vec4(vec3(clamp(a * gain, 0.0, 1.0)), 1.0);\n"
     "}\n";
 
+/* Tempo symulacji z rytmu monitora (sekcja GL „P4”): jedna cząstka co krok
+ * stempluje akumulator i przesuwa się w prawo o stały kawałek „na krok
+ * nominalny” (× step_scale): 1/4 szerokości celu na sekundę. Suma jasności
+ * mówi, ile światła dostał akumulator na sekundę, a najjaśniejsza kolumna —
+ * dokąd cząstka doszła. */
+static const char *RATE_UPDATE =
+    "#pragma flux particles 1\n"
+    "#pragma flux life 0.5\n"
+    "#pragma flux rate 60\n"
+    "#pragma flux inc 0.02\n"
+    "#pragma flux gain 1\n"
+    "void main() {\n"
+    "    vec4 s = texelFetch(pos, ivec2(gl_FragCoord.xy), 0);\n"
+    "    if (s.z < 0.5) { o = vec4(0.125, 0.5, 1.0, 1.0); return; }\n"
+    "    o = vec4(s.x + 0.25 / 60.0 * step_scale, 0.5, s.z + 1.0, 1.0);\n"
+    "}\n";
+
 int main(void) {
     float c[3];
     printf("parse_hex_color\n");
@@ -1547,6 +1564,104 @@ int main(void) {
         CHECK(flux_audio_mode(false, false, true, true) == FLUX_AUDIO_OFF, "--once bez audio → OFF (bez logu „pominięte”)");
     }
 
+    /* Decyzja właściciela 2026-11-24: klatki animacji w rytmie odświeżania
+     * ustawionego dla DANEGO monitora, ruch płynny w tym rytmie. Klatki
+     * przychodzą z frame callbacków (nigdy częściej niż Hz monitora), a silnik
+     * dopasowuje do nich krok symulacji: całkowita liczba kroków na klatkę.
+     * Dawne stałe 60 kroków/s na 144 Hz: krok w 60 klatkach ze 144, reszta
+     * powtarzała stan cząstek (sprawdzone niżej jako „tempo nominalne”). */
+    printf("P4: rytm monitora → tempo symulacji (flux_frame_hz, flux_sim_rate, flux_sim_steps)\n");
+    {
+        CHECK(flux_frame_hz(144000, 0) == 144.0 && flux_frame_hz(59951, 0) == 59.951 && flux_frame_hz(165003, 0) == 165.003,
+              "odświeżanie z wl_output.mode (mHz) → Hz tego monitora");
+        CHECK(flux_frame_hz(144000, 30) == 30.0 && flux_frame_hz(60000, 240) == 60.0,
+              "limit -f niższy niż Hz monitora wygrywa; wyższy nie podnosi rytmu ponad monitor");
+        CHECK(flux_frame_hz(0, 0) == 0.0 && flux_frame_hz(-5, 0) == 0.0 && flux_frame_hz(5000000, 0) == 0.0,
+              "odświeżanie nieznane albo bez sensu → 0 (tempo nominalne shadera)");
+        CHECK(flux_frame_hz(0, 30) == 30.0, "odświeżanie nieznane, jest -f → rytm z -f");
+
+        CHECK(flux_sim_rate(60.0f, 60.0) == 60.0 && flux_sim_rate(60.0f, 0.0) == 60.0 && flux_sim_rate(60.0f, NAN) == 60.0,
+              "60 Hz albo rytm nieznany: tempo nominalne 60 kroków/s (obraz jak dotąd)");
+        CHECK(flux_sim_rate(60.0f, 144.0) == 144.0 && flux_sim_rate(60.0f, 165.0) == 165.0 && flux_sim_rate(60.0f, 240.0) == 240.0,
+              "monitor szybszy niż tempo nominalne: jeden krok na klatkę (144, 165, 240)");
+        CHECK(flux_sim_rate(60.0f, 59.951) == 59.951, "59.95 Hz: dalej JEDEN krok na klatkę, nie dwa (tolerancja 5 %)");
+        CHECK(flux_sim_rate(120.0f, 60.0) == 120.0 && flux_sim_rate(240.0f, 60.0) == 240.0,
+              "tempo nominalne ponad Hz: całkowita liczba kroków na klatkę (2 i 4 na 60 Hz)");
+        CHECK(flux_sim_rate(240.0f, 144.0) == 288.0 && flux_sim_rate(240.0f, 165.0) == 330.0 && flux_sim_rate(120.0f, 144.0) == 144.0,
+              "nigdy mniej kroków niż nominalnie: 240/s na 144 Hz → 288, na 165 Hz → 330");
+        CHECK(flux_sim_rate(60.0f, 30.0) == 60.0 && flux_sim_rate(60.0f, 5.0) == 60.0 && flux_sim_rate(60.0f, 2000.0) == 60.0,
+              "-f 30 → 2 kroki na klatkę; rytm spoza 10..1000 Hz ignorowany");
+
+        /* 144 klatki monitora 144 Hz z drganiem czasu klatki ±15 % */
+        uint32_t lcg = 99u;
+        double acc_new = 0.0, acc_nom = 0.0, rate_new = flux_sim_rate(60.0f, 144.0);
+        int bad_new = 0, empty_nom = 0, total_new = 0, total_nom = 0;
+        double carry = 0.0;
+        for (int f = 0; f < 144; f++) {
+            lcg = lcg * 1664525u + 1013904223u;
+            double jitter = ((double)(lcg >> 8) / 16777216.0 * 2.0 - 1.0) * 0.15;
+            double dt = (1.0 + jitter - carry) / 144.0;      /* drganie się znosi: średnio równo 1/144 s */
+            carry = jitter;
+            int sn = flux_sim_steps(&acc_new, dt, rate_new, 4);
+            int so = flux_sim_steps(&acc_nom, dt, 60.0, 4);
+            if (sn != 1) bad_new++;
+            if (so == 0) empty_nom++;
+            total_new += sn; total_nom += so;
+        }
+        printf("       144 Hz, 1 s: tempo z monitora %d kroków (klatek bez dokładnie 1 kroku: %d); tempo nominalne %d kroków, %d klatek bez kroku\n",
+               total_new, bad_new, total_nom, empty_nom);
+        CHECK(bad_new == 0 && total_new == 144, "tempo z monitora: dokładnie jeden krok w KAŻDEJ klatce mimo drgania ±15 %");
+        CHECK(total_nom == 60 && empty_nom >= 80, "tempo nominalne 60/s na 144 Hz: ponad połowa klatek bez kroku (stan cząstek się powtarza)");
+        double acc = 0.0;
+        CHECK(flux_sim_steps(&acc, 1.0 / 30.0, 60.0, 4) == 2 && fabs(acc) < 1e-9, "klatka 1/30 s przy 60 kroków/s → 2 kroki, bez reszty");
+        acc = 0.0;
+        CHECK(flux_sim_steps(&acc, 0.0, 144.0, 4) == 0, "pierwsza klatka (dt = 0) → 0 kroków");
+        CHECK(flux_sim_steps(&acc, 5.0, 144.0, 4) == 4 && acc == 0.0, "po pauzie 5 s: najwyżej limit kroków i bez zaległości");
+        acc = 0.0;
+        int a1 = flux_sim_steps(&acc, 0.4 / 144.0, 144.0, 4), a2 = flux_sim_steps(&acc, 0.4 / 144.0, 144.0, 4);
+        CHECK(a1 == 0 && a2 == 1, "ułamki kroku przechodzą na następną klatkę (0.4 + 0.4 → krok w drugiej)");
+    }
+
+    /* Cechy dźwięku w rytmie monitora: analiza daje 50 wartości/s, monitor rysuje
+     * do 240 klatek — słupki mają dochodzić do nowej wartości płynnie, a zanik
+     * uderzenia ma być ciągły, nie schodkowy co 20 ms. */
+    printf("P4: cechy dźwięku w rytmie monitora (audio_features_follow)\n");
+    {
+        static struct audio_features cur, snap;
+        memset(&cur, 0, sizeof cur); memset(&snap, 0, sizeof snap);
+        snap.t = 10.0; snap.level = 0.2f; snap.spectrum[7] = 0.2f; snap.live = true; snap.wave[5] = 0.5f; snap.raw_level = 0.1f;
+        audio_features_follow(&cur, &snap, 10.0, 0.0f);
+        CHECK(cur.level == 0.2f && cur.spectrum[7] == 0.2f && cur.wave[5] == 0.5f && cur.live && cur.raw_level == 0.1f,
+              "pierwsza klatka: od razu snapshot (także przebieg, live, surowy poziom)");
+        snap.t = 10.02; snap.level = 1.0f; snap.spectrum[7] = 1.0f; snap.wave[5] = -0.5f;   /* nowa analiza */
+        float prev_l = cur.level, prev_s = cur.spectrum[7];
+        bool rising = true;
+        for (int f = 1; f <= 3; f++) {                       /* trzy klatki 144 Hz w jednym hopie 20 ms */
+            audio_features_follow(&cur, &snap, 10.02 + f / 144.0, 1.0f / 144.0f);
+            if (!(cur.level > prev_l + 0.01f && cur.spectrum[7] > prev_s + 0.01f)) rising = false;
+            prev_l = cur.level; prev_s = cur.spectrum[7];
+        }
+        CHECK(rising, "144 Hz: w każdej z trzech klatek między analizami słupek jest wyżej (bez powtórzonych klatek)");
+        CHECK(cur.level > 0.9f && cur.level < 1.0f && cur.wave[5] == -0.5f, "po ~21 ms: ponad 90 % drogi; przebieg zawsze najnowszy");
+        memset(&cur, 0, sizeof cur);
+        snap.level = 0.2f; snap.t = 10.0;
+        audio_features_follow(&cur, &snap, 10.0, 0.0f);
+        snap.level = 1.0f; snap.t = 10.02;
+        audio_features_follow(&cur, &snap, 10.03, 1.0f / 60.0f);
+        CHECK(cur.level > 0.2f + 0.8f * 0.85f, "60 Hz: jedna klatka pokonuje ponad 85 % skoku (opóźnienie poniżej klatki)");
+        audio_features_follow(&cur, &snap, 12.0, 1.0f);
+        CHECK(cur.level == 1.0f, "po długiej przerwie między klatkami: od razu snapshot");
+        snap.beat = 1.0f; snap.t = 20.0;
+        float b0, b1, b2;
+        audio_features_follow(&cur, &snap, 20.0, 0.007f);   b0 = cur.beat;
+        audio_features_follow(&cur, &snap, 20.007, 0.007f); b1 = cur.beat;
+        audio_features_follow(&cur, &snap, 20.014, 0.007f); b2 = cur.beat;
+        CHECK(near(b0, 1.0f) && b1 < b0 - 0.03f && b2 < b1 - 0.03f && near(b2, expf(-0.14f)),
+              "uderzenie gaśnie w każdej klatce między analizami (po 14 ms: exp(-0.14))");
+        audio_features_follow(&cur, &snap, 20.5, 0.007f);
+        CHECK(near(cur.beat, expf(-1.0f)), "zanik uderzenia tutaj tylko do 100 ms wieku (dalej gasi audio_features_age)");
+    }
+
     /* Linia stanu `-v` co FLUX_STATS_PERIOD s (audyt 2026-11-24, U4): klatki na
      * sekundę z liczby klatek i czasu okna, średni czas klatki, poziom w dBFS. */
     printf("logic: statystyki -v (klatki/s, ms/klatkę, dBFS)\n");
@@ -1608,6 +1723,54 @@ int main(void) {
         }
         flux_target_destroy(gt);
         if (ge) flux_engine_destroy(ge);
+    }
+
+    /* Ten sam shader na monitorze 60 Hz (tempo nominalne) i 144 Hz (krok na
+     * klatkę): akumulator ma dostać tyle samo światła na sekundę — silnik
+     * skaluje jasność śladu (inc · step_scale) — a cząstka sunąca „o stały
+     * kawałek na krok nominalny” ma po 2 s być w tej samej kolumnie (trzeciej
+     * z czterech). Bez skalowania 144 kroki/s dałyby obraz 2.4× jaśniejszy,
+     * a cząstka po 2 s byłaby już poza celem. */
+    printf("GL: P4 — tempo symulacji z rytmu monitora nie zmienia jasności ani prędkości\n");
+    if (!gl_ok) {
+        printf("  POMINIĘTO: brak EGL surfaceless / GLES 3.0 — test wymaga Mesy albo GPU\n");
+    } else {
+        char gerr[2560];
+        struct palette gpal = { {0, 0, 0}, {1, 1, 1}, {1, 1, 1} };
+        const double hz[2] = { 60.0, 144.0 };
+        double mean[2] = { 0, 0 }, rate[2] = { 0, 0 };
+        int col[2] = { -1, -1 };
+        for (int v = 0; v < 2; v++) {
+            struct flux_engine *ge = flux_engine_create(ONCE_FRAG, "test-rate.frag", RATE_UPDATE, "test-rate.update.glsl",
+                                                        gerr, sizeof gerr);
+            struct flux_target *gt = ge ? flux_target_create(ge, 4, 4, gerr, sizeof gerr) : NULL;
+            if (!ge || !gt) { printf("       %s\n", gerr); CHECK(false, "silnik i cel 4x4 (test tempa)"); if (ge) flux_engine_destroy(ge); continue; }
+            if (v == 1) flux_target_set_frame_rate(gt, hz[v]);
+            rate[v] = flux_target_sim_rate(gt);
+            GLuint tex, fbo = test_dest_fbo(4, 4, &tex);
+            int frames = (int)(2.0 * hz[v]);                       /* 2 s: akumulator w stanie ustalonym */
+            for (int f = 0; f <= frames; f++)
+                flux_engine_render(ge, gt, fbo, f / hz[v], &gpal, 1.0f, 0.0f, NULL, 0.0f, false);
+            mean[v] = test_fbo_mean(fbo, 4, 4);
+            unsigned char px[4 * 4 * 4];
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glReadPixels(0, 0, 4, 4, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            int best = -1;
+            for (int x = 0; x < 4; x++) {
+                int sum = 0;
+                for (int y = 0; y < 4; y++) sum += px[(y * 4 + x) * 4];
+                if (sum > best) { best = sum; col[v] = x; }
+            }
+            glDeleteFramebuffers(1, &fbo); glDeleteTextures(1, &tex);
+            flux_target_destroy(gt);
+            flux_engine_destroy(ge);
+        }
+        printf("       60 Hz: %.0f kroków/s, jasność %.2f, cząstka w kolumnie %d;  144 Hz: %.0f kroków/s, jasność %.2f, kolumna %d\n",
+               rate[0], mean[0], col[0], rate[1], mean[1], col[1]);
+        CHECK(rate[0] == 60.0 && rate[1] == 144.0, "cel bez rytmu: 60 kroków/s (nominalnie); po flux_target_set_frame_rate(144): 144");
+        CHECK(mean[0] > 2.0 && fabs(mean[1] - mean[0]) < 0.05 * mean[0], "jasność akumulatora ta sama przy 60 i 144 Hz (±5 %)");
+        CHECK(col[0] == 2 && col[1] == 2, "ruch „na krok nominalny” · step_scale: po 2 s cząstka w tej samej (trzeciej) kolumnie");
     }
 
     /* Kod 3 = EGL/shader: main.c (build_engine) kończy kodem 3, gdy

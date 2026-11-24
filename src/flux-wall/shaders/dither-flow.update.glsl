@@ -52,7 +52,7 @@ void main() {
     /* Współrzędne szumu w jednostkach SZEROKOŚCI (komórki kwadratowe w pikselach). */
     vec2  q = vec2(p.x, p.y / aspect) * FIELD_SCALE + vec2(drift * time, drift * time * 0.6);
     float a = fbm(q, octaves, seed) * 6.2831853 * 2.0;
-    p += vec2(cos(a), sin(a)) * STEP * vec2(1.0, aspect);
+    p += vec2(cos(a), sin(a)) * (STEP * step_scale) * vec2(1.0, aspect);   /* STEP na krok NOMINALNY (engine.h) */
 
     o = vec4(p, age + 1.0, gen);
 }

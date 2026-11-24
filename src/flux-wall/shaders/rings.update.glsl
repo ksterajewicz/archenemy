@@ -64,12 +64,14 @@ void main() {
         } else {
             float quiet = 1.0 - smoothstep(0.03, 0.12, audio_level);
             float ph = mod(time, BREATH);
-            if (quiet > 0.0 && ph < 2.0 * dt) {
+            if (quiet > 0.0 && ph < 2.0 * dt / step_scale) {     /* okno dwóch kroków NOMINALNYCH (1/60 s) */
                 wake = WAKE_BREATH * quiet;
                 r0  += RING_V * ph;
             }
         }
-        if (wake > 0.0 && h2(idx.x, idx.y, seed + step_id) < wake) {
+        /* WAKE_* to szansa na krok NOMINALNY — step_scale utrzymuje tę samą liczbę
+         * obudzonych cząstek na uderzenie przy gęstszych krokach (engine.h) */
+        if (wake > 0.0 && h2(idx.x, idx.y, seed + step_id) < wake * step_scale) {
             float g = gen + 1.0;
             int   k = int(g) * 7;
             float a = h2(idx.x + 13, idx.y, seed + k) * 6.2831853;

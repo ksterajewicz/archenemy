@@ -255,6 +255,28 @@ void audio_features_age(struct audio_features *f, double now, float release) {
     f->wave_peak *= k;
 }
 
+void audio_features_follow(struct audio_features *cur, const struct audio_features *snap, double now, float dt) {
+    float k = 1.0f;
+    if (cur->t > 0.0 && dt > 0.0f && dt < 0.25f) k = 1.0f - expf(-dt / AUDIO_FOLLOW_TAU);
+    float level = cur->level, bass = cur->bass, lowmid = cur->lowmid, mid = cur->mid, high = cur->high;
+    float spectrum[AUDIO_SPECTRUM_BINS];
+    memcpy(spectrum, cur->spectrum, sizeof spectrum);
+    *cur = *snap;                                    /* przebieg, spektrogram, t, live, raw_level */
+    if (k < 1.0f) {
+        cur->level  = level  + (snap->level  - level)  * k;
+        cur->bass   = bass   + (snap->bass   - bass)   * k;
+        cur->lowmid = lowmid + (snap->lowmid - lowmid) * k;
+        cur->mid    = mid    + (snap->mid    - mid)    * k;
+        cur->high   = high   + (snap->high   - high)   * k;
+        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
+            cur->spectrum[i] = spectrum[i] + (snap->spectrum[i] - spectrum[i]) * k;
+    }
+    /* uderzenie: zanik ~100 ms liczony w analizie skokami co 20 ms — tu ciągle;
+     * powyżej 100 ms wieku gasi je już audio_features_age */
+    double age = now - snap->t;
+    if (snap->t > 0.0 && age > 0.0) cur->beat = snap->beat * expf(-(float)(age < 0.1 ? age : 0.1) / 0.1f);
+}
+
 /* ── pełna analiza okna ─────────────────────────────────────────────────── */
 
 /* Bramka szumu: poniżej −60 dBFS RMS wszystko = 0 (cisza nie ma być

@@ -31,7 +31,8 @@ void main() {
 
     float R = ORB_R * (1.0 + ORB_BR * audio_bass);
     /* Uderzenie: część cząstek odradza się od razu → fala pyłu od tarczy. */
-    bool burst = audio_beat > 0.6 && h2(idx.x + 77, idx.y + int(gen), seed) < 0.35 && age > 20.0;
+    /* wiek w krokach NOMINALNYCH (age · step_scale): 20 kroków = 1/3 s niezależnie od tempa symulacji */
+    bool burst = audio_beat > 0.6 && h2(idx.x + 77, idx.y + int(gen), seed) < 0.35 && age * step_scale > 20.0;
     bool respawn = age < 0.5 || age >= life_steps || burst
                 || p.x < -0.02 || p.x > 1.02 || p.y < -0.02 || p.y > 1.02;
     if (respawn) {

@@ -15,7 +15,10 @@
  *   offscreen <shader.frag> -o <katalog> [-s WxH] [-p bg,ink,accent]
  *             [-f fps] [-t 0.5,3,6.25]   czasy klatek do zapisu (sekundy)
  *             [--audio synth|silence|<plik.f32>] [--detail 0..1]
- *             [--dither | --no-dither] [-v]
+ *             [--dither | --no-dither] [--hz N] [-v]
+ *   --hz N: rytm monitora dla silnika (flux_target_set_frame_rate) — tempo
+ *   symulacji jak na monitorze N Hz; zwykle razem z `-f N`. Bez flagi tempo
+ *   nominalne shadera (jak dotąd). Do porównań „60 Hz kontra 144 Hz”.
  *   --dither / --no-dither: uniform `dither` jak w flux-wall (1 = raster
  *   Bayera, 0 = gładko); domyślnie 0 — tak samo jak binarka na żywo.
  *   Klatki liczone są CIĄGLE od 0 z krokiem 1/fps (tryb cząstkowy musi
@@ -187,13 +190,13 @@ static void usage(void) {
     fprintf(stderr,
         "offscreen <shader.frag> -o <katalog> [-s WxH] [-p bg,ink,accent] [-f fps]\n"
         "          [-t t1,t2,...] [--audio synth|silence|plik.f32] [--detail 0..1]\n"
-        "          [--dither | --no-dither] [-v]\n");
+        "          [--dither | --no-dither] [--hz N] [-v]\n");
     exit(2);
 }
 
 int main(int argc, char **argv) {
     const char *frag_path = NULL, *out_dir = NULL, *audio_mode = "synth";
-    int w = 960, h = 540; double fps = 60.0; float detail = 1.0f, dither = 0.0f; bool verbose = false;
+    int w = 960, h = 540; double fps = 60.0, hz = 0.0; float detail = 1.0f, dither = 0.0f; bool verbose = false;
     struct palette pal = { {0.012f, 0.082f, 0.2f}, {0.188f, 0.412f, 0.678f}, {0.212f, 0.824f, 0.847f} };   /* crt */
     double times[64]; int ntimes = 0;
     for (int i = 1; i < argc; i++) {
@@ -211,6 +214,7 @@ int main(int argc, char **argv) {
         }
         else if (!strcmp(argv[i], "--audio") && i + 1 < argc) audio_mode = argv[++i];
         else if (!strcmp(argv[i], "--detail") && i + 1 < argc) detail = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--hz") && i + 1 < argc) hz = atof(argv[++i]);
         else if (!strcmp(argv[i], "--dither")) dither = 1.0f;
         else if (!strcmp(argv[i], "--no-dither")) dither = 0.0f;
         else if (!strcmp(argv[i], "-v")) verbose = true;
@@ -232,6 +236,7 @@ int main(int argc, char **argv) {
     if (!e) { fprintf(stderr, "offscreen: %s\n", err); return 3; }
     struct flux_target *t = flux_target_create(e, w, h, err, sizeof err);
     if (!t) { fprintf(stderr, "offscreen: %s\n", err); return 3; }
+    if (hz > 0.0) flux_target_set_frame_rate(t, hz);
 
     /* FBO docelowe (RGBA8) — to, co na żywo jest powierzchnią okna */
     GLuint tex, fbo;
@@ -254,8 +259,9 @@ int main(int argc, char **argv) {
     fd.silence = !use_audio;
     const struct flux_params *p = flux_engine_params(e);
     bool wants_audio = p->audio != 0;
-    if (verbose) fprintf(stderr, "offscreen: %s, %dx%d, %s, audio=%s (pragma audio %d), dither=%g\n", frag_path, w, h,
-                         flux_engine_is_particle(e) ? "cząstkowy" : "jednoprzebiegowy", audio_mode, p->audio, dither);
+    if (verbose) fprintf(stderr, "offscreen: %s, %dx%d, %s, audio=%s (pragma audio %d), dither=%g, symulacja %.1f kroków/s\n", frag_path, w, h,
+                         flux_engine_is_particle(e) ? "cząstkowy" : "jednoprzebiegowy", audio_mode, p->audio, dither,
+                         flux_target_sim_rate(t));
 
     double tmax = 0; for (int i = 0; i < ntimes; i++) if (times[i] > tmax) tmax = times[i];
     long nframes = (long)ceil(tmax * fps) + 1;

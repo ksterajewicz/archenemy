@@ -203,6 +203,25 @@ Rules that follow directly from the table:
   live in `src/flux-wall/recovery.h` (no Wayland/EGL calls, tested by
   `make -C src/flux-wall test`); `main.c` only carries them out — don't
   add a new `die(3, …)` on a path reachable after start.
+- **flux-wall: a simulation step is not 1/60 s — it follows the monitor.**
+  Owner, 2026-11-24: animation frames match the refresh rate set for each
+  monitor and motion must be smooth at that rate. Frames come from frame
+  callbacks (never more than the monitor's Hz; `-f` only lowers it), and the
+  engine runs a whole number of particle steps per frame
+  (`flux_sim_rate`: 60 steps/s → 144 on a 144 Hz monitor, 240 → 288; unknown
+  rate, `--once`, offscreen → the nominal `#pragma flux rate`). With a fixed
+  60 steps/s only 60 of 144 frames moved the particles. So in every
+  `*.update.glsl`: speed × `dt`, and anything written "per step" × the
+  `step_scale` uniform (nominal rate / actual rate; exactly 1.0 at the
+  nominal rate, so the picture there is bit-identical): a fixed displacement
+  (`STEP`, `FALL`, an integrator's `H`), a per-step chance (`WAKE_*`), an age
+  in steps (`age * step_scale`), a per-step hash seed
+  (`int(time * 60.0 / step_scale)`). The engine itself scales `inc`,
+  `life_steps` and `warm`. Audio features (50 per second) are eased per
+  monitor in `audio_features_follow` before each frame. `bash
+  tests/flux-wall-rate.sh` (after `make -C src/flux-wall tools`) renders
+  every particle animation at 60 and 144 Hz and compares brightness and lit
+  area; `make -C src/flux-wall test` has the pure functions and a GL check.
 - **flux-wall: every shader declares `precision highp sampler2D;`** — each
   `.frag` and every GLSL source built into `engine.c` that uses a sampler
   (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00

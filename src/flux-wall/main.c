@@ -30,6 +30,14 @@
  *   a viewport mapuje go na rozmiar logiczny — raster 1:1 przy KAŻDEJ skali
  *   ustawionej w install.sh. Bez tych protokołów: skala całkowita wl_output.
  *
+ *   Rytm: jedna klatka na frame callback kompozytora, czyli tyle klatek na
+ *   sekundę, ile wynosi odświeżanie ustawione dla DANEGO monitora, i nigdy
+ *   więcej (`-f` może go tylko obniżyć). Odświeżanie bieżącego trybu przychodzi
+ *   w wl_output.mode; silnik dopasowuje do niego krok symulacji cząstek —
+ *   całkowita liczba kroków na klatkę (engine.h: flux_sim_rate), a cechy
+ *   dźwięku (50 analiz/s) dochodzą do nowej wartości w każdej klatce
+ *   (audio.h: audio_features_follow). Każdy monitor ma własny rytm.
+ *
  *   Użycie: flux-wall -s shader.frag [-p bg,ink,acc] [-d 0..1 | --battery]
  *                     [-f fps] [-o output] [-l background|bottom] [--once] [-v]
  *                     [--dither | --no-dither] [--ready-file plik]
@@ -86,6 +94,7 @@ struct output {
     uint32_t version;            /* zbindowana wersja wl_output (release od v3) */
     char name[64];
     int32_t scale;
+    int32_t refresh_mhz;         /* odświeżanie bieżącego trybu z wl_output.mode (mHz); 0 = nieznane */
     struct wl_surface *surface;
     struct zwlr_layer_surface_v1 *layer_surface;
     struct wl_egl_window *egl_window;
@@ -104,6 +113,8 @@ struct output {
                                   * monitory z -f N dławiłyby się nawzajem */
     struct flux_target *target;  /* stan silnika dla tej powierzchni (akumulator, cząstki) */
     struct flux_stats stats;     /* -v: klatki/s i czas klatki tego monitora (logic.h) */
+    struct audio_features audio_cur;  /* cechy dźwięku wygładzone do rytmu TEGO monitora (audio_features_follow) */
+    double audio_frame;          /* chwila poprzedniej klatki z dźwiękiem; 0 = jeszcze żadnej */
     struct output *next;
 };
 
@@ -295,6 +306,7 @@ static void egl_init(struct state *s) {
 
 static void output_request_frame(struct output *o);
 static void output_teardown_surface(struct output *o);
+static void output_apply_rate(struct output *o);
 
 /* EGL_CONTEXT_LOST (zdarzenie zasilania, np. wybudzenie GPU; specyfikacja
  * EGL 1.5, rozdz. 3.2): kontekst i wszystkie obiekty GL przepadły, a
@@ -364,7 +376,11 @@ static void render_output(struct output *o) {
         if (feat.t > 0.0) audio_age = frame_start - feat.t;
         audio_raw = feat.raw_level; audio_live = feat.live;
         audio_features_age(&feat, frame_start, 0.25f);
-        audio = &feat;
+        /* 50 analiz/s → rytm tego monitora (audio.h); każdy monitor ma własny stan */
+        audio_features_follow(&o->audio_cur, &feat, frame_start,
+                              o->audio_frame > 0.0 ? (float)(frame_start - o->audio_frame) : 0.0f);
+        o->audio_frame = frame_start;
+        audio = &o->audio_cur;
     }
     flux_engine_render(s->engine, o->target, 0, t, &s->cfg.palette, s->detail_current, s->cfg.dither,
                        audio, 1.0f, s->cfg.once);
@@ -403,7 +419,11 @@ static void render_output(struct output *o) {
                 else
                     snprintf(snd, sizeof snd, "brak połączenia, ostatnie dane sprzed %.0f ms", audio_age * 1000.0);
             }
-            logv(s, "%s: %.1f kl/s, %.2f ms/klatkę (CPU), dźwięk: %s", o->name, fps, ms, snd);
+            char sim[64] = "";
+            if (flux_engine_is_particle(s->engine))
+                snprintf(sim, sizeof sim, ", symulacja %.1f kroków/s", flux_target_sim_rate(o->target));
+            logv(s, "%s: %.1f kl/s (monitor %.2f Hz%s), %.2f ms/klatkę (CPU), dźwięk: %s", o->name, fps,
+                 o->refresh_mhz / 1000.0, sim, ms, snd);
         }
     }
 }
@@ -524,6 +544,7 @@ static void output_apply_size(struct output *o) {
     if (!o->target) {
         o->target = flux_target_create(s->engine, pw, ph, err, sizeof err);
         if (!o->target) { output_surface_failed(o, EGL_SUCCESS, "%s", err); return; }
+        output_apply_rate(o);
     } else if (changed && !flux_target_resize(o->target, pw, ph, err, sizeof err)) {
         logv(s, "%s: zmiana rozmiaru akumulatora nie powiodła się (%s) — rysuję w starym rozmiarze", o->name, err);
     }
@@ -637,6 +658,7 @@ static void output_teardown_surface(struct output *o) {
     o->width = o->height = 0;
     o->frac_scale120 = 0;
     o->stats = (struct flux_stats){0};
+    o->audio_frame = 0.0;
 }
 
 static void output_destroy(struct output *o) {
@@ -652,16 +674,34 @@ static void output_destroy(struct output *o) {
 
 /* ── wl_output ────────────────────────────────────────────────────────────── */
 
+/* Tempo symulacji celu z rytmu monitora (logic.h: flux_frame_hz, engine.h:
+ * flux_sim_rate). --once to jedna klatka z rozgrzewką — zostaje tempo
+ * nominalne shadera. */
+static void output_apply_rate(struct output *o) {
+    struct state *s = o->state;
+    if (!o->target || s->cfg.once) return;
+    double hz = flux_frame_hz(o->refresh_mhz, s->cfg.fps), before = flux_target_sim_rate(o->target);
+    flux_target_set_frame_rate(o->target, hz);
+    if (flux_engine_is_particle(s->engine) && flux_target_sim_rate(o->target) != before)
+        logv(s, "%s: rytm %.2f Hz → symulacja %.1f kroków/s", o->name, hz, flux_target_sim_rate(o->target));
+}
+
 static void out_geometry(void *d, struct wl_output *w, int32_t x, int32_t y, int32_t pw, int32_t ph,
                          int32_t sub, const char *make, const char *model, int32_t tr) {
     (void)d; (void)w; (void)x; (void)y; (void)pw; (void)ph; (void)sub; (void)make; (void)model; (void)tr;
 }
-static void out_mode(void *d, struct wl_output *w, uint32_t f, int32_t mw, int32_t mh, int32_t r) {
-    (void)d; (void)w; (void)f; (void)mw; (void)mh; (void)r;
+/* Rytm animacji = odświeżanie ustawione dla TEGO monitora (bieżący tryb).
+ * Przychodzi także po zmianie trybu w trakcie sesji — nowe tempo symulacji
+ * ustawia output_apply_rate po `done`. */
+static void out_mode(void *data, struct wl_output *w, uint32_t flags, int32_t mw, int32_t mh, int32_t refresh) {
+    (void)w; (void)mw; (void)mh;
+    struct output *o = data;
+    if (flags & WL_OUTPUT_MODE_CURRENT) o->refresh_mhz = refresh;
 }
 static void out_done(void *data, struct wl_output *w) {
     (void)w;
     struct output *o = data;
+    output_apply_rate(o);                /* zmiana trybu monitora w trakcie sesji */
     /* Po `done` znamy skalę i nazwę — dopiero teraz sens ma tworzyć powierzchnię.
      * Zaległe odtworzenie (`recreate`: po `closed` albo błędzie EGL) zostawiamy
      * pętli — inaczej kolejne `done` omijałoby przerwę przed ponowieniem. */
@@ -876,6 +916,8 @@ static void usage(void) {
           "                  [-f fps] [-o output] [-l background|bottom] [--once] [-v]\n"
           "                  [--audio-device=monitor] [--no-audio] [--audio-file plik.f32]\n"
           "                  [--dither | --no-dither] [--ready-file plik]\n"
+          "  -f fps       limit klatek PONIŻEJ odświeżania monitora (bez flagi: rytm monitora,\n"
+          "               jedna klatka na jego odświeżenie, nigdy więcej)\n"
           "  --dither     raster Bayera 8x8 do trzech kolorów palety (rice dither-flux)\n"
           "  --no-dither  gładki gradient palety bez rastra (domyślnie)\n"
           "  --ready-file po pierwszej klatce na ekranie utwórz plik z PID-em (flux-wall.sh\n"

@@ -43,6 +43,6 @@ void main() {
     vec2 g = vec2(psi(q + vec2(e, 0.0), octaves) - psi(q - vec2(e, 0.0), octaves),
                   psi(q + vec2(0.0, e), octaves) - psi(q - vec2(0.0, e), octaves)) / (2.0 * e);
     vec2 v = normalize(vec2(g.y, -g.x) + 1e-6);
-    p += v * STEP * vec2(1.0, aspect);
+    p += v * (STEP * step_scale) * vec2(1.0, aspect);   /* STEP na krok NOMINALNY (engine.h) */
     o = vec4(p, age + 1.0, gen);
 }

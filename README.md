@@ -391,7 +391,7 @@ archenemy/
 │       ├── tools/                    #   offscreen.c — dev tool: render animation frames to PNG without
 │       │                             #   a screen (EGL surfaceless + the same engine.c); `make tools`,
 │       │                             #   never built by install.sh; pngstat.py + bars-accum-debug.frag —
-│       │                             #   helpers for tests/flux-wall-bars.sh; render-previews.sh — renders
+│       │                             #   helpers for tests/flux-wall-bars.sh and flux-wall-rate.sh; render-previews.sh — renders
 │       │                             #   shaders/previews/<rice>/<animation>.png (256x144, the rice's palette,
 │       │                             #   synth audio for visualizations) for the Super+W menu — dev tool, run
 │       │                             #   by hand after adding a shader or changing a palette, then commit;
@@ -412,6 +412,9 @@ archenemy/
 │                                     #   self-check, installer step [3]. `bash tests/machine-layer.sh`.
 │                                     #   flux-wall-bars.sh — offscreen render of `bars` at both monitor sizes,
 │                                     #   peak marks must land on BOTH halves (needs `make -C src/flux-wall tools`).
+│                                     #   flux-wall-rate.sh — offscreen render of every particle animation at the nominal
+│                                     #   simulation rate and as on a 144 Hz monitor: same brightness and lit area
+│                                     #   (needs `make -C src/flux-wall tools`).
 │                                     #   flux-wall-shaders.sh — static check: every flux-wall shader (.frag files and
 │                                     #   GLSL built into engine.c) declares `precision highp sampler2D` before using a sampler.
 │                                     #   flux-wall-dither.sh — flux-wall.sh passes --dither only for the active
@@ -670,6 +673,8 @@ The role only applies to **wallpapers** (primary→v1, every other monitor→v2)
 
 **Dither and battery.** Only `dither-flux` sets `FLUX_WALL_DITHER=1`; the wrapper passes `--dither` there and `--no-dither` elsewhere, regardless of the selected animation. Shaders with dithering use an 8×8 Bayer matrix or a smooth palette gradient; `spectrogram` always uses a smooth gradient. An older binary that lacks these flags gets neither until rebuilt. `--battery` lowers the `detail` uniform to the battery level only while a battery reports `Discharging`; on AC power detail stays at 1.0, including a battery held at a charge limit (`Not charging`, e.g. 80% set by asusctl or the BIOS) or reporting `Unknown`. Each shader decides how detail affects its rendering.
 
+**Frame rate.** An animation draws one frame per frame callback of its monitor, so every monitor runs at the refresh rate set for it (the current mode, e.g. from `Super+A → [n]`) and never faster; `-f <fps>` can only lower that. The binary reads the rate from `wl_output.mode` and matches the particle simulation to it — a whole number of simulation steps per frame, never fewer steps per second than the shader's nominal `#pragma flux rate` (60 steps/s becomes 144 on a 144 Hz monitor, 240 becomes 288) — so particles move in every frame instead of standing still for two or three. Brightness and speed stay the same at any rate: the engine scales each trail stamp and shaders scale per-step quantities with `step_scale`. Audio features arrive 50 times a second and are eased towards the newest value in each frame, per monitor. An unknown refresh rate, `--once` and the offscreen tool keep the nominal rate. `-v` logs the monitor's rate, the simulation rate and the measured frames per second.
+
 Available animations in `src/flux-wall/shaders/`:
 
 - `dither-flux` (domain warping), `dither-waves` (wave interference), `dither-flow` (flow-field trails), `dither-attractor` (Clifford attractor), `dither-thomas`, `dither-halvorsen`, `dither-aizawa`, `dither-dejong`, `dither-vortex` and `dither-rain`.
@@ -694,7 +699,7 @@ scripts/wallpapers/flux-wall.sh doctor               # read-only diagnostic dump
 
 **EGL errors while running.** Exit code 3 belongs to startup: until the first frame is on screen (the moment `--ready-file` marks), any EGL error ends the process and hyprpaper stays visible. After that, an EGL error on one monitor's surface (for example a newly connected monitor on which `eglCreateWindowSurface` fails) drops only that surface and retries it after 1 s, doubling up to 30 s; the other monitors keep animating. A lost EGL context (`EGL_CONTEXT_LOST`, e.g. after the GPU wakes up) never recovers by itself, so the binary creates a new context, rebuilds the shader program and recreates every monitor's surface instead of skipping frames forever with a frozen picture while `status` reports it running. More than 3 losses within 60 s, or a failed new context, end the process with 3 and hyprpaper stays. Such errors are always written to the log, also without `-v`.
 
-**Adding shaders.** A single-pass animation is a `.frag` file. A matching `<name>.update.glsl` enables the particle engine: positions and fading trails live in floating-point textures, with parameters from `#pragma flux` declarations. Supported uniforms and parameters are defined in `src/flux-wall/engine.h` and implemented in `engine.c`. Every shader declares `precision highp sampler2D;` before its first sampler, because GLSL ES defaults samplers to low precision and Mesa then rounds texture reads; `tests/flux-wall-shaders.sh` checks it. Add previews with `src/flux-wall/tools/render-previews.sh -r <rice>` after building the tools. Dithering must follow the uniform rather than the animation name. Accumulator reads at computed columns need a small band (`bars` uses `xc-1..xc+1`), because point stamps may land one pixel to the left; `tests/flux-wall-bars.sh` checks both screen halves. `tests/flux-wall-dither.sh` checks wrapper flags and, when tools are built, rendering.
+**Adding shaders.** A single-pass animation is a `.frag` file. A matching `<name>.update.glsl` enables the particle engine: positions and fading trails live in floating-point textures, with parameters from `#pragma flux` declarations. Supported uniforms and parameters are defined in `src/flux-wall/engine.h` and implemented in `engine.c`. Every shader declares `precision highp sampler2D;` before its first sampler, because GLSL ES defaults samplers to low precision and Mesa then rounds texture reads; `tests/flux-wall-shaders.sh` checks it. Add previews with `src/flux-wall/tools/render-previews.sh -r <rice>` after building the tools. Dithering must follow the uniform rather than the animation name. A particle step is not a fixed 1/60 s: anything counted per step must use `dt` (speed × `dt`) or `step_scale` (a fixed per-step displacement or chance × `step_scale`, an age in nominal steps = age × `step_scale`), see `engine.h`; `tests/flux-wall-rate.sh` renders every particle animation at 60 and 144 Hz and compares the frames. Accumulator reads at computed columns need a small band (`bars` uses `xc-1..xc+1`), because point stamps may land one pixel to the left; `tests/flux-wall-bars.sh` checks both screen halves. `tests/flux-wall-dither.sh` checks wrapper flags and, when tools are built, rendering.
 
 ## Rices
 
