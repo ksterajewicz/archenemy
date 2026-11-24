@@ -115,8 +115,12 @@ Rules that follow directly from the table:
   folder in its own palette, and only configs without looks
   (`networkmanager-dmenu`, `ncmpcpp/bindings`, `hypr/hyprpaper.conf`) may be
   committed relative links to another rice. The alacritty background must
-  appear in `nvim/lua/config/colorscheme.lua` and `zsh/colors.zsh`;
-  `zsh/colors.zsh` also sets `ARCHENEMY_PROMPT_*` (`tests/zsh-rice-look.sh`).
+  appear in `nvim/lua/config/colorscheme.lua` and `archenemy-zsh/colors.zsh`;
+  `archenemy-zsh/colors.zsh` also sets `ARCHENEMY_PROMPT_*`
+  (`tests/zsh-rice-look.sh`). No rice (beta included) may have a folder
+  named after a user-owned `~/.config` path: `zsh/` would move a
+  `ZDOTDIR=~/.config/zsh` to `.bak` on `Super+T` (2026-11-24, R3;
+  `tests/rice-completeness.sh` checks `zsh/`).
 - **fastfetch follows the system logo on every rice** (owner, 2026-11-22;
   before that, 2026-11-18: always the detected distribution's logo):
   `"logo": { "type": "auto", "source": "~/archenemy/data/fastfetch-logo.txt",
@@ -294,18 +298,22 @@ Rules that follow directly from the table:
   single "pure Starship" config). `zsh-defaults.zsh` sources
   `config/shell/rice-look.zsh` right after the default prompt (so before
   `keys.zsh`, `shellrc` and plugins — the user's settings win). It sources
-  `~/.config/zsh/colors.zsh` only when `~/.config/zsh` resolves into
-  `<archenemy>/rices/*/zsh` (never a user's own dir such as `ZDOTDIR`),
+  `~/.config/archenemy-zsh/colors.zsh` only when that path resolves into
+  `<archenemy>/rices/*/archenemy-zsh` (never a user's own dir or link;
+  `~/.config/zsh` is the user's, e.g. `ZDOTDIR`, and is never touched),
   recolours only the default prompt from `ARCHENEMY_PROMPT_TEXT/PATH/OK/ERROR`
   (`#RRGGBB` only), and with `starship` installed exports
-  `STARSHIP_CONFIG=~/.config/zsh/starship.toml` unless the user has
+  `STARSHIP_CONFIG=~/.config/archenemy-zsh/starship.toml` unless the user has
   `~/.config/starship.toml` or another `STARSHIP_CONFIG`; `starship init zsh`
   only with the default prompt and no `prompt_starship_precmd` yet
   (`ARCHENEMY_ZSH_STARSHIP=0` opts out). The rc block itself is unchanged.
   Keep the file in the zsh/bash common subset: `tests/zsh-rice-look.sh`
   runs it with bash (no zsh on CI/VPS) and checks every non-beta rice for
   the four prompt colours. `starship` is optional (`additional-packages`,
-  `fedora=unavailable`).
+  `fedora=unavailable`). Migration from the old `zsh/` folder lives in
+  `lib/switch-rice.sh` (one-shot, `mv` only): when the cleanup loop has just
+  removed an archenemy `~/.config/zsh` link and the path is free, the newest
+  `zsh.bak-YYYYmmdd_HHMMSS` moves back, with a message; `tests/switch-rice.sh`.
   Personal `plugins.zsh` defaults to all plugins disabled; zsh-completions
   remain available while their package is installed (the toggle only registers
   a missing system path); `[h] → 5` uses the
