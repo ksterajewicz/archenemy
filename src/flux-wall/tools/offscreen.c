@@ -14,8 +14,13 @@
  * Użycie:
  *   offscreen <shader.frag> -o <katalog> [-s WxH] [-p bg,ink,accent]
  *             [-f fps] [-t 0.5,3,6.25]   czasy klatek do zapisu (sekundy)
- *             [--audio synth|silence|<plik.f32>] [--detail 0..1]
- *             [--dither | --no-dither] [--hz N] [-v]
+ *             [--audio synth|music|silence|<plik.f32>] [--detail 0..1]
+ *             [--dither | --no-dither] [--hz N] [--downscale N] [-v]
+ *   --downscale N: klatka liczona w -s WxH, a PNG zapisywany N razy mniejszy
+ *   (uśrednianie bloków N×N w świetle liniowym). Do kadrów podglądu: shadery
+ *   mają elementy w pikselach (cząstka 1 px, raster 8 px, poświata 9 px),
+ *   więc kadr liczony wprost w 256×144 nie przypomina pulpitu — ślady były
+ *   ~100× gęstsze niż na prawdziwym ekranie (audyt 2026-11-24, U11).
  *   --hz N: rytm monitora dla silnika (flux_target_set_frame_rate) — tempo
  *   symulacji jak na monitorze N Hz; zwykle razem z `-f N`. Bez flagi tempo
  *   nominalne shadera (jak dotąd). Do porównań „60 Hz kontra 144 Hz”.
@@ -29,6 +34,11 @@
  * bas na przemian 55/82 Hz, pad z trzech tonów, hi-hat co 250 ms (szum),
  * lekki stereo-spread (pad szerzej w L, hat w R) — wystarczy, żeby zobaczyć
  * reakcję na bas, środek, wysokie i beat oraz figury XY z L≠R.
+ *   „music" — pełne pasmo jak w gotowym miksie (do kadrów podglądu): stopa
+ *   2 Hz, werbel na 2 i 4, linia basu zmieniająca dźwięk co uderzenie, akord
+ *   z harmonicznymi do kilku kHz, hi-hat i cichy szum różowy w tle. „synth”
+ *   ma energię w kilku binach widma, więc słupki wychodziły z kontrastem,
+ *   jakiego przy muzyce nie ma (audyt 2026-11-24, U12).
  *   „silence" — cisza (klatki bazowe animacji).
  */
 #define _POSIX_C_SOURCE 200809L
@@ -95,6 +105,39 @@ static bool write_png(const char *path, int w, int h, const unsigned char *rgba)
     return true;
 }
 
+/* --downscale: bloki n×n → jeden piksel, średnia w świetle LINIOWYM (sRGB →
+ * liniowe → średnia → sRGB). Średnia wartości sRGB zaniżałaby jasność rastra
+ * Bayera i cienkich jasnych linii — z daleka oko uśrednia światło, nie kody.
+ * `rgba` w×h (wiersz 0 na dole, jak z glReadPixels) → nowy bufor (w/n)×(h/n). */
+static unsigned char *downscale_rgba(const unsigned char *rgba, int w, int h, int n) {
+    static float lin[256];
+    if (lin[255] == 0.0f)
+        for (int i = 0; i < 256; i++) {
+            float c = (float)i / 255.0f;
+            lin[i] = c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
+        }
+    int ow = w / n, oh = h / n;
+    unsigned char *out = malloc((size_t)ow * oh * 4);
+    if (!out) return NULL;
+    float inv = 1.0f / (float)(n * n);
+    for (int oy = 0; oy < oh; oy++)
+        for (int ox = 0; ox < ow; ox++) {
+            float acc[3] = { 0, 0, 0 };
+            for (int y = 0; y < n; y++) {
+                const unsigned char *src = rgba + ((size_t)(oy * n + y) * w + (size_t)ox * n) * 4;
+                for (int x = 0; x < n; x++, src += 4) { acc[0] += lin[src[0]]; acc[1] += lin[src[1]]; acc[2] += lin[src[2]]; }
+            }
+            unsigned char *dst = out + ((size_t)oy * ow + ox) * 4;
+            for (int c = 0; c < 3; c++) {
+                float v = acc[c] * inv;
+                v = v <= 0.0031308f ? v * 12.92f : 1.055f * powf(v, 1.0f / 2.4f) - 0.055f;
+                dst[c] = (unsigned char)(v <= 0.0f ? 0 : (v >= 1.0f ? 255 : (int)(v * 255.0f + 0.5f)));
+            }
+            dst[3] = 255;
+        }
+    return out;
+}
+
 /* ── syntezator ────────────────────────────────────────────────────────── */
 static uint32_t rng = 2026u;
 static float frand(void) { rng = rng * 1664525u + 1013904223u; return (float)(rng >> 8) / 16777216.0f * 2.0f - 1.0f; }
@@ -117,13 +160,55 @@ static void synth(double t, float *l, float *r) {
     *r = kick + bass_r * 0.9f + pad_r * 0.7f + hat * 1.2f;
 }
 
+/* „music": próbka stereo pełnopasmowego miksu w czasie t (sekundy). Osobny
+ * generator szumu — `synth` zostaje bit w bit (tests/flux-wall-bars.sh). */
+static uint32_t mrng = 1957u;
+static float mrand(void) { mrng = mrng * 1664525u + 1013904223u; return (float)(mrng >> 8) / 16777216.0f * 2.0f - 1.0f; }
+static float pink_state[6];
+static float pink(void) {                     /* filtr Kelleta: szum różowy z białego */
+    float w = mrand(), *b = pink_state;
+    b[0] = 0.99886f * b[0] + w * 0.0555179f; b[1] = 0.99332f * b[1] + w * 0.0750759f;
+    b[2] = 0.96900f * b[2] + w * 0.1538520f; b[3] = 0.86650f * b[3] + w * 0.3104856f;
+    b[4] = 0.55000f * b[4] + w * 0.5329522f; b[5] = -0.7616f * b[5] - w * 0.0168980f;
+    return (b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + w * 0.5362f) * 0.11f;
+}
+static void music(double t, float *l, float *r) {
+    static const double bass_note[4] = { 55.0, 55.0, 65.41, 49.0 };
+    static const double chord[3] = { 220.0, 277.18, 329.63 };
+    double beat = fmod(t, 0.5);
+    int    nb = (int)(t / 0.5);
+    float kick = (float)(sin(2 * M_PI * 60.0 * beat * (1.0 - beat)) * exp(-beat * 9.0)) * 0.55f;
+    double fb = bass_note[nb & 3];
+    float benv = (float)(1.0 - exp(-beat * 60.0)) * (float)exp(-beat * 2.0);
+    float bass = (float)(sin(2 * M_PI * fb * t) + 0.35 * sin(2 * M_PI * 2.0 * fb * t)) * 0.24f * benv;
+    float bass_r = (float)(cos(2 * M_PI * fb * t) + 0.35 * sin(2 * M_PI * 2.0 * fb * t)) * 0.24f * benv;
+    float pad = 0.0f, pad_r = 0.0f;
+    for (int c = 0; c < 3; c++)
+        for (int h = 1; h <= 12; h++) {           /* harmoniczne 1/h — do ~4 kHz */
+            pad   += (float)sin(2 * M_PI * chord[c] * h * t) / (float)h;
+            pad_r += (float)sin(2 * M_PI * chord[c] * 1.007 * h * t) / (float)h;
+        }
+    pad *= 0.035f; pad_r *= 0.035f;
+    float snare = 0.0f;
+    if (nb & 1) snare = (mrand() * 0.6f + (float)sin(2 * M_PI * 185.0 * beat) * 0.4f) * (float)exp(-beat * 22.0) * 0.30f;
+    double hb = fmod(t, 0.125);
+    float hw = mrand(), hat;
+    static float hprev;
+    hat = (hw - hprev) * (float)exp(-hb * 60.0) * 0.12f * ((nb + (int)(t / 0.125)) & 1 ? 1.0f : 0.55f);   /* różnica = górnoprzepustowo */
+    hprev = hw;
+    float bed = pink() * 0.10f;
+    *l = kick + bass + pad * 1.15f + snare + hat * 0.7f + bed;
+    *r = kick + bass_r * 0.9f + pad_r * 0.85f + snare * 0.9f + hat * 1.2f + bed * 0.9f;
+}
+
 /* Cechy dźwięku na chwilę `t`: analiza okien co hop, jak wątek na żywo. */
 struct feeder {
     struct audio_state st;
     float ring[AUDIO_FFT_N], ring_l[AUDIO_FFT_N], ring_r[AUDIO_FFT_N];
     long  next_sample;           /* pierwsza próbka jeszcze niewprowadzona */
-    FILE *file;                  /* NULL = synth; pusty tryb: silence */
+    FILE *file;                  /* NULL = synth albo music; pusty tryb: silence */
     bool  silence;
+    bool  full_band;             /* --audio music zamiast synth */
 };
 
 static void feeder_advance(struct feeder *fd, double t) {
@@ -140,7 +225,8 @@ static void feeder_advance(struct feeder *fd, double t) {
                 if (fread(p, sizeof(float), 2, fd->file) < 2) { rewind(fd->file); if (fread(p, sizeof(float), 2, fd->file) < 2) p[0] = p[1] = 0; }
                 l = audio_sample_clean(p[0]); r = audio_sample_clean(p[1]);   /* NaN/inf → 0, jak push_hop na żywo */
             } else if (!fd->silence) {
-                synth((double)(fd->next_sample + i) / AUDIO_RATE, &l, &r);
+                if (fd->full_band) music((double)(fd->next_sample + i) / AUDIO_RATE, &l, &r);
+                else synth((double)(fd->next_sample + i) / AUDIO_RATE, &l, &r);
             }
             fd->ring_l[AUDIO_FFT_N - AUDIO_HOP + i] = l;
             fd->ring_r[AUDIO_FFT_N - AUDIO_HOP + i] = r;
@@ -189,14 +275,14 @@ static void egl_init(bool verbose) {
 static void usage(void) {
     fprintf(stderr,
         "offscreen <shader.frag> -o <katalog> [-s WxH] [-p bg,ink,accent] [-f fps]\n"
-        "          [-t t1,t2,...] [--audio synth|silence|plik.f32] [--detail 0..1]\n"
-        "          [--dither | --no-dither] [--hz N] [-v]\n");
+        "          [-t t1,t2,...] [--audio synth|music|silence|plik.f32] [--detail 0..1]\n"
+        "          [--dither | --no-dither] [--hz N] [--downscale N] [-v]\n");
     exit(2);
 }
 
 int main(int argc, char **argv) {
     const char *frag_path = NULL, *out_dir = NULL, *audio_mode = "synth";
-    int w = 960, h = 540; double fps = 60.0, hz = 0.0; float detail = 1.0f, dither = 0.0f; bool verbose = false;
+    int w = 960, h = 540, down = 1; double fps = 60.0, hz = 0.0; float detail = 1.0f, dither = 0.0f; bool verbose = false;
     struct palette pal = { {0.012f, 0.082f, 0.2f}, {0.188f, 0.412f, 0.678f}, {0.212f, 0.824f, 0.847f} };   /* crt */
     double times[64]; int ntimes = 0;
     for (int i = 1; i < argc; i++) {
@@ -215,6 +301,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--audio") && i + 1 < argc) audio_mode = argv[++i];
         else if (!strcmp(argv[i], "--detail") && i + 1 < argc) detail = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--hz") && i + 1 < argc) hz = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--downscale") && i + 1 < argc) down = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--dither")) dither = 1.0f;
         else if (!strcmp(argv[i], "--no-dither")) dither = 0.0f;
         else if (!strcmp(argv[i], "-v")) verbose = true;
@@ -224,6 +311,7 @@ int main(int argc, char **argv) {
     if (!frag_path || !out_dir) usage();
     if (ntimes == 0) { times[0] = 0.5; times[1] = 3.0; times[2] = 6.0; ntimes = 3; }
     if (fps <= 0) fps = 60.0;
+    if (down < 1 || down > 16 || w % down || h % down) die("--downscale: N w 1..16 i rozmiar -s podzielny przez N");
 
     char *frag = flux_read_file(frag_path);
     if (!frag) die("nie mogę wczytać shadera");
@@ -252,7 +340,8 @@ int main(int argc, char **argv) {
     struct feeder fd; memset(&fd, 0, sizeof fd);
     audio_state_init(&fd.st);
     bool use_audio = strcmp(audio_mode, "silence") != 0;
-    if (strcmp(audio_mode, "synth") && strcmp(audio_mode, "silence")) {
+    fd.full_band = strcmp(audio_mode, "music") == 0;
+    if (strcmp(audio_mode, "synth") && strcmp(audio_mode, "music") && strcmp(audio_mode, "silence")) {
         fd.file = fopen(audio_mode, "rb");
         if (!fd.file) die("nie mogę otworzyć pliku audio");
     }
@@ -286,7 +375,11 @@ int main(int argc, char **argv) {
                 glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pix);
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 char path[1200]; snprintf(path, sizeof path, "%s/%s-%05.2f.png", out_dir, name, times[i]);
-                if (!write_png(path, w, h, pix)) die("zapis PNG");
+                if (down > 1) {
+                    unsigned char *small = downscale_rgba(pix, w, h, down);
+                    if (!small || !write_png(path, w / down, h / down, small)) die("zapis PNG (pomniejszony)");
+                    free(small);
+                } else if (!write_png(path, w, h, pix)) die("zapis PNG");
                 if (verbose) fprintf(stderr, "offscreen: %s\n", path);
                 saved++;
             }

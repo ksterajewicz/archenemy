@@ -2,7 +2,16 @@
 # =============================================
 #   archenemy - src/flux-wall/tools/render-previews.sh
 #   Kadry podglądu animacji do menu Super+W → Animations/:
-#   src/flux-wall/shaders/previews/<rice>/<animacja>.png (256x144, w repo).
+#   src/flux-wall/shaders/previews/<rice>/<animacja>.png (480x270, w repo).
+#
+#   Kadr ma wyglądać jak animacja na pulpicie przy grającej muzyce (decyzja
+#   właściciela 2026-11-24, wariant 3A), więc jest liczony w rozdzielczości
+#   EKRANU (1920x1080) i dopiero pomniejszany 4× (offscreen --downscale,
+#   uśrednianie w świetle liniowym). Shadery mają elementy w pikselach
+#   (cząstka 1 px, raster Bayera 8 px, poświata 9 px): kadr liczony wprost
+#   w 256x144 miał ślady ~100× gęstsze niż na ekranie i słupki zlane w plamę
+#   (audyt 2026-11-24, U11). 480 px to też pełna ostrość pola ikony rofi na
+#   HiDPI (160 px × skala; miniatury tapet mają 320 px).
 #
 #   Narzędzie deweloperskie (jak offscreen — NIE uruchamia go install.sh):
 #   odpal po dodaniu/zmianie shadera albo palety rice'a i zacommituj PNG-i.
@@ -14,9 +23,16 @@
 #     * dither: --dither gdy FLUX_WALL_DITHER=1, inaczej --no-dither — ale
 #       tylko jeśli offscreen zna te flagi (jego usage wspomina --dither);
 #       starszy offscreen dostaje dawne wywołanie bez nich,
-#     * dźwięk: `--audio synth` (wbudowany syntezator) dla wizualizacji
-#       muzyki (`#pragma flux audio 1` we .frag albo .update.glsl — ta sama
-#       reguła co flux-wall.sh list-audio), cisza dla reszty,
+#     * dźwięk: `--audio music` (wbudowany syntezator pełnego pasma: stopa,
+#       werbel, bas, akord, hi-hat, szum różowy — widmo jak w gotowym miksie)
+#       dla wizualizacji muzyki (`#pragma flux audio 1` we .frag albo
+#       .update.glsl — ta sama reguła co flux-wall.sh list-audio), cisza dla
+#       reszty; starszy offscreen bez `music` dostaje dawne `synth`,
+#     * rozmiar: `-s 1920x1080 --downscale 4`, jeśli offscreen zna
+#       --downscale; starszy — dawne 256x144 wprost,
+#     * klatki: 30/s, a dla shaderów z `#pragma flux rate` ponad 120 — 60/s
+#       (silnik robi najwyżej 4 kroki symulacji na klatkę; dither-rain ma
+#       240 kroków/s i przy 30 klatkach/s leciałby o połowę wolniej),
 #     * chwila kadru: shader cząstkowy (jest <nazwa>.update.glsl) —
 #       1.5 × `#pragma flux life` (akumulator zanika z exp(-dt/life), po
 #       1.5·life ma ~78% stanu ustalonego), w granicach 4..15 s; pragmy
@@ -40,8 +56,9 @@ REPO="$(cd "$FW/../.." && pwd)"
 OFF="$FW/build/offscreen"
 SHADERS="$FW/shaders"
 OUT="$SHADERS/previews"
-SIZE="256x144"
-FPS=30
+RENDER_SIZE="1920x1080"     # rozdzielczość liczenia = typowy ekran
+DOWNSCALE=4                 # → 480x270 w repo
+OLD_SIZE="256x144"          # offscreen bez --downscale
 
 RICES=(); ANIMS=()
 while (( $# )); do
@@ -62,9 +79,11 @@ fi
 # Flagi ditheru tylko, gdy offscreen je zna. Usage idzie na stderr z kodem 2 —
 # do zmiennej, nie `| grep -q`: przy pipefail kod 2 offscreena przykryłby
 # trafienie grepa i flagi nigdy by nie poszły.
-DITHER_FLAGS=0
+DITHER_FLAGS=0; SIZE_ARGS=(-s "$OLD_SIZE"); AUDIO_MODE=synth
 usage_text="$("$OFF" --help 2>&1)"
 [[ "$usage_text" == *--dither* ]] && DITHER_FLAGS=1
+[[ "$usage_text" == *--downscale* ]] && SIZE_ARGS=(-s "$RENDER_SIZE" --downscale "$DOWNSCALE")
+[[ "$usage_text" == *"synth|music"* ]] && AUDIO_MODE=music
 
 if (( ${#RICES[@]} == 0 )); then
     for conf in "$REPO"/rices/*/flux-wall.conf; do
@@ -94,6 +113,12 @@ is_audio() {     # ta sama reguła co flux-wall.sh is_audio_shader
     grep -qs '^#pragma flux audio 1' "$SHADERS/$1.update.glsl" "$SHADERS/$1.frag"
 }
 
+frame_fps() {    # klatki na sekundę liczenia (patrz nagłówek)
+    local rate
+    rate=$(sed -n 's/^#pragma flux rate[[:space:]]\{1,\}\([0-9.]\{1,\}\).*/\1/p' "$SHADERS/$1.update.glsl" 2>/dev/null | head -n1)
+    awk -v r="${rate:-60}" 'BEGIN { print (r > 120 ? 60 : 30) }'
+}
+
 frame_time() {   # chwila kadru w sekundach (patrz nagłówek)
     local name="$1" life
     if [[ -f "$SHADERS/$name.update.glsl" ]]; then
@@ -114,7 +139,7 @@ for rice in "${RICES[@]}"; do
         echo "✗ $rice: brak rices/$rice/flux-wall.conf — pomijam" >&2; failed=$((failed + 1)); continue
     fi
     read -r palette dither < <(rice_conf "$conf")
-    args=(-s "$SIZE" -f "$FPS")
+    args=("${SIZE_ARGS[@]}")
     [[ -n "$palette" ]] && args+=(-p "$palette")
     if (( DITHER_FLAGS )); then
         if [[ "$dither" == "1" ]]; then args+=(--dither); else args+=(--no-dither); fi
@@ -126,9 +151,9 @@ for rice in "${RICES[@]}"; do
             echo "✗ $rice/$name: nie ma takiej animacji" >&2; failed=$((failed + 1)); continue
         fi
         t="$(frame_time "$name")"
-        audio=silence; is_audio "$name" && audio=synth
+        audio=silence; is_audio "$name" && audio="$AUDIO_MODE"
         job="$TMP/job"; rm -rf "$job"; mkdir -p "$job"
-        if "$OFF" "$SHADERS/$name.frag" -o "$job" "${args[@]}" -t "$t" --audio "$audio" >"$TMP/log" 2>&1; then
+        if "$OFF" "$SHADERS/$name.frag" -o "$job" "${args[@]}" -f "$(frame_fps "$name")" -t "$t" --audio "$audio" >"$TMP/log" 2>&1; then
             png=("$job"/*.png)
             if [[ -f "${png[0]}" ]]; then
                 mv -f "${png[0]}" "$OUT/$rice/$name.png"
@@ -144,4 +169,5 @@ done
 echo ""
 echo "Kadry: $ok zapisanych, $failed błędów → ${OUT#"$REPO"/}/<rice>/<animacja>.png"
 (( DITHER_FLAGS )) || echo "(offscreen bez --dither/--no-dither — kadry w jego domyślnym trybie)"
+[[ "${SIZE_ARGS[1]}" == "$RENDER_SIZE" ]] || echo "(offscreen bez --downscale — kadry $OLD_SIZE liczone wprost; przebuduj: make -C src/flux-wall tools)"
 (( failed == 0 ))
