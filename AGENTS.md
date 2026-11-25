@@ -218,7 +218,7 @@ Rules that follow directly from the table:
   60 steps/s only 60 of 144 frames moved the particles. So in every
   `*.update.glsl`: speed × `dt`, and anything written "per step" × the
   `step_scale` uniform (nominal rate / actual rate; exactly 1.0 at the
-  nominal rate, so the picture there is bit-identical): a fixed displacement
+  nominal rate, so nothing is rescaled there): a fixed displacement
   (`STEP`, `FALL`, an integrator's `H`), a per-step chance (`WAKE_*`), an age
   in steps (`age * step_scale`), a per-step hash seed
   (`int(time * 60.0 / step_scale)`). The engine itself scales `inc`,
