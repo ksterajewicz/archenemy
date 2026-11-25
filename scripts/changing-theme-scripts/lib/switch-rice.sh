@@ -141,7 +141,7 @@ if (( OLD_ZSH_LINK )) && [[ ! -e "$CONFIG_DIR/zsh" && ! -L "$CONFIG_DIR/zsh" ]];
     if [[ -n "$zsh_bak" ]] && mv "$zsh_bak" "$CONFIG_DIR/zsh"; then
         zsh_msg="Restored ~/.config/zsh from ${zsh_bak##*/} (an earlier rice switch had moved it there). Rice zsh colours now live in ~/.config/archenemy-zsh."
         echo "$zsh_msg"
-        [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || notify-send "archenemy" "$zsh_msg"
+        [[ "${SWITCH_RICE_LINK_ONLY:-0}" == 1 ]] || notify-send -a archenemy "archenemy" "$zsh_msg"
     fi
 fi
 
