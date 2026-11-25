@@ -61,7 +61,8 @@ const float SPOKE_F   = 0.16;    /* jasność szprych (× LEVEL) */
 const float W_BASE    = 0.05;    /* długość segmentu w ciszy */
 const float W_MAX     = 0.60;    /* długość segmentu przy pełnym pasmie (odstęp obręczy = 1.0) */
 const float FILL      = 0.72;    /* część szczeliny kątowej zajęta przez segment (blisko kamery) */
-const float ACCENT_LVL= 0.30;    /* segmenty głośniejsze niż to mają końcówkę w akcencie */
+const float ACCENT_LVL= 0.60;    /* segmenty głośniejsze niż to mają końcówkę w akcencie (widmo w dB względem
+                                  * wspólnego szczytu: 0.60 = do 18 dB pod najgłośniejszym pasmem) */
 const float HIST_MIN  = 0.30;    /* najsłabsza „pamięć” pasma na starszym pierścieniu */
 const float BEAT_F    = 0.55;    /* rozbłysk najbliższych pierścieni przy uderzeniu (× LEVEL) */
 

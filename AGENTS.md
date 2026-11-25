@@ -98,7 +98,12 @@ Rules that follow directly from the table:
   (`hyprlock-background-<rice>.conf`), `.gitignore`, `HYPRLOCK_BG_FILES` in
   `scripts/rofi/rofi_wallpaper_switcher.sh`, `known_rices` in
   `scripts/archenemy-doctor.sh`, `MOTIFS` in
-  `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), and the
+  `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), the
+  flux-wall preview frames of a rice with a `flux-wall.conf`
+  (`src/flux-wall/tools/render-previews.sh -r <rice>` after `make -C
+  src/flux-wall tools`, then commit `shaders/previews/<rice>/`; `yang` had
+  none until 2026-11-24 and its `Super+W → Animations/` showed no pictures —
+  `tests/render-previews.sh` now fails on a missing frame), and the
   hard-coded rice lists in `tests/` (`install-main`, `bluetooth`,
   `keyboard-layouts`, `mouse-settings`, `rofi-clipboard`, `font-settings`,
   `flux-wall-dither`, `runtime-platforms`, `waybar-launcher` for a rice with
@@ -217,6 +222,29 @@ Rules that follow directly from the table:
   live in `src/flux-wall/recovery.h` (no Wayland/EGL calls, tested by
   `make -C src/flux-wall test`); `main.c` only carries them out — don't
   add a new `die(3, …)` on a path reachable after start.
+- **flux-wall: a simulation step is not 1/60 s — it follows the monitor.**
+  Owner, 2026-11-24: animation frames match the refresh rate set for each
+  monitor and motion must be smooth at that rate. Frames come from frame
+  callbacks (never more than the monitor's Hz; `-f` only lowers it), and the
+  engine runs a whole number of particle steps per frame
+  (`flux_sim_rate`: 60 steps/s → 144 on a 144 Hz monitor, 240 → 288; unknown
+  rate, `--once`, offscreen → the nominal `#pragma flux rate`). With a fixed
+  60 steps/s only 60 of 144 frames moved the particles. So in every
+  `*.update.glsl`: speed × `dt`, and anything written "per step" × the
+  `step_scale` uniform (nominal rate / actual rate; exactly 1.0 at the
+  nominal rate, so nothing is rescaled there): a fixed displacement
+  (`STEP`, `FALL`, an integrator's `H`), a per-step chance (`WAKE_*`), an age
+  in steps (`age * step_scale`), a per-step hash seed
+  (`int(time * 60.0 / step_scale)`). The engine itself scales `inc`,
+  `life_steps` and `warm`. A shader using `step_scale` starts with
+  `#ifndef FLUX_STEP_SCALE` / `const float step_scale = 1.0;` / `#endif`
+  (the prelude defines the macro): an older binary after a `git pull`
+  without a rebuild has no such uniform and would fail to compile the
+  shader — no animation, exit 3 (`bash tests/flux-wall-shaders.sh`). Audio features (50 per second) are eased per
+  monitor in `audio_features_follow` before each frame. `bash
+  tests/flux-wall-rate.sh` (after `make -C src/flux-wall tools`) renders
+  every particle animation at 60 and 144 Hz and compares brightness and lit
+  area; `make -C src/flux-wall test` has the pure functions and a GL check.
 - **flux-wall: every shader declares `precision highp sampler2D;`** — each
   `.frag` and every GLSL source built into `engine.c` that uses a sampler
   (vertex shaders included), before the first `sampler2D`. GLSL ES 3.00
@@ -946,6 +974,14 @@ so these rules are tested, not just conventions:
   offer. Its git advice must work as printed: after a `stash pop` conflict
   `git add` + `git stash drop`, and never `drop` when nothing was applied
   (`bash tests/update-archenemy.sh` runs the advice on real git).
+  flux-wall is compiled, so a pull that changed `src/flux-wall/*.c`, `*.h`,
+  `Makefile` or `protocols/` leaves an older binary running: with a built
+  binary present the updater asks "Rebuild flux-wall now?" (default Yes —
+  `make` inside the checkout, no sudo), says ✓ only when no source is newer
+  than the binary, and restarts a running animation through
+  `flux-wall.sh start` (✓ only on exit 0 = first frame); shader-only pulls
+  restart a running animation without a question. The block prints nothing
+  when flux-wall did not change, so the Arch parity run stays byte-identical.
 - **shellcheck with a baseline:** `bash tests/shellcheck.sh` runs
   `shellcheck -x -S info -e SC1091` on every tracked script and fails only on
   findings that are not in `tests/shellcheck.baseline`. Keep `-x`: without it

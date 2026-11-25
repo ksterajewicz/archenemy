@@ -19,6 +19,9 @@
 #pragma flux seed 2040
 #pragma flux audio_tempo 0.6
 #pragma flux audio_glow 0.8
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float ORB_R   = 0.20;      /* promień tarczy w jednostkach wysokości/2 (jak c w .frag) */
 const float ORB_BR  = 0.22;      /* przyrost promienia przy pełnym basie */
@@ -31,7 +34,8 @@ void main() {
 
     float R = ORB_R * (1.0 + ORB_BR * audio_bass);
     /* Uderzenie: część cząstek odradza się od razu → fala pyłu od tarczy. */
-    bool burst = audio_beat > 0.6 && h2(idx.x + 77, idx.y + int(gen), seed) < 0.35 && age > 20.0;
+    /* wiek w krokach NOMINALNYCH (age · step_scale): 20 kroków = 1/3 s niezależnie od tempa symulacji */
+    bool burst = audio_beat > 0.6 && h2(idx.x + 77, idx.y + int(gen), seed) < 0.35 && age * step_scale > 20.0;
     bool respawn = age < 0.5 || age >= life_steps || burst
                 || p.x < -0.02 || p.x > 1.02 || p.y < -0.02 || p.y > 1.02;
     if (respawn) {

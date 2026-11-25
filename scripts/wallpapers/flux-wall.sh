@@ -45,7 +45,8 @@
 #     flux-wall.sh stop | status
 #     flux-wall.sh doctor-safe          sonda bez source konfiguracji (publiczny doctor)
 #     flux-wall.sh doctor               zrzut stanu do diagnozy (repo, binarka,
-#                                        shadery, wybór, proces, log) — tylko odczyt
+#                                        shadery, wybór, proces, dźwięk: wyjście
+#                                        i źródło strumienia z pactl, log) — tylko odczyt
 #
 #   Kody: 0 ok · 1 użycie/zła nazwa · 2 brak binarki · 3 start nieudany albo
 #         bez pierwszej klatki w limicie albo bez możliwości jej potwierdzenia
@@ -340,6 +341,56 @@ do_start() {
     exit 3
 }
 
+# Sekcja „dźwięk” doctora: czy wybrana animacja w ogóle słucha, z jakiego
+# źródła flux-wall bierze strumień i co o dźwięku mówi log. Bez niej „nie
+# reaguje na muzykę” nie zostawiało żadnego śladu: komunikaty audio szły
+# tylko z -v, którego wrapper nie podaje (audyt 2026-11-24, U4).
+# pactl (libpulse) jest opcjonalny — bez niego mówimy to wprost. LC_ALL=C:
+# `pactl list` tłumaczy etykiety, a czytamy „Source:” i „application.name”.
+# $1 = wybór z flux-wall.dat ("" = domyślne zachowanie rice'a).
+doctor_audio() {
+    local choice="$1" name sink src_id src_name
+    echo "== dźwięk"
+    name="$choice"
+    if [[ -z "$name" && "$FLUX_WALL_AUTOSTART" == "1" && -n "$FLUX_WALL_SHADER" ]]; then
+        name="${FLUX_WALL_SHADER##*/}"; name="${name%.frag}"
+    fi
+    if [[ -n "$name" && "$name" != off ]] && is_audio_shader "$name"; then
+        echo "animacja '$name' to wizualizacja muzyki — flux-wall słucha monitora wyjścia (nigdy mikrofonu)"
+    else
+        echo "animacja '${name:-<brak>}' nie jest wizualizacją muzyki — flux-wall nie otwiera strumienia dźwięku"
+        return 0
+    fi
+    if ! command -v pactl >/dev/null 2>&1; then
+        echo "pactl: brak polecenia — nie sprawdzę wyjścia ani strumienia (pakiet libpulse)"
+    else
+        sink="$(LC_ALL=C pactl get-default-sink 2>/dev/null)"
+        if [[ -n "$sink" ]]; then echo "domyślne wyjście: $sink"
+        else echo "⚠ domyślne wyjście: pactl nic nie zwrócił — serwer dźwięku nie działa albo nie ma wyjścia"; fi
+        # numer źródła strumienia nagrywania, którego klient nazywa się flux-wall
+        src_id="$(LC_ALL=C pactl list source-outputs 2>/dev/null | awk '
+            /^Source Output #/ { src = "" }
+            $1 == "Source:"    { src = $2 }
+            /application\.name = "flux-wall"/ { if (src != "") { print src; exit } }')"
+        if [[ -n "$src_id" ]]; then
+            src_name="$(LC_ALL=C pactl list short sources 2>/dev/null | awk -F'\t' -v id="$src_id" '$1 == id { print $2; exit }')"
+            echo "strumień flux-wall: źródło ${src_name:-nr $src_id}"
+            if [[ -n "$sink" && -n "$src_name" && "$src_name" != "${sink}.monitor" ]]; then
+                echo "  ⚠ to NIE jest monitor domyślnego wyjścia (${sink}.monitor) — po zmianie wyjścia uruchom animację ponownie: flux-wall.sh start"
+            fi
+        elif pgrep -x flux-wall >/dev/null 2>&1; then
+            echo "⚠ flux-wall działa, ale nie ma otwartego strumienia dźwięku — patrz linie o dźwięku w logu niżej"
+        else
+            echo "strumień flux-wall: brak (flux-wall nie działa)"
+        fi
+    fi
+    if [[ -n "$RUN_DIR" && -f "$LOG" ]]; then
+        echo "log, ostatnie linie o dźwięku:"
+        grep -a 'audio:' "$LOG" | tail -3 | sed 's/^/  /'
+    fi
+    return 0
+}
+
 # Zrzut stanu do diagnozy „animacje nie działają / nie ma ich w menu" — jedno
 # polecenie zamiast pięciu pytań (wzorzec scripts/hypr/workspace-diag.sh).
 # Tylko odczyt. Najczęstsze przyczyny, które ma wyłapać: klon za origin
@@ -395,6 +446,7 @@ doctor() {
     else
         echo "flux-wall nie działa"
     fi
+    doctor_audio "$choice"
     # Bez prywatnego katalogu sesji LOG to /dev/null — powiedz to wprost, zamiast
     # „brak /dev/null (proces nigdy nie wystartował…)”.
     if [[ -z "$RUN_DIR" ]]; then

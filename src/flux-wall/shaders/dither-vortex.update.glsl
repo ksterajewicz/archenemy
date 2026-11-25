@@ -16,6 +16,9 @@
 #pragma flux gain 14
 #pragma flux splat 0
 #pragma flux seed 2032
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float FIELD_SCALE = 3.5;
 const float STEP        = 1.35 / 960.0;
@@ -43,6 +46,6 @@ void main() {
     vec2 g = vec2(psi(q + vec2(e, 0.0), octaves) - psi(q - vec2(e, 0.0), octaves),
                   psi(q + vec2(0.0, e), octaves) - psi(q - vec2(0.0, e), octaves)) / (2.0 * e);
     vec2 v = normalize(vec2(g.y, -g.x) + 1e-6);
-    p += v * STEP * vec2(1.0, aspect);
+    p += v * (STEP * step_scale) * vec2(1.0, aspect);   /* STEP na krok NOMINALNY (engine.h) */
     o = vec4(p, age + 1.0, gen);
 }

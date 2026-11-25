@@ -18,6 +18,9 @@
 #pragma flux scale 0.042
 #pragma flux warm 60
 #pragma flux seed 2029
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float A = 1.89;
 const float H = 0.012;
@@ -41,8 +44,9 @@ void main() {
         o = vec4(v.x + 2.5, v.y + 2.5, 1.0, v.z);
         return;
     }
+    float h  = H * step_scale;           /* H na krok NOMINALNY; przy gęstszych krokach całkujemy drobniej (engine.h) */
     vec3 k1 = field(v);
-    vec3 k2 = field(v + 0.5 * H * k1);
-    v += H * k2;
+    vec3 k2 = field(v + 0.5 * h * k1);
+    v += h * k2;
     o = vec4(v.x + 2.5, v.y + 2.5, age + 1.0, v.z);
 }

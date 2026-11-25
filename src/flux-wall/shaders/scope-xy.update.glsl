@@ -25,7 +25,8 @@
 const int   WAVE_N = 1024;
 const int   SUB    = 8;          /* podpunktów między próbkami */
 const float AMP    = 0.42;       /* część połowy wysokości ekranu przy pełnym wychyleniu */
-const float GAIN_MAX = 8.0;      /* sufit auto-wzmocnienia */
+const float GAIN_MAX = 32.0;     /* sufit auto-wzmocnienia (= GAIN_MAX w scope.frag): szczyt do −30 dBFS wypełnia ekran,
+                                  * więc ściszony odtwarzacz nie kurczy figury; 8.0 kurczyło ją już przy −18 dBFS */
 
 void main() {
     ivec2 idx = ivec2(gl_FragCoord.xy);

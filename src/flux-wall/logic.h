@@ -77,6 +77,20 @@ static inline int flux_poll_timeout(int timeout, double wait) {
     return (timeout < 0 || ms < timeout) ? ms : timeout;
 }
 
+/* Ile razy na sekundę monitor dostaje klatkę animacji: odświeżanie z
+ * wl_output.mode (`refresh_mhz`, mHz — to, co ustawiono dla TEGO monitora,
+ * np. w Super+A → monitory) albo niższy limit `-f`. Klatki przychodzą z frame
+ * callbacków kompozytora, czyli w rytmie monitora i nigdy częściej niż jego
+ * Hz (decyzja właściciela 2026-11-24); ta wartość mówi silnikowi, do jakiego
+ * rytmu dopasować krok symulacji (engine.h: flux_sim_rate). 0 = nieznane
+ * (kompozytor nie podał odświeżania i nie ma -f) → tempo nominalne shadera. */
+static inline double flux_frame_hz(int32_t refresh_mhz, int fps_limit) {
+    double hz = refresh_mhz / 1000.0;
+    if (!(hz >= 10.0 && hz <= 1000.0)) hz = 0.0;
+    if (fps_limit > 0 && (hz <= 0.0 || fps_limit < hz)) hz = (double)fps_limit;
+    return hz;
+}
+
 /* Co ile sekund --battery czyta /sys/class/power_supply. */
 #define FLUX_BATTERY_POLL 30.0
 
@@ -96,6 +110,47 @@ static inline float flux_detail_step(float current, float target) {
  * kompozytora) — to nie jest błąd, kończymy kodem 0; inny błąd = kod 2. */
 static inline bool flux_connection_closed(int err) {
     return err == EPIPE || err == ECONNRESET;
+}
+
+/* ── statystyki `-v` ──────────────────────────────────────────────────────── */
+
+/* Co ile sekund `-v` wypisuje linię stanu monitora: klatki na sekundę, czas
+ * CPU jednej klatki, stan dźwięku. Bez tego „za wolne” i „nie reaguje” nie
+ * dawało się zmierzyć na laptopie (audyt 2026-11-24, U4). */
+#define FLUX_STATS_PERIOD 5.0
+
+struct flux_stats {
+    double since;        /* początek okna (zegar monotoniczny); 0 = okno jeszcze nie otwarte */
+    int    frames;       /* klatki w oknie */
+    double render_sum;   /* suma czasu rysowania klatek w oknie (sekundy) */
+};
+
+/* Jedna narysowana klatka: `now` = chwila po swapie, `render_s` = czas od
+ * początku rysowania do końca swapu (CPU: wywołania GL i przekazanie klatki,
+ * bez czekania na GPU — swap nie blokuje, eglSwapInterval 0). */
+static inline void flux_stats_frame(struct flux_stats *s, double now, double render_s) {
+    if (s->since <= 0.0) { s->since = now; s->frames = 0; s->render_sum = 0.0; return; }
+    s->frames++;
+    s->render_sum += render_s > 0.0 ? render_s : 0.0;
+}
+
+/* true, gdy okno ma już FLUX_STATS_PERIOD s: oddaje klatki/s i średni czas
+ * klatki w ms, po czym otwiera nowe okno od `now`. Pierwsza klatka tylko
+ * otwiera okno (nie liczy się), więc fps = klatki / czas między pierwszą
+ * a ostatnią chwilą, bez zawyżania o jedną. */
+static inline bool flux_stats_due(struct flux_stats *s, double now, double *fps, double *ms_per_frame) {
+    if (s->since <= 0.0 || now - s->since < FLUX_STATS_PERIOD) return false;
+    double span = now - s->since;
+    *fps = s->frames / span;
+    *ms_per_frame = s->frames ? s->render_sum / s->frames * 1000.0 : 0.0;
+    s->since = now; s->frames = 0; s->render_sum = 0.0;
+    return true;
+}
+
+/* Surowy poziom RMS (0..1) w dBFS do logu; cisza cyfrowa i śmieci = -120. */
+static inline double flux_dbfs(double rms) {
+    if (!(rms > 1e-6)) return -120.0;
+    return 20.0 * log10(rms);
 }
 
 /* ── dźwięk ───────────────────────────────────────────────────────────────── */

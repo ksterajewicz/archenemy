@@ -16,6 +16,9 @@
 #pragma flux gain 14
 #pragma flux splat 0
 #pragma flux seed 2033
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const float FALL  = 0.55 / 240.0;     /* wysokości ekranu na krok (0.55 ekranu/s) */
 const float WIND  = 0.12;            /* maksymalne odchylenie poziome (części FALL) */
@@ -34,7 +37,8 @@ void main() {
     }
     /* wiatr: wolne pole fBm w skali kadru, plus lekki dryf w czasie */
     float w = (fbm(vec2(p.x * 2.0 + time * 0.05, p.y * 1.5 + time * 0.03), 3, seed) - 0.5) * 2.0;
-    float speed = FALL * (0.8 + 0.4 * h2(idx.x + 3, idx.y + 5, seed));   /* każda kropla ma swoje tempo */
+    /* FALL na krok NOMINALNY (240/s); step_scale przelicza na krok faktyczny (engine.h) */
+    float speed = FALL * step_scale * (0.8 + 0.4 * h2(idx.x + 3, idx.y + 5, seed));   /* każda kropla ma swoje tempo */
     p += vec2(w * WIND * speed / aspect, -speed);
     o = vec4(p, age + 1.0, gen);
 }

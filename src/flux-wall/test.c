@@ -25,6 +25,9 @@
 #include "cli.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"  /* ZWLR_LAYER_SHELL_V1_LAYER_* */
 #define TEST_PI 3.14159265f
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <math.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -284,6 +287,23 @@ static const char *ONCE_FRAG =
     "void main() {\n"
     "    float a = texelFetch(accum, ivec2(gl_FragCoord.xy), 0).r;\n"
     "    fragColor = vec4(vec3(clamp(a * gain, 0.0, 1.0)), 1.0);\n"
+    "}\n";
+
+/* Tempo symulacji z rytmu monitora (sekcja GL „P4”): jedna cząstka co krok
+ * stempluje akumulator i przesuwa się w prawo o stały kawałek „na krok
+ * nominalny” (× step_scale): 1/4 szerokości celu na sekundę. Suma jasności
+ * mówi, ile światła dostał akumulator na sekundę, a najjaśniejsza kolumna —
+ * dokąd cząstka doszła. */
+static const char *RATE_UPDATE =
+    "#pragma flux particles 1\n"
+    "#pragma flux life 0.5\n"
+    "#pragma flux rate 60\n"
+    "#pragma flux inc 0.02\n"
+    "#pragma flux gain 1\n"
+    "void main() {\n"
+    "    vec4 s = texelFetch(pos, ivec2(gl_FragCoord.xy), 0);\n"
+    "    if (s.z < 0.5) { o = vec4(0.125, 0.5, 1.0, 1.0); return; }\n"
+    "    o = vec4(s.x + 0.25 / 60.0 * step_scale, 0.5, s.z + 1.0, 1.0);\n"
     "}\n";
 
 int main(void) {
@@ -647,8 +667,12 @@ int main(void) {
         CHECK(isfinite(rec) && rec > 0.4f, "smooth: poprzednia NaN → liczy od 0 (stan wychodzi z NaN)");
     }
 
+    /* Detektor uderzenia pracuje na PRZYROŚCIE energii basu (suma dodatnich
+     * przyrostów amplitud binów 12–152 Hz między analizami, po auto-gain 0..1):
+     * onset, gdy przyrost przekracza AUDIO_BEAT_MIN i 3× swoją krótką średnią,
+     * nie częściej niż co 220 ms. Wejście niżej to gotowy przyrost 0..1. */
     printf("audio_beat_step\n");
-    struct audio_beat bt = {0};
+    struct audio_beat bt = { .since = 1.0f };
     int hits = 0;
     for (int i = 0; i < 110; i++) {                       /* impulsy co 500 ms, pierwszy po 200 ms */
         bool imp = (i % 25 == 10);
@@ -656,24 +680,90 @@ int main(void) {
         if (imp && o >= 0.99f) hits++;
     }
     CHECK(hits == 4, "4 impulsy co 500 ms → 4 detekcje");
-    struct audio_beat bt2 = {0}; int onsets = 0;
+    struct audio_beat bt2 = { .since = 1.0f }; int onsets = 0;
     for (int i = 0; i < 100; i++) if (audio_beat_step(&bt2, 0.8f, 0.02f) >= 0.99f) onsets++;
-    CHECK(onsets == 1, "ton ciągły → dokładnie jeden onset, bez serii");
-    /* Odstęp 150 ms między uderzeniami: drugie, mocniejsze uderzenie 100 ms po
-     * pierwszym (ponad progiem 1.5 × średnia) się nie liczy, trzecie 200 ms po
-     * pierwszym — tak. */
+    CHECK(onsets == 1, "stały przyrost → dokładnie jeden onset, bez serii (średnia dogania)");
     {
-        struct audio_beat b3 = {0};
+        struct audio_beat bq = { .since = 1.0f }; int weak = 0;
+        for (int i = 0; i < 100; i++) if (audio_beat_step(&bq, (i % 10 == 5) ? 0.3f : 0.02f, 0.02f) >= 0.99f) weak++;
+        CHECK(weak == 0, "przyrosty poniżej progu 0.4 (drobne wahania basu) → bez detekcji");
+    }
+    /* Odstęp 220 ms między uderzeniami: drugie, mocniejsze 100 ms po pierwszym
+     * się nie liczy (ogon tej samej stopy), trzecie 300 ms po pierwszym — tak. */
+    {
+        struct audio_beat b3 = { .since = 1.0f };
         float o1 = 0, o2 = 0, o3 = 0;
-        for (int i = 0; i <= 20; i++) {                            /* krok 20 ms; tło 0.1 */
-            float in = i == 10 ? 1.0f : (i == 15 || i == 20) ? 2.0f : 0.1f;
+        for (int i = 0; i <= 25; i++) {                            /* krok 20 ms; tło 0.05 */
+            float in = i == 10 ? 1.0f : (i == 15 || i == 25) ? 1.0f : 0.05f;
             float o = audio_beat_step(&b3, in, 0.02f);
             if (i == 10) o1 = o;
             if (i == 15) o2 = o;                                   /* 100 ms po pierwszym */
-            if (i == 20) o3 = o;                                   /* 200 ms po pierwszym */
+            if (i == 25) o3 = o;                                   /* 300 ms po pierwszym */
         }
-        CHECK(o1 >= 0.99f && o2 < 0.99f, "uderzenie 100 ms po poprzednim → bez detekcji (odstęp 150 ms)");
-        CHECK(o3 >= 0.99f, "uderzenie 200 ms po poprzednim → detekcja");
+        CHECK(o1 >= 0.99f && o2 < 0.99f, "uderzenie 100 ms po poprzednim → bez detekcji (odstęp 220 ms)");
+        CHECK(o3 >= 0.99f, "uderzenie 300 ms po poprzednim → detekcja");
+    }
+
+    /* Audyt 2026-11-24, U2: dawny detektor (bas > 1.5 × średnia, po trafieniu
+     * średnia = bas, powrót ze stałą 1 s) przy stopie 120 BPM na tle ciągłej
+     * linii basu łapał co czwarte uderzenie — rings (pierścień tylko z beat)
+     * prawie stało. Sygnał: stopa co 500 ms (60 Hz z zanikiem), linia basu
+     * 55 Hz o amplitudzie 0.35 albo 0.10, szum biały ±0.05 (LCG). Uderzenie
+     * trafione = onset do 70 ms po stopie; wymagane ≥ 14 z 16 i ani jednego
+     * onsetu poza stopą. Ton ciągły: jeden onset (start dźwięku), potem nic. */
+    printf("audio_analyze: uderzenia — stopa 120 BPM na tle linii basu, ton ciągły\n");
+    {
+        static struct audio_state bs;
+        static float ring[AUDIO_FFT_N];
+        const float bass_amp[2] = { 0.35f, 0.10f };
+        for (int v = 0; v < 2; v++) {
+            audio_state_init(&bs);
+            memset(ring, 0, sizeof ring);
+            uint32_t lcg = 777u;
+            int got = 0, extra = 0, total = 0;
+            bool kick_hit[16] = { false };
+            float prev_beat = 0.0f;
+            for (int h = 0; h < 400; h++) {                        /* 8 s = 16 uderzeń */
+                memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+                for (int i = 0; i < AUDIO_HOP; i++) {
+                    double t = (double)(h * AUDIO_HOP + i) / AUDIO_RATE, b = fmod(t, 0.5);
+                    lcg = lcg * 1664525u + 1013904223u;
+                    float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                    ring[AUDIO_FFT_N - AUDIO_HOP + i] = (float)(sin(2.0 * M_PI * 60.0 * b * (1.0 - b)) * exp(-b * 9.0) * 0.6
+                                                      + bass_amp[v] * sin(2.0 * M_PI * 55.0 * t)) + 0.05f * w;
+                }
+                audio_analyze(&bs, ring, 0.02f, 1.0 + h * 0.02);
+                if (bs.out.beat >= 0.99f && prev_beat < 0.99f) {   /* onset w tej analizie */
+                    double t = (h + 1) * 0.02, since_kick = fmod(t + 0.02, 0.5) - 0.02;   /* -20..480 ms od stopy */
+                    int k = (int)((t + 0.02) / 0.5);
+                    total++;
+                    if (since_kick <= 0.07 && k < 16) kick_hit[k] = true; else extra++;
+                }
+                prev_beat = bs.out.beat;
+            }
+            for (int k = 0; k < 16; k++) if (kick_hit[k]) got++;
+            printf("       linia basu %.2f: trafione %d/16, poza stopą %d (onsetów %d)\n", bass_amp[v], got, extra, total);
+            CHECK(got >= 14, v == 0 ? "stopa na tle MOCNEJ linii basu: ≥ 14 z 16 uderzeń" : "stopa na tle cichej linii basu: ≥ 14 z 16 uderzeń");
+            CHECK(extra == 0, "żadnego onsetu poza stopą (ogon stopy i linia basu nie wyzwalają)");
+        }
+        audio_state_init(&bs);
+        for (int i = 0; i < AUDIO_FFT_N; i++) ring[i] = 0.0f;
+        int tone_onsets = 0;
+        float prev_beat = 0.0f;
+        uint32_t lcg = 5u;
+        for (int h = 0; h < 200; h++) {                            /* 4 s tonu 80 Hz z lekkim szumem */
+            memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+            for (int i = 0; i < AUDIO_HOP; i++) {
+                lcg = lcg * 1664525u + 1013904223u;
+                float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                ring[AUDIO_FFT_N - AUDIO_HOP + i] = 0.5f * sinf(2.0f * TEST_PI * 80.0f * (float)(h * AUDIO_HOP + i) / AUDIO_RATE) + 0.02f * w;
+            }
+            audio_analyze(&bs, ring, 0.02f, 1.0 + h * 0.02);
+            if (bs.out.beat >= 0.99f && prev_beat < 0.99f) tone_onsets++;
+            prev_beat = bs.out.beat;
+        }
+        printf("       ton ciągły 80 Hz, 4 s: onsetów %d\n", tone_onsets);
+        CHECK(tone_onsets == 1, "ton ciągły → jeden onset (początek dźwięku), zero fałszywych potem");
     }
 
     printf("audio_features_age\n");
@@ -704,6 +794,128 @@ int main(void) {
       int expect = (int)floorf(logf(1000.0f / AUDIO_SPECTRO_LO) / logf(AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO) * AUDIO_SPECTRO_BINS);
       /* szczyt AGC z basu 60 Hz jeszcze nie opadł (zanik ~2 s) → ton 1 kHz kilka dB pod 0 dB, ale > 0.9 */
       CHECK(abs(smax - expect) <= 1 && st.out.spectro[smax] > 0.9f, "ton 1 kHz w łańcuchu → szczyt spektrogramu > 0.9 we właściwym paśmie"); }
+
+    /* Widmo 32 binów (uniform audio_spectrum — słupki bars/orb/tunnel, radar,
+     * waterfall). Audyt 2026-11-24, U1: każdy bin był dzielony przez WŁASNY
+     * szczyt z ~2 s, więc przy muzyce 28–29 z 32 słupków stało średnio ponad
+     * 0.5 — ściana wysokich słupków zamiast kształtu muzyki. Decyzja
+     * właściciela 2026-11-24 (1A): jeden wspólny szczyt dla wszystkich binów
+     * i skala dB (AUDIO_SPECTRUM_RANGE_DB), a bin to ENERGIA pasma (suma mocy,
+     * nie średnia) — szum różowy, czyli równa energia na oktawę, daje równe
+     * słupki, a nie opadające o 3 dB na oktawę. */
+    printf("audio_analyze: widmo 32 binów — wspólny szczyt i skala dB\n");
+    {
+        static struct audio_state ws; audio_state_init(&ws);
+        const int b_lo = 18, b_hi = 27;                /* środki binów: ~1082 Hz i ~5380 Hz */
+        float f_lo = 40.0f * powf(300.0f, ((float)b_lo + 0.5f) / AUDIO_SPECTRUM_BINS);
+        float f_hi = 40.0f * powf(300.0f, ((float)b_hi + 0.5f) / AUDIO_SPECTRUM_BINS);
+        for (int i = 0; i < AUDIO_FFT_N; i++)
+            sig[i] = 0.5f  * sinf(2.0f * TEST_PI * f_lo * (float)i / AUDIO_RATE)
+                   + 0.05f * sinf(2.0f * TEST_PI * f_hi * (float)i / AUDIO_RATE);   /* drugi ton 20 dB ciszej */
+        for (int i = 0; i < 50; i++) audio_analyze(&ws, sig, 0.02f, 1.0 + i * 0.02);
+        printf("       ton głośny %.3f, ton -20 dB %.3f, bin bez sygnału %.3f\n",
+               ws.out.spectrum[b_lo], ws.out.spectrum[b_hi], ws.out.spectrum[5]);
+        CHECK(ws.out.spectrum[b_lo] > 0.95f, "najgłośniejszy bin → ~1.0 (0 dB względem wspólnego szczytu)");
+        CHECK(fabsf(ws.out.spectrum[b_hi] - (1.0f - 20.0f / AUDIO_SPECTRUM_RANGE_DB)) < 0.06f,
+              "ton o 20 dB cichszy → 1 - 20/zakres (nie ~1.0 jak przy szczycie per bin)");
+        CHECK(ws.out.spectrum[5] < 0.02f, "bin bez sygnału → 0");
+
+        /* szum różowy (filtr Kelleta na LCG), okno przesuwane hopami jak w wątku */
+        audio_state_init(&ws);
+        static float ring[AUDIO_FFT_N];
+        memset(ring, 0, sizeof ring);
+        uint32_t lcg = 12345u;
+        float kb[6] = {0};
+        static double acc_bin[AUDIO_SPECTRUM_BINS];
+        memset(acc_bin, 0, sizeof acc_bin);
+        int counted = 0;
+        for (int h = 0; h < 250; h++) {                /* 5 s; średnie z ostatnich 2 s */
+            memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+            for (int i = 0; i < AUDIO_HOP; i++) {
+                lcg = lcg * 1664525u + 1013904223u;
+                float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                kb[0] = 0.99886f * kb[0] + w * 0.0555179f; kb[1] = 0.99332f * kb[1] + w * 0.0750759f;
+                kb[2] = 0.96900f * kb[2] + w * 0.1538520f; kb[3] = 0.86650f * kb[3] + w * 0.3104856f;
+                kb[4] = 0.55000f * kb[4] + w * 0.5329522f; kb[5] = -0.7616f * kb[5] - w * 0.0168980f;
+                ring[AUDIO_FFT_N - AUDIO_HOP + i] = (kb[0] + kb[1] + kb[2] + kb[3] + kb[4] + kb[5] + w * 0.5362f) * 0.04f;
+            }
+            audio_analyze(&ws, ring, 0.02f, 10.0 + h * 0.02);
+            if (h >= 150) { for (int b = 0; b < AUDIO_SPECTRUM_BINS; b++) acc_bin[b] += ws.out.spectrum[b]; counted++; }
+        }
+        double mn = 1e9, mx = -1e9;
+        for (int b = 0; b < AUDIO_SPECTRUM_BINS; b++) {
+            double m = acc_bin[b] / counted;
+            if (m < mn) mn = m;
+            if (m > mx) mx = m;
+        }
+        printf("       szum różowy: średnie binów %.3f..%.3f\n", mn, mx);
+        CHECK(mx - mn < 0.15, "szum różowy (równa energia na oktawę) → słupki równe: rozrzut średnich < 0.15");
+        CHECK(mn > 0.5 && mx < 0.98, "szum różowy: słupki wysoko, ale pod sufitem (szczyt łapie chwilowe maksima)");
+        for (int i = 0; i < AUDIO_FFT_N; i++) ring[i] = 0.0f;
+        for (int i = 0; i < 100; i++) audio_analyze(&ws, ring, 0.02f, 20.0 + i * 0.02);
+        float left = 0.0f;
+        for (int b = 0; b < AUDIO_SPECTRUM_BINS; b++) if (ws.out.spectrum[b] > left) left = ws.out.spectrum[b];
+        CHECK(left < 0.01f, "cisza 2 s → całe widmo ~0");
+    }
+
+    /* Audyt 2026-11-24, U3: podłoga auto-gain była STAŁA (0.004 na średni bin
+     * pasma), więc przy ściszonym odtwarzaczu (monitor wyjścia bierze sygnał
+     * po głośności aplikacji) szerokie pasma wysokich spadały pod podłogę
+     * i gasły: ta sama muzyka ×0.05 dawała `high` 0.03 zamiast 0.65. Podłogi
+     * są teraz ułamkiem szczytu poziomu ogólnego — sygnał ×0.05 (−26 dB) ma
+     * dawać te same cechy co ×1 (±10 %). Sygnał: stopa 120 BPM, linia basu
+     * 55 Hz, szum różowy (pełne pasmo). Bramka ciszy −60 dBFS zostaje. */
+    printf("audio_analyze: cichy strumień (×0.05) daje te same cechy co głośny\n");
+    {
+        static struct audio_state qs;
+        static float ring[AUDIO_FFT_N];
+        static double feat[2][5 + AUDIO_SPECTRUM_BINS];
+        int beats[2] = { 0, 0 };
+        const float gain[2] = { 1.0f, 0.05f };
+        for (int v = 0; v < 2; v++) {
+            audio_state_init(&qs);
+            memset(ring, 0, sizeof ring);
+            memset(feat[v], 0, sizeof feat[v]);
+            uint32_t lcg = 4242u;
+            float kb[6] = {0}, prev_beat = 0.0f;
+            int counted = 0;
+            for (int h = 0; h < 300; h++) {                        /* 6 s; średnie z ostatnich 3 s */
+                memmove(ring, ring + AUDIO_HOP, (AUDIO_FFT_N - AUDIO_HOP) * sizeof(float));
+                for (int i = 0; i < AUDIO_HOP; i++) {
+                    double t = (double)(h * AUDIO_HOP + i) / AUDIO_RATE, b = fmod(t, 0.5);
+                    lcg = lcg * 1664525u + 1013904223u;
+                    float w = (float)(lcg >> 8) / 16777216.0f * 2.0f - 1.0f;
+                    kb[0] = 0.99886f * kb[0] + w * 0.0555179f; kb[1] = 0.99332f * kb[1] + w * 0.0750759f;
+                    kb[2] = 0.96900f * kb[2] + w * 0.1538520f; kb[3] = 0.86650f * kb[3] + w * 0.3104856f;
+                    kb[4] = 0.55000f * kb[4] + w * 0.5329522f; kb[5] = -0.7616f * kb[5] - w * 0.0168980f;
+                    float pink = (kb[0] + kb[1] + kb[2] + kb[3] + kb[4] + kb[5] + w * 0.5362f) * 0.04f;
+                    ring[AUDIO_FFT_N - AUDIO_HOP + i] = gain[v] * ((float)(sin(2.0 * M_PI * 60.0 * b * (1.0 - b)) * exp(-b * 9.0) * 0.6
+                                                      + 0.35 * sin(2.0 * M_PI * 55.0 * t)) + pink);
+                }
+                audio_analyze(&qs, ring, 0.02f, 1.0 + h * 0.02);
+                if (qs.out.beat >= 0.99f && prev_beat < 0.99f) beats[v]++;
+                prev_beat = qs.out.beat;
+                if (h >= 150) {
+                    feat[v][0] += qs.out.level; feat[v][1] += qs.out.bass; feat[v][2] += qs.out.lowmid;
+                    feat[v][3] += qs.out.mid;   feat[v][4] += qs.out.high;
+                    for (int k = 0; k < AUDIO_SPECTRUM_BINS; k++) feat[v][5 + k] += qs.out.spectrum[k];
+                    counted++;
+                }
+            }
+            for (int k = 0; k < 5 + AUDIO_SPECTRUM_BINS; k++) feat[v][k] /= counted;
+            printf("       ×%-4g level %.3f bass %.3f lowmid %.3f mid %.3f high %.3f, widmo[4] %.3f widmo[28] %.3f, uderzeń %d\n",
+                   (double)gain[v], feat[v][0], feat[v][1], feat[v][2], feat[v][3], feat[v][4], feat[v][5 + 4], feat[v][5 + 28], beats[v]);
+        }
+        int off_band = 0, off_spec = 0;
+        for (int k = 0; k < 5; k++)
+            if (fabs(feat[0][k] - feat[1][k]) > 0.10 * feat[0][k] + 0.005) off_band++;
+        for (int k = 5; k < 5 + AUDIO_SPECTRUM_BINS; k++)
+            if (fabs(feat[0][k] - feat[1][k]) > 0.10 * feat[0][k] + 0.005) off_spec++;
+        CHECK(feat[0][4] > 0.3, "warunek testu: przy ×1 pasmo wysokich wyraźnie gra (high > 0.3)");
+        CHECK(off_band == 0, "level/bass/lowmid/mid/high: ×0.05 w granicach ±10 % wartości z ×1");
+        CHECK(off_spec == 0, "32 biny widma: ×0.05 w granicach ±10 % wartości z ×1");
+        CHECK(beats[0] >= 10 && beats[0] == beats[1], "uderzenia: tyle samo przy ×0.05 co przy ×1");
+    }
 
     /* Bramka szumu −60 dBFS (AUDIO_GATE 0.001 RMS): cichy szum toru nie może
      * zostać wzmocniony przez auto-gain do pełnej reakcji. Sinus 60 Hz o RMS
@@ -977,6 +1189,53 @@ int main(void) {
         printf("       przerwy między próbami: %.2f s, %.2f s\n", g1, g2);
         CHECK(fs.tries >= 3 && g1 >= 0.95 && g1 < 1.6 && g2 >= 1.95 && g2 < 2.8,
               "przerwa między próbami 1 s, potem 2 s (backoff się podwaja)");
+    }
+
+    /* Audyt 2026-11-24, U4: komunikaty audio szły tylko z -v, którego wrapper
+     * nie podaje — brak serwera albo zły monitor nie zostawiał w flux-wall.log
+     * żadnego śladu. Bez -v do logu ma trafić: pierwsze połączenie z nazwą
+     * źródła, zerwanie, a brak połączenia RAZ na przerwę (nie co próbę).
+     * audio_source oddaje nazwę źródła bieżącego strumienia (linia stanu -v),
+     * raw_level — surowy RMS okna (sinus 0.5 → 0.354). */
+    printf("audio: log stanu strumienia bez -v, nazwa źródła, surowy poziom (atrapa libpulse)\n");
+    {
+        FILE *lf = tmpfile();
+        CHECK(lf != NULL, "plik tymczasowy na log");
+        audio_log_stream(lf);
+        fake_pa_setup("@DEFAULT_MONITOR@", 15);        /* 0.3 s danych z --audio-device, potem zerwanie */
+        struct audio *au = audio_start("test-sink.monitor", NULL, false);
+        struct audio_features snap = {0};
+        char src[128] = "?";
+        bool heard = false;
+        for (double end = test_now() + 2.0; !heard && test_now() < end; test_sleep_ms(5)) {
+            audio_snapshot(au, &snap);
+            heard = snap.live && snap.bass > 0.5f;
+            if (heard) audio_source(au, src, sizeof src);
+        }
+        CHECK(heard && strcmp(src, "test-sink.monitor") == 0, "audio_source: nazwa źródła bieżącego strumienia");
+        CHECK(fabsf(snap.raw_level - 0.3536f) < 0.02f, "raw_level: surowy RMS okna (sinus 0.5 → 0.354), nie wartość po auto-gain");
+        for (double end = test_now() + 3.0; fake_pa_get().fails < 1 && test_now() < end; ) test_sleep_ms(10);
+        test_sleep_ms(60);                             /* wątek zdąży zapisać linię o zerwaniu */
+        audio_source(au, src, sizeof src);
+        CHECK(src[0] == 0, "audio_source po zerwaniu: pusty napis (brak połączenia)");
+        audio_stop(au);
+        fake_pa_setup("*", 0);                         /* brak serwera: próby po 0, 1 i 3 s */
+        au = audio_start(NULL, NULL, false);
+        for (double end = test_now() + 4.0; fake_pa_get().tries < 2 && test_now() < end; ) test_sleep_ms(10);
+        audio_stop(au);
+        audio_log_stream(NULL);
+        static char logbuf[4096];
+        rewind(lf);
+        size_t ln = fread(logbuf, 1, sizeof logbuf - 1, lf);
+        logbuf[ln] = 0;
+        int n_conn = 0, n_lost = 0, n_none = 0;
+        for (const char *q = logbuf; (q = strstr(q, "strumień z test-sink.monitor (monitor")) != NULL; q++) n_conn++;
+        for (const char *q = logbuf; (q = strstr(q, "zerwany")) != NULL; q++) n_lost++;
+        for (const char *q = logbuf; (q = strstr(q, "brak połączenia z monitorem wyjścia")) != NULL; q++) n_none++;
+        CHECK(n_conn == 1, "bez -v: pierwsze połączenie w logu, z nazwą źródła");
+        CHECK(n_lost == 1, "bez -v: zerwanie strumienia w logu");
+        CHECK(fake_pa_get().tries >= 2 && n_none == 1, "bez -v: brak połączenia w logu RAZ, nie co próbę");
+        CHECK(strstr(logbuf, "flux-wall: audio: ") == logbuf, "linie zaczynają się od „flux-wall: audio: ” (doctor filtruje po „audio:”)");
     }
 
     /* Kody wyjścia to kontrakt z flux-wall.sh (DECYZJE 2026-09-07h): 1 =
@@ -1305,6 +1564,130 @@ int main(void) {
         CHECK(flux_audio_mode(false, false, true, true) == FLUX_AUDIO_OFF, "--once bez audio → OFF (bez logu „pominięte”)");
     }
 
+    /* Decyzja właściciela 2026-11-24: klatki animacji w rytmie odświeżania
+     * ustawionego dla DANEGO monitora, ruch płynny w tym rytmie. Klatki
+     * przychodzą z frame callbacków (nigdy częściej niż Hz monitora), a silnik
+     * dopasowuje do nich krok symulacji: całkowita liczba kroków na klatkę.
+     * Dawne stałe 60 kroków/s na 144 Hz: krok w 60 klatkach ze 144, reszta
+     * powtarzała stan cząstek (sprawdzone niżej jako „tempo nominalne”). */
+    printf("P4: rytm monitora → tempo symulacji (flux_frame_hz, flux_sim_rate, flux_sim_steps)\n");
+    {
+        CHECK(flux_frame_hz(144000, 0) == 144.0 && flux_frame_hz(59951, 0) == 59.951 && flux_frame_hz(165003, 0) == 165.003,
+              "odświeżanie z wl_output.mode (mHz) → Hz tego monitora");
+        CHECK(flux_frame_hz(144000, 30) == 30.0 && flux_frame_hz(60000, 240) == 60.0,
+              "limit -f niższy niż Hz monitora wygrywa; wyższy nie podnosi rytmu ponad monitor");
+        CHECK(flux_frame_hz(0, 0) == 0.0 && flux_frame_hz(-5, 0) == 0.0 && flux_frame_hz(5000000, 0) == 0.0,
+              "odświeżanie nieznane albo bez sensu → 0 (tempo nominalne shadera)");
+        CHECK(flux_frame_hz(0, 30) == 30.0, "odświeżanie nieznane, jest -f → rytm z -f");
+
+        CHECK(flux_sim_rate(60.0f, 60.0) == 60.0 && flux_sim_rate(60.0f, 0.0) == 60.0 && flux_sim_rate(60.0f, NAN) == 60.0,
+              "60 Hz albo rytm nieznany: tempo nominalne 60 kroków/s (obraz jak dotąd)");
+        CHECK(flux_sim_rate(60.0f, 144.0) == 144.0 && flux_sim_rate(60.0f, 165.0) == 165.0 && flux_sim_rate(60.0f, 240.0) == 240.0,
+              "monitor szybszy niż tempo nominalne: jeden krok na klatkę (144, 165, 240)");
+        CHECK(flux_sim_rate(60.0f, 59.951) == 59.951, "59.95 Hz: dalej JEDEN krok na klatkę, nie dwa (tolerancja 5 %)");
+        CHECK(flux_sim_rate(120.0f, 60.0) == 120.0 && flux_sim_rate(240.0f, 60.0) == 240.0,
+              "tempo nominalne ponad Hz: całkowita liczba kroków na klatkę (2 i 4 na 60 Hz)");
+        CHECK(flux_sim_rate(240.0f, 144.0) == 288.0 && flux_sim_rate(240.0f, 165.0) == 330.0 && flux_sim_rate(120.0f, 144.0) == 144.0,
+              "nigdy mniej kroków niż nominalnie: 240/s na 144 Hz → 288, na 165 Hz → 330");
+        CHECK(flux_sim_rate(60.0f, 30.0) == 60.0 && flux_sim_rate(60.0f, 5.0) == 60.0 && flux_sim_rate(60.0f, 2000.0) == 60.0,
+              "-f 30 → 2 kroki na klatkę; rytm spoza 10..1000 Hz ignorowany");
+
+        /* 144 klatki monitora 144 Hz z drganiem czasu klatki ±15 % */
+        uint32_t lcg = 99u;
+        double acc_new = 0.0, acc_nom = 0.0, rate_new = flux_sim_rate(60.0f, 144.0);
+        int bad_new = 0, empty_nom = 0, total_new = 0, total_nom = 0;
+        double carry = 0.0;
+        for (int f = 0; f < 144; f++) {
+            lcg = lcg * 1664525u + 1013904223u;
+            double jitter = ((double)(lcg >> 8) / 16777216.0 * 2.0 - 1.0) * 0.15;
+            double dt = (1.0 + jitter - carry) / 144.0;      /* drganie się znosi: średnio równo 1/144 s */
+            carry = jitter;
+            int sn = flux_sim_steps(&acc_new, dt, rate_new, 4);
+            int so = flux_sim_steps(&acc_nom, dt, 60.0, 4);
+            if (sn != 1) bad_new++;
+            if (so == 0) empty_nom++;
+            total_new += sn; total_nom += so;
+        }
+        printf("       144 Hz, 1 s: tempo z monitora %d kroków (klatek bez dokładnie 1 kroku: %d); tempo nominalne %d kroków, %d klatek bez kroku\n",
+               total_new, bad_new, total_nom, empty_nom);
+        CHECK(bad_new == 0 && total_new == 144, "tempo z monitora: dokładnie jeden krok w KAŻDEJ klatce mimo drgania ±15 %");
+        CHECK(total_nom == 60 && empty_nom >= 80, "tempo nominalne 60/s na 144 Hz: ponad połowa klatek bez kroku (stan cząstek się powtarza)");
+        double acc = 0.0;
+        CHECK(flux_sim_steps(&acc, 1.0 / 30.0, 60.0, 4) == 2 && fabs(acc) < 1e-9, "klatka 1/30 s przy 60 kroków/s → 2 kroki, bez reszty");
+        acc = 0.0;
+        CHECK(flux_sim_steps(&acc, 0.0, 144.0, 4) == 0, "pierwsza klatka (dt = 0) → 0 kroków");
+        CHECK(flux_sim_steps(&acc, 5.0, 144.0, 4) == 4 && acc == 0.0, "po pauzie 5 s: najwyżej limit kroków i bez zaległości");
+        acc = 0.0;
+        int a1 = flux_sim_steps(&acc, 0.4 / 144.0, 144.0, 4), a2 = flux_sim_steps(&acc, 0.4 / 144.0, 144.0, 4);
+        CHECK(a1 == 0 && a2 == 1, "ułamki kroku przechodzą na następną klatkę (0.4 + 0.4 → krok w drugiej)");
+    }
+
+    /* Cechy dźwięku w rytmie monitora: analiza daje 50 wartości/s, monitor rysuje
+     * do 240 klatek — słupki mają dochodzić do nowej wartości płynnie, a zanik
+     * uderzenia ma być ciągły, nie schodkowy co 20 ms. */
+    printf("P4: cechy dźwięku w rytmie monitora (audio_features_follow)\n");
+    {
+        static struct audio_features cur, snap;
+        memset(&cur, 0, sizeof cur); memset(&snap, 0, sizeof snap);
+        snap.t = 10.0; snap.level = 0.2f; snap.spectrum[7] = 0.2f; snap.live = true; snap.wave[5] = 0.5f; snap.raw_level = 0.1f;
+        audio_features_follow(&cur, &snap, 10.0, 0.0f);
+        CHECK(cur.level == 0.2f && cur.spectrum[7] == 0.2f && cur.wave[5] == 0.5f && cur.live && cur.raw_level == 0.1f,
+              "pierwsza klatka: od razu snapshot (także przebieg, live, surowy poziom)");
+        snap.t = 10.02; snap.level = 1.0f; snap.spectrum[7] = 1.0f; snap.wave[5] = -0.5f;   /* nowa analiza */
+        float prev_l = cur.level, prev_s = cur.spectrum[7];
+        bool rising = true;
+        for (int f = 1; f <= 3; f++) {                       /* trzy klatki 144 Hz w jednym hopie 20 ms */
+            audio_features_follow(&cur, &snap, 10.02 + f / 144.0, 1.0f / 144.0f);
+            if (!(cur.level > prev_l + 0.01f && cur.spectrum[7] > prev_s + 0.01f)) rising = false;
+            prev_l = cur.level; prev_s = cur.spectrum[7];
+        }
+        CHECK(rising, "144 Hz: w każdej z trzech klatek między analizami słupek jest wyżej (bez powtórzonych klatek)");
+        CHECK(cur.level > 0.9f && cur.level < 1.0f && cur.wave[5] == -0.5f, "po ~21 ms: ponad 90 % drogi; przebieg zawsze najnowszy");
+        memset(&cur, 0, sizeof cur);
+        snap.level = 0.2f; snap.t = 10.0;
+        audio_features_follow(&cur, &snap, 10.0, 0.0f);
+        snap.level = 1.0f; snap.t = 10.02;
+        audio_features_follow(&cur, &snap, 10.03, 1.0f / 60.0f);
+        CHECK(cur.level > 0.2f + 0.8f * 0.85f, "60 Hz: jedna klatka pokonuje ponad 85 % skoku (opóźnienie poniżej klatki)");
+        audio_features_follow(&cur, &snap, 12.0, 1.0f);
+        CHECK(cur.level == 1.0f, "po długiej przerwie między klatkami: od razu snapshot");
+        snap.beat = 1.0f; snap.t = 20.0;
+        float b0, b1, b2;
+        audio_features_follow(&cur, &snap, 20.0, 0.007f);   b0 = cur.beat;
+        audio_features_follow(&cur, &snap, 20.007, 0.007f); b1 = cur.beat;
+        audio_features_follow(&cur, &snap, 20.014, 0.007f); b2 = cur.beat;
+        CHECK(near(b0, 1.0f) && b1 < b0 - 0.03f && b2 < b1 - 0.03f && near(b2, expf(-0.14f)),
+              "uderzenie gaśnie w każdej klatce między analizami (po 14 ms: exp(-0.14))");
+        audio_features_follow(&cur, &snap, 20.5, 0.007f);
+        CHECK(near(cur.beat, expf(-1.0f)), "zanik uderzenia tutaj tylko do 100 ms wieku (dalej gasi audio_features_age)");
+    }
+
+    /* Linia stanu `-v` co FLUX_STATS_PERIOD s (audyt 2026-11-24, U4): klatki na
+     * sekundę z liczby klatek i czasu okna, średni czas klatki, poziom w dBFS. */
+    printf("logic: statystyki -v (klatki/s, ms/klatkę, dBFS)\n");
+    {
+        struct flux_stats fs = {0};
+        double fps = -1, ms = -1;
+        CHECK(!flux_stats_due(&fs, 100.0, &fps, &ms), "przed pierwszą klatką: nic do wypisania");
+        flux_stats_frame(&fs, 100.0, 0.5);                   /* pierwsza klatka tylko otwiera okno */
+        int due_early = 0;
+        for (int i = 1; i <= 720; i++) {                     /* 144 kl/s przez 5 s, 2 ms na klatkę */
+            double now = 100.0 + i / 144.0;
+            flux_stats_frame(&fs, now, 0.002);
+            if (i < 720 && flux_stats_due(&fs, now, &fps, &ms)) due_early++;
+        }
+        CHECK(due_early == 0, "przed upływem 5 s: bez linii");
+        bool due = flux_stats_due(&fs, 105.0, &fps, &ms);
+        CHECK(due && fabs(fps - 144.0) < 0.01 && fabs(ms - 2.0) < 0.001,
+              "po 5 s: 144.0 kl/s i 2.00 ms/klatkę (klatka otwierająca okno się nie liczy)");
+        CHECK(!flux_stats_due(&fs, 105.1, &fps, &ms) && fs.frames == 0, "po linii okno liczy od nowa");
+        for (int i = 1; i <= 10; i++) flux_stats_frame(&fs, 105.0 + i * 0.5, 0.001);
+        due = flux_stats_due(&fs, 110.0, &fps, &ms);
+        CHECK(due && fabs(fps - 2.0) < 0.01, "rzadkie klatki (zasłonięta tapeta): 2.0 kl/s");
+        CHECK(fabs(flux_dbfs(1.0)) < 1e-9 && fabs(flux_dbfs(0.1) + 20.0) < 1e-6 && flux_dbfs(0.0) == -120.0 &&
+              flux_dbfs(NAN) == -120.0, "dBFS: 1.0 → 0, 0.1 → -20, cisza i NaN → -120");
+    }
+
     /* --once (tapeta statyczna) liczy rozgrzewkę przed jedyną klatką. Zmiana
      * skali albo rozdzielczości odtwarza i czyści akumulator, więc kolejna
      * klatka też potrzebuje rozgrzewki — inaczej z obrazu zostawało samo tło
@@ -1340,6 +1723,54 @@ int main(void) {
         }
         flux_target_destroy(gt);
         if (ge) flux_engine_destroy(ge);
+    }
+
+    /* Ten sam shader na monitorze 60 Hz (tempo nominalne) i 144 Hz (krok na
+     * klatkę): akumulator ma dostać tyle samo światła na sekundę — silnik
+     * skaluje jasność śladu (inc · step_scale) — a cząstka sunąca „o stały
+     * kawałek na krok nominalny” ma po 2 s być w tej samej kolumnie (trzeciej
+     * z czterech). Bez skalowania 144 kroki/s dałyby obraz 2.4× jaśniejszy,
+     * a cząstka po 2 s byłaby już poza celem. */
+    printf("GL: P4 — tempo symulacji z rytmu monitora nie zmienia jasności ani prędkości\n");
+    if (!gl_ok) {
+        printf("  POMINIĘTO: brak EGL surfaceless / GLES 3.0 — test wymaga Mesy albo GPU\n");
+    } else {
+        char gerr[2560];
+        struct palette gpal = { {0, 0, 0}, {1, 1, 1}, {1, 1, 1} };
+        const double hz[2] = { 60.0, 144.0 };
+        double mean[2] = { 0, 0 }, rate[2] = { 0, 0 };
+        int col[2] = { -1, -1 };
+        for (int v = 0; v < 2; v++) {
+            struct flux_engine *ge = flux_engine_create(ONCE_FRAG, "test-rate.frag", RATE_UPDATE, "test-rate.update.glsl",
+                                                        gerr, sizeof gerr);
+            struct flux_target *gt = ge ? flux_target_create(ge, 4, 4, gerr, sizeof gerr) : NULL;
+            if (!ge || !gt) { printf("       %s\n", gerr); CHECK(false, "silnik i cel 4x4 (test tempa)"); if (ge) flux_engine_destroy(ge); continue; }
+            if (v == 1) flux_target_set_frame_rate(gt, hz[v]);
+            rate[v] = flux_target_sim_rate(gt);
+            GLuint tex, fbo = test_dest_fbo(4, 4, &tex);
+            int frames = (int)(2.0 * hz[v]);                       /* 2 s: akumulator w stanie ustalonym */
+            for (int f = 0; f <= frames; f++)
+                flux_engine_render(ge, gt, fbo, f / hz[v], &gpal, 1.0f, 0.0f, NULL, 0.0f, false);
+            mean[v] = test_fbo_mean(fbo, 4, 4);
+            unsigned char px[4 * 4 * 4];
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glReadPixels(0, 0, 4, 4, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            int best = -1;
+            for (int x = 0; x < 4; x++) {
+                int sum = 0;
+                for (int y = 0; y < 4; y++) sum += px[(y * 4 + x) * 4];
+                if (sum > best) { best = sum; col[v] = x; }
+            }
+            glDeleteFramebuffers(1, &fbo); glDeleteTextures(1, &tex);
+            flux_target_destroy(gt);
+            flux_engine_destroy(ge);
+        }
+        printf("       60 Hz: %.0f kroków/s, jasność %.2f, cząstka w kolumnie %d;  144 Hz: %.0f kroków/s, jasność %.2f, kolumna %d\n",
+               rate[0], mean[0], col[0], rate[1], mean[1], col[1]);
+        CHECK(rate[0] == 60.0 && rate[1] == 144.0, "cel bez rytmu: 60 kroków/s (nominalnie); po flux_target_set_frame_rate(144): 144");
+        CHECK(mean[0] > 2.0 && fabs(mean[1] - mean[0]) < 0.05 * mean[0], "jasność akumulatora ta sama przy 60 i 144 Hz (±5 %)");
+        CHECK(col[0] == 2 && col[1] == 2, "ruch „na krok nominalny” · step_scale: po 2 s cząstka w tej samej (trzeciej) kolumnie");
     }
 
     /* Kod 3 = EGL/shader: main.c (build_engine) kończy kodem 3, gdy

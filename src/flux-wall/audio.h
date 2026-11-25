@@ -4,14 +4,16 @@
  * Wątek czyta próbki przez libpulse-simple (pipewire-pulse), liczy co ~20 ms
  * FFT 2048 z oknem Hanna i sprowadza widmo do pasm jak w wizualizerach:
  *   bass 20–150 Hz · lowmid 150–500 · mid 500–2000 · high 2000–10000
- * plus poziom RMS, detektor uderzenia (onset basu) i 32 biny log-freq.
+ * plus poziom RMS, detektor uderzenia (przyrost energii basu) i 32 biny log-freq.
  * Od 2026-09-17 strumień jest STEREO: FFT/pasma liczone z miksu (L+R)/2,
  * a osobno trzymany jest PRZEBIEG (ostatnie AUDIO_WAVE_N próbek L i R) dla
  * wizualizacji oscyloskopowych — z triggerem jak w prawdziwym oscyloskopie
  * (start okna na ostatnim narastającym przejściu przez zero, żeby ślad
  * okresowego tonu stał w miejscu zamiast skakać co klatkę).
- * Każde pasmo przechodzi auto-gain (bieżące maksimum z zanikiem, z podłogą)
- * i wygładzanie attack/release — wynik w 0..1, w ciszy dokładnie 0.
+ * Pasma bass/lowmid/mid/high i poziom przechodzą auto-gain per pasmo (bieżące
+ * maksimum z zanikiem, z podłogą) i wygładzanie attack/release — wynik w 0..1,
+ * w ciszy dokładnie 0. Widmo 32 binów (słupki) ma JEDEN wspólny szczyt i skalę
+ * dB — pokazuje kształt muzyki, nie każdy bin względem samego siebie.
  *
  * Wątek nie dotyka GL ani Waylanda. Render bierze snapshot pod mutexem raz na
  * klatkę. Snapshot ma znacznik czasu: gdy sink śpi, `pa_simple_read` blokuje
@@ -30,6 +32,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #define AUDIO_RATE          48000
 #define AUDIO_FFT_N         2048
@@ -45,10 +48,13 @@
 #define AUDIO_SPECTRO_LO    40.0f
 #define AUDIO_SPECTRO_HI    16000.0f
 #define AUDIO_SPECTRO_RANGE_DB 60.0f
+#define AUDIO_SPECTRUM_RANGE_DB 45.0f   /* widmo 32 binów: zakres dB pod wspólnym szczytem */
 
 /* Cechy dźwięku dla silnika — wszystko w 0..1, `beat` to impuls z zanikiem. */
 struct audio_features {
     float level, bass, lowmid, mid, high, beat;
+    /* widmo 32 binów log-freq (40 Hz – 12 kHz): 0..1 = -AUDIO_SPECTRUM_RANGE_DB..0 dB
+     * względem najgłośniejszego binu z ostatnich ~2 s, wygładzone attack/release */
     float spectrum[AUDIO_SPECTRUM_BINS];
     /* przebieg po triggerze: wave[2*i] = L, wave[2*i+1] = R, i = 0..AUDIO_WAVE_N-1,
      * próbki w -1..1 (bez auto-gain — oscyloskop ma pokazywać prawdziwą amplitudę,
@@ -59,6 +65,10 @@ struct audio_features {
     float spectro[AUDIO_SPECTRO_BINS];
     double t;        /* czas snapshotu (sekundy, zegar monotoniczny); 0 = nigdy */
     bool   live;     /* strumień z serwera działa */
+    /* surowy RMS okna analizy (0..1, PRZED auto-gain i wygładzaniem) — tylko
+     * diagnostyka: log `-v` pokazuje, czy do flux-walla w ogóle dociera dźwięk
+     * i jak głośny (cechy wyżej są już znormalizowane, więc tego nie powiedzą) */
+    float  raw_level;
 };
 
 /* ── czyste ─────────────────────────────────────────────────────────────── */
@@ -74,12 +84,20 @@ void audio_fft_init(struct audio_fft *f);
 void audio_fft_power(struct audio_fft *f, const float *in, float *power);
 
 /* Surowe pasma z mocy widma i RMS z próbek czasu (bez auto-gain). */
+/* `spectrum[i]` to ENERGIA binu log-freq (pierwiastek z sumy mocy binów FFT
+ * w paśmie), pozostałe pola — średnia (RMS na bin FFT). Biny log mają stałą
+ * szerokość w oktawach, więc energia jest równa dla szumu różowego (równa moc
+ * na oktawę, typowe nachylenie muzyki); średnia opadałaby o 3 dB na oktawę
+ * i góra widma leżałaby przy każdej muzyce. */
 struct audio_bands_raw { float level, bass, lowmid, mid, high; float spectrum[AUDIO_SPECTRUM_BINS]; float spectro[AUDIO_SPECTRO_BINS]; };
 void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out);
 
 /* Auto-gain: dzieli przez bieżące maksimum (zanik ~2 s), podłoga chroni ciszę
  * przed wzmocnieniem do pełnej reakcji. Zwraca x/peak przycięte do 0..1.
+ * Podłogę podaje wołający: stałą dla poziomu ogólnego, a dla pasm — ułamek
+ * szczytu poziomu (audio.c: AUDIO_FLOOR_*), żeby ściszenie całego strumienia
+ * nie zmieniało cech.
  * x NaN/inf (moc FFT przepełniona olbrzymią próbką) liczy się jak 0,
  * a szczyt NaN/inf wraca do podłogi — wynik zawsze skończony. */
 struct audio_agc { float peak; };
@@ -89,10 +107,28 @@ float audio_agc_step(struct audio_agc *a, float x, float dt, float floor_value);
  * x NaN/inf → zostaje prev; prev NaN/inf → liczy od 0 (stan wychodzi z NaN). */
 float audio_smooth(float prev, float x, float dt, float attack, float release);
 
-/* Detektor uderzenia: onset basu względem średniej kroczącej (~1 s), nie
- * częściej niż co 150 ms; wyjście 1.0 z zanikiem ~100 ms. */
-struct audio_beat { float avg; float since; float out; };
-float audio_beat_step(struct audio_beat *b, float bass, float dt);
+/* Detektor uderzenia na PRZYROŚCIE energii basu (spectral flux): suma
+ * dodatnich przyrostów amplitud binów FFT 1..AUDIO_FLUX_BINS (12–152 Hz)
+ * między kolejnymi analizami. Stopa to nagły przyrost w kilku binach naraz,
+ * ciągła linia basu przyrostu nie daje — dawny próg „bas > 1.5 × średnia”
+ * (średnia skakała do szczytu po trafieniu) gubił uderzenia na tle basu
+ * (audyt 2026-11-24, U2: 3 z 16 przy stopie 120 BPM i mocnej linii basu).
+ *   audio_bass_flux: przyrost z mocy widma (`power` = NULL → cisza: zeruje
+ *                    pamięć binów, zwraca 0; NaN/inf w mocy liczy się jak 0),
+ *   audio_beat_step: `flux` po auto-gain (0..1) → onset, gdy przekracza
+ *                    AUDIO_BEAT_MIN i AUDIO_BEAT_RATIO × swoją krótką średnią
+ *                    (stała AUDIO_BEAT_AVG s), nie częściej niż co
+ *                    AUDIO_BEAT_GAP s; wyjście 1.0 z zanikiem ~100 ms.
+ * `since` = 0 w świeżej strukturze blokuje onset przez pierwsze AUDIO_BEAT_GAP
+ * s — audio_state_init ustawia je tak, żeby pierwszy dźwięk mógł wyzwolić. */
+#define AUDIO_FLUX_BINS  6
+#define AUDIO_BEAT_GAP   0.22f
+#define AUDIO_BEAT_MIN   0.40f
+#define AUDIO_BEAT_RATIO 3.0f
+#define AUDIO_BEAT_AVG   0.5f
+struct audio_beat { float prev[AUDIO_FLUX_BINS]; float avg; float since; float out; };
+float audio_bass_flux(struct audio_beat *b, const float *power);
+float audio_beat_step(struct audio_beat *b, float flux, float dt);
 
 /* Trigger oscyloskopu: w buforze `mono` (n próbek, najnowsza na końcu) szuka
  * NAJPÓŹNIEJSZEGO narastającego przejścia przez zero (z histerezą `hyst`), po
@@ -104,12 +140,26 @@ int audio_trigger(const float *mono, int n, int span, float hyst);
  * z buforów L i R długości n. */
 void audio_wave_fill(struct audio_features *out, const float *l, const float *r, int n, int start);
 
+/* `n` surowych pasm → dB względem wspólnego szczytu `peak`, zakres `range_db`
+ * przeskalowany na 0..1 (0 dB = 1, -range_db i mniej = 0; peak <= 0 → zera). */
+void audio_db_column(const float *raw, int n, float peak, float range_db, float *out);
 /* Kolumna spektrogramu ze SUROWYCH pasm: dB względem `peak` (szczyt globalny
  * po auto-gain), zakres AUDIO_SPECTRO_RANGE_DB → 0..1. Czyste, testowane. */
 void audio_spectro_column(const float *raw, float peak, float *out);
 
 /* Zanik stęchłego snapshotu: gdy `now - t` > 0.1 s, cechy gasną z `release`. */
 void audio_features_age(struct audio_features *f, double now, float release);
+
+/* Render: cechy dla TEJ klatki. Analiza daje nowe wartości 50 razy na sekundę,
+ * a monitor rysuje 60–240 klatek: bez tego słupki na 144 Hz stały przez 2–3
+ * klatki i skakały. `cur` (stan per monitor) dochodzi do najnowszego
+ * snapshotu wykładniczo ze stałą AUDIO_FOLLOW_TAU — poziom, pasma i 32 biny
+ * widma; uderzenie gaśnie w sposób ciągły (snapshot niesie jego wartość
+ * z chwili analizy, tu dokładamy zanik za czas, który minął do klatki);
+ * przebieg, spektrogram, znaczniki — kopia. `dt` = czas od poprzedniej
+ * klatki tego monitora (<= 0 albo pierwsza klatka → od razu snapshot). */
+#define AUDIO_FOLLOW_TAU 0.008f
+void audio_features_follow(struct audio_features *cur, const struct audio_features *snap, double now, float dt);
 
 /* Próbka wejściowa (serwer dźwięku, plik): NaN i ±inf → 0, reszta bez zmian.
  * Jedna taka próbka w oknie FFT zatruwała auto-gain, wygładzanie i średnią
@@ -124,8 +174,13 @@ float audio_sample_clean(float x);
 struct audio_state {
     struct audio_fft  fft;
     float             power[AUDIO_FFT_N / 2 + 1];
-    struct audio_agc  agc_level, agc_bass, agc_lowmid, agc_mid, agc_high, agc_spec[AUDIO_SPECTRUM_BINS];
+    struct audio_agc  agc_level, agc_bass, agc_lowmid, agc_mid, agc_high;
+    /* JEDEN szczyt dla 32 binów widma (decyzja właściciela 2026-11-24, 1A):
+     * dawny szczyt per bin normalizował każdy słupek do samego siebie i przy
+     * muzyce prawie wszystkie stały wysoko (audyt 2026-11-24, U1) */
+    struct audio_agc  agc_spectrum;
     struct audio_agc  agc_spectro;   /* JEDEN szczyt dla całej kolumny spektrogramu */
+    struct audio_agc  agc_flux;      /* szczyt przyrostu basu (wejście detektora uderzeń w 0..1) */
     struct audio_beat beat;
     struct audio_features out;
 };
@@ -143,5 +198,17 @@ struct audio;
 struct audio *audio_start(const char *device, const char *file, bool verbose);
 void audio_snapshot(struct audio *a, struct audio_features *out);
 void audio_stop(struct audio *a);
+
+/* Diagnostyka (bez `-v`): pierwsze połączenie ze strumieniem i pierwsza
+ * porażka ZAWSZE trafiają do logu, razem z nazwą źródła — bez tego brak
+ * serwera albo zły monitor wyglądał jak „wizualizacja nie działa” i nie
+ * zostawiał śladu (audyt 2026-11-24, U4). Potem log tylko przy zmianie stanu
+ * (połączony ↔ zerwany), więc ponawianie co 1–30 s go nie zalewa.
+ * audio_log_stream: gdzie pisać (NULL = stderr, czyli flux-wall.log wrappera);
+ * testy podają własny strumień. Ustawiać PRZED audio_start. */
+void audio_log_stream(FILE *f);
+/* Nazwa źródła, z którego idzie strumień (`@DEFAULT_MONITOR@`, nazwa z
+ * --audio-device albo ścieżka --audio-file); pusty napis = brak połączenia. */
+void audio_source(struct audio *a, char *out, size_t outlen);
 
 #endif

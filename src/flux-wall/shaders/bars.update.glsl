@@ -36,6 +36,9 @@
 #pragma flux seed 2041
 #pragma flux audio_tempo 0
 #pragma flux audio_glow 0.5
+#ifndef FLUX_STEP_SCALE
+const float step_scale = 1.0;   /* binarka sprzed 2026-11-24 (git pull bez make) nie zna step_scale: stałe tempo z pragmy */
+#endif
 
 const int   P         = 14;      /* bok siatki cząstek: ceil(sqrt(184)) */
 const int   BARS      = 64;      /* 32 biny × 2 (lustro: bas w środku) */
@@ -91,7 +94,9 @@ void main() {
     if (idle) {
         /* szansa na start w tym kroku: pasmo + wysokie + uderzenie; w ciszy rzadkie żarzenie */
         float rate = 0.003 + lvl * (0.15 + 2.5 * audio_high) + 3.0 * audio_beat * lvl;   /* startów/s na iskrę */
-        float roll = h2(idx.x + 31, idx.y + 17 * int(gen), seed + int(time * 60.0));
+        /* los zmienia się co KROK (nominalnie 60/s; przy gęstszych krokach szybciej — inaczej
+         * kolejne kroki tej samej 1/60 s powtarzałyby ten sam los i iskier byłoby mniej) */
+        float roll = h2(idx.x + 31, idx.y + 17 * int(gen), seed + int(time * 60.0 / step_scale));
         if (roll > rate * dt) { o = vec4(-1.0, -1.0, 0.0, gen); return; }
         float g    = gen + 1.0;
         float sw   = resolution.x / float(BARS);

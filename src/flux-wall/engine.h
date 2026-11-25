@@ -19,7 +19,8 @@
  *   animacji; shader bez tego uniformu działa jak dotąd),
  *   accum (sampler2D), gain                            — tylko tryb cząstkowy,
  *   audio_level/bass/lowmid/mid/high/beat (0..1), audio_spectrum (sampler2D
- *   32×1 R, jednostka 2), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
+ *   32×1 R, jednostka 2: 32 biny log-freq w dB względem WSPÓLNEGO szczytu —
+ *   bin bez sygnału = 0, najgłośniejszy ~1, patrz audio.h), audio_wave (sampler2D AUDIO_WAVE_N×1 RG: r = L,
  *   g = R, próbki -1..1 po triggerze — oscyloskop), audio_wave_peak (szczyt
  *   |mono| tego okna — auto-wzmocnienie), audio_spectrogram (sampler2D
  *   COLS×AUDIO_SPECTRO_BINS R8, jednostka 4: historia kolumn spektrogramu w
@@ -32,10 +33,21 @@
  * jednoprzebiegowych) — linie są usuwane przed kompilacją, `#version` zostaje.
  * Kontrakt kroku cząstek (.update.glsl) — prelude dokleja silnik:
  *   pos (sampler2D P×P: xy pozycja, z wiek w krokach, w numer wcielenia),
- *   time, dt (sekundy na krok), detail, resolution, aspect (w/h), seed,
- *   life_steps, accum (sampler2D — gęstość śladów z poprzedniego kroku, w
- *   pikselach ekranu); funkcje h2/vnoise/fbm 1:1 z gen_dither_flux_wallpaper.py;
+ *   time, dt (sekundy na krok), step_scale, detail, resolution, aspect (w/h),
+ *   seed, life_steps, accum (sampler2D — gęstość śladów z poprzedniego kroku,
+ *   w pikselach ekranu); funkcje h2/vnoise/fbm 1:1 z gen_dither_flux_wallpaper.py;
  *   plik definiuje main() i pisze `o = vec4(x, y, wiek, wcielenie)`.
+ * Tempo symulacji idzie za monitorem (flux_sim_rate): `rate` z pragmy to tempo
+ *   NOMINALNE, a krok trwa `dt` = 1/(tempo faktyczne). Wszystko, co shader liczy
+ *   „na krok”, ma zależeć od `dt` (prędkość · dt) albo od `step_scale` =
+ *   nominalne/faktyczne (stałe przesunięcie na krok · step_scale, szansa na krok
+ *   · step_scale, wiek w krokach nominalnych = wiek · step_scale). Przy tempie
+ *   nominalnym step_scale = 1.0 dokładnie — obraz bit w bit jak bez skalowania.
+ *   Silnik sam skaluje `inc` (jasność śladu · step_scale), `life_steps` i `warm`.
+ *   Prelude definiuje makro FLUX_STEP_SCALE; shader używający step_scale zaczyna
+ *   od `#ifndef FLUX_STEP_SCALE` / `const float step_scale = 1.0;` / `#endif` —
+ *   starsza binarka (git pull bez przebudowy) nie zna uniformu i bez tej stałej
+ *   shader by się nie skompilował (animacja nie wstaje, kod 3).
  * Parametry w nagłówku .update.glsl: `#pragma flux <klucz> <wartość>`.
  */
 #ifndef FLUX_ENGINE_H
@@ -82,6 +94,24 @@ struct flux_params {
 
 /* Czyste funkcje (testowalne bez GL). */
 bool flux_params_parse(const char *src, struct flux_params *p, char *err, size_t errlen);
+/* Tempo symulacji (kroków/s) dla powierzchni rysowanej `frame_hz` razy na
+ * sekundę (odświeżanie monitora albo limit -f): CAŁKOWITA liczba kroków na
+ * klatkę, nigdy mniej kroków niż nominalne `rate` z pragmy —
+ *   k = ceil(rate / frame_hz), wynik k · frame_hz
+ * (60 kroków/s na 144 Hz → 144; 240 na 144 Hz → 288; 120 na 60 Hz → 120).
+ * Stałe 60 kroków/s na monitorze 144 Hz dawało krok w 60 klatkach ze 144:
+ * cząstki stały przez 2–3 klatki i skakały (decyzja właściciela 2026-11-24:
+ * klatki animacji w rytmie monitora, ruch płynny w tym rytmie).
+ * Tolerancja 5 %: 59.95 Hz to dalej jeden krok 60/s na klatkę, nie dwa.
+ * frame_hz spoza 10..1000 (nieznane, offscreen, --once) → `rate` bez zmian. */
+double flux_sim_rate(float rate, double frame_hz);
+/* Ile kroków symulacji zrobić w tej klatce: `acc` zbiera ułamki (dt_sim ·
+ * sim_rate), wynik to zaokrąglenie do NAJBLIŻSZEJ liczby całkowitej, reszta
+ * (−0.5..0.5) przechodzi na następną klatkę. Zaokrąglenie w dół dawało przy
+ * równym rytmie i drganiu czasu klatki ±kilka % sekwencje 0, 2, 1, 0, 2…
+ * zamiast 1, 1, 1 (dudnienie na granicy całego kroku). Po pauzie najwyżej
+ * `cap` kroków i bez zaległości (acc = 0). */
+int flux_sim_steps(double *acc, double dt_sim, double sim_rate, int cap);
 /* Mnożnik tempa z dźwięku: 1 + audio_tempo·strength·mid; 1.0 bez audio. */
 double flux_warp(const struct flux_params *p, const struct audio_features *audio, float strength);
 /* Maksimum kroków symulacji na klatkę: 4 · ceil(1 + audio_tempo·strength) — przy warpie
@@ -125,6 +155,12 @@ struct flux_target *flux_target_create(struct flux_engine *e, int w, int h, char
  * z działającym FBO (wołający może dalej rysować). */
 bool flux_target_resize(struct flux_target *t, int w, int h, char *err, size_t errlen);
 void flux_target_destroy(struct flux_target *t);
+/* Ile razy na sekundę ta powierzchnia jest rysowana (Hz monitora albo limit
+ * -f) — ustawia tempo symulacji celu przez flux_sim_rate. 0 = nieznane: tempo
+ * nominalne z pragmy (domyślnie; tak liczą offscreen i --once). */
+void flux_target_set_frame_rate(struct flux_target *t, double frame_hz);
+/* Faktyczne tempo symulacji celu (kroków/s) — do logu -v i testów. */
+double flux_target_sim_rate(const struct flux_target *t);
 
 /* Jedna klatka: symulacja (tryb cząstkowy) + przebieg finalny do `dest_fbo`
  * (0 = powierzchnia okna) o rozmiarze celu. `time` w sekundach od startu;

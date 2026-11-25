@@ -263,6 +263,56 @@ if [[ -n "$old_head" && "$(git -C "$ARCHENEMY_DIR" rev-parse --short=7 HEAD 2>/d
         echo -e "  ${YELLOW}⚠ Login screen / boot menu themes changed — the copies in the system are older. Refresh them:${NC}"
         echo -e "    bash ~/archenemy/install/system-theme-installation.sh"
     fi
+    # flux-wall (animowana tapeta) to jedyny komponent KOMPILOWANY: po pullu,
+    # który zmienił jego źródła, dalej działa stara binarka — a nowe shadery
+    # liczą już na nową (uniformy, skala widma), więc animacja wygląda inaczej
+    # niż powinna albo nie startuje (zostaje sama tapeta hyprpapera). Dotąd
+    # mówił o tym tylko ręczny `flux-wall.sh doctor` (audyt 2026-11-24, U6).
+    # Tylko gdy binarka istnieje (kto jej nie zbudował, nie używa animacji;
+    # buduje ją install.sh [9.6]). Budowanie idzie w ~/archenemy, bez sudo —
+    # ten sam poziom zaufania co skrypty z tego samego pulla, stąd domyślnie
+    # TAK. Sukces = odczytany stan: żadne źródło nie jest nowsze od binarki;
+    # restart animacji potwierdza pierwsza klatka (kod 0 z `flux-wall.sh start`).
+    fw_dir="$ARCHENEMY_DIR/src/flux-wall"
+    fw_wrap="$ARCHENEMY_DIR/scripts/wallpapers/flux-wall.sh"
+    if [[ -x "$fw_dir/build/flux-wall" ]]; then
+        fw_src="$(git -C "$ARCHENEMY_DIR" diff --name-only "$old_head" HEAD -- 'src/flux-wall/*.c' 'src/flux-wall/*.h' \
+            src/flux-wall/Makefile src/flux-wall/protocols 2>/dev/null)"
+        fw_shaders="$(git -C "$ARCHENEMY_DIR" diff --name-only "$old_head" HEAD -- 'src/flux-wall/shaders/*.frag' \
+            'src/flux-wall/shaders/*.glsl' 2>/dev/null)"
+        fw_restart=0
+        if [[ -n "$fw_src" ]]; then
+            echo -e "  ${YELLOW}⚠ The animated wallpaper (flux-wall) has new sources — the built program is older; animations may look wrong or not start until it is rebuilt.${NC}"
+            if ! command -v make >/dev/null 2>&1; then
+                echo -e "  ${YELLOW}  make is not installed — rebuild later: make -C ~/archenemy/src/flux-wall${NC}"
+            elif confirm "Rebuild flux-wall now? It compiles inside ~/archenemy, no sudo." Y; then
+                fw_log="$(mktemp 2>/dev/null)" || fw_log=/dev/null
+                echo -e "  ${CYAN}→ Building flux-wall...${NC}"
+                if make -C "$fw_dir" >"$fw_log" 2>&1 && [[ -x "$fw_dir/build/flux-wall" ]] \
+                    && [[ -z "$(find "$fw_dir" -maxdepth 1 \( -name '*.c' -o -name '*.h' \) -newer "$fw_dir/build/flux-wall" 2>/dev/null)" ]]; then
+                    echo -e "  ${GREEN}✓ flux-wall rebuilt.${NC}"
+                    fw_restart=1
+                else
+                    echo -e "  ${RED}✗ flux-wall build failed — the old program stays in use. Last lines:${NC}"
+                    tail -n 5 "$fw_log" 2>/dev/null | sed 's/^/    /'
+                    echo -e "    Try again: make -C ~/archenemy/src/flux-wall"
+                fi
+                [[ "$fw_log" == /dev/null ]] || rm -f "$fw_log"
+            else
+                echo -e "  Later: make -C ~/archenemy/src/flux-wall && bash ~/archenemy/scripts/wallpapers/flux-wall.sh start"
+            fi
+        elif [[ -n "$fw_shaders" ]]; then
+            fw_restart=1                 # same shadery: binarka aktualna, wystarczy wczytać je od nowa
+        fi
+        # Restart tylko działającej animacji (czyta shader raz, przy starcie).
+        if (( fw_restart )) && pgrep -x flux-wall >/dev/null 2>&1 && [[ -f "$fw_wrap" ]]; then
+            if bash "$fw_wrap" start >/dev/null 2>&1; then
+                echo -e "  ${GREEN}✓ Animation restarted with the updated flux-wall.${NC}"
+            else
+                echo -e "  ${YELLOW}⚠ The animation did not confirm its first frame after the restart — check: bash ~/archenemy/scripts/wallpapers/flux-wall.sh doctor${NC}"
+            fi
+        fi
+    fi
 fi
 # Domyślnie NIE (K4, audyt bezpieczeństwa 2026-11-14): instalator pochodzi
 # z kodu pobranego przed chwilą i woła sudo — jeden Enter nie może go

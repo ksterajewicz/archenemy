@@ -92,6 +92,22 @@ static float band_rms(const float *power, int n_power, float hz_per_bin, float l
     return sqrtf(sum / weight);
 }
 
+/* Energia pasma [lo, hi) Hz: pierwiastek z SUMY mocy binów FFT, z tym samym
+ * ułamkowym pokryciem co band_rms (pasmo węższe niż bin bierze jego część). */
+static float band_energy(const float *power, int n_power, float hz_per_bin, float lo, float hi) {
+    if (hi <= lo) return 0.0f;
+    float sum = 0.0f;
+    int a = (int)floorf(lo / hz_per_bin + 0.5f), b = (int)floorf(hi / hz_per_bin + 0.5f);
+    if (a < 1) a = 1;
+    if (b > n_power - 1) b = n_power - 1;
+    for (int k = a; k <= b; k++) {
+        float k_lo = ((float)k - 0.5f) * hz_per_bin, k_hi = ((float)k + 0.5f) * hz_per_bin;
+        float ov = fminf(hi, k_hi) - fmaxf(lo, k_lo);
+        if (ov > 0.0f) sum += power[k] * (ov / hz_per_bin);
+    }
+    return sqrtf(sum);
+}
+
 void audio_bands(const float *power, int n_power, float sample_rate,
                  const float *samples, int n_samples, struct audio_bands_raw *out) {
     float hz_per_bin = sample_rate / (float)AUDIO_FFT_N;
@@ -102,11 +118,11 @@ void audio_bands(const float *power, int n_power, float sample_rate,
     out->lowmid = band_rms(power, n_power, hz_per_bin,  150.0f,   500.0f);
     out->mid    = band_rms(power, n_power, hz_per_bin,  500.0f,  2000.0f);
     out->high   = band_rms(power, n_power, hz_per_bin, 2000.0f, 10000.0f);
-    /* 32 biny log-freq od 40 Hz do 12 kHz */
+    /* 32 biny log-freq od 40 Hz do 12 kHz — energia pasma (patrz audio.h) */
     for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) {
         float lo = 40.0f * powf(300.0f, (float)i / AUDIO_SPECTRUM_BINS);
         float hi = 40.0f * powf(300.0f, (float)(i + 1) / AUDIO_SPECTRUM_BINS);
-        out->spectrum[i] = band_rms(power, n_power, hz_per_bin, lo, hi);
+        out->spectrum[i] = band_energy(power, n_power, hz_per_bin, lo, hi);
     }
     /* drobne pasma spektrogramu (log od AUDIO_SPECTRO_LO do _HI) */
     float ratio = AUDIO_SPECTRO_HI / AUDIO_SPECTRO_LO;
@@ -117,15 +133,19 @@ void audio_bands(const float *power, int n_power, float sample_rate,
     }
 }
 
-void audio_spectro_column(const float *raw, float peak, float *out) {
-    for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) {
+void audio_db_column(const float *raw, int n, float peak, float range_db, float *out) {
+    for (int i = 0; i < n; i++) {
         float v = 0.0f;
         if (peak > 0.0f && raw[i] > 0.0f) {
             float db = 20.0f * log10f(raw[i] / peak);        /* <= 0 przy raw <= peak */
-            v = 1.0f + db / AUDIO_SPECTRO_RANGE_DB;
+            v = 1.0f + db / range_db;
         }
-        out[i] = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+        out[i] = v > 0.0f ? (v < 1.0f ? v : 1.0f) : 0.0f;    /* NaN → 0 */
     }
+}
+
+void audio_spectro_column(const float *raw, float peak, float *out) {
+    audio_db_column(raw, AUDIO_SPECTRO_BINS, peak, AUDIO_SPECTRO_RANGE_DB, out);
 }
 
 /* ── auto-gain, wygładzanie, beat, starzenie ────────────────────────────── */
@@ -157,19 +177,34 @@ float audio_smooth(float prev, float x, float dt, float attack, float release) {
     return prev + (x - prev) * k;
 }
 
-float audio_beat_step(struct audio_beat *b, float bass, float dt) {
+float audio_bass_flux(struct audio_beat *b, const float *power) {
+    float flux = 0.0f;
+    for (int k = 0; k < AUDIO_FLUX_BINS; k++) {
+        float a = power ? sqrtf(power[k + 1]) : 0.0f;       /* bin 0 = składowa stała, pomijamy */
+        if (!isfinite(a)) a = 0.0f;
+        float d = a - b->prev[k];
+        if (power && d > 0.0f) flux += d;
+        b->prev[k] = a;
+    }
+    return flux;
+}
+
+float audio_beat_step(struct audio_beat *b, float flux, float dt) {
+    if (!isfinite(flux)) flux = 0.0f;
+    if (!isfinite(b->avg)) b->avg = 0.0f;
     b->since += dt;
-    if (bass > 1.5f * b->avg && bass > 0.2f && b->since > 0.15f) {
+    if (b->since > AUDIO_BEAT_GAP && flux > AUDIO_BEAT_MIN && flux > AUDIO_BEAT_RATIO * b->avg) {
         b->out = 1.0f;
         b->since = 0.0f;
-        /* Po uderzeniu średnia skacze do poziomu uderzenia: ciągły ton daje
-         * JEDEN onset, a nie serię co 150 ms, dopóki średnia nie dogoni. */
-        b->avg = bass;
     } else {
         b->out *= expf(-dt / 0.1f);
         if (b->out < 0.001f) b->out = 0.0f;
     }
-    b->avg += (bass - b->avg) * (dt / 1.0f > 1.0f ? 1.0f : dt / 1.0f);
+    /* Średnia NIE skacze do szczytu po trafieniu (dawniej skakała i przez
+     * ~1 s zasłaniała kolejne uderzenia): ciągły przyrost i tak daje jeden
+     * onset, bo średnia dogania go w ~AUDIO_BEAT_AVG s. */
+    float k = dt / AUDIO_BEAT_AVG;
+    b->avg += (flux - b->avg) * (k > 1.0f ? 1.0f : k);
     return b->out;
 }
 
@@ -220,19 +255,58 @@ void audio_features_age(struct audio_features *f, double now, float release) {
     f->wave_peak *= k;
 }
 
+void audio_features_follow(struct audio_features *cur, const struct audio_features *snap, double now, float dt) {
+    float k = 1.0f;
+    if (cur->t > 0.0 && dt > 0.0f && dt < 0.25f) k = 1.0f - expf(-dt / AUDIO_FOLLOW_TAU);
+    float level = cur->level, bass = cur->bass, lowmid = cur->lowmid, mid = cur->mid, high = cur->high;
+    float spectrum[AUDIO_SPECTRUM_BINS];
+    memcpy(spectrum, cur->spectrum, sizeof spectrum);
+    *cur = *snap;                                    /* przebieg, spektrogram, t, live, raw_level */
+    if (k < 1.0f) {
+        cur->level  = level  + (snap->level  - level)  * k;
+        cur->bass   = bass   + (snap->bass   - bass)   * k;
+        cur->lowmid = lowmid + (snap->lowmid - lowmid) * k;
+        cur->mid    = mid    + (snap->mid    - mid)    * k;
+        cur->high   = high   + (snap->high   - high)   * k;
+        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
+            cur->spectrum[i] = spectrum[i] + (snap->spectrum[i] - spectrum[i]) * k;
+    }
+    /* uderzenie: zanik ~100 ms liczony w analizie skokami co 20 ms — tu ciągle;
+     * powyżej 100 ms wieku gasi je już audio_features_age */
+    double age = now - snap->t;
+    if (snap->t > 0.0 && age > 0.0) cur->beat = snap->beat * expf(-(float)(age < 0.1 ? age : 0.1) / 0.1f);
+}
+
 /* ── pełna analiza okna ─────────────────────────────────────────────────── */
 
 /* Bramka szumu: poniżej −60 dBFS RMS wszystko = 0 (cisza nie ma być
  * wzmacniana przez auto-gain do pełnej reakcji). */
 #define AUDIO_GATE   0.001f
-/* Podłoga auto-gain per pasmo — poniżej niej szum/syk nie liczy się jako sygnał. */
+/* Podłoga auto-gain POZIOMU ogólnego (RMS okna): sygnał cichszy niż −48 dBFS
+ * nie jest już wzmacniany do pełnej reakcji, tylko gaśnie ku bramce. */
 #define AUDIO_FLOOR  0.004f
+/* Podłogi pasm, widma, spektrogramu i przyrostu basu są UŁAMKIEM szczytu
+ * poziomu ogólnego (agc_level.peak), nie stałą: pasmo, które jest po prostu
+ * ciche względem reszty muzyki (sam syk), dalej nie rośnie do pełnej reakcji,
+ * ale ściszenie całego strumienia nic nie zmienia. Stała podłoga 0.004 na
+ * średni bin gasiła szerokie pasma wysokich przy ściszonym odtwarzaczu —
+ * monitor wyjścia bierze sygnał po głośności aplikacji (audyt 2026-11-24, U3).
+ *   BAND     — bass/lowmid/mid/high (średnia na bin FFT): −48 dB od poziomu,
+ *   SPECTRUM — 32 biny (energia pasma, skala 45 dB): −26 dB; niżej przeciek
+ *              okna Hanna z tonu spoza zakresu rysowałby słupki,
+ *   SPECTRO  — spektrogram (średnia na bin, skala 60 dB): −40 dB,
+ *   FLUX     — przyrost basu: wahania poniżej −34 dB od poziomu to nie uderzenia. */
+#define AUDIO_FLOOR_BAND     0.004f
+#define AUDIO_FLOOR_SPECTRUM 0.05f
+#define AUDIO_FLOOR_SPECTRO  0.01f
+#define AUDIO_FLOOR_FLUX     0.02f
 #define AUDIO_ATTACK 0.03f
 #define AUDIO_RELEASE 0.25f
 
 void audio_state_init(struct audio_state *st) {
     memset(st, 0, sizeof *st);
     audio_fft_init(&st->fft);
+    st->beat.since = 1.0f;               /* pierwszy dźwięk po starcie może być uderzeniem */
 }
 
 void audio_analyze(struct audio_state *st, const float *window, float dt, double now) {
@@ -252,30 +326,46 @@ void audio_analyze(struct audio_state *st, const float *window, float dt, double
             o->spectrum[i] = audio_smooth(o->spectrum[i], 0.0f, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         /* spektrogram bez wygładzania — kolumna to jedna chwila; cisza = 0 od razu */
         for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) o->spectro[i] = 0.0f;
+        audio_bass_flux(&st->beat, NULL);                    /* po ciszy pierwszy dźwięk = pełny przyrost */
         o->beat = audio_beat_step(&st->beat, 0.0f, dt);
     } else {
         float lv = audio_agc_step(&st->agc_level,  raw.level,  dt, AUDIO_FLOOR);
-        float ba = audio_agc_step(&st->agc_bass,   raw.bass,   dt, AUDIO_FLOOR);
-        float lm = audio_agc_step(&st->agc_lowmid, raw.lowmid, dt, AUDIO_FLOOR);
-        float mi = audio_agc_step(&st->agc_mid,    raw.mid,    dt, AUDIO_FLOOR);
-        float hi = audio_agc_step(&st->agc_high,   raw.high,   dt, AUDIO_FLOOR);
+        /* Jak głośny jest strumień: szczyt poziomu, AUDIO_FLOOR..1. Sufit 1.0
+         * (pełna skala): jedna skończona próbka rzędu 1e20 winduje szczyt
+         * poziomu na ~100 s — bez sufitu pociągnęłaby za sobą podłogi pasm
+         * i wizualizacja stałaby do tego czasu (przegląd 2026-11-15, R1). */
+        float ref = fminf(st->agc_level.peak, 1.0f);
+        float ba = audio_agc_step(&st->agc_bass,   raw.bass,   dt, AUDIO_FLOOR_BAND * ref);
+        float lm = audio_agc_step(&st->agc_lowmid, raw.lowmid, dt, AUDIO_FLOOR_BAND * ref);
+        float mi = audio_agc_step(&st->agc_mid,    raw.mid,    dt, AUDIO_FLOOR_BAND * ref);
+        float hi = audio_agc_step(&st->agc_high,   raw.high,   dt, AUDIO_FLOOR_BAND * ref);
         o->level  = audio_smooth(o->level,  lv, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->bass   = audio_smooth(o->bass,   ba, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->lowmid = audio_smooth(o->lowmid, lm, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->mid    = audio_smooth(o->mid,    mi, dt, AUDIO_ATTACK, AUDIO_RELEASE);
         o->high   = audio_smooth(o->high,   hi, dt, AUDIO_ATTACK, AUDIO_RELEASE);
-        for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) {
-            float v = audio_agc_step(&st->agc_spec[i], raw.spectrum[i], dt, AUDIO_FLOOR);
-            o->spectrum[i] = audio_smooth(o->spectrum[i], v, dt, AUDIO_ATTACK, AUDIO_RELEASE);
+        /* widmo 32 binów: wspólny szczyt (najgłośniejszy bin, zanik ~2 s), biny
+         * w dB względem niego — głośne pasma wysoko, ciche nisko */
+        {
+            float smx = 0.0f, col[AUDIO_SPECTRUM_BINS];
+            for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++) if (raw.spectrum[i] > smx) smx = raw.spectrum[i];
+            audio_agc_step(&st->agc_spectrum, smx, dt, AUDIO_FLOOR_SPECTRUM * ref);
+            audio_db_column(raw.spectrum, AUDIO_SPECTRUM_BINS, st->agc_spectrum.peak, AUDIO_SPECTRUM_RANGE_DB, col);
+            for (int i = 0; i < AUDIO_SPECTRUM_BINS; i++)
+                o->spectrum[i] = audio_smooth(o->spectrum[i], col[i], dt, AUDIO_ATTACK, AUDIO_RELEASE);
         }
-        o->beat = audio_beat_step(&st->beat, ba, dt);
+        {
+            float fx = audio_bass_flux(&st->beat, st->power);
+            o->beat = audio_beat_step(&st->beat, audio_agc_step(&st->agc_flux, fx, dt, AUDIO_FLOOR_FLUX * ref), dt);
+        }
         /* spektrogram: jeden szczyt globalny (najgłośniejsze pasmo, zanik ~2 s),
          * kolumna w dB względem niego — proporcje między pasmami zostają */
         float mx = 0.0f;
         for (int i = 0; i < AUDIO_SPECTRO_BINS; i++) if (raw.spectro[i] > mx) mx = raw.spectro[i];
-        audio_agc_step(&st->agc_spectro, mx, dt, AUDIO_FLOOR);
+        audio_agc_step(&st->agc_spectro, mx, dt, AUDIO_FLOOR_SPECTRO * ref);
         audio_spectro_column(raw.spectro, st->agc_spectro.peak, o->spectro);
     }
+    o->raw_level = isfinite(raw.level) ? raw.level : 0.0f;
     o->t = now;
 }
 
@@ -289,6 +379,7 @@ struct audio {
     char           *device;
     char           *file;
     struct audio_features snap;
+    char            source[128];                /* źródło bieżącego strumienia; "" = brak (pod `lock`) */
     struct audio_state    st;
     float           ring[AUDIO_FFT_N];          /* miks (L+R)/2 — okno FFT */
     float           ring_l[AUDIO_FFT_N], ring_r[AUDIO_FFT_N];   /* przebieg L/R dla oscyloskopu */
@@ -296,11 +387,34 @@ struct audio {
     bool            started;
 };
 
+static FILE *log_stream;                    /* NULL = stderr; audio_log_stream() */
+
+void audio_log_stream(FILE *f) { log_stream = f; }
+
+static void log_line(const char *fmt, va_list ap) {
+    FILE *f = log_stream ? log_stream : stderr;
+    fputs("flux-wall: audio: ", f); vfprintf(f, fmt, ap); fputc('\n', f);
+    fflush(f);
+}
+
 static void logv(const struct audio *a, const char *fmt, ...) {
     if (!a->verbose) return;
     va_list ap; va_start(ap, fmt);
-    fputs("flux-wall: audio: ", stderr); vfprintf(stderr, fmt, ap); fputc('\n', stderr);
+    log_line(fmt, ap);
     va_end(ap);
+}
+
+/* Jak logv, ale zawsze (także bez -v): zmiany stanu strumienia — patrz audio.h. */
+static void logw(const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    log_line(fmt, ap);
+    va_end(ap);
+}
+
+static void set_source(struct audio *a, const char *name) {
+    pthread_mutex_lock(&a->lock);
+    snprintf(a->source, sizeof a->source, "%s", name ? name : "");
+    pthread_mutex_unlock(&a->lock);
 }
 
 /* Dosuń hop (stereo, przeplatany) do buforów przesuwanych: miks do okna FFT,
@@ -334,7 +448,9 @@ static void set_live(struct audio *a, bool live) {
 
 static void run_file(struct audio *a) {
     FILE *f = fopen(a->file, "rb");
-    if (!f) { logv(a, "nie mogę otworzyć %s: %s", a->file, strerror(errno)); return; }
+    if (!f) { logw("nie mogę otworzyć pliku %s: %s — bez reakcji na dźwięk", a->file, strerror(errno)); return; }
+    set_source(a, a->file);
+    logw("dźwięk z pliku %s (--audio-file)", a->file);
     struct timespec next; clock_gettime(CLOCK_MONOTONIC, &next);
     while (a->running) {
         const size_t want = AUDIO_HOP * AUDIO_CHANNELS;
@@ -350,6 +466,7 @@ static void run_file(struct audio *a) {
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
     }
     fclose(f);
+    set_source(a, NULL);
 }
 
 static pa_simple *open_stream(struct audio *a, const char **used) {
@@ -382,24 +499,29 @@ static void retry_pause(struct audio *a, int *backoff) {
 
 static void run_pulse(struct audio *a) {
     int backoff = 1;
-    bool reported = false;
+    bool reported = false;               /* brak połączenia już zgłoszony (jedna linia na przerwę) */
     while (a->running) {
         const char *used = NULL;
         pa_simple *s = open_stream(a, &used);
         if (!s) {
             set_live(a, false);
-            if (!reported) { logv(a, "brak serwera dźwięku — ponawiam (backoff do 30 s)"); reported = true; }
+            if (!reported) {
+                logw("brak połączenia z monitorem wyjścia (@DEFAULT_MONITOR@%s%s) — bez reakcji na dźwięk, ponawiam co 1–30 s",
+                     a->device ? ", " : "", a->device ? a->device : "");
+                reported = true;
+            }
             retry_pause(a, &backoff);
             continue;
         }
-        logv(a, "strumień z %s", used);
+        set_source(a, used);
+        logw("strumień z %s (monitor wyjścia, nigdy mikrofon)", used);
         reported = false;
         int err = 0;
         while (a->running) {
             /* Blokuje, gdy sink śpi (nic nie gra) — wtedy snapshot się starzeje,
              * a render gasi go sam (audio_features_age). */
             if (pa_simple_read(s, a->hop, sizeof a->hop, &err) < 0) {
-                logv(a, "strumień zerwany: %s", pa_strerror(err));
+                logw("strumień z %s zerwany: %s — ponawiam", used, pa_strerror(err));
                 break;
             }
             /* Backoff wraca do 1 s dopiero po danych, nie po samym otwarciu:
@@ -408,6 +530,7 @@ static void run_pulse(struct audio *a) {
             push_hop(a);
         }
         pa_simple_free(s);
+        set_source(a, NULL);
         set_live(a, false);
         /* Po zerwanym strumieniu też pauza — wcześniej pętla od razu otwierała
          * nowy i biła w serwer bez przerwy (audyt 2026-11-05, F8). */
@@ -442,6 +565,13 @@ struct audio *audio_start(const char *device, const char *file, bool verbose) {
 void audio_snapshot(struct audio *a, struct audio_features *out) {
     pthread_mutex_lock(&a->lock);
     *out = a->snap;
+    pthread_mutex_unlock(&a->lock);
+}
+
+void audio_source(struct audio *a, char *out, size_t outlen) {
+    if (!outlen) return;
+    pthread_mutex_lock(&a->lock);
+    snprintf(out, outlen, "%s", a->source);
     pthread_mutex_unlock(&a->lock);
 }
 
