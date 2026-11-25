@@ -98,7 +98,12 @@ Rules that follow directly from the table:
   (`hyprlock-background-<rice>.conf`), `.gitignore`, `HYPRLOCK_BG_FILES` in
   `scripts/rofi/rofi_wallpaper_switcher.sh`, `known_rices` in
   `scripts/archenemy-doctor.sh`, `MOTIFS` in
-  `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), and the
+  `scripts/wallpapers/gen_rice_preview.py` (its `preview.png`), the
+  flux-wall preview frames of a rice with a `flux-wall.conf`
+  (`src/flux-wall/tools/render-previews.sh -r <rice>` after `make -C
+  src/flux-wall tools`, then commit `shaders/previews/<rice>/`; `yang` had
+  none until 2026-11-24 and its `Super+W → Animations/` showed no pictures —
+  `tests/render-previews.sh` now fails on a missing frame), and the
   hard-coded rice lists in `tests/` (`install-main`, `bluetooth`,
   `keyboard-layouts`, `mouse-settings`, `rofi-clipboard`, `font-settings`,
   `flux-wall-dither`, `runtime-platforms`, `waybar-launcher` for a rice with

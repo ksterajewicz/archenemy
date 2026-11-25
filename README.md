@@ -392,9 +392,10 @@ archenemy/
 │       │                             #   a screen (EGL surfaceless + the same engine.c); `make tools`,
 │       │                             #   never built by install.sh; pngstat.py + bars-accum-debug.frag —
 │       │                             #   helpers for tests/flux-wall-bars.sh and flux-wall-rate.sh; render-previews.sh — renders
-│       │                             #   shaders/previews/<rice>/<animation>.png (256x144, the rice's palette,
-│       │                             #   synth audio for visualizations) for the Super+W menu — dev tool, run
-│       │                             #   by hand after adding a shader or changing a palette, then commit;
+│       │                             #   shaders/previews/<rice>/<animation>.png (480x270: rendered at 1920x1080
+│       │                             #   and downscaled 4x, the rice's palette, full-band synthetic music for
+│       │                             #   visualizations) for the Super+W menu — dev tool, run by hand after
+│       │                             #   adding a shader, a rice or changing a palette, then commit;
 │       └── shaders/                  #   animations selectable in Super+W: dither-flux (domain warping),
 │                                     #   dither-waves (interference) — single .frag files; pairs of
 │                                     #   .frag + .update.glsl (particle engine): dither-flow,
@@ -438,8 +439,10 @@ archenemy/
 │                                     #   rofi-theme-switcher.sh — Super+T previews on a fake rofi; every rice
 │                                     #   stub has a valid rices/<RICE_NAME>/preview.png.
 │                                     #   render-previews.sh — tools/render-previews.sh on a fake offscreen:
-│                                     #   --dither/--no-dither per rice (none for an older offscreen), synth audio,
-│                                     #   frame time from `#pragma flux life`.
+│                                     #   --dither/--no-dither per rice (none for an older offscreen), render size,
+│                                     #   downscale and audio mode by what offscreen supports, frame time from
+│                                     #   `#pragma flux life`; and the committed frames themselves: every rice with
+│                                     #   a flux-wall.conf has a 480x270 PNG for every animation, no orphans.
 │                                     #   update-archenemy.sh — the Super+A → [u] updater on real git
 │                                     #   (bare origin in a temp dir): no false "✓" on failure, no
 │                                     #   switching to a branch older than what you run; per-platform installer
@@ -651,7 +654,7 @@ Wallpapers live in `wallpapers/` (loose files or in subfolders) and are versione
 
 The `Super+W` menu is two-level: under two checkboxes are the **`Wallpapers/`** folder (files from `wallpapers/`) and **`Animations/`** (flux-wall animations, when built; music visualizations tagged `♪ music visualisation`), and below them **`Animation: off`**; `← Back` in the submenu returns to the top. Picking an animation doesn't change the hyprpaper wallpaper: the animation draws on top of it and works in **every** rice, using `rices/<rice>/flux-wall.conf` for the palette when present (beta has no such file and uses the binary's default palette). The choice is remembered in `data/flux-wall.dat` and survives `Super+T` and reboots; `off` disables the animation everywhere, and deleting the file restores the rice's default behavior (dither-flux: enabled, the rest: disabled). Switching: `Super + W` — the menu shows all images (jpg/jpeg/png/webp), with two checkboxes at the top: `[x] Upload to all monitors` (checked by default — wallpaper goes to all monitors instead of just the focused one) and `[ ] Set as hyprlock background (no blur)` (unchecked by default — checking it sets the chosen image as the lock-screen background without blur, instead of the default live screenshot + blur; survives switching rices).
 
-**Previews.** Both submenus show pictures: a 3-column grid with a large image above each name (set via `-theme-str` only for these menus — each rice's rofi colors, borders and rounding stay; the top level with the checkboxes stays a plain list, and `← Back` has no image). `Wallpapers/` shows thumbnails generated on first use into `data/thumbs/` (machine layer, outside git), keyed by path + modification time — an edited file gets a fresh thumbnail, the stale one is removed. The tool is whichever is present: `glycin-thumbnailer`, `gdk-pixbuf-thumbnailer`, or ImageMagick's `magick`; with none of them, or on an error, the original image is used as the icon (rofi loads it, just more slowly). Generation is capped at 3 s per file and 6 s per menu opening, so the shortcut never hangs — anything left over shows the original and gets its thumbnail next time. `Animations/` shows ready-made frames from `src/flux-wall/shaders/previews/<active rice>/<animation>.png` (committed, rendered in each rice's palette by `src/flux-wall/tools/render-previews.sh`); an animation without a frame is listed without a picture, and a rice with no frames at all (e.g. `white-blue_beta`) gets the plain list.
+**Previews.** Both submenus show pictures: a 3-column grid with a large image above each name (set via `-theme-str` only for these menus — each rice's rofi colors, borders and rounding stay; the top level with the checkboxes stays a plain list, and `← Back` has no image). `Wallpapers/` shows thumbnails generated on first use into `data/thumbs/` (machine layer, outside git), keyed by path + modification time — an edited file gets a fresh thumbnail, the stale one is removed. The tool is whichever is present: `glycin-thumbnailer`, `gdk-pixbuf-thumbnailer`, or ImageMagick's `magick`; with none of them, or on an error, the original image is used as the icon (rofi loads it, just more slowly). Generation is capped at 3 s per file and 6 s per menu opening, so the shortcut never hangs — anything left over shows the original and gets its thumbnail next time. `Animations/` shows ready-made frames from `src/flux-wall/shaders/previews/<active rice>/<animation>.png` (committed, rendered in each rice's palette by `src/flux-wall/tools/render-previews.sh`). A frame shows the animation as it looks on a desktop with music playing: it is rendered at screen resolution (1920×1080) with a full-band synthetic mix and then downscaled 4× to 480×270 by averaging in linear light — shaders draw in pixels (1 px particles, an 8 px dither matrix), so a frame rendered directly at thumbnail size looks nothing like the wallpaper. `tests/render-previews.sh` fails when a rice with a `flux-wall.conf` lacks a frame for any animation. An animation without a frame is listed without a picture, and a rice with no frames at all (e.g. `white-blue_beta`) gets the plain list.
 
 At the top of the menu is the **`[x] Upload to all monitors`** toggle (checked by default):
 
