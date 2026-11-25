@@ -718,7 +718,7 @@ check "1A: ta sama nazwa obrazu w dwóch plikach → podpis z rozszerzeniem, oba
 check "1A: kafel z czystym podpisem ma miniaturę wariantu pod primary" '[[ "$(icon_of 2 crt/crt-scope)" == "$THUMBS"/*.png ]]'
 MENU_MONS=three menu "Wallpapers/" "crt/crt-scope"
 check "1A: wybór podpisu → primary v1, secondary v2" '[[ "$(MOCK_MONS=three active_of HDMI-A-3)" == "$W/crt/crt-scope-v1-1920x1080.png" && "$(MOCK_MONS=three active_of eDP-1)" == "$W/crt/crt-scope-v2-2560x1600.png" ]]'
-check "1A: powiadomienie z nazwą obrazu" 'grep -qF "applied" "$MOCK_LOG" && grep -q "NOTIFY: archenemy Wallpaper .crt/crt-scope. applied" "$MOCK_LOG"'
+check "1A: powiadomienie z nazwą obrazu" 'grep -qF "applied" "$MOCK_LOG" && grep -q "NOTIFY: -a archenemy archenemy Wallpaper .crt/crt-scope. applied" "$MOCK_LOG"'
 check "3A: brak pliku 2560x1440 → najmniejszy pokrywający ekran (crt v2-2560x1600)" '[[ "$(MOCK_MONS=three active_of DP-3)" == "$W/crt/crt-scope-v2-2560x1600.png" ]]'
 MENU_MONS=three menu "Wallpapers/" "own/sunset.png"
 check "1A: podpis z rozszerzeniem → dokładnie ten plik" '[[ "$(MOCK_MONS=three active_of HDMI-A-3)" == "$W/own/sunset.png" && "$(MOCK_MONS=three active_of DP-3)" == "$W/own/sunset.png" ]]'
